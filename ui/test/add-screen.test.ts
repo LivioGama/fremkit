@@ -72,7 +72,14 @@ describe('the add-screen dialog', () => {
     const wrapper = mount(AddScreenDialog, { attachTo: document.body, global: { stubs } })
     await wrapper.find('input').setValue('Kitchen')
     const selects = wrapper.findAll('select')
-    expect(selects[0].text()).toContain('iPad 13" landscape — 1376 × 1032')
+    expect(selects[0].findAll('option').map((o) => o.text())).toEqual([
+      'iPad Pro 13" landscape — 1376 × 1032', 'iPad Pro 13" portrait — 1032 × 1376',
+      'iPad Pro 11" landscape — 1210 × 834', 'iPad Pro 11" portrait — 834 × 1210',
+      'iPad Air 13" landscape — 1366 × 1024', 'iPad Air 13" portrait — 1024 × 1366',
+      'iPad Air 11" landscape — 1180 × 820', 'iPad Air 11" portrait — 820 × 1180',
+      'Custom',
+    ])
+    expect(wrapper.text()).toContain('“More Space” is larger')
     await selects[1].setValue('edge')
     await button(wrapper, 'Preview…').trigger('click')
 

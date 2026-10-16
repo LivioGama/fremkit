@@ -21,12 +21,19 @@ const emit = defineEmits<{ close: [] }>()
 const s = useAdminStore()
 const { t } = useI18n()
 
-/** Device sizes offered, in CSS px in the orientation they name, as the iPad reports them. */
+/**
+ * Device sizes offered, in CSS px (points) in the orientation they name, as each iPad reports them
+ * in its standard display mode. "More Space" reports more; a paired device reports its own size.
+ */
 const PRESETS = [
-  { id: 'ipad13Landscape', width: 1376, height: 1032 },
-  { id: 'ipad13Portrait', width: 1032, height: 1376 },
-  { id: 'ipad11Landscape', width: 1180, height: 820 },
-  { id: 'ipad11Portrait', width: 820, height: 1180 },
+  { id: 'ipadPro13Landscape', width: 1376, height: 1032 },
+  { id: 'ipadPro13Portrait', width: 1032, height: 1376 },
+  { id: 'ipadPro11Landscape', width: 1210, height: 834 },
+  { id: 'ipadPro11Portrait', width: 834, height: 1210 },
+  { id: 'ipadAir13Landscape', width: 1366, height: 1024 },
+  { id: 'ipadAir13Portrait', width: 1024, height: 1366 },
+  { id: 'ipadAir11Landscape', width: 1180, height: 820 },
+  { id: 'ipadAir11Portrait', width: 820, height: 1180 },
 ] as const
 const CUSTOM = 'custom'
 /** The Edge's grid, as `addScreen` builds it. */
@@ -130,6 +137,7 @@ function create(): void {
             <option :value="CUSTOM">{{ t('admin.screens.dialog.custom') }}</option>
           </select>
         </BaseField>
+        <p class="hint">{{ t('admin.screens.dialog.sizeHint') }}</p>
         <div v-if="preset === CUSTOM" class="row">
           <BaseField :label="t('admin.screens.dialog.width')">
             <BaseInput :model-value="width" type="number" :min="40" :invalid="!sizeOk" @update:model-value="width = Number($event)" />
