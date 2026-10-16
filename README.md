@@ -179,6 +179,10 @@ leaves the screen with no background at all rather than putting it back.
 The admin's middle column is the real page, rendered with live widgets and scaled to fit, with the
 navigation bar below it exactly as the Edge shows it.
 
+A dashboard can have several screens — the Edge, an iPad — each with its own pages and bar, and
+each edited on its own: pick it above the canvas. The widgets are shared, so one shown on
+two screens is the same widget, with the same settings.
+
 - **Edit / Test** — in Edit, an overlay captures the mouse: click to select, drag to move, eight
   handles to resize. In Test the overlay steps aside and the widgets are usable, and the preview
   behaves like the screen: a horizontal swipe on the navigation bar or on free board space changes

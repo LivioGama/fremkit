@@ -311,7 +311,13 @@ server* off in the menu and run it yourself.
 
 `data/fremkit.json` is valid JSON that the server cannot interpret, so it runs on defaults and
 refuses to save over your file rather than overwriting it. Repair or remove the file — a good copy
-may be in `data/fremkit.json.bak`, written when a v1 file was migrated — then restart the server.
+may be in `data/fremkit.json.bak`, the file as it was before the last save — then restart the
+server.
+
+`data/fremkit.v3.json` is something else: the dashboard as it was the first time a version with
+screens started and converted it, kept once and never overwritten. It is the file to use to go
+back to an older version of Fremkit: stop the server, put it back as `data/fremkit.json`, and
+start the older version. Anything changed since that upgrade is not in it.
 
 ## Two admin tabs disagree
 
