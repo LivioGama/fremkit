@@ -135,12 +135,12 @@ const asked = new Set<string>()
 export function useConfigTheme(config: Ref<Config | null>): void {
   const { themes: all, reload } = useThemes()
   const paint = (): void => {
-    const id = config.value?.display.theme
+    const id = config.value?.theme
     applyTheme(document.documentElement, themeVariables(all.value, id))
     if (id && !all.value[id] && !asked.has(id)) {
       asked.add(id)
       void reload().catch(() => { /* offline: the built-in theme's own values stand */ })
     }
   }
-  watch([all, () => config.value?.display.theme], paint, { immediate: true })
+  watch([all, () => config.value?.theme], paint, { immediate: true })
 }
