@@ -8,6 +8,7 @@ import {
   NAV_DOTS_RESERVE_CELLS, WIDE_COMPACT_SETTINGS, WIDE_COMPACT_WIDTH, compactWidth, navCellsUsed,
 } from '../src/config/nav.js'
 import { ManifestSchema } from '../src/widgets/manifest.js'
+import { readFileSync } from 'node:fs'
 
 const manifests = new Map([['clock', { minSize: [8, 4] as [number, number] }]])
 
@@ -400,6 +401,36 @@ describe('screens', () => {
     expect(validateNavWidgets(shared(true), screenManifests))
       .toEqual(['screen Tablet, navigation bar: its widgets take 28 cells of the 24 the page dots leave'])
   })
+
+  describe('against the config being replaced', () => {
+    // Tablet: 34 columns, 24 cells for the bar. `n` 4-cell pills, plus a renamed page to stand
+    // for an edit that has nothing to do with the bar.
+    const tablet = (n: number, pageName = 'P', id = 'tab') => {
+      const widgets: Record<string, unknown> = {}
+      const nav = Array.from({ length: n }, (_, i) => { widgets['p' + i] = { widgetId: 'pill' }; return { instanceId: 'p' + i } })
+      return config(widgets, [screen(id, 'Tablet', { display: { cols: 34 }, nav, pages: [{ id: 'p', name: pageName, items: [] }] })], 'en')
+    }
+    const refusal = (used: number) => [`screen Tablet, navigation bar: its widgets take ${used} cells of the 24 the page dots leave`]
+
+    it('lets an unrelated save through when the stored bar is already over the limit', () => {
+      expect(validateNavWidgets(tablet(7, 'Renamed'), screenManifests, tablet(7))).toEqual([])
+    })
+    it('lets a save that narrows an over-full bar through, even if still over', () => {
+      expect(validateNavWidgets(tablet(7), screenManifests, tablet(8))).toEqual([])
+    })
+    it('refuses a save that widens a bar already over the limit', () => {
+      expect(validateNavWidgets(tablet(8), screenManifests, tablet(7))).toEqual(refusal(32))
+    })
+    it('refuses a save that takes a bar over the limit', () => {
+      expect(validateNavWidgets(tablet(7), screenManifests, tablet(6))).toEqual(refusal(28))
+    })
+    it('refuses a new screen over the limit', () => {
+      expect(validateNavWidgets(tablet(7, 'P', 'tab-2'), screenManifests, tablet(7))).toEqual(refusal(28))
+    })
+    it('without the previous config, refuses any bar over the limit', () => {
+      expect(validateNavWidgets(tablet(7, 'Renamed'), screenManifests)).toEqual(refusal(28))
+    })
+  })
 })
 
 describe('nav.ts', () => {
@@ -529,5 +560,18 @@ describe('display.adminGesture', () => {
     expect(parsed.success).toBe(true)
     if (parsed.success) expect(parsed.data.adminGesture).toBeUndefined()
     expect(DEFAULT_ADMIN_GESTURE).toBe('both')
+  })
+})
+
+describe('nav.ts mirrors the UI', () => {
+  // The admin applies the bar's width rule while editing, the server again at save: if the two
+  // drift, the admin offers what the server refuses. The UI file is read as text to keep the
+  // server's tests free of the UI's imports.
+  const ui = readFileSync(new URL('../../ui/src/shared/types.ts', import.meta.url), 'utf8')
+  it('has the same constants as ui/src/shared/types.ts', () => {
+    expect(ui).toMatch(new RegExp(`export const NAV_DOTS_RESERVE_CELLS = ${NAV_DOTS_RESERVE_CELLS}\\b`))
+    expect(ui).toMatch(new RegExp(`export const WIDE_COMPACT_WIDTH = ${WIDE_COMPACT_WIDTH}\\b`))
+    const list = WIDE_COMPACT_SETTINGS.map((k) => `'${k}'`).join(', ')
+    expect(ui).toContain(`export const WIDE_COMPACT_SETTINGS = [${list}] as const`)
   })
 })

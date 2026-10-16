@@ -38,7 +38,8 @@ export async function configRoutes(app: FastifyInstance, opts: { store: ConfigSt
 
     const errors = [
       ...validateLayout(parsed.data, opts.catalog.manifests),
-      ...validateNavWidgets(parsed.data, opts.catalog.manifests),
+      // `current` lets a bar already over the limit through an unrelated save.
+      ...validateNavWidgets(parsed.data, opts.catalog.manifests, current),
       ...validateConnections(parsed.data),
     ]
     if (errors.length) return reply.code(400).send({ errors })

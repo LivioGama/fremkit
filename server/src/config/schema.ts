@@ -495,8 +495,15 @@ export function validateLayout(config: Config, manifests: Map<string, LayoutMani
  * screen, but a setting changed on a widget shared with another screen can widen that screen's
  * bar too, and only the save sees every screen. A bar entry naming a missing widget is left to
  * `validateLayout`. Messages name the screen and come back in the language the config asks for.
+ *
+ * `previous`, the config being replaced, keeps an already over-full bar from locking every save:
+ * a bar can be over the limit before this save (a wide setting switched on earlier, a manifest
+ * whose compact width grew), and an unrelated edit must still go through. With it, a screen's
+ * bar is refused only when it is over the limit *and* this save makes it use more cells than the
+ * screen with the same id did in `previous`; a screen `previous` does not have is refused as soon
+ * as it is over. Without it, any bar over the limit is refused.
  */
-export function validateNavWidgets(config: Config, manifests: Map<string, LayoutManifest>): string[] {
+export function validateNavWidgets(config: Config, manifests: Map<string, LayoutManifest>, previous?: Config): string[] {
   const errors: string[] = []
   const locale = config.locale
   for (const screen of config.screens) {
@@ -510,7 +517,9 @@ export function validateNavWidgets(config: Config, manifests: Map<string, Layout
     }
     const used = navCellsUsed(screen, config.widgets, manifests)
     const room = screen.display.cols - NAV_DOTS_RESERVE_CELLS
-    if (used > room) errors.push(tr(locale, 'navWidgets.noRoom', { screen: name, used, room }))
+    const before = previous?.screens.find((s) => s.id === screen.id)
+    const grew = before === undefined || used > navCellsUsed(before, previous!.widgets, manifests)
+    if (used > room && grew) errors.push(tr(locale, 'navWidgets.noRoom', { screen: name, used, room }))
   }
   return errors
 }

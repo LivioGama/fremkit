@@ -81,6 +81,27 @@ describe('config routes', () => {
     expect(put.json().errors[0]).toBe(degradedMessage(defaultLocale()))
     expect(await readFile(join(dir, 'data', 'fremkit.json'), 'utf8')).toBe(mine)
   })
+  it('lets an unrelated save through a bar already over the limit, and refuses widening it', async () => {
+    await app.close()
+    await mkdir(join(dir, 'widgets', 'pill'), { recursive: true })
+    await writeFile(join(dir, 'widgets', 'pill', 'manifest.json'), JSON.stringify({ id: 'pill', name: 'Pill', version: '1.0.0', minSize: [4, 2], defaultSize: [4, 2], compact: { width: 4 } }))
+    await writeFile(join(dir, 'widgets', 'pill', 'index.html'), '<!doctype html><html><head><title>p</title></head><body>p</body></html>')
+    // 34 columns leave the bar 24 cells: seven 4-cell pills (28) are already over, as a bar
+    // can be after a manifest's compact width grew.
+    const tablet = (pills: number, pageName: string) => {
+      const widgets: Record<string, unknown> = {}
+      const nav = Array.from({ length: pills }, (_, i) => { widgets['p' + i] = { widgetId: 'pill' }; return { instanceId: 'p' + i } })
+      return { version: 4, locale: 'en', widgets, screens: [{ id: 'tab', name: 'Tablet', kind: 'device', display: { cols: 34, rows: 23 }, nav, pages: [{ id: 'p', name: pageName }] }] }
+    }
+    await mkdir(join(dir, 'data'), { recursive: true })
+    await writeFile(join(dir, 'data', 'fremkit.json'), JSON.stringify(tablet(7, 'P')))
+    app = await buildApp({ dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets') })
+    const renamed = await app.inject({ method: 'PUT', url: '/api/config', payload: tablet(7, 'Renamed') })
+    expect(renamed.statusCode).toBe(200)
+    const widened = await app.inject({ method: 'PUT', url: '/api/config', payload: tablet(8, 'Renamed') })
+    expect(widened.statusCode).toBe(400)
+    expect(widened.json().errors).toEqual(['screen Tablet, navigation bar: its widgets take 32 cells of the 24 the page dots leave'])
+  })
 })
 
 describe('the request gate', () => {
