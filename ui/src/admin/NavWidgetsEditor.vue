@@ -98,8 +98,7 @@ function onSetting(instanceId: string, key: string, value: unknown): void {
           @click="s.moveNavWidget(w.instanceId, 1)">
           <BaseIcon name="chevron-down" :size="14" />
         </BaseButton>
-        <BaseButton v-if="widgetDelete.armed(widgetDeleteKey(w.instanceId))" variant="danger"
-          :title="t('admin.inspector.widget.deleteConfirm', { name: label(w.widgetId) })" @click="remove(w.instanceId)">
+        <BaseButton v-if="widgetDelete.armed(widgetDeleteKey(w.instanceId))" variant="danger" @click="remove(w.instanceId)">
           {{ t('common.confirm') }}
         </BaseButton>
         <BaseButton v-else variant="icon"
@@ -108,6 +107,11 @@ function onSetting(instanceId: string, key: string, value: unknown): void {
           <BaseIcon :name="s.isLastPlace(w.instanceId) ? 'trash-2' : 'x'" :size="14" />
         </BaseButton>
       </div>
+      <!-- The row is too narrow for the name on the button, and a tooltip never shows on touch:
+           the question naming the widget goes under the row while it is armed. -->
+      <p v-if="widgetDelete.armed(widgetDeleteKey(w.instanceId))" class="hint bad">
+        {{ t('admin.inspector.widget.deleteConfirm', { name: label(w.widgetId) }) }}
+      </p>
       <!-- Which side of the dots this widget sits on; the arrows above order it within that side. -->
       <BaseSegmented class="slot" :model-value="w.slot" :options="SLOT_OPTIONS"
         @update:model-value="s.updateNavWidget(w.instanceId, { slot: $event as NavSlot })" />
@@ -138,6 +142,7 @@ function onSetting(instanceId: string, key: string, value: unknown): void {
 h3 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted);
   margin: var(--space-4) 0 var(--space-2); }
 .hint { font-size: var(--fs-xs); color: var(--text-dim); margin: 0 0 var(--space-2); }
+.list .hint.bad { color: var(--danger); margin: var(--space-1) 0 0; }
 .list { list-style: none; margin: 0 0 var(--space-2); padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
 .list li { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-2); }
 .head { display: flex; align-items: center; gap: var(--space-1); }

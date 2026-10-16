@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import WidgetInspector from '../src/admin/WidgetInspector.vue'
+import NavWidgetsEditor from '../src/admin/NavWidgetsEditor.vue'
 import { useAdminStore } from '../src/admin/store'
 import { widgetDelete } from '../src/admin/widgetDelete'
 import type { Config, WidgetManifest } from '../src/shared/types'
@@ -101,6 +102,27 @@ describe('the widget inspector', () => {
     expect(wrapper.find('.hint.bad').text()).toContain('“CPU” is on no other screen')
     await buttons(wrapper).find((b) => b.text() === 'Delete “CPU”?')!.trigger('click')
     expect(s.state.config!.widgets['cpu-1']).toBeUndefined()
+    wrapper.unmount()
+  })
+})
+
+describe('the bar editor', () => {
+  it('names the widget on screen, not in a tooltip, before deleting it from its last screen', async () => {
+    const s = useAdminStore()
+    // `cpu-1` moves from the Edge's page to the Edge's bar: still on no other screen.
+    const edge = s.state.config!.screens[0]
+    edge.pages[0].items = edge.pages[0].items.filter((p) => p.instanceId !== 'cpu-1')
+    edge.nav = [{ instanceId: 'cpu-1', slot: 'left' }]
+    const wrapper = mount(NavWidgetsEditor, { attachTo: document.body })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.hint.bad').exists()).toBe(false)
+    await wrapper.find('button[title="Delete the widget"]').trigger('click')
+    // Armed, not done: the question naming it is text in the row, readable without hovering.
+    expect(s.state.config!.widgets['cpu-1']).toBeDefined()
+    expect(wrapper.find('.hint.bad').text()).toBe('Delete “CPU”?')
+    await wrapper.findAll('button').find((b) => b.text() === 'Confirm?')!.trigger('click')
+    expect(s.state.config!.widgets['cpu-1']).toBeUndefined()
+    expect(wrapper.find('.hint.bad').exists()).toBe(false)
     wrapper.unmount()
   })
 })
