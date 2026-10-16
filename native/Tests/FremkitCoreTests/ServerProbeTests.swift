@@ -13,6 +13,11 @@ final class ServerProbeTests: XCTestCase {
         XCTAssertTrue(ServerProbe.looksLikeFremkitConfig(json(#"{"version":9,"pages":[]}"#)))
     }
 
+    func testRecognisesAV4Config() {
+        // v4 moved the pages under `screens`; the helper must still know its own server.
+        XCTAssertTrue(ServerProbe.looksLikeFremkitConfig(json(#"{"version":4,"screens":[{"id":"edge"}],"widgets":{}}"#)))
+    }
+
     func testRefusesAnythingElseAnsweringOnThePort() {
         // The case that made the helper stand down for good: something else on 4242.
         XCTAssertFalse(ServerProbe.looksLikeFremkitConfig(json("<!doctype html><title>Vite</title>")))

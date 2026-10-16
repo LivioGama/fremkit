@@ -13,6 +13,9 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another
+  one, and give each its own layout. A widget shown on more than one screen is the same widget:
+  edit its settings once and every screen follows.
 - **Fremkit as an app.** A signed, notarized `Fremkit.app`, on a DMG or with
   `brew install --cask fdussert/fremkit/fremkit`, runs the whole dashboard on its own: no
   checkout, no Node, no Xcode tools. Drag it to Applications, open it, grant two permissions.
@@ -39,6 +42,11 @@ tagged `vX.Y.Z`.
   today, in total, and over the last 30 days, read from the `rtk` program when it is installed.
 
 ### Changed
+- **Upgrading the dashboard file.** Your dashboard is converted to the new screens layout the
+  first time this version starts, and the previous file is kept as `data/fremkit.v3.json`: to go
+  back to an older version, put it back as `data/fremkit.json`. Rebuild and reinstall the helper
+  with this version (`pnpm helper:build && pnpm helper:install`), or it will not recognise the
+  new server.
 - **Missing permissions say where to go.** A menu bar line such as "Touch: Input Monitoring
   missing — open Settings…" or "Fence: Accessibility missing — open Settings…" can be clicked: it
   opens the right pane of System Settings → Privacy & Security, with Fremkit listed there. The
@@ -56,6 +64,9 @@ tagged `vX.Y.Z`.
   Accessibility, which none of the three is using.
 
 ### Fixed
+- **A connection used only by the navigation bar is protected.** A widget shown only in the bar
+  now keeps its connection from being deleted; before, the connection could be removed while the
+  bar widget still used it.
 - **Input Monitoring is asked on a first launch.** Fremkit asked for Accessibility and Input
   Monitoring at the same moment, and macOS, which shows one such prompt at a time, dropped the
   second: touch said "permission missing" and Fremkit was not even listed under Input Monitoring.

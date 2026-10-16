@@ -13,14 +13,14 @@ public enum ServerProbe {
      alone, so any program answering anything between 200 and 499 made it give up, with no way
      back but a relaunch.
 
-     Only the shape is checked: a JSON object carrying the two keys every Fremkit config has.
-     Enough to tell our server from something else, and nothing a future config version breaks.
+     Only the shape is checked: a JSON object with a `version` and either `pages` (config v3 and
+     before) or `screens` (v4 on), so a server of either generation is recognised. Enough to tell our server from something else, and nothing a future config version breaks.
      */
     public static func looksLikeFremkitConfig(_ data: Data?) -> Bool {
         guard let data, !data.isEmpty, data.count < maxProbeBytes,
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return false }
-        return object["version"] != nil && object["pages"] is [Any]
+        return object["version"] != nil && (object["pages"] is [Any] || object["screens"] is [Any])
     }
 }
 

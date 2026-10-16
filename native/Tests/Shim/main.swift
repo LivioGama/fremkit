@@ -91,6 +91,7 @@ let suites: [(String, () -> XCTestCase, [TestMethod])] = [
     ]),
     ("ServerProbeTests", { ServerProbeTests() }, [
         ("testRecognisesAFremkitConfig", { ($0 as! ServerProbeTests).testRecognisesAFremkitConfig() }),
+        ("testRecognisesAV4Config", { ($0 as! ServerProbeTests).testRecognisesAV4Config() }),
         ("testRefusesAnythingElseAnsweringOnThePort", { ($0 as! ServerProbeTests).testRefusesAnythingElseAnsweringOnThePort() }),
         ("testRefusesNothingAtAll", { ($0 as! ServerProbeTests).testRefusesNothingAtAll() }),
     ]),
