@@ -89,9 +89,9 @@ export class ConfigStore {
    * the dashboard the user actually had. A copy that fails for any other reason throws, and the
    * load leaves the original untouched rather than rewriting it without its safety net.
    */
-  private async keepRollbackCopy(): Promise<void> {
+  private async keepRollbackCopy(source: string = this.filePath): Promise<void> {
     const copy = this.filePath.replace(/\.json$/, '') + '.v3.json'
-    await copyFile(this.filePath, copy, constants.COPYFILE_EXCL).catch((err: NodeJS.ErrnoException) => {
+    await copyFile(source, copy, constants.COPYFILE_EXCL).catch((err: NodeJS.ErrnoException) => {
       if (err.code !== 'EEXIST') throw err
     })
   }
@@ -99,16 +99,24 @@ export class ConfigStore {
   /** True while the in-memory config is a stand-in for a file we could not interpret. */
   get degraded(): boolean { return this.degradedFlag }
 
-  /** Read and validate a config file; throws ENOENT when missing, or a parse/schema error. */
-  private async read(path: string): Promise<Config> {
-    return normalizeInstances(migrateConfig(JSON.parse(await readFile(path, 'utf8'))))
+  /**
+   * Read and validate a config file; throws ENOENT when missing, or a parse/schema error. Also
+   * says whether the file was older than v4, so the caller can keep its rollback copy.
+   */
+  private async read(path: string): Promise<{ config: Config; migrated: boolean }> {
+    const raw = JSON.parse(await readFile(path, 'utf8')) as { version?: unknown } | null
+    return { config: normalizeInstances(migrateConfig(raw)), migrated: raw?.version !== CONFIG_VERSION }
   }
 
   /** The main file is unreadable: fall back to the .bak, else to the defaults, keeping the bad file. */
   private async recover(cause: Error): Promise<Config> {
     let recovered: Config | null = null
     try {
-      recovered = await this.read(this.filePath + '.bak')
+      const bak = await this.read(this.filePath + '.bak')
+      // A pre-v4 .bak is about to be rewritten as v4, and the next save overwrites the .bak
+      // itself: the rollback copy has to be taken from it now, exactly as load() does.
+      if (bak.migrated) await this.keepRollbackCopy(this.filePath + '.bak')
+      recovered = bak.config
     } catch {
       recovered = null
     }
