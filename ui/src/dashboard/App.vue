@@ -30,9 +30,20 @@ const page = computed(() => screen.value?.pages[pageIndex.value] ?? null)
 // The theme the config names, repainted whenever the admin saves another one.
 useConfigTheme(config)
 const direction = ref<1 | -1>(1)
-// PageView paints the same background over the widget area; repeating it on the root covers
-// the nav bar strip and any letterboxing, so the screen reads as one surface.
-const rootStyle = computed(() => backgroundStyle(display.value?.background))
+/**
+ * The screen's background, painted once, on the root, behind the stage and the bar alike. The
+ * root keeps the bar's height as bottom padding and the image is sized against its content box —
+ * the area above the bar — then painted over the whole viewport: on the Edge that area is the
+ * stage exactly, so the image falls where the admin's preview shows it, and under a translucent
+ * bar it simply carries on. A device viewport larger than its grid shows one image, no seam.
+ */
+const rootStyle = computed(() => display.value && {
+  ...backgroundStyle(display.value.background),
+  'background-origin': 'content-box',
+  'padding-bottom': navHeightOf(display.value) + 'px',
+})
+/** The grid's own size: the stage's, and the bar's width. */
+const gridWidth = computed(() => display.value ? display.value.cols * display.value.cell + 'px' : '0')
 let cycleTimer: number | undefined
 let unsub: (() => void) | undefined
 
@@ -107,19 +118,20 @@ watch(() => config.value?.locale, (l) => setLocale(l))
     <div v-if="socket.status.value !== 'open'" class="banner">{{ t('dashboard.reconnecting') }}</div>
     <div
       class="stage"
-      :style="{ width: display.cols * display.cell + 'px', height: display.rows * display.cell + 'px' }"
+      :style="{ width: gridWidth, height: display.rows * display.cell + 'px' }"
       @pointerdown="stageSwipe.down"
       @pointerup="stageSwipe.up"
       @pointercancel="stageSwipe.cancel"
       @wheel="stageSwipe.wheel"
     >
       <Transition :name="direction === 1 ? 'slide-left' : 'slide-right'">
-        <PageView :key="page.id" :page="page" :config="config" :display="display" :manifests="manifests" />
+        <PageView :key="page.id" :page="page" :config="config" :display="display" :manifests="manifests"
+          :paint-background="false" />
       </Transition>
       <div class="edge left" @pointerdown.stop="stageSwipe.down" @pointerup.stop="stageSwipe.up" @pointercancel.stop="stageSwipe.cancel" @wheel.stop="stageSwipe.wheel" />
       <div class="edge right" @pointerdown.stop="stageSwipe.down" @pointerup.stop="stageSwipe.up" @pointercancel.stop="stageSwipe.cancel" @wheel.stop="stageSwipe.wheel" />
     </div>
-    <NavBar :pages="screen.pages" :active="pageIndex" :height="navHeightOf(display)"
+    <NavBar class="bar" :style="{ width: gridWidth }" :pages="screen.pages" :active="pageIndex" :height="navHeightOf(display)"
       :opacity="display.navOpacity" :nav-items="navItemsOf(screen)" :widgets="config.widgets"
       :manifests="manifests" :cell="display.cell" :admin-gesture="display.adminGesture"
       @select="select" @swipe="go"
@@ -138,14 +150,19 @@ watch(() => config.value?.locale, (l) => setLocale(l))
 </template>
 
 <style scoped>
-.root { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+/* The bar's height is bottom padding (see rootStyle), the bar sits in it. */
+.root { position: relative; width: 100vw; height: 100vh; overflow: hidden; box-sizing: border-box; }
 /* Widget iframes carry their own document and keep their own cursor rules; this covers the
    dashboard document only, which is where the pointer actually sits. */
 .root.kiosk, .root.kiosk :deep(*) { cursor: none !important; }
 /* touch-action: none propagates into widget iframes in Chromium; moot here since the touch driver emits wheel events. */
-/* Sized from the screen's grid (cols × cell), drawn 1:1 from the top-left: on the Edge that is
-   the panel's 2560 px, on a device the whole cells its viewport holds. */
-.stage { position: relative; overflow: hidden; touch-action: none; user-select: none; }
+/* Sized from the screen's grid (cols × cell), drawn 1:1 from the top: on the Edge that is the
+   panel's 2560 px, on a device the whole cells its viewport holds, centred in the leftover width.
+   Auto margins resolve to 0 when the viewport is narrower, so it then stays on the left. */
+.stage { position: relative; overflow: hidden; touch-action: none; user-select: none; margin: 0 auto; }
+/* Pinned to the bottom of the viewport, as wide as the stage and centred under it, so its widgets
+   and dots line up with the grid the bar's room is counted against. */
+.bar { position: absolute; bottom: 0; left: 0; right: 0; margin: 0 auto; }
 .edge { position: absolute; top: 0; bottom: 0; width: 24px; z-index: 5; touch-action: none; user-select: none; }
 .edge.left { left: 0; } .edge.right { right: 0; }
 .banner { position: absolute; top: 0; left: 50%; transform: translateX(-50%); padding: 4px 12px; background: #a33; color: #fff; font-size: 14px; border-radius: 0 0 8px 8px; z-index: 10; }

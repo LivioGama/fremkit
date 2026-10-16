@@ -43,4 +43,15 @@ describe('PageView', () => {
     expect((wrapper.find('.page').element as HTMLElement).style.height).toBe('640px')
     wrapper.unmount()
   })
+  it('paints the background unless the dashboard, which paints it once behind everything, says not to', () => {
+    const display = { cols: 34, rows: 23, cell: 40, autoCycleSeconds: 0, background: { color: '#101820' } }
+    const style = (paintBackground?: boolean) => {
+      const wrapper = mount(PageView, { props: { page, config, display, manifests: {}, ...(paintBackground === undefined ? {} : { paintBackground }) } })
+      const color = (wrapper.find('.page').element as HTMLElement).style.backgroundColor
+      wrapper.unmount()
+      return color
+    }
+    expect(style()).toBe('rgb(16, 24, 32)')
+    expect(style(false)).toBe('')
+  })
 })
