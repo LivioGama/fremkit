@@ -148,7 +148,10 @@ watch(() => config.value?.locale, (l) => setLocale(l))
 
 <style scoped>
 /* The bar's height is bottom padding (see rootStyle), the bar sits in it. */
-.root { position: relative; width: 100vw; height: 100vh; overflow: hidden; box-sizing: border-box; }
+/* The visible height, not the largest one: an iOS web view that keeps its safe-area insets makes
+   100vh taller than what it shows, which would cut the bar pinned to the bottom. 100vh stays as
+   the fallback for an engine without dvh. */
+.root { position: relative; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; box-sizing: border-box; }
 /* Widget iframes carry their own document and keep their own cursor rules; this covers the
    dashboard document only, which is where the pointer actually sits. */
 .root.kiosk, .root.kiosk :deep(*) { cursor: none !important; }
