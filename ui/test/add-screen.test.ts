@@ -80,6 +80,9 @@ describe('the add-screen dialog', () => {
       'Custom',
     ])
     expect(wrapper.text()).toContain('“More Space” is larger')
+    // The grid hint names the bar the device screen will get.
+    expect(wrapper.find('.hint:not(.bad)').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Grid: 34 × 24 cells under a 40 px bar.')
     await selects[1].setValue('edge')
     await button(wrapper, 'Preview…').trigger('click')
 

@@ -327,7 +327,7 @@ export const fr: Record<string, string> = {
   'admin.screens.dialog.custom': 'Personnalisée',
   'admin.screens.dialog.width': 'Largeur (px)',
   'admin.screens.dialog.height': 'Hauteur (px)',
-  'admin.screens.dialog.grid': 'Grille : {cols} × {rows} cellules sous une barre de 80 px.',
+  'admin.screens.dialog.grid': 'Grille : {cols} × {rows} cellules sous une barre de {bar} px.',
   'admin.screens.dialog.badSize': 'Trop petit : il faut au moins 40 px de large et 120 px de haut.',
   'admin.screens.dialog.deviceHint': 'Tant qu’aucun appareil n’est appairé, l’écran s’ouvre à son adresse, indiquée dans le panneau Écran.',
   'admin.screens.dialog.sizeHint': 'La taille réelle dépend du mode d’affichage de l’appareil (« Plus d’espace » est plus grand). Un appareil appairé indiquera la sienne ; d’ici là, choisissez « Personnalisée ».',

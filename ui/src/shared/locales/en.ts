@@ -327,7 +327,7 @@ export const en: Record<string, string> = {
   'admin.screens.dialog.custom': 'Custom',
   'admin.screens.dialog.width': 'Width (px)',
   'admin.screens.dialog.height': 'Height (px)',
-  'admin.screens.dialog.grid': 'Grid: {cols} × {rows} cells under an 80 px bar.',
+  'admin.screens.dialog.grid': 'Grid: {cols} × {rows} cells under a {bar} px bar.',
   'admin.screens.dialog.badSize': 'Too small: it needs at least 40 px across and 120 px down.',
   'admin.screens.dialog.deviceHint': 'Until a device is paired, the screen opens at its own address, shown in the Screen panel.',
   'admin.screens.dialog.sizeHint': 'The real size depends on the device’s display mode (“More Space” is larger). A paired device will report its own; until then, pick “Custom”.',

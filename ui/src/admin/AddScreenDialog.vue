@@ -146,7 +146,7 @@ function create(): void {
             <BaseInput :model-value="height" type="number" :min="120" :invalid="!sizeOk" @update:model-value="height = Number($event)" />
           </BaseField>
         </div>
-        <p v-if="sizeOk" class="hint">{{ t('admin.screens.dialog.grid', grid) }} {{ t('admin.screens.dialog.deviceHint') }}</p>
+        <p v-if="sizeOk" class="hint">{{ t('admin.screens.dialog.grid', { ...grid, bar: DEVICE_NAV_HEIGHT }) }} {{ t('admin.screens.dialog.deviceHint') }}</p>
         <p v-else class="hint bad" role="alert">{{ t('admin.screens.dialog.badSize') }}</p>
       </template>
 
