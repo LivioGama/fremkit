@@ -1,4 +1,6 @@
 
+import type { Config } from '../shared/types'
+
 /**
  * The shelves of the widget library, in reading order: what the person is building with first,
  * then the machine, then the day's work, then the room. A widget whose manifest names no
@@ -32,4 +34,21 @@ export function groupByCategory<T extends { category?: string }>(
   return WIDGET_CATEGORIES
     .filter((id) => groups.has(id))
     .map((id) => ({ id, widgets: groups.get(id)!.sort(compare) }))
+}
+
+/**
+ * The widgets other screens show and this one does not, each once, in the order they first
+ * appear (screens in config order; on a screen, its pages before its bar). A screen shows a
+ * widget at most once, so one already on this screen — on a page or in its bar — is not offered.
+ */
+export function otherScreenWidgets(config: Config, screenId: string): string[] {
+  const idsOf = (s: Config['screens'][number]): string[] =>
+    [...s.pages.flatMap((p) => p.items.map((i) => i.instanceId)), ...s.nav.map((i) => i.instanceId)]
+  const here = new Set(config.screens.filter((s) => s.id === screenId).flatMap(idsOf))
+  const out = new Set<string>()
+  for (const s of config.screens) {
+    if (s.id === screenId) continue
+    for (const id of idsOf(s)) if (!here.has(id) && config.widgets[id]) out.add(id)
+  }
+  return [...out]
 }

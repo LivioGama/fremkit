@@ -6,19 +6,22 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import BaseChip from '../shared/ui/BaseChip.vue'
 import BaseIcon from '../shared/ui/BaseIcon.vue'
-import { pick } from '../shared/i18n'
-import { tileOf } from '../shared/screens'
-import { DND_TYPE, useAdminStore } from './store'
+import { pick, useI18n } from '../shared/i18n'
+import { screensShowing, tileOf } from '../shared/screens'
+import { DND_EXISTING_TYPE, DND_TYPE, useAdminStore } from './store'
 import { fitAround, fits, moveRect, resizeRect, snapPoint, type Handle, type Rect } from './layout'
 
 const props = defineProps<{ scale: number }>()
 const s = useAdminStore()
+const { t } = useI18n()
 const root = ref<HTMLElement>()
 
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 const cell = computed(() => s.screen.value!.display.cell)
 /** This page's tiles, each joined with its shared widget for its name and manifest. */
 const widgets = computed(() => (s.page.value?.items ?? []).map((p) => tileOf(s.state.config!, p)))
+/** How many screens show each tile's widget; more than one and the tile wears the count. */
+const shownOn = (instanceId: string): number => screensShowing(s.state.config!, instanceId).length
 const boardH = computed(() => s.grid.value.rows * cell.value)
 
 interface Drag { kind: 'move' | 'resize' | 'create'; instanceId: string; widgetId: string; start: Rect; handle: Handle; min: [number, number]; ox: number; oy: number }
@@ -125,12 +128,20 @@ onBeforeUnmount(() => {
 })
 
 // --- dropping a card from the library ---
+/** The manifest of what is being dragged: a library card, or a widget shown on another screen. */
+function draggedManifest(existing: boolean) {
+  const id = s.state.dragWidgetId
+  if (!id) return undefined
+  return s.state.manifests[existing ? s.state.config?.widgets[id]?.widgetId ?? '' : id]
+}
+const isOurs = (e: DragEvent): boolean =>
+  !!e.dataTransfer && (e.dataTransfer.types.includes(DND_TYPE) || e.dataTransfer.types.includes(DND_EXISTING_TYPE))
+
 function onDragOver(e: DragEvent): void {
   // Only our own library cards may drop here: a native drag of text, a link or an image
-  // carries no DND_TYPE and must pass straight through.
-  if (!e.dataTransfer?.types.includes(DND_TYPE)) return
-  const id = s.state.dragWidgetId
-  const manifest = id ? s.state.manifests[id] : undefined
+  // carries neither type and must pass straight through.
+  if (!isOurs(e)) return
+  const manifest = draggedManifest(e.dataTransfer!.types.includes(DND_EXISTING_TYPE))
   if (!manifest) return
   e.preventDefault()
   // The ghost shrinks towards the widget's minimum when the default size does not fit here.
@@ -140,13 +151,16 @@ function onDragOver(e: DragEvent): void {
 }
 
 function onDrop(e: DragEvent): void {
-  if (!e.dataTransfer?.types.includes(DND_TYPE)) return
+  if (!isOurs(e)) return
   e.preventDefault()
+  const existing = e.dataTransfer!.types.includes(DND_EXISTING_TYPE)
   const id = s.state.dragWidgetId
   const g = ghost.value
   ghost.value = null
   s.setDragWidget(null)
-  if (id && g && ghostOk.value) s.placeWidget(id, g)
+  if (!id || !g || !ghostOk.value) return
+  if (existing) s.placeExisting(id, g)
+  else s.placeWidget(id, g)
 }
 
 function onDragLeave(): void { ghost.value = null }
@@ -165,6 +179,9 @@ function onDragLeave(): void { ghost.value = null }
     >
       <BaseChip v-if="w.instanceId === s.state.selectedId" tone="accent" class="tag">
         <BaseIcon :name="iconOf(w.instanceId)" :size="14" />{{ labelOf(w.instanceId) }}
+      </BaseChip>
+      <BaseChip v-if="shownOn(w.instanceId) > 1" class="shared" :title="t('admin.overlay.sharedOn', { n: shownOn(w.instanceId) })">
+        <BaseIcon name="monitor" :size="12" />{{ shownOn(w.instanceId) }}
       </BaseChip>
       <span
         v-for="hnd in HANDLES" v-show="w.instanceId === s.state.selectedId" :key="hnd"
@@ -185,6 +202,7 @@ function onDragLeave(): void { ghost.value = null }
 }
 .hit { position: absolute; box-sizing: border-box; cursor: move; border: 2px solid transparent; border-radius: var(--radius-md); }
 .hit.selected { border-color: var(--accent); }
+.shared { position: absolute; right: 6px; top: 6px; pointer-events: none; gap: 2px; }
 .tag { position: absolute; left: 6px; top: 6px; pointer-events: none; }
 .handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 3px;
   background: var(--accent); border: 2px solid var(--on-accent); box-sizing: border-box; }

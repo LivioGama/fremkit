@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { categoryOf, groupByCategory } from '../src/admin/library'
-import type { WidgetManifest } from '../src/shared/types'
+import { categoryOf, groupByCategory, otherScreenWidgets } from '../src/admin/library'
+import type { Config, WidgetManifest } from '../src/shared/types'
 
 const widget = (id: string, category?: string): WidgetManifest => ({
   id,
@@ -44,5 +44,27 @@ describe('groupByCategory', () => {
     expect(groups).toHaveLength(1)
     expect(groups[0].id).toBe('other')
     expect(groups[0].widgets.map((w) => w.id)).toEqual(['mystery'])
+  })
+})
+
+describe('otherScreenWidgets', () => {
+  const place = (instanceId: string) => ({ instanceId, x: 0, y: 0, w: 1, h: 1 })
+  const config = {
+    widgets: Object.fromEntries(['clock-1', 'cpu-1', 'note-1', 'mail-1', 'bar-1', 'bar-2'].map((id) => [id, { widgetId: id.split('-')[0], showTitle: false, settings: {} }])),
+    screens: [
+      { id: 'edge', kind: 'edge', nav: [{ instanceId: 'bar-1' }], pages: [{ items: [place('clock-1'), place('cpu-1')] }] },
+      { id: 'tablet', kind: 'device', nav: [{ instanceId: 'bar-2' }], pages: [{ items: [place('cpu-1')] }, { items: [place('note-1'), place('clock-1')] }] },
+      { id: 'phone', kind: 'device', nav: [{ instanceId: 'bar-1' }], pages: [{ items: [place('note-1'), place('mail-1')] }] },
+    ],
+  } as unknown as Config
+
+  it('excludes widgets already on this screen and lists each once', () => {
+    expect(otherScreenWidgets(config, 'edge')).toEqual(['note-1', 'bar-2', 'mail-1'])
+    expect(otherScreenWidgets(config, 'tablet')).toEqual(['bar-1', 'mail-1'])
+  })
+
+  it('is empty with a single screen or an unknown screen id', () => {
+    expect(otherScreenWidgets({ ...config, screens: [config.screens[0]] } as Config, 'edge')).toEqual([])
+    expect(otherScreenWidgets(config, 'nope')).toEqual(['clock-1', 'cpu-1', 'bar-1', 'note-1', 'bar-2', 'mail-1'])
   })
 })

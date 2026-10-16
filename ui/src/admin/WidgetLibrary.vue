@@ -40,9 +40,9 @@ import BaseIcon from '../shared/ui/BaseIcon.vue'
 import BaseSection from '../shared/ui/BaseSection.vue'
 import WidgetPermissions from './WidgetPermissions.vue'
 import { pick, useI18n } from '../shared/i18n'
-import { DND_TYPE, useAdminStore } from './store'
+import { DND_EXISTING_TYPE, DND_TYPE, useAdminStore } from './store'
 import { useMarketplaceStore } from './marketplace'
-import { groupByCategory } from './library'
+import { groupByCategory, otherScreenWidgets } from './library'
 
 const s = useAdminStore()
 const market = useMarketplaceStore()
@@ -62,6 +62,24 @@ const groups = computed(() => groupByCategory(
   Object.values(s.state.manifests),
   (a, b) => pick(a.name).localeCompare(pick(b.name)),
 ).map((g) => ({ ...g, title: t(`admin.library.category.${g.id}`) })))
+
+/** Widgets other screens show and this one does not: placed here, they stay the same widget. */
+const elsewhere = computed(() => {
+  const config = s.state.config
+  const screen = s.screen.value
+  if (!config || !screen) return []
+  return otherScreenWidgets(config, screen.id).map((id) => {
+    const w = config.widgets[id]
+    const m = s.state.manifests[w.widgetId]
+    return { id, title: w.title?.trim() || pick(m?.name) || w.widgetId, icon: m?.icon ?? 'layout-grid' }
+  })
+})
+
+function onDragExisting(e: DragEvent, id: string): void {
+  s.setDragWidget(id)
+  e.dataTransfer?.setData(DND_EXISTING_TYPE, id)
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
+}
 
 function onDragStart(e: DragEvent, id: string): void {
   s.setDragWidget(id)
@@ -95,6 +113,17 @@ onBeforeUnmount(unbindDragFallback)
         <BaseIcon name="refresh-cw" :size="16" />
       </BaseButton>
     </h2>
+
+    <BaseSection v-if="elsewhere.length" id="library.elsewhere" :title="t('admin.library.elsewhere')"
+      :badge="String(elsewhere.length)" default-open>
+      <div class="list">
+        <BaseCard v-for="w in elsewhere" :key="w.id" class="existing" grab :draggable="true"
+          @dragstart="onDragExisting($event, w.id)" @dragend="s.setDragWidget(null)" @click="s.placeExisting(w.id)">
+          <BaseIcon :name="w.icon" :size="20" />
+          <div class="txt"><strong>{{ w.title }}</strong></div>
+        </BaseCard>
+      </div>
+    </BaseSection>
 
     <BaseSection v-for="g in groups" :key="g.id" :id="`library.${g.id}`" :title="g.title"
       :badge="String(g.widgets.length)" default-open>
@@ -133,6 +162,7 @@ onBeforeUnmount(unbindDragFallback)
 section { margin-top: var(--space-4); }
 h2 { display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-xs);
   text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin: 0 0 var(--space-2); }
+.existing { min-height: 44px; }
 .errors { margin-top: var(--space-3); }
 .list { display: flex; flex-direction: column; gap: var(--space-2); }
 .txt { display: flex; flex-direction: column; min-width: 0; }

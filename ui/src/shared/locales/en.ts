@@ -37,6 +37,8 @@ export const en: Record<string, string> = {
   'admin.library.category.home': 'Home',
   'admin.library.category.other': 'Other',
   'admin.library.rescan': 'Rescan the widgets folder',
+  'admin.library.elsewhere': 'Already on your other screens',
+  'admin.overlay.sharedOn': 'Shown on {n} screens',
   'admin.tabs.marketplace': 'Sietch',
   'admin.topbar.openMarketplace': 'Browse the widget registry',
   'admin.market.view.available': 'Available',

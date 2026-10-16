@@ -18,6 +18,8 @@ export const SAVE_DEBOUNCE_MS = 300
 export const UNDO_LIMIT = 50
 /** Drag-and-drop mime type set by the widget library's drag source. */
 export const DND_TYPE = 'application/x-fremkit-widget'
+/** A drag of a widget that already exists on another screen: the payload is its instance id. */
+export const DND_EXISTING_TYPE = 'application/x-fremkit-existing-widget'
 /** Mirrors the server's 409 body: saving is impossible until the file on disk is fixed. */
 export const degradedMessage = (): string => t('admin.store.degraded')
 

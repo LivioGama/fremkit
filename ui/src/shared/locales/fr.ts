@@ -37,6 +37,8 @@ export const fr: Record<string, string> = {
   'admin.library.category.home': 'Maison',
   'admin.library.category.other': 'Autres',
   'admin.library.rescan': 'Relire le dossier widgets',
+  'admin.library.elsewhere': 'Déjà sur vos autres écrans',
+  'admin.overlay.sharedOn': 'Affiché sur {n} écrans',
   'admin.tabs.marketplace': 'Sietch',
   'admin.topbar.openMarketplace': 'Parcourir le registre de widgets',
   'admin.market.view.available': 'Disponibles',
