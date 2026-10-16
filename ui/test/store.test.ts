@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createAdminStore, SAVE_DEBOUNCE_MS, UNDO_LIMIT, type StoreDeps } from '../src/admin/store'
+import { createAdminStore, freeInstanceId, SAVE_DEBOUNCE_MS, UNDO_LIMIT, type StoreDeps } from '../src/admin/store'
 import type { Config, Placement, Widget, WidgetManifest, WidgetsResponse } from '../src/shared/types'
 
 /** A promise this test controls: resolve()/reject() it whenever the scenario needs the "server" to answer. */
@@ -1009,5 +1009,17 @@ describe('modals', () => {
     store.select('clock-1')
     expect(store.state.modal).toBe('connections')
     expect(store.state.selectedId).toBe('clock-1')
+  })
+})
+
+describe('freeInstanceId', () => {
+  it('stays within the 64 characters the server accepts, however long the widget id', () => {
+    const long = 'w'.repeat(60)
+    const id = freeInstanceId(config(), long)
+    expect(id.length).toBeLessThanOrEqual(64)
+    expect(id).toMatch(new RegExp(`^${'w'.repeat(57)}-[a-z0-9]{1,6}$`))
+  })
+  it('keeps a short widget id whole', () => {
+    expect(freeInstanceId(config(), 'clock')).toMatch(/^clock-[a-z0-9]{1,6}$/)
   })
 })

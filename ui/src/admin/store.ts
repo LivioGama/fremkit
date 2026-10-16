@@ -168,9 +168,17 @@ function patchInto(target: Record<string, unknown>, patch: Record<string, unknow
 }
 
 /** A fresh instance id for a widget, never one the config already uses. */
-function freeInstanceId(cfg: Config, widgetId: string): string {
-  let id = `${widgetId}-${uid()}`
-  while (cfg.widgets[id]) id = `${widgetId}-${uid()}`
+/** Longest instance id the server accepts: `INSTANCE_ID_MAX` in server/src/config/schema.ts. */
+const MAX_INSTANCE_ID = 64
+
+/**
+ * An instance id free in `cfg`: the widget id, cut so the whole stays within the server's 64
+ * characters, then a dash and six random ones.
+ */
+export function freeInstanceId(cfg: Config, widgetId: string): string {
+  const stem = widgetId.slice(0, MAX_INSTANCE_ID - 7)
+  let id = `${stem}-${uid()}`
+  while (Object.hasOwn(cfg.widgets, id)) id = `${stem}-${uid()}`
   return id
 }
 
