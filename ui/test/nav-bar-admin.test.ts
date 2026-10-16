@@ -153,3 +153,27 @@ describe('the bar of one screen', () => {
     wrapper.unmount()
   })
 })
+
+describe('the dots fit the room kept for them', () => {
+  const pages = (n: number): Page[] => Array.from({ length: n }, (_, i) => ({ id: 'p' + i, name: 'P' + i, items: [] }))
+  /** The hit column each dot gets at full scale, as the bar hands it to its stylesheet. */
+  function column(n: number): string {
+    const wrapper = mount(NavBar, { props: { pages: pages(n), active: 0, height: 80, cell: 40 } })
+    const width = (wrapper.find('nav').element as HTMLElement).style.getPropertyValue('--dot-width')
+    wrapper.unmount()
+    return width
+  }
+
+  it('keeps the 64 px columns when the pages fit, as on the Edge', () => {
+    expect(column(4)).toBe('64px')
+  })
+
+  it('narrows the columns to share the reserved cells between many pages', () => {
+    // 10 cells x 40 px = 400 px for 8 dots.
+    expect(column(8)).toBe('50px')
+  })
+
+  it('never goes under the 44 px touch minimum', () => {
+    expect(column(12)).toBe('44px')
+  })
+})

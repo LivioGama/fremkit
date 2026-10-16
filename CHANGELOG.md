@@ -47,6 +47,8 @@ tagged `vX.Y.Z`.
   today, in total, and over the last 30 days, read from the `rtk` program when it is installed.
 
 ### Changed
+- **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer
+  together instead of running over the bar's widgets, down to a size a finger can still hit.
 - **Upgrading the dashboard file.** Your dashboard is converted to the new screens layout the
   first time this version starts, and the previous file is kept as `data/fremkit.v3.json` — the
   file as it was at that first upgrade, never overwritten after: to go back to an older version,

@@ -2,7 +2,7 @@
 import { ADMIN_REPEAT_MS, cancelsHold, isDoubleTap, startsHold, type Tap } from './longPress'
 import { DEFAULT_ADMIN_GESTURE, type AdminGesture } from '../shared/types'
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { DEFAULT_NAV_HEIGHT, type Config, type NavItem, type NavSlot, type Page, type WidgetManifest } from '../shared/types'
+import { DEFAULT_NAV_HEIGHT, NAV_DOTS_RESERVE_CELLS, type Config, type NavItem, type NavSlot, type Page, type WidgetManifest } from '../shared/types'
 import { fade, surfaceOpacity } from '../shared/background'
 import { useSwipe } from './useSwipe'
 import CompactWidgetFrame from './CompactWidgetFrame.vue'
@@ -201,13 +201,27 @@ const manifestOf = (item: NavItem): WidgetManifest | undefined => {
  * dots with it. The hit areas keep spanning the whole height either way.
  */
 const scale = computed(() => props.height / DEFAULT_NAV_HEIGHT)
+/** The widest a dot's hit column gets, and the narrowest: 44 px is the touch minimum. */
+const DOT_MAX = 64
+const DOT_MIN = 44
+/**
+ * Each dot's hit column, before the bar's scale. The dots share the cells the bar-room rule keeps
+ * free for them, so many pages narrow their columns instead of running over the clusters; past
+ * the touch minimum they keep 44 px and may spill (about nine pages and more on a small screen).
+ */
+const dotWidth = computed(() => {
+  const reserve = NAV_DOTS_RESERVE_CELLS * props.cell
+  return Math.min(DOT_MAX, Math.max(DOT_MIN, reserve / Math.max(1, props.pages.length)))
+})
 /**
  * Only the bar's own background and top border take the opacity: the dots and the compact
  * widgets are drawn on top of it and stay fully legible whatever shows through behind them.
  */
 const style = computed<Record<string, string | number>>(() => {
   const alpha = surfaceOpacity(props.opacity)
-  const s: Record<string, string | number> = { height: props.height + 'px', '--nav-scale': scale.value }
+  const s: Record<string, string | number> = {
+    height: props.height + 'px', '--nav-scale': scale.value, '--dot-width': dotWidth.value + 'px',
+  }
   if (alpha < 1) {
     s['--nav-bg'] = fade(NAV_BG, alpha)
     s['--nav-border'] = fade(NAV_BORDER, alpha)
@@ -252,7 +266,7 @@ nav { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; gr
 /* Each dot's hit area spans the whole bar height and a wide column: a finger on the touch
    strip is far less precise than a pointer, and the visible dot stays small. */
 .dots { grid-area: dots; display: flex; gap: 0; align-items: stretch; height: 100%; justify-self: center; }
-.dot { width: calc(64px * var(--nav-scale, 1)); height: 100%; padding: 0; border: 0; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.dot { width: calc(var(--dot-width, 64px) * var(--nav-scale, 1)); height: 100%; padding: 0; border: 0; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .dot::after { content: ''; width: calc(14px * var(--nav-scale, 1)); height: calc(14px * var(--nav-scale, 1)); border-radius: calc(7px * var(--nav-scale, 1)); background: var(--border-strong, #3a404a); transition: width .2s, background .2s; }
 .dot.active::after { width: calc(36px * var(--nav-scale, 1)); background: var(--accent); }
 /* Held for the admin: the accent swells and breathes, so the finger knows something is counting
