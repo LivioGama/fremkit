@@ -15,6 +15,7 @@ import SettingsForm from './SettingsForm.vue'
 import { pick, useI18n } from '../shared/i18n'
 import { NAV_SLOTS, navItemsOf, type NavSlot } from '../shared/types'
 import { useAdminStore } from './store'
+import { widgetDelete, widgetDeleteKey } from './widgetDelete'
 
 const s = useAdminStore()
 const { t } = useI18n()
@@ -49,6 +50,15 @@ function onAdd(event: Event): void {
   // The drop-down is an action, not a value: it snaps back to its placeholder either way.
   select.value = ''
   if (widgetId) s.addNavWidget(widgetId)
+}
+
+/**
+ * The trash button takes the widget out of this screen's bar. When no other screen shows it, that
+ * deletes the widget, so the button asks first — the same two-tap confirmation as a tile.
+ */
+function remove(instanceId: string): void {
+  if (!s.isLastPlace(instanceId)) { s.removeNavWidget(instanceId); return }
+  widgetDelete.ask(widgetDeleteKey(instanceId), () => s.removeNavWidget(instanceId))
 }
 
 /**
@@ -88,8 +98,14 @@ function onSetting(instanceId: string, key: string, value: unknown): void {
           @click="s.moveNavWidget(w.instanceId, 1)">
           <BaseIcon name="chevron-down" :size="14" />
         </BaseButton>
-        <BaseButton variant="icon" :title="t('common.remove')" @click="s.removeNavWidget(w.instanceId)">
-          <BaseIcon name="trash-2" :size="14" />
+        <BaseButton v-if="widgetDelete.armed(widgetDeleteKey(w.instanceId))" variant="danger"
+          :title="t('admin.inspector.widget.deleteConfirm', { name: label(w.widgetId) })" @click="remove(w.instanceId)">
+          {{ t('common.confirm') }}
+        </BaseButton>
+        <BaseButton v-else variant="icon"
+          :title="t(s.isLastPlace(w.instanceId) ? 'admin.inspector.widget.delete' : 'admin.inspector.widget.removeFromScreen')"
+          @click="remove(w.instanceId)">
+          <BaseIcon :name="s.isLastPlace(w.instanceId) ? 'trash-2' : 'x'" :size="14" />
         </BaseButton>
       </div>
       <!-- Which side of the dots this widget sits on; the arrows above order it within that side. -->

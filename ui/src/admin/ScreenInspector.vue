@@ -21,6 +21,7 @@ import { CONTRIBUTORS, MAINTAINER, REGISTRY_REPOSITORY, REPOSITORY, VERSION } fr
 import { BUILTIN_THEME, useThemes } from '../shared/theme'
 import { ADMIN_GESTURES, DEFAULT_ADMIN_GESTURE, NAV_HEIGHTS, navHeightOf,
   type AdminGesture, type Background, type Config, type NavHeight, type Screen } from '../shared/types'
+import { screensShowing } from '../shared/screens'
 import { useAdminStore } from './store'
 
 const s = useAdminStore()
@@ -125,6 +126,24 @@ async function onRestoreFile(event: Event): Promise<void> {
   }
 }
 
+const scr = computed(() => s.screen.value!)
+/** An emptied name is not a name: the field snaps back to the current one instead. */
+function rename(value: string | number): void {
+  s.renameScreen(scr.value.id, String(value))
+}
+/** The widgets that would go with this screen: those no other screen shows. */
+const onlyHere = computed(() => {
+  const cfg = s.state.config!
+  const ids = new Set([...scr.value.nav.map((x) => x.instanceId), ...scr.value.pages.flatMap((p) => p.items.map((x) => x.instanceId))])
+  return [...ids].filter((id) => screensShowing(cfg, id).every((x) => x.id === scr.value.id)).length
+})
+const lastScreen = computed(() => s.state.config!.screens.length <= 1)
+const removeKey = computed(() => `screen:${scr.value.id}`)
+function confirmRemoveScreen(): void {
+  const id = scr.value.id
+  confirm.ask(removeKey.value, () => s.removeScreen(id))
+}
+
 /** The selected screen's display: every setting below is that screen's, not the others'. */
 const d = computed(() => s.screen.value!.display)
 /** The selected screen inside the config a mutation is handed. */
@@ -184,6 +203,23 @@ function setBackground(patch: Partial<Background>): void {
 </script>
 
 <template>
+  <BaseField :label="t('admin.inspector.screen.name')">
+    <!-- Keyed by screen: switching screens must not carry the other one's half-typed name over. -->
+    <BaseInput :key="scr.id" lazy :model-value="scr.name" :aria-label="t('admin.inspector.screen.name')"
+      @update:model-value="rename($event)" />
+  </BaseField>
+  <div class="row">
+    <!-- Two taps, the first saying what goes with it; the last screen cannot go at all. -->
+    <BaseButton v-if="confirm.armed(removeKey)" variant="danger" @click="confirmRemoveScreen()">
+      {{ t('admin.inspector.screen.remove.confirmButton') }}
+    </BaseButton>
+    <BaseButton v-else variant="danger" :disabled="lastScreen" @click="confirmRemoveScreen()">
+      <BaseIcon name="trash-2" :size="16" />{{ t('admin.inspector.screen.remove') }}
+    </BaseButton>
+  </div>
+  <p v-if="confirm.armed(removeKey)" class="ro warn">{{ t('admin.inspector.screen.remove.confirm', { name: scr.name, count: onlyHere }) }}</p>
+  <p v-else-if="lastScreen" class="ro">{{ t('admin.inspector.screen.remove.last') }}</p>
+
   <BaseField :label="t('admin.inspector.screen.language')">
     <BaseSegmented :model-value="locale" :options="LANGUAGES" @update:model-value="setLocale($event)" />
   </BaseField>
@@ -203,12 +239,23 @@ function setBackground(patch: Partial<Background>): void {
   <p v-for="e in themeErrors" :key="e.id" class="err">{{ e.id }} — {{ e.error }}</p>
 
   <BaseSection id="screen.layout" :title="t('admin.inspector.screen.layout')">
-  <BaseField :label="t('admin.inspector.screen.grid')" :hint="t('admin.inspector.screen.grid.hint')">
+  <BaseField :label="t('admin.inspector.screen.grid')"
+    :hint="t(scr.kind === 'device' ? 'admin.inspector.screen.grid.hint.device' : 'admin.inspector.screen.grid.hint')">
     <p class="ro">{{ t('admin.inspector.screen.grid.value', { cols: d.cols, rows: d.rows, cell: d.cell }) }}</p>
   </BaseField>
   <BaseField :label="t('admin.inspector.screen.area')">
     <p class="ro">{{ t('admin.inspector.screen.area.value', { width: d.cols * d.cell, height: d.rows * d.cell, nav: navHeight }) }}</p>
   </BaseField>
+  <!-- A device screen was made for one orientation and one viewport; changing either is adding
+       a screen, so both are shown, not edited. -->
+  <template v-if="scr.kind === 'device'">
+    <BaseField v-if="d.orientation" :label="t('admin.inspector.screen.orientation')">
+      <p class="ro">{{ t(`admin.inspector.screen.orientation.${d.orientation}`) }}</p>
+    </BaseField>
+    <BaseField v-if="d.viewport" :label="t('admin.inspector.screen.viewport')">
+      <p class="ro">{{ t('admin.inspector.screen.viewport.value', { width: d.viewport.width, height: d.viewport.height }) }}</p>
+    </BaseField>
+  </template>
   <BaseField :label="t('admin.inspector.screen.navHeight')" :hint="t('admin.inspector.screen.navHeight.hint')">
     <BaseSegmented :model-value="String(navHeight)" :options="NAV_OPTIONS"
       @update:model-value="s.setNavHeight(Number($event) as NavHeight)" />

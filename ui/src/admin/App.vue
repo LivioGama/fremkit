@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from '../shared/i18n'
 import { useAdminStore } from './store'
+import { widgetDelete, widgetDeleteKey } from './widgetDelete'
 import Sidebar from './Sidebar.vue'
 import Canvas from './Canvas.vue'
 import Inspector from './Inspector.vue'
@@ -48,7 +49,11 @@ function onKeyDown(e: KeyboardEvent): void {
   if (e.key === 'Escape') { s.select(null); return }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault()
-    s.removeFromScreen(inst.instanceId)
+    // Off this screen only: done at once, undo covers it. On its last screen the widget itself
+    // goes, so the key arms the inspector's confirmation and a second press confirms it.
+    const id = inst.instanceId
+    if (!s.isLastPlace(id)) s.removeFromScreen(id)
+    else widgetDelete.ask(widgetDeleteKey(id), () => s.removeFromScreen(id))
     return
   }
   const delta = ARROWS[e.key]

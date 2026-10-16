@@ -15,15 +15,17 @@ import MissingWidget from './MissingWidget.vue'
 import SettingsForm from './SettingsForm.vue'
 import WidgetPermissions from './WidgetPermissions.vue'
 import { pick, useI18n } from '../shared/i18n'
+import { screensShowing } from '../shared/screens'
 import { surfaceOpacity } from '../shared/background'
 import { useAdminStore } from './store'
+import { widgetDelete, widgetDeleteKey } from './widgetDelete'
 import { fits, type Rect } from './layout'
 import { THEME_ACCENT, THEME_SURFACE } from '../shared/color'
 import { themeColor, useAppliedTheme } from '../shared/theme'
 import { fieldsInScope, type AccentMode, type WidgetBackground } from '../shared/types'
 
 const s = useAdminStore()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const inst = computed(() => s.selected.value)
 const manifest = computed(() => (inst.value ? s.state.manifests[inst.value.widgetId] : undefined))
 /**
@@ -108,6 +110,29 @@ function onSetting(key: string, value: unknown): void {
   s.updateInstance(inst.value!.instanceId, { settings: { ...inst.value!.settings, [key]: value } })
 }
 
+/** What the user calls this widget: its own title, else its manifest's name. */
+const name = computed(() => (inst.value ? inst.value.title?.trim() || pick(manifest.value?.name) || inst.value.widgetId : ''))
+/**
+ * The other screens showing this same widget, named. Its look and settings are shared, so the
+ * inspector says where else an edit will show; the geometry below is this screen's only.
+ */
+const alsoOn = computed(() => {
+  const cfg = s.state.config
+  const here = s.screen.value?.id
+  if (!cfg || !inst.value) return ''
+  const names = screensShowing(cfg, inst.value.instanceId).filter((x) => x.id !== here).map((x) => x.name)
+  return names.length ? new Intl.ListFormat(locale.value, { type: 'conjunction' }).format(names) : ''
+})
+/** On its last screen, removing the widget deletes it: that takes a confirmation naming it. */
+const lastPlace = computed(() => !!inst.value && s.isLastPlace(inst.value.instanceId))
+const deleteArmed = computed(() => !!inst.value && widgetDelete.armed(widgetDeleteKey(inst.value.instanceId)))
+function remove(): void {
+  const id = inst.value?.instanceId
+  if (!id) return
+  if (!lastPlace.value) { s.removeFromScreen(id); return }
+  widgetDelete.ask(widgetDeleteKey(id), () => s.removeFromScreen(id))
+}
+
 /** The pages of this screen the selected tile could go to: every one but the page it sits on. */
 const otherPages = computed(() => (s.screen.value?.pages ?? [])
   .map((p, index) => ({ index, name: p.name }))
@@ -130,6 +155,7 @@ function moveToPage(): void {
       <BaseIcon :name="manifest?.icon ?? 'layout-grid'" :size="20" />
       <strong>{{ manifest ? pick(manifest.name) : inst.widgetId }}</strong>
     </div>
+    <p v-if="alsoOn" class="hint shared"><BaseIcon name="monitor" :size="14" />{{ t('admin.inspector.widget.alsoOn', { screens: alsoOn }) }}</p>
     <MissingWidget v-if="!manifest" :widget-id="inst.widgetId" />
 
     <BaseField :label="t('admin.inspector.widget.title')">
@@ -205,8 +231,13 @@ function moveToPage(): void {
 
     <div class="actions">
       <BaseButton @click="s.duplicateWidget(inst!.instanceId)"><BaseIcon name="copy" :size="16" />{{ t('common.duplicate') }}</BaseButton>
-      <BaseButton variant="danger" @click="s.removeFromScreen(inst!.instanceId)"><BaseIcon name="trash-2" :size="16" />{{ t('common.remove') }}</BaseButton>
+      <!-- Shown elsewhere: taking it off this screen is all there is, and undo covers it. On its
+           last screen the same press deletes the widget, so it asks first, by name. -->
+      <BaseButton v-if="!lastPlace" @click="remove()"><BaseIcon name="x" :size="16" />{{ t('admin.inspector.widget.removeFromScreen') }}</BaseButton>
+      <BaseButton v-else-if="deleteArmed" variant="danger" @click="remove()">{{ t('admin.inspector.widget.deleteConfirm', { name }) }}</BaseButton>
+      <BaseButton v-else variant="danger" @click="remove()"><BaseIcon name="trash-2" :size="16" />{{ t('admin.inspector.widget.delete') }}</BaseButton>
     </div>
+    <p v-if="deleteArmed" class="hint bad">{{ t('admin.inspector.widget.deleteHint', { name }) }}</p>
   </template>
 </template>
 
@@ -218,7 +249,8 @@ h3 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; 
 .grid4 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--space-2); }
 .hint { font-size: var(--fs-xs); color: var(--text-dim); margin: 0 0 var(--space-3); }
 .hint.bad { color: var(--danger); }
-.actions { display: flex; gap: var(--space-2); margin-top: var(--space-4); }
+.hint.shared { display: flex; align-items: center; gap: var(--space-1); color: var(--text-muted); }
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-4) 0 var(--space-2); }
 .move { display: flex; gap: var(--space-2); align-items: center; }
 .move select { flex: 1; min-width: 0; box-sizing: border-box; font: inherit; font-size: var(--fs-sm); color: var(--text);
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 6px 8px; }
