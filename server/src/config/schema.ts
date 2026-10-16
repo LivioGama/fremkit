@@ -17,14 +17,6 @@ export const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/
 export const AccentModeSchema = z.enum(['none', 'frame', 'fill'])
 export type AccentMode = z.infer<typeof AccentModeSchema>
 
-/**
- * The three-way `appearance` a tile used to carry, with its `accentStyle` companion. Kept only so
- * a v3 file written against them still parses (see `v3.ts`): `normalizeInstances` turns both into
- * the background and accent keys above and drops them, on load and on save alike.
- */
-export const LegacyAppearanceSchema = z.enum(['panel', 'transparent', 'accent'])
-export const LegacyAccentStyleSchema = z.enum(['fill', 'outline'])
-
 export const BackgroundFitSchema = z.enum(['cover', 'contain'])
 export type BackgroundFit = z.infer<typeof BackgroundFitSchema>
 
@@ -73,7 +65,7 @@ export const OpacitySchema = z.number().min(0).max(1)
  * The longest instance id the config accepts. The proxy already caps the id it is handed at 64,
  * and an id the proxy would refuse is an instance that could never reach its connection.
  */
-const INSTANCE_ID_MAX = 64
+export const INSTANCE_ID_MAX = 64
 const InstanceIdSchema = z.string().min(1).max(INSTANCE_ID_MAX)
 
 /**

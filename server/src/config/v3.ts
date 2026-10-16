@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { BUILTIN_THEME } from '../themes/theme.js'
 import {
-  WIDGET_ID_RE, HEX_COLOR_RE, AccentModeSchema, LegacyAppearanceSchema, LegacyAccentStyleSchema,
+  WIDGET_ID_RE, HEX_COLOR_RE, AccentModeSchema,
   WidgetBackgroundSchema, OpacitySchema, BackgroundSchema, NavHeightSchema, MAX_NAV_WIDGETS, NavSlotSchema,
   AdminGestureSchema, ConnectionSchema, SecretsSchema, LocaleSchema, defaultLocale, PrivacySchema, MarketplaceSchema,
 } from './schema.js'
@@ -12,6 +12,14 @@ import {
  * Kept only so `migrate.ts` can read a v3 file — and run the v3 normalisations on it — before it
  * converts it to v4. Nothing else should import from here: the live shape is in `schema.ts`.
  */
+
+/**
+ * The three-way `appearance` a tile used to carry, with its `accentStyle` companion. Kept only so
+ * a v3 file written against them still parses: `normalizeV3` turns both into the background and
+ * accent keys and drops them before the file is converted, so no v4 config ever carries them.
+ */
+export const LegacyAppearanceSchema = z.enum(['panel', 'transparent', 'accent'])
+export const LegacyAccentStyleSchema = z.enum(['fill', 'outline'])
 
 export const WidgetInstanceSchema = z.object({
   instanceId: z.string().min(1),
@@ -35,9 +43,9 @@ export const WidgetInstanceSchema = z.object({
    * tile — border included — fully see-through. Absent means a solid tile.
    */
   opacity: OpacitySchema.optional(),
-  /** @deprecated Converted and dropped by `normalizeInstances`; never written back out. */
+  /** @deprecated Converted and dropped by `normalizeV3`; never written back out. */
   appearance: LegacyAppearanceSchema.optional(),
-  /** @deprecated Converted and dropped by `normalizeInstances`; never written back out. */
+  /** @deprecated Converted and dropped by `normalizeV3`; never written back out. */
   accentStyle: LegacyAccentStyleSchema.optional(),
   settings: z.record(z.string(), z.unknown()).default({}),
 })
@@ -87,9 +95,8 @@ export const DisplaySchema = z.object({
   /** Absent means the plain --bg theme background, which is the default everywhere. */
   background: BackgroundSchema.optional(),
   /**
-   * Compact widgets drawn in the navigation bar, in cluster order. Absent means none; an empty
-   * list is folded back to a missing key by `normalizeInstances`, so the default is never
-   * written out as a value.
+   * Compact widgets drawn in the navigation bar, in cluster order. Absent means none. Each one
+   * becomes a `widgets` entry and a nav item of the Edge screen in v4.
    */
   navWidgets: z.array(NavWidgetSchema).max(MAX_NAV_WIDGETS).optional(),
 })

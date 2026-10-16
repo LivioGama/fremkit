@@ -1,4 +1,5 @@
 import { readFile, writeFile, rename, copyFile, mkdir, access } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { dirname } from 'node:path'
 import { CONFIG_VERSION, ConfigSchema, DEFAULT_CONFIG, type Config } from './schema.js'
 import { migrateConfig } from './migrate.js'
@@ -63,8 +64,12 @@ export class ConfigStore {
     try {
       const needsMigration = raw?.version !== CONFIG_VERSION
       this.config = normalizeInstances(migrateConfig(raw))
-      // write() copies the original to .bak first, so the user's v1 file survives the rewrite.
-      if (needsMigration) await this.write()
+      // write() copies the original to .bak first, so the user's older file survives the rewrite
+      // — until the next save. The rollback copy is the one that stays.
+      if (needsMigration) {
+        await this.keepRollbackCopy()
+        await this.write()
+      }
       return this.config
     } catch (err) {
       console.error(
@@ -75,6 +80,20 @@ export class ConfigStore {
       this.degradedFlag = true
       return this.config
     }
+  }
+
+  /**
+   * Keeps the file as it was before its first rewrite as v4, as `fremkit.v3.json` next to it, so
+   * going back to a release that only reads v3 is a matter of putting it back. Written once and
+   * never overwritten: a later migration (a restored v3 backup, say) must not replace the copy of
+   * the dashboard the user actually had. A copy that fails for any other reason throws, and the
+   * load leaves the original untouched rather than rewriting it without its safety net.
+   */
+  private async keepRollbackCopy(): Promise<void> {
+    const copy = this.filePath.replace(/\.json$/, '') + '.v3.json'
+    await copyFile(this.filePath, copy, constants.COPYFILE_EXCL).catch((err: NodeJS.ErrnoException) => {
+      if (err.code !== 'EEXIST') throw err
+    })
   }
 
   /** True while the in-memory config is a stand-in for a file we could not interpret. */
