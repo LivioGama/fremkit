@@ -47,8 +47,9 @@ tagged `vX.Y.Z`.
 
 ### Changed
 - **Upgrading the dashboard file.** Your dashboard is converted to the new screens layout the
-  first time this version starts, and the previous file is kept as `data/fremkit.v3.json`: to go
-  back to an older version, put it back as `data/fremkit.json`. Rebuild and reinstall the helper
+  first time this version starts, and the previous file is kept as `data/fremkit.v3.json` — the
+  file as it was at that first upgrade, never overwritten after: to go back to an older version,
+  put it back as `data/fremkit.json`, knowing that changes made since are not in it. Rebuild and reinstall the helper
   with this version (`pnpm helper:build && pnpm helper:install`), or it will not recognise the
   new server.
 - **Missing permissions say where to go.** A menu bar line such as "Touch: Input Monitoring
