@@ -6,7 +6,7 @@ import { useSocket } from '../shared/socket'
 import type { Config, NavItem, WidgetManifest } from '../shared/types'
 import { navHeightOf, navItemsOf } from '../shared/types'
 import { pickScreen } from '../shared/screens'
-import { backgroundStyle } from '../shared/background'
+import { rootBackgroundStyle } from '../shared/background'
 import { useConfigTheme } from '../shared/theme'
 import PageView from './PageView.vue'
 import NavBar from './NavBar.vue'
@@ -31,15 +31,12 @@ const page = computed(() => screen.value?.pages[pageIndex.value] ?? null)
 useConfigTheme(config)
 const direction = ref<1 | -1>(1)
 /**
- * The screen's background, painted once, on the root, behind the stage and the bar alike. The
- * root keeps the bar's height as bottom padding and the image is sized against its content box —
- * the area above the bar — then painted over the whole viewport: on the Edge that area is the
- * stage exactly, so the image falls where the admin's preview shows it, and under a translucent
- * bar it simply carries on. A device viewport larger than its grid shows one image, no seam.
+ * The screen's background, painted on the root, behind the stage and the bar alike. The root
+ * keeps the bar's height as bottom padding; `rootBackgroundStyle` sizes the image against the
+ * area above the bar and paints a full-root `cover` under it, which a translucent bar shows.
  */
 const rootStyle = computed(() => display.value && {
-  ...backgroundStyle(display.value.background),
-  'background-origin': 'content-box',
+  ...rootBackgroundStyle(display.value.background),
   'padding-bottom': navHeightOf(display.value) + 'px',
 })
 /** The grid's own size: the stage's, and the bar's width. */
