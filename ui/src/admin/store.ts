@@ -4,7 +4,7 @@ import { pick, setLocale, t } from '../shared/i18n'
 import { useSocket } from '../shared/socket'
 import type { Config, NavHeight, NavItem, Page, Placement, Screen, ScreenDisplay, Widget, WidgetInstance, WidgetManifest, WidgetPermissionSet, WidgetSource, WidgetsResponse } from '../shared/types'
 import { DEFAULT_NAV_HEIGHT, MAX_NAV_WIDGETS, ROWS_BY_NAV_HEIGHT, compactWidth, mergeSettings, navHasRoom } from '../shared/types'
-import { DEVICE_CELL, deviceGrid, pickScreen, screensShowing, tileOf } from '../shared/screens'
+import { DEVICE_CELL, DEVICE_NAV_HEIGHT, deviceGrid, pickScreen, screensShowing, tileOf } from '../shared/screens'
 import { fits, largestFreeSpot, type Grid, type Rect } from './layout'
 
 export type Mode = 'edit' | 'test'
@@ -156,7 +156,10 @@ const SCREEN_NAME_MAX = 60
 /** The Edge's grid: 64 columns of 40 px cells. */
 const EDGE_COLS = 64
 const EDGE_CELL = 40
-/** What a pre-filled screen takes from the look of the one it came from. */
+/**
+ * What a pre-filled screen takes from the look of the one it came from. Not the bar's height: a
+ * device screen keeps its own slim bar whatever its source has, and its rows were counted under it.
+ */
 const LOOK_KEYS = ['autoCycleSeconds', 'navOpacity', 'tileOpacity', 'adminGesture', 'background'] as const
 
 /** Applies a patch, dropping the keys it sets to `undefined`: defaults are stored as absent keys. */
@@ -674,8 +677,8 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     },
 
     /**
-     * A new screen, selected at once. A device screen takes its grid from the viewport it reported
-     * (under the default 80 px bar); an Edge screen takes the Edge's. A pre-fill places existing
+     * A new screen, selected at once. A device screen takes its grid from the viewport it reported,
+     * under the slim 40 px bar it gets (`DEVICE_NAV_HEIGHT`); an Edge screen takes the Edge's. A pre-fill places existing
      * widgets — shared, not copied — and brings the look of the screen it came from; whatever would
      * break the once-per-screen rule or overflow the bar is left out (an `arrangeInto` result never
      * has any). A device screen with no viewport, or one too small for a single cell, is refused.
@@ -685,15 +688,15 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       if (!cfg) return ''
       if (input.kind === 'device') {
         const vp = input.viewport
-        const g = vp ? deviceGrid(vp.width, vp.height, DEFAULT_NAV_HEIGHT) : null
+        const g = vp ? deviceGrid(vp.width, vp.height, DEVICE_NAV_HEIGHT) : null
         if (!vp || !g || !(g.cols >= 1) || !(g.rows >= 1)) { state.toast = t('admin.store.badViewport'); return '' }
       }
       const name = input.name.trim().slice(0, SCREEN_NAME_MAX) || t('admin.store.newScreen')
       const id = freeScreenId(name, cfg.screens.map((x) => x.id))
       const display: ScreenDisplay = input.kind === 'device' && input.viewport
         ? {
-          ...deviceGrid(input.viewport.width, input.viewport.height, DEFAULT_NAV_HEIGHT),
-          cell: DEVICE_CELL, autoCycleSeconds: 0,
+          ...deviceGrid(input.viewport.width, input.viewport.height, DEVICE_NAV_HEIGHT),
+          cell: DEVICE_CELL, navHeight: DEVICE_NAV_HEIGHT, autoCycleSeconds: 0,
           viewport: { ...input.viewport },
           ...(input.orientation ? { orientation: input.orientation } : {}),
         }

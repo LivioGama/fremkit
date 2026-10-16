@@ -77,14 +77,15 @@ describe('the add-screen dialog', () => {
     await button(wrapper, 'Preview…').trigger('click')
 
     expect(s.state.config!.screens).toHaveLength(1)
-    expect(wrapper.text()).toContain('1 page(s), on a 34 × 23 grid.')
+    // Under the 40 px bar a device screen starts with: the preview counts the rows addScreen will.
+    expect(wrapper.text()).toContain('1 page(s), on a 34 × 24 grid.')
     expect(wrapper.text()).toContain('The look (background, opacities, rotation, admin gesture) is copied from Edge.')
     expect(wrapper.find('[data-test="left-out"]').text()).toContain('Left out, for lack of room: Banner.')
     expect(wrapper.findAll('.page-stub')).toHaveLength(1)
 
     await button(wrapper, 'Accept').trigger('click')
     const added = s.state.config!.screens[1]
-    expect(added).toMatchObject({ id: 'kitchen', name: 'Kitchen', kind: 'device', display: { cols: 34, rows: 23, orientation: 'landscape' } })
+    expect(added).toMatchObject({ id: 'kitchen', name: 'Kitchen', kind: 'device', display: { cols: 34, rows: 24, navHeight: 40, orientation: 'landscape' } })
     expect(added.pages[0].items).toEqual([{ instanceId: 'clock-1', x: 0, y: 0, w: 8, h: 4 }])
     expect(s.state.screenId).toBe('kitchen')
     expect(wrapper.emitted('close')).toHaveLength(1)
@@ -104,7 +105,7 @@ describe('the add-screen dialog', () => {
     await w.setValue('800')
     expect(button(wrapper, 'Add').attributes('disabled')).toBeUndefined()
     await button(wrapper, 'Add').trigger('click')
-    expect(s.state.config!.screens[1].display).toMatchObject({ cols: 20, rows: 18, viewport: { width: 800, height: 800 } })
+    expect(s.state.config!.screens[1].display).toMatchObject({ cols: 20, rows: 19, navHeight: 40, viewport: { width: 800, height: 800 } })
     wrapper.unmount()
   })
 })

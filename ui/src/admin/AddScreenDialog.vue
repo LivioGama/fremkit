@@ -12,7 +12,7 @@ import BaseInput from '../shared/ui/BaseInput.vue'
 import BaseIcon from '../shared/ui/BaseIcon.vue'
 import PageView from '../dashboard/PageView.vue'
 import { pick, useI18n } from '../shared/i18n'
-import { DEVICE_CELL, deviceGrid } from '../shared/screens'
+import { DEVICE_CELL, DEVICE_NAV_HEIGHT, deviceGrid } from '../shared/screens'
 import { DEFAULT_NAV_HEIGHT, ROWS_BY_NAV_HEIGHT, type Display, type Screen } from '../shared/types'
 import { arrangeInto, type Arrangement } from './arrange'
 import { useAdminStore } from './store'
@@ -53,7 +53,8 @@ const grid = computed(() => {
   if (kind.value === 'edge') return EDGE_GRID
   const { width: w, height: h } = viewport.value
   if (!Number.isInteger(w) || !Number.isInteger(h)) return { cols: 0, rows: 0 }
-  return deviceGrid(w, h, DEFAULT_NAV_HEIGHT)
+  // The rows `addScreen` will give it, under the slim bar a device screen starts with.
+  return deviceGrid(w, h, DEVICE_NAV_HEIGHT)
 })
 const sizeOk = computed(() => grid.value.cols >= 1 && grid.value.rows >= 1)
 const defaultName = computed(() => (kind.value === 'edge'
@@ -77,6 +78,7 @@ const names = (ids: string[]): string => ids.map(nameOf).join(', ')
 /** The pages drawn the way the new screen will show them: its grid, the look it takes from the source. */
 const previewDisplay = computed<Display>(() => ({
   ...grid.value, cell: DEVICE_CELL, autoCycleSeconds: 0,
+  ...(kind.value === 'device' ? { navHeight: DEVICE_NAV_HEIGHT } : {}),
   ...(source.value?.display.background ? { background: source.value.display.background } : {}),
 }))
 const thumbScale = computed(() => THUMB_WIDTH / (Math.max(1, grid.value.cols) * DEVICE_CELL))

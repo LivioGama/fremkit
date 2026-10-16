@@ -7,6 +7,11 @@ import type { Config, NavHeight, NavItem, Placement, Screen, Widget, WidgetInsta
 
 /** Cell size of a device screen, in CSS pixels; the same as the Edge's. */
 export const DEVICE_CELL = 40
+/**
+ * The bar a new device screen gets. A tablet is held close and touched with a fingertip, so the
+ * slim bar leaves the room to the pages; the Edge keeps its 80 px default.
+ */
+export const DEVICE_NAV_HEIGHT: NavHeight = 40
 
 /**
  * What a placement or bar item naming no widget is drawn as: an empty `widgetId`, which no
@@ -49,7 +54,7 @@ export function pickScreen(config: Config, id: string | null): Screen {
 
 /**
  * The grid a device screen gets from its viewport: 40 px cells across the whole width, and down
- * the height the bar leaves. 1376 × 1032 (a 13-inch iPad in landscape) under an 80 px bar is 34 × 23.
+ * the height the bar leaves. 1376 × 1032 (a 13-inch iPad in landscape) under a 40 px bar is 34 × 24.
  */
 export function deviceGrid(width: number, height: number, navHeight: NavHeight): { cols: number; rows: number } {
   return {

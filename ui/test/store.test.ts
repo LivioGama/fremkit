@@ -929,7 +929,7 @@ describe('screens', () => {
     const added = store.state.config!.screens[1]
     expect(added).toMatchObject({
       id, name: 'iPad de test', kind: 'device', nav: [],
-      display: { cols: 34, rows: 23, cell: 40, orientation: 'landscape', viewport: { width: 1376, height: 1032 } },
+      display: { cols: 34, rows: 24, cell: 40, navHeight: 40, orientation: 'landscape', viewport: { width: 1376, height: 1032 } },
     })
     expect(added.pages).toHaveLength(1)
     expect(added.pages[0].items).toEqual([])
@@ -937,6 +937,8 @@ describe('screens', () => {
     // A second one by the same name gets a free id.
     expect(store.addScreen({ name: 'iPad de test', kind: 'edge', prefill: null })).toBe('ipad-de-test-2')
     expect(store.state.config!.screens[2].display).toMatchObject({ cols: 64, rows: 16, cell: 40 })
+    // An Edge screen keeps the default 80 px bar, stored as an absent key.
+    expect(store.state.config!.screens[2].display.navHeight).toBeUndefined()
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
@@ -963,13 +965,28 @@ describe('screens', () => {
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
+  it('addScreen gives a device screen the 40 px bar even when pre-filled from an 80 px Edge', async () => {
+    const { store } = make()
+    await store.load()
+    store.state.config!.screens[0].display.navOpacity = 0.5
+    expect(store.state.config!.screens[0].display.navHeight).toBeUndefined()
+    store.addScreen({
+      name: 'Tablet', kind: 'device', viewport: { width: 1180, height: 820 }, orientation: 'landscape',
+      prefill: { from: 'edge', pages: [], nav: [] },
+    })
+    const added = store.state.config!.screens.at(-1)!
+    // The look is copied, the bar height is not: (820 - 40) / 40 = 19 rows.
+    expect(added.display).toMatchObject({ cols: 29, rows: 19, navHeight: 40, navOpacity: 0.5 })
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
   it('addScreen refuses a device screen without a usable viewport', async () => {
     const { store } = make()
     await store.load()
     expect(store.addScreen({ name: 'Tablet', kind: 'device', prefill: null })).toBe('')
-    // 30 px wide is less than one 40 px column; 100 px tall leaves no row under the 80 px bar.
+    // 30 px wide is less than one 40 px column; 70 px tall leaves no row under the 40 px bar.
     expect(store.addScreen({ name: 'Tablet', kind: 'device', viewport: { width: 30, height: 800 }, prefill: null })).toBe('')
-    expect(store.addScreen({ name: 'Tablet', kind: 'device', viewport: { width: 800, height: 100 }, prefill: null })).toBe('')
+    expect(store.addScreen({ name: 'Tablet', kind: 'device', viewport: { width: 800, height: 70 }, prefill: null })).toBe('')
     expect(store.state.config!.screens).toHaveLength(1)
     expect(store.state.toast).not.toBe('')
     expect(store.canUndo.value).toBe(false)
