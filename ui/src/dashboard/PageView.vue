@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Page, Display, WidgetManifest } from '../shared/types'
+import type { Config, Page, Display, WidgetManifest } from '../shared/types'
 import { backgroundStyle } from '../shared/background'
+import { tileOf } from '../shared/screens'
 import WidgetFrame from './WidgetFrame.vue'
 
-const props = defineProps<{ page: Page; display: Display; manifests: Record<string, WidgetManifest>; edit?: boolean }>()
+/** `config` is where a placement's widget, settings and look are read: the page stores only where it sits. */
+const props = defineProps<{ page: Page; config: Pick<Config, 'widgets'>; display: Display; manifests: Record<string, WidgetManifest>; edit?: boolean }>()
+
+/** Each placement joined with the shared widget it names: the tile shape every frame and the bridge speak. */
+const tiles = computed(() => props.page.items.map((p) => tileOf(props.config, p)))
 
 // The configured background lives here rather than on the dashboard stage, because this is the
 // one component the real dashboard and the admin's canvas preview share: putting it anywhere
@@ -23,7 +28,7 @@ const style = computed(() => ({
   -->
   <div class="page" :style="style">
     <WidgetFrame
-      v-for="w in page.widgets"
+      v-for="w in tiles"
       :key="w.instanceId"
       :instance="w"
       :manifest="manifests[w.widgetId]"

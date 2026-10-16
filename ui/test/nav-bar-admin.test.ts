@@ -14,11 +14,12 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import NavBar from '../src/dashboard/NavBar.vue'
-import type { AdminGesture } from '../src/shared/types'
+import { pickScreen } from '../src/shared/screens'
+import { navItemsOf, type AdminGesture, type Config, type Page, type Screen, type WidgetManifest } from '../src/shared/types'
 
-const PAGES = [
-  { id: 'home', name: 'Accueil', widgets: [] },
-  { id: 'work', name: 'Travail', widgets: [] },
+const PAGES: Page[] = [
+  { id: 'home', name: 'Accueil', items: [] },
+  { id: 'work', name: 'Travail', items: [] },
 ]
 
 function bar(adminGesture?: AdminGesture) {
@@ -98,6 +99,57 @@ describe('the setting decides which gesture is listened to', () => {
     down(0)
     down(0)
     expect(admins()).toBe(1)
+    wrapper.unmount()
+  })
+})
+
+describe('the bar of one screen', () => {
+  const manifest = (id: string): WidgetManifest => ({
+    id, name: id, version: '1.0.0', sdk: 1, description: '', icon: 'clock',
+    minSize: [4, 2], defaultSize: [8, 4], compact: { width: 3 },
+    subscriptions: [], commands: [], settingsSchema: {}, permissions: { network: [] },
+  })
+  const screen = (id: string, kind: Screen['kind'], nav: Screen['nav']): Screen => ({
+    id, name: id, kind, display: { cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0 }, nav, pages: PAGES,
+  })
+  const config = {
+    version: 4,
+    connections: [], secrets: { backend: 'file' }, locale: 'en',
+    privacy: { claudeAccountUsage: false, showAccountEmail: false, codexAccount: false, codexHistorySources: [], macmonTemperature: false },
+    widgets: {
+      'clock-1': { widgetId: 'clock', showTitle: false, settings: {} },
+      'weather-1': { widgetId: 'weather', showTitle: false, settings: {} },
+      'battery-1': { widgetId: 'battery', showTitle: false, settings: {} },
+    },
+    screens: [
+      screen('edge', 'edge', [{ instanceId: 'clock-1', slot: 'left' }, { instanceId: 'weather-1', slot: 'right' }]),
+      screen('ipad', 'device', [{ instanceId: 'battery-1', slot: 'right' }]),
+    ],
+  } as unknown as Config
+  const manifests = { clock: manifest('clock'), weather: manifest('weather'), battery: manifest('battery') }
+
+  function srcs(id: string | null): string[] {
+    const navItems = navItemsOf(pickScreen(config, id))
+    const wrapper = mount(NavBar, {
+      props: { pages: PAGES, active: 0, height: 80, navItems, widgets: config.widgets, manifests },
+    })
+    const out = wrapper.findAll('.compact iframe').map((f) => f.attributes('src') ?? '')
+    wrapper.unmount()
+    return out
+  }
+
+  it('renders the bar items of the given screen only', () => {
+    expect(srcs('ipad')).toEqual(['/widgets/battery/index.html'])
+    expect(srcs('edge')).toEqual(['/widgets/clock/index.html', '/widgets/weather/index.html'])
+    // A stale id shows the Edge's bar, never an empty one.
+    expect(srcs('gone')).toEqual(['/widgets/clock/index.html', '/widgets/weather/index.html'])
+  })
+
+  it('sizes each item from its shared widget', () => {
+    const wrapper = mount(NavBar, {
+      props: { pages: PAGES, active: 0, height: 80, navItems: navItemsOf(pickScreen(config, 'ipad')), widgets: config.widgets, manifests, cell: 40 },
+    })
+    expect((wrapper.find('.compact').element as HTMLElement).style.width).toBe('120px')
     wrapper.unmount()
   })
 })

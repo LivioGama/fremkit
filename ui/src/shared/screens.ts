@@ -16,7 +16,7 @@ export const DEVICE_CELL = 40
 const MISSING: Widget = { widgetId: '', showTitle: false, settings: {} }
 
 /** A widget joined with one of its placements: what a page frame draws. */
-export function tileOf(config: Config, p: Placement): WidgetInstance {
+export function tileOf(config: Pick<Config, 'widgets'>, p: Placement): WidgetInstance {
   return { ...(config.widgets[p.instanceId] ?? MISSING), ...p }
 }
 
@@ -25,7 +25,7 @@ export function tileOf(config: Config, p: Placement): WidgetInstance {
  * top-left, with no title and no appearance of its own — the bar paints the surface, and the
  * widget's tile look belongs to its tiles. The popover starts from this and sizes it to its box.
  */
-export function compactOf(config: Config, item: NavItem, cells: number): WidgetInstance {
+export function compactOf(config: Pick<Config, 'widgets'>, item: NavItem, cells: number): WidgetInstance {
   const widget = config.widgets[item.instanceId] ?? MISSING
   return {
     instanceId: item.instanceId,

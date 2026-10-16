@@ -7,9 +7,13 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useWidgetBridge } from '../shared/useWidgetBridge'
 import { pick, useI18n } from '../shared/i18n'
-import { compactWidth, mergeSettings, type NavWidget, type WidgetInstance, type WidgetManifest } from '../shared/types'
+import { compactOf } from '../shared/screens'
+import { compactWidth, mergeSettings, type Config, type NavItem, type WidgetInstance, type WidgetManifest } from '../shared/types'
 
-const props = defineProps<{ navWidget: NavWidget; manifest?: WidgetManifest; cell: number; height: number; edit?: boolean }>()
+/** `widgets` is where the item's widget and settings are read: a bar item names an instance, nothing more. */
+const props = defineProps<{
+  item: NavItem; widgets: Config['widgets']; manifest?: WidgetManifest; cell: number; height: number; edit?: boolean
+}>()
 const emit = defineEmits<{ tap: [el: Element] }>()
 const iframe = ref<HTMLIFrameElement>()
 const root = ref<HTMLElement>()
@@ -20,7 +24,7 @@ const root = ref<HTMLElement>()
  * it. Without a popover there is no overlay at all and the touch reaches the widget, as before.
  * The admin's Edit mode configures the bar in the Screen tab, so nothing there is tappable.
  */
-const tappable = computed(() => props.navWidget.popup === true && !props.edit)
+const tappable = computed(() => props.item.popup === true && !props.edit)
 const pressed = ref(false)
 /** How far a finger may travel and still count as a tap rather than a swipe across the bar. */
 const TAP_SLOP = 10
@@ -55,35 +59,28 @@ function cancel(): void {
 onBeforeUnmount(cancel)
 
 /** The settings decide the width, so they are read through the manifest's defaults, as the widget sees them. */
-const cells = computed(() => compactWidth(props.manifest, mergeSettings(props.manifest, props.navWidget.settings)))
+const cells = computed(() => compactWidth(props.manifest, mergeSettings(props.manifest, props.widgets[props.item.instanceId]?.settings ?? {})))
 const width = computed(() => cells.value * props.cell)
 
 /**
- * The bridge speaks in tiles, so the bar entry is presented as one: no title, no surface and no
- * accent of its own (the bar paints the surface, and a bar widget carries neither a background
- * colour nor an accent mode), and a size the bridge takes from `pixelSize` rather than from the
- * grid, since the bar's height is not a whole number of cells.
+ * The bridge speaks in tiles, so the bar item is presented as one (`compactOf`): no title, no
+ * surface and no accent of its own (the bar paints the surface), and a size the bridge takes from
+ * `pixelSize` rather than from the grid, since the bar's height is not a whole number of cells.
  */
-const instance = computed<WidgetInstance>(() => ({
-  instanceId: props.navWidget.instanceId,
-  widgetId: props.navWidget.widgetId,
-  x: 0, y: 0, w: cells.value, h: 1,
-  showTitle: false,
-  settings: props.navWidget.settings,
-}))
+const instance = computed<WidgetInstance>(() => compactOf({ widgets: props.widgets }, props.item, cells.value))
 
 const { state } = useWidgetBridge(iframe, () => instance.value, () => props.manifest, () => props.cell, {
   compact: () => true,
   pixelSize: () => ({ width: width.value, height: props.height }),
-  slot: () => props.navWidget.slot,
+  slot: () => props.item.slot,
 })
 const { t } = useI18n()
-const title = computed(() => pick(props.manifest?.name) || props.navWidget.widgetId)
+const title = computed(() => pick(props.manifest?.name) || instance.value.widgetId)
 </script>
 
 <template>
   <div ref="root" class="compact" :class="{ edit }" :style="{ width: width + 'px' }">
-    <iframe v-if="manifest" ref="iframe" :src="`/widgets/${navWidget.widgetId}/index.html`" sandbox="allow-scripts" :title="title" />
+    <iframe v-if="manifest" ref="iframe" :src="`/widgets/${instance.widgetId}/index.html`" sandbox="allow-scripts" :title="title" />
     <!-- One line of room here, so the words take the place of the id rather than joining it. -->
     <div v-if="!manifest || state === 'error'" class="missing">{{ manifest ? title : t('dashboard.widget.notInstalled') }}</div>
     <!-- Pointer events still bubble to the bar, so a swipe starting here keeps changing page. -->

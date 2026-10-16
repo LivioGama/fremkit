@@ -2,7 +2,7 @@
 import { ADMIN_REPEAT_MS, cancelsHold, isDoubleTap, startsHold, type Tap } from './longPress'
 import { DEFAULT_ADMIN_GESTURE, type AdminGesture } from '../shared/types'
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { DEFAULT_NAV_HEIGHT, type NavSlot, type NavWidget, type Page, type WidgetManifest } from '../shared/types'
+import { DEFAULT_NAV_HEIGHT, type Config, type NavItem, type NavSlot, type Page, type WidgetManifest } from '../shared/types'
 import { fade, surfaceOpacity } from '../shared/background'
 import { useSwipe } from './useSwipe'
 import CompactWidgetFrame from './CompactWidgetFrame.vue'
@@ -13,19 +13,21 @@ const NAV_BORDER = 'var(--nav-outline)'
 
 const props = withDefaults(defineProps<{
   pages: Page[]; active: number; height: number; opacity?: number
-  /** Every compact widget of the bar; `slot` splits them between the two clusters. */
-  navWidgets?: NavWidget[]
+  /** The bar items of the screen shown; `slot` splits them between the two clusters. */
+  navItems?: NavItem[]
+  /** The config's shared widgets, where each item's widget and settings are read. */
+  widgets?: Config['widgets']
   manifests?: Record<string, WidgetManifest>
   cell?: number
   /** Admin Edit mode: the bar's widgets stay live but inert, since the Screen tab configures them. */
   edit?: boolean
   /** Which gesture on the dots opens the admin. Absent means `both`. */
   adminGesture?: AdminGesture
-}>(), { navWidgets: () => [], manifests: () => ({}), cell: 40 })
+}>(), { navItems: () => [], widgets: () => ({}), manifests: () => ({}), cell: 40 })
 const emit = defineEmits<{
   select: [index: number]; swipe: [delta: 1 | -1]
   /** A compact widget with `popup` on was tapped; the element is where its popover hangs from. */
-  tap: [widget: NavWidget, el: Element]
+  tap: [item: NavItem, el: Element]
   /** The dots asked for the admin — a long press, or a double tap. */
   admin: []
 }>()
@@ -187,8 +189,13 @@ onBeforeUnmount(() => {
 })
 
 const s = useSwipe((delta) => emit('swipe', delta))
-/** The widgets of one cluster, in their configured order. */
-const cluster = (slot: NavSlot): NavWidget[] => props.navWidgets.filter((w) => w.slot === slot)
+/** The items of one cluster, in their configured order. */
+const cluster = (slot: NavSlot): NavItem[] => props.navItems.filter((item) => item.slot === slot)
+/** The manifest of the widget an item names; none for a widget gone from the config or the disk. */
+const manifestOf = (item: NavItem): WidgetManifest | undefined => {
+  const widgetId = props.widgets[item.instanceId]?.widgetId
+  return widgetId ? props.manifests[widgetId] : undefined
+}
 /**
  * Everything drawn in the bar is sized against the 80 px design, so a shorter bar shrinks the
  * dots with it. The hit areas keep spanning the whole height either way.
@@ -220,14 +227,15 @@ const style = computed<Record<string, string | number>>(() => {
     <div v-for="slot in (['left', 'right'] as const)" :key="slot" class="cluster" :class="slot"
       :style="{ gridArea: slot }">
       <CompactWidgetFrame
-        v-for="w in cluster(slot)"
-        :key="w.instanceId"
-        :nav-widget="w"
-        :manifest="manifests[w.widgetId]"
+        v-for="item in cluster(slot)"
+        :key="item.instanceId"
+        :item="item"
+        :widgets="widgets"
+        :manifest="manifestOf(item)"
         :cell="cell"
         :height="height"
         :edit="edit"
-        @tap="emit('tap', w, $event)"
+        @tap="emit('tap', item, $event)"
       />
     </div>
     <div class="dots" :class="{ holding }" @pointerdown="holdDown" @contextmenu="holdContextMenu"

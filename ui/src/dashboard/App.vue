@@ -3,8 +3,9 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { api } from '../shared/api'
 import { setLocale, useI18n } from '../shared/i18n'
 import { useSocket } from '../shared/socket'
-import type { Config, WidgetManifest } from '../shared/types'
-import { navHeightOf, navWidgetsOf } from '../shared/types'
+import type { Config, NavItem, WidgetManifest } from '../shared/types'
+import { navHeightOf, navItemsOf } from '../shared/types'
+import { pickScreen } from '../shared/screens'
 import { backgroundStyle } from '../shared/background'
 import { useConfigTheme } from '../shared/theme'
 import PageView from './PageView.vue'
@@ -17,20 +18,27 @@ const socket = useSocket()
 const { t } = useI18n()
 const config = ref<Config | null>(null)
 const manifests = ref<Record<string, WidgetManifest>>({})
+/**
+ * The screen this dashboard shows, named by `?screen=<id>`. The kiosk opens `/` with no id and
+ * gets the first Edge screen; an id that no longer exists gets it too, never a blank page.
+ */
+const screenId = new URLSearchParams(location.search).get('screen')
+const screen = computed(() => (config.value ? pickScreen(config.value, screenId) ?? null : null))
+const display = computed(() => screen.value?.display ?? null)
 const pageIndex = ref(0)
-const page = computed(() => config.value?.pages[pageIndex.value] ?? null)
+const page = computed(() => screen.value?.pages[pageIndex.value] ?? null)
 // The theme the config names, repainted whenever the admin saves another one.
 useConfigTheme(config)
 const direction = ref<1 | -1>(1)
 // PageView paints the same background over the widget area; repeating it on the root covers
 // the nav bar strip and any letterboxing, so the screen reads as one surface.
-const rootStyle = computed(() => backgroundStyle(config.value?.display.background))
+const rootStyle = computed(() => backgroundStyle(display.value?.background))
 let cycleTimer: number | undefined
 let unsub: (() => void) | undefined
 
 function go(delta: number) {
-  if (!config.value) return
-  const n = config.value.pages.length
+  if (!screen.value) return
+  const n = screen.value.pages.length
   direction.value = delta >= 0 ? 1 : -1
   pageIndex.value = (pageIndex.value + delta + n) % n
 }
@@ -69,7 +77,7 @@ function onKey(e: KeyboardEvent) {
 }
 function setupCycle() {
   window.clearInterval(cycleTimer)
-  const s = config.value?.display.autoCycleSeconds ?? 0
+  const s = display.value?.autoCycleSeconds ?? 0
   if (s > 0) cycleTimer = window.setInterval(() => go(1), s * 1000)
 }
 
@@ -79,44 +87,50 @@ onMounted(async () => {
   unsub = socket.subscribe('config', async (c) => {
     manifests.value = (await api.getWidgets()).widgets
     config.value = c as Config
-    if (pageIndex.value >= (c as Config).pages.length) pageIndex.value = 0
+    if (pageIndex.value >= (screen.value?.pages.length ?? 0)) pageIndex.value = 0
   })
   window.addEventListener('keydown', onKey)
 })
 onUnmounted(() => { unsub?.(); window.removeEventListener('keydown', onKey); window.clearInterval(cycleTimer) })
-watch(() => config.value?.display.autoCycleSeconds, setupCycle)
+watch(() => display.value?.autoCycleSeconds, setupCycle)
+/** The manifest of the widget a bar item names, for the popover it opens. */
+function manifestOf(item: NavItem): WidgetManifest | undefined {
+  const widgetId = config.value?.widgets[item.instanceId]?.widgetId
+  return widgetId ? manifests.value[widgetId] : undefined
+}
 // The screen follows the language the admin saved, pushed over the same config channel.
 watch(() => config.value?.locale, (l) => setLocale(l))
 </script>
 
 <template>
-  <div class="root" :class="{ kiosk }" :style="rootStyle" v-if="config && page">
+  <div class="root" :class="{ kiosk }" :style="rootStyle" v-if="config && screen && display && page">
     <div v-if="socket.status.value !== 'open'" class="banner">{{ t('dashboard.reconnecting') }}</div>
     <div
       class="stage"
-      :style="{ height: config.display.rows * config.display.cell + 'px' }"
+      :style="{ width: display.cols * display.cell + 'px', height: display.rows * display.cell + 'px' }"
       @pointerdown="stageSwipe.down"
       @pointerup="stageSwipe.up"
       @pointercancel="stageSwipe.cancel"
       @wheel="stageSwipe.wheel"
     >
       <Transition :name="direction === 1 ? 'slide-left' : 'slide-right'">
-        <PageView :key="page.id" :page="page" :display="config.display" :manifests="manifests" />
+        <PageView :key="page.id" :page="page" :config="config" :display="display" :manifests="manifests" />
       </Transition>
       <div class="edge left" @pointerdown.stop="stageSwipe.down" @pointerup.stop="stageSwipe.up" @pointercancel.stop="stageSwipe.cancel" @wheel.stop="stageSwipe.wheel" />
       <div class="edge right" @pointerdown.stop="stageSwipe.down" @pointerup.stop="stageSwipe.up" @pointercancel.stop="stageSwipe.cancel" @wheel.stop="stageSwipe.wheel" />
     </div>
-    <NavBar :pages="config.pages" :active="pageIndex" :height="navHeightOf(config.display)"
-      :opacity="config.display.navOpacity" :nav-widgets="navWidgetsOf(config.display)"
-      :manifests="manifests" :cell="config.display.cell" :admin-gesture="config.display.adminGesture"
+    <NavBar :pages="screen.pages" :active="pageIndex" :height="navHeightOf(display)"
+      :opacity="display.navOpacity" :nav-items="navItemsOf(screen)" :widgets="config.widgets"
+      :manifests="manifests" :cell="display.cell" :admin-gesture="display.adminGesture"
       @select="select" @swipe="go"
       @tap="popover.toggle" @admin="openAdmin" />
     <!-- Drawn by the root, above the stage and the bar, so it is never clipped by either. -->
     <NavPopover v-if="popover.open.value" fixed
-      :key="popover.open.value.widget.instanceId"
-      :nav-widget="popover.open.value.widget"
-      :manifest="manifests[popover.open.value.widget.widgetId]"
-      :cell="config.display.cell"
+      :key="popover.open.value.item.instanceId"
+      :item="popover.open.value.item"
+      :widgets="config.widgets"
+      :manifest="manifestOf(popover.open.value.item)"
+      :cell="display.cell"
       :anchor="popover.open.value.anchor"
       :screen="popover.open.value.screen"
       @root="popover.setPopoverEl" />
@@ -129,7 +143,9 @@ watch(() => config.value?.locale, (l) => setLocale(l))
    dashboard document only, which is where the pointer actually sits. */
 .root.kiosk, .root.kiosk :deep(*) { cursor: none !important; }
 /* touch-action: none propagates into widget iframes in Chromium; moot here since the touch driver emits wheel events. */
-.stage { position: relative; width: 100%; overflow: hidden; touch-action: none; user-select: none; }
+/* Sized from the screen's grid (cols × cell), drawn 1:1 from the top-left: on the Edge that is
+   the panel's 2560 px, on a device the whole cells its viewport holds. */
+.stage { position: relative; overflow: hidden; touch-action: none; user-select: none; }
 .edge { position: absolute; top: 0; bottom: 0; width: 24px; z-index: 5; touch-action: none; user-select: none; }
 .edge.left { left: 0; } .edge.right { right: 0; }
 .banner { position: absolute; top: 0; left: 50%; transform: translateX(-50%); padding: 4px 12px; background: #a33; color: #fff; font-size: 14px; border-radius: 0 0 8px 8px; z-index: 10; }
