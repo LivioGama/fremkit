@@ -216,10 +216,14 @@ describe('dock routes', () => {
   beforeEach(async () => {
     dataDir = await mkdtemp(join(tmpdir(), 'fremkit-dockapp-'))
     await writeFile(join(dataDir, 'fremkit.json'), JSON.stringify({
-      version: 3,
-      display: { cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0 },
+      version: 4,
       connections: [], secrets: { backend: 'file' },
-      pages: [{ id: 'home', name: 'Accueil', widgets: [] }],
+      widgets: {},
+      screens: [{
+        id: 'edge', name: 'Xeneon Edge', kind: 'edge',
+        display: { cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0 },
+        pages: [{ id: 'home', name: 'Accueil', items: [] }],
+      }],
     }), 'utf8')
     app = await buildApp({ dataDir, widgetsDir: join(process.cwd(), '..', 'widgets'), providers: [], connectionTypes: [] })
   })

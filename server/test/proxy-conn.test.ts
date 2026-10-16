@@ -48,12 +48,10 @@ function config(over: Partial<Config> = {}): Config {
   return {
     ...DEFAULT_CONFIG,
     connections: [{ id: 'homey-x1', type: TYPE, name: 'Homey', fields: { host: '192.168.1.40' } }],
-    pages: [{
-      id: 'home', name: 'Home',
-      widgets: [{
-        instanceId: 'flows-1', widgetId: 'homey-flows', x: 0, y: 0, w: 8, h: 4,
-        showTitle: true, settings: { connection: 'homey-x1' },
-      }],
+    widgets: { 'flows-1': { widgetId: 'homey-flows', showTitle: true, settings: { connection: 'homey-x1' } } },
+    screens: [{
+      ...DEFAULT_CONFIG.screens[0],
+      pages: [{ id: 'home', name: 'Home', items: [{ instanceId: 'flows-1', x: 0, y: 0, w: 8, h: 4 }] }],
     }],
     marketplace: { installed: { 'homey-flows': {
       kind: 'widget', version: '2.0.0', registry: 'fremkit-sietch',
@@ -217,10 +215,8 @@ describe('what the route refuses before it touches the network', () => {
     // An instance id is not a capability: a widget asking on behalf of another one is asking for
     // somebody else's connection.
     const cfg = config()
-    cfg.pages[0].widgets.push({
-      instanceId: 'other-1', widgetId: 'some-other', x: 0, y: 8, w: 8, h: 4,
-      showTitle: true, settings: { connection: 'homey-x1' },
-    } as never)
+    cfg.widgets['other-1'] = { widgetId: 'some-other', showTitle: true, settings: { connection: 'homey-x1' } }
+    cfg.screens[0].pages[0].items.push({ instanceId: 'other-1', x: 0, y: 8, w: 8, h: 4 })
     const res = await app({ cfg }).inject({
       method: 'POST', url: '/api/proxy/homey-flows/conn',
       payload: { instanceId: 'other-1', method: 'GET', path: '/api/manager/flow/flow' } as never,
@@ -264,7 +260,7 @@ describe('what the route refuses before it touches the network', () => {
 
   it('says so when no connection is chosen for the instance', async () => {
     const cfg = config()
-    cfg.pages[0].widgets[0].settings = {}
+    cfg.widgets['flows-1'].settings = {}
     const res = await app({ cfg }).inject({
       method: 'POST', url: '/api/proxy/homey-flows/conn',
       payload: { instanceId: 'flows-1', method: 'GET', path: '/api/manager/flow/flow' } as never,
