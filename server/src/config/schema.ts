@@ -19,8 +19,8 @@ export type AccentMode = z.infer<typeof AccentModeSchema>
 
 /**
  * The three-way `appearance` a tile used to carry, with its `accentStyle` companion. Kept only so
- * a file written against them still parses: `normalizeInstances` turns both into the background
- * and accent keys above and drops them, on load and on save alike.
+ * a v3 file written against them still parses (see `v3.ts`): `normalizeInstances` turns both into
+ * the background and accent keys above and drops them, on load and on save alike.
  */
 export const LegacyAppearanceSchema = z.enum(['panel', 'transparent', 'accent'])
 export const LegacyAccentStyleSchema = z.enum(['fill', 'outline'])
@@ -69,13 +69,24 @@ export type WidgetBackground = z.infer<typeof WidgetBackgroundSchema>
  */
 export const OpacitySchema = z.number().min(0).max(1)
 
-export const WidgetInstanceSchema = z.object({
-  instanceId: z.string().min(1),
+/**
+ * The longest instance id the config accepts. The proxy already caps the id it is handed at 64,
+ * and an id the proxy would refuse is an instance that could never reach its connection.
+ */
+const INSTANCE_ID_MAX = 64
+const InstanceIdSchema = z.string().min(1).max(INSTANCE_ID_MAX)
+
+/**
+ * What a widget instance *is*, shared by every screen that shows it: which widget, how its tile
+ * looks, and its settings. Where it sits is a `Placement` (or a `NavItem`) on each screen, keyed
+ * by the instance id this is stored under in `Config.widgets`.
+ *
+ * The v3 `WidgetInstance` (see `v3.ts`) minus its id, its geometry and the two legacy appearance
+ * keys, which the migration converts on the v3 shape before building this one. Unknown keys are
+ * stripped, so a stray `x` never survives a parse.
+ */
+export const WidgetSchema = z.object({
   widgetId: z.string().regex(WIDGET_ID_RE),
-  x: z.number().int().min(0),
-  y: z.number().int().min(0),
-  w: z.number().int().min(1),
-  h: z.number().int().min(1),
   title: z.string().optional(),
   showTitle: z.boolean().default(true),
   /** Colour of the tile's own surface. Absent means the theme surface, `--surface`. */
@@ -91,17 +102,22 @@ export const WidgetInstanceSchema = z.object({
    * tile — border included — fully see-through. Absent means a solid tile.
    */
   opacity: OpacitySchema.optional(),
-  /** @deprecated Converted and dropped by `normalizeInstances`; never written back out. */
-  appearance: LegacyAppearanceSchema.optional(),
-  /** @deprecated Converted and dropped by `normalizeInstances`; never written back out. */
-  accentStyle: LegacyAccentStyleSchema.optional(),
   settings: z.record(z.string(), z.unknown()).default({}),
+})
+
+/** Where one widget sits on one page of one screen, in cells. Everything else is in `widgets`. */
+export const PlacementSchema = z.object({
+  instanceId: InstanceIdSchema,
+  x: z.number().int().min(0),
+  y: z.number().int().min(0),
+  w: z.number().int().min(1),
+  h: z.number().int().min(1),
 })
 
 export const PageSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  widgets: z.array(WidgetInstanceSchema).default([]),
+  items: z.array(PlacementSchema).default([]),
 })
 
 export const BackgroundSchema = z.object({
@@ -130,20 +146,19 @@ export const NavSlotSchema = z.enum(['left', 'right'])
 export type NavSlot = z.infer<typeof NavSlotSchema>
 
 /**
- * One widget drawn inside the navigation bar. It has no geometry — the bar sizes it from the
- * manifest's `compact.width` — and no appearance: the bar is its surface. `slot` picks the
- * cluster it joins, and its position in this list orders it within that cluster.
+ * One widget drawn inside a screen's navigation bar. It has no geometry — the bar sizes it from
+ * the manifest's `compact.width` — and no appearance: the bar is its surface. Its widget and
+ * settings are the `widgets` entry it names. `slot` picks the cluster it joins, and its position
+ * in the screen's `nav` list orders it within that cluster.
  */
-export const NavWidgetSchema = z.object({
-  instanceId: z.string().min(1),
-  widgetId: z.string().regex(WIDGET_ID_RE),
+export const NavItemSchema = z.object({
+  instanceId: InstanceIdSchema,
   slot: NavSlotSchema.default('left'),
   /**
    * Touching the widget opens a popover showing the same widget in full, as a tile. Absent means
    * no popover, so the touch reaches the compact widget itself, which is the default everywhere.
    */
   popup: z.boolean().optional(),
-  settings: z.record(z.string(), z.unknown()).default({}),
 })
 
 /**
@@ -158,13 +173,15 @@ export const AdminGestureSchema = z.enum(['longPress', 'doubleTap', 'both'])
 export type AdminGesture = z.infer<typeof AdminGestureSchema>
 export const DEFAULT_ADMIN_GESTURE: AdminGesture = 'both'
 
-export const DisplaySchema = z.object({
+/**
+ * The grid and the look of one screen. The theme is not here: it is the same on every screen and
+ * lives at the top of the config. Neither is the bar's content, which is the screen's `nav`.
+ */
+export const ScreenDisplaySchema = z.object({
   cols: z.number().int().min(1).default(64),
   rows: z.number().int().min(1).default(16),
   cell: z.number().int().min(1).default(40),
   autoCycleSeconds: z.number().int().min(0).default(0),
-  /** Id of a theme in `themes/`. An unknown id falls back to the built-in one. */
-  theme: z.string().regex(/^[a-z0-9_-]+$/).default(BUILTIN_THEME),
   /** Absent means 80: the default is stored as a missing key, never as a value. */
   navHeight: NavHeightSchema.optional(),
   /** Opacity of the navigation bar's background. Absent means a solid bar. */
@@ -180,11 +197,36 @@ export const DisplaySchema = z.object({
   /** Absent means the plain --bg theme background, which is the default everywhere. */
   background: BackgroundSchema.optional(),
   /**
-   * Compact widgets drawn in the navigation bar, in cluster order. Absent means none; an empty
-   * list is folded back to a missing key by `normalizeInstances`, so the default is never
-   * written out as a value.
+   * The orientation a device screen was made for; the device app locks it. Absent on the Edge,
+   * which has only one. Changing it is adding a screen, not reflowing this one.
    */
-  navWidgets: z.array(NavWidgetSchema).max(MAX_NAV_WIDGETS).optional(),
+  orientation: z.enum(['landscape', 'portrait']).optional(),
+  /**
+   * The device's viewport in that orientation, in CSS pixels, as it reported it when it paired.
+   * Kept so `rows` can be recomputed when `navHeight` changes; absent on the Edge.
+   */
+  viewport: z.object({
+    width: z.number().int().min(1),
+    height: z.number().int().min(1),
+  }).optional(),
+})
+
+/** A screen id is a slug: it is stable, it goes in the dashboard's `?screen=` and in device records. */
+export const SCREEN_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
+
+/**
+ * One display the dashboard is drawn on — the Edge, or a paired device — with its own grid, its
+ * own bar and its own pages. The widgets it shows are referenced by instance id from `widgets`,
+ * so one widget can sit on several screens and stay one widget.
+ */
+export const ScreenSchema = z.object({
+  id: z.string().regex(SCREEN_ID_RE),
+  name: z.string().min(1).max(60),
+  kind: z.enum(['edge', 'device']),
+  display: ScreenDisplaySchema.prefault({}),
+  /** Compact widgets drawn in this screen's navigation bar, in cluster order. */
+  nav: z.array(NavItemSchema).max(MAX_NAV_WIDGETS).default([]),
+  pages: z.array(PageSchema).min(1),
 })
 
 /** A connection id is a slug: it becomes a channel suffix and a secret-key segment. */
@@ -230,7 +272,7 @@ export function defaultLocale(locale: string = SYSTEM_LOCALE): Locale {
  * what is read and where it goes. Nothing is inferred from a widget being on the dashboard: a
  * widget asking for data is not consent to read a credential.
  */
-const PrivacySchema = z.object({
+export const PrivacySchema = z.object({
   /**
    * Read Claude Code's OAuth token from the macOS keychain item `Claude Code-credentials` and
    * ask `api.anthropic.com` for this account's usage, which is what the claude-usage widget's
@@ -315,13 +357,16 @@ export type MarketplaceState = z.infer<typeof MarketplaceSchema>
  * The version a config file written today carries.
  *
  * v1 → v2 halved the cell and doubled every coordinate. v2 → v3 moved the Homey connection from
- * the coded `homey` type to the one `homey-devices` declares; see `migrate.ts`.
+ * the coded `homey` type to the one `homey-devices` declares. v3 → v4 split the single dashboard
+ * into shared `widgets` and per-display `screens`, and moved the theme to the top; see `migrate.ts`
+ * and `v3.ts`.
  */
-export const CONFIG_VERSION = 3
+export const CONFIG_VERSION = 4
 
 export const ConfigSchema = z.object({
   version: z.literal(CONFIG_VERSION),
-  display: DisplaySchema.prefault({}),
+  /** Id of a theme in `themes/`, the same on every screen. An unknown id falls back to the built-in one. */
+  theme: z.string().regex(/^[a-z0-9_-]+$/).default(BUILTIN_THEME),
   connections: z.array(ConnectionSchema).default([]),
   secrets: SecretsSchema.prefault({}),
   /** Language of the admin and of the screen. Absent in every file written before it existed. */
@@ -329,71 +374,101 @@ export const ConfigSchema = z.object({
   privacy: PrivacySchema,
   /** Absent in every file written before the marketplace existed, which means nothing installed. */
   marketplace: MarketplaceSchema,
-  pages: z.array(PageSchema).min(1),
+  /** Every widget instance, keyed by instance id, whatever the number of screens showing it. */
+  widgets: z.record(InstanceIdSchema, WidgetSchema).default({}),
+  screens: z.array(ScreenSchema).min(1),
 })
 
 export type Config = z.infer<typeof ConfigSchema>
+export type Widget = z.infer<typeof WidgetSchema>
+export type Placement = z.infer<typeof PlacementSchema>
 export type Page = z.infer<typeof PageSchema>
-export type WidgetInstance = z.infer<typeof WidgetInstanceSchema>
-export type NavWidget = z.infer<typeof NavWidgetSchema>
+export type NavItem = z.infer<typeof NavItemSchema>
+export type Screen = z.infer<typeof ScreenSchema>
+export type ScreenDisplay = z.infer<typeof ScreenDisplaySchema>
 
 export const DEFAULT_CONFIG: Config = {
   version: CONFIG_VERSION,
-  display: {
-    cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0, theme: BUILTIN_THEME,
-    // The shipped wallpaper, seeded into the background library at start. Referenced like any
-    // other image, so the Screen inspector shows it selected and "remove" leaves no background
-    // at all rather than putting a hardcoded one back.
-    //
-    // Which means a copy of the project with no `brand/wallpaper/` starts with a config naming an
-    // image that is not there: the seed cannot fail the boot over it, and the page simply paints
-    // no background. Harmless, and the user can pick another — but it is why `brand/wallpaper/`
-    // travels with a release, not only with the git checkout. See `backgrounds/seed.ts`.
-    background: { image: DEFAULT_BACKGROUND, fit: 'cover' },
-  },
+  theme: BUILTIN_THEME,
   connections: [],
   secrets: { backend: defaultSecretsBackend() },
   locale: defaultLocale(),
   privacy: { claudeAccountUsage: false, showAccountEmail: false, codexAccount: false, codexHistorySources: [], macmonTemperature: false },
   marketplace: { installed: {} },
-  pages: [
+  widgets: {
+    'clock-1': { widgetId: 'clock', showTitle: true, settings: {} },
+  },
+  screens: [
     {
-      id: 'home',
-      name: tr(defaultLocale(), 'config.defaultPageName'),
-      widgets: [{ instanceId: 'clock-1', widgetId: 'clock', x: 0, y: 0, w: 16, h: 4, showTitle: true, settings: {} }],
+      id: 'edge',
+      name: 'Xeneon Edge',
+      kind: 'edge',
+      display: {
+        cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0,
+        // The shipped wallpaper, seeded into the background library at start. Referenced like any
+        // other image, so the Screen inspector shows it selected and "remove" leaves no background
+        // at all rather than putting a hardcoded one back.
+        //
+        // Which means a copy of the project with no `brand/wallpaper/` starts with a config naming an
+        // image that is not there: the seed cannot fail the boot over it, and the page simply paints
+        // no background. Harmless, and the user can pick another — but it is why `brand/wallpaper/`
+        // travels with a release, not only with the git checkout. See `backgrounds/seed.ts`.
+        background: { image: DEFAULT_BACKGROUND, fit: 'cover' },
+      },
+      nav: [],
+      pages: [
+        {
+          id: 'home',
+          name: tr(defaultLocale(), 'config.defaultPageName'),
+          items: [{ instanceId: 'clock-1', x: 0, y: 0, w: 16, h: 4 }],
+        },
+      ],
     },
   ],
 }
 
-type SizeInfo = { minSize: [number, number]; compact?: { width: number } }
+/** What the layout checks need from a widget's manifest. */
+export type LayoutManifest = {
+  minSize: [number, number]
+  compact?: { width: number }
+  settingsSchema?: Record<string, { default?: unknown }>
+}
 
-function overlaps(a: WidgetInstance, b: WidgetInstance): boolean {
+function overlaps(a: Placement, b: Placement): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 }
 
-/** Messages come back in the language the config being checked asks for. */
-export function validateLayout(config: Config, manifests: Map<string, SizeInfo>): string[] {
+/**
+ * Each screen's pages are checked against that screen's own grid. A placement naming an instance
+ * missing from `widgets` skips the size check. Messages come back in the language the config
+ * being checked asks for.
+ */
+export function validateLayout(config: Config, manifests: Map<string, LayoutManifest>): string[] {
   const errors: string[] = []
   const locale = config.locale
-  for (const page of config.pages) {
-    const seen = new Set<string>()
-    for (const w of page.widgets) {
-      if (seen.has(w.instanceId)) errors.push(tr(locale, 'layout.duplicateInstance', { page: page.id, instanceId: w.instanceId }))
-      seen.add(w.instanceId)
-      if (w.x + w.w > config.display.cols || w.y + w.h > config.display.rows) {
-        errors.push(tr(locale, 'layout.outsideGrid', { page: page.id, instanceId: w.instanceId }))
+  for (const screen of config.screens) {
+    const { cols, rows } = screen.display
+    for (const page of screen.pages) {
+      const seen = new Set<string>()
+      for (const p of page.items) {
+        if (seen.has(p.instanceId)) errors.push(tr(locale, 'layout.duplicateInstance', { page: page.id, instanceId: p.instanceId }))
+        seen.add(p.instanceId)
+        if (p.x + p.w > cols || p.y + p.h > rows) {
+          errors.push(tr(locale, 'layout.outsideGrid', { page: page.id, instanceId: p.instanceId }))
+        }
+        const widgetId = config.widgets[p.instanceId]?.widgetId
+        const m = widgetId === undefined ? undefined : manifests.get(widgetId)
+        if (m && (p.w < m.minSize[0] || p.h < m.minSize[1])) {
+          errors.push(tr(locale, 'layout.tooSmall', {
+            page: page.id, instanceId: p.instanceId, w: p.w, h: p.h, minW: m.minSize[0], minH: m.minSize[1], widgetId,
+          }))
+        }
       }
-      const m = manifests.get(w.widgetId)
-      if (m && (w.w < m.minSize[0] || w.h < m.minSize[1])) {
-        errors.push(tr(locale, 'layout.tooSmall', {
-          page: page.id, instanceId: w.instanceId, w: w.w, h: w.h, minW: m.minSize[0], minH: m.minSize[1], widgetId: w.widgetId,
-        }))
-      }
-    }
-    for (let i = 0; i < page.widgets.length; i++) {
-      for (let j = i + 1; j < page.widgets.length; j++) {
-        const a = page.widgets[i], b = page.widgets[j]
-        if (overlaps(a, b)) errors.push(tr(locale, 'layout.overlap', { page: page.id, a: a.instanceId, b: b.instanceId }))
+      for (let i = 0; i < page.items.length; i++) {
+        for (let j = i + 1; j < page.items.length; j++) {
+          const a = page.items[i], b = page.items[j]
+          if (overlaps(a, b)) errors.push(tr(locale, 'layout.overlap', { page: page.id, a: a.instanceId, b: b.instanceId }))
+        }
       }
     }
   }
@@ -403,18 +478,23 @@ export function validateLayout(config: Config, manifests: Map<string, SizeInfo>)
 /**
  * The navigation bar only draws widgets that have a compact rendering, so a bar entry naming a
  * widget the catalog does not know — or one that declares no `compact` — is refused rather than
- * silently dropped. Messages come back in the language the config asks for, like the layout ones.
+ * silently dropped. Each screen's bar is checked on its own. Messages come back in the language
+ * the config asks for, like the layout ones.
  */
-export function validateNavWidgets(config: Config, manifests: Map<string, SizeInfo>): string[] {
+export function validateNavWidgets(config: Config, manifests: Map<string, LayoutManifest>): string[] {
   const errors: string[] = []
   const locale = config.locale
-  const seen = new Set<string>()
-  for (const w of config.display.navWidgets ?? []) {
-    if (seen.has(w.instanceId)) errors.push(tr(locale, 'navWidgets.duplicateInstance', { instanceId: w.instanceId }))
-    seen.add(w.instanceId)
-    const m = manifests.get(w.widgetId)
-    if (!m) errors.push(tr(locale, 'navWidgets.unknownWidget', { widgetId: w.widgetId }))
-    else if (!m.compact) errors.push(tr(locale, 'navWidgets.notCompact', { widgetId: w.widgetId }))
+  for (const screen of config.screens) {
+    const seen = new Set<string>()
+    for (const item of screen.nav) {
+      if (seen.has(item.instanceId)) errors.push(tr(locale, 'navWidgets.duplicateInstance', { instanceId: item.instanceId }))
+      seen.add(item.instanceId)
+      const widgetId = config.widgets[item.instanceId]?.widgetId
+      if (widgetId === undefined) continue
+      const m = manifests.get(widgetId)
+      if (!m) errors.push(tr(locale, 'navWidgets.unknownWidget', { widgetId }))
+      else if (!m.compact) errors.push(tr(locale, 'navWidgets.notCompact', { widgetId }))
+    }
   }
   return errors
 }

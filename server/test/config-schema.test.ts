@@ -1,117 +1,195 @@
 import { describe, it, expect } from 'vitest'
-import { ConfigSchema, DEFAULT_CONFIG, MAX_NAV_WIDGETS, defaultLocale, validateConnections, validateLayout, validateNavWidgets, DisplaySchema, DEFAULT_ADMIN_GESTURE } from '../src/config/schema.js'
+import {
+  ConfigSchema, DEFAULT_CONFIG, MAX_NAV_WIDGETS, defaultLocale, validateConnections, validateLayout, validateNavWidgets,
+  ScreenDisplaySchema, WidgetSchema, NavItemSchema, PlacementSchema, ScreenSchema, DEFAULT_ADMIN_GESTURE,
+  type Config, type Placement, type Widget,
+} from '../src/config/schema.js'
 import { ManifestSchema } from '../src/widgets/manifest.js'
 
 const manifests = new Map([['clock', { minSize: [8, 4] as [number, number] }]])
 
+/** The smallest valid v4 file: one screen, one empty page, plus whatever the case adds. */
+const v4 = (extra: object = {}, screen: object = {}) => ({
+  version: 4,
+  screens: [{ id: 'edge', name: 'Xeneon Edge', kind: 'edge', pages: [{ id: 'p', name: 'P' }], ...screen }],
+  ...extra,
+})
+
 describe('ConfigSchema', () => {
-  it('accepts the default config and fills display defaults', () => {
-    const parsed = ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P' }] })
-    expect(parsed.display).toEqual({ cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0, theme: 'fremkit' })
-    expect(parsed.pages[0].widgets).toEqual([])
+  it('parses DEFAULT_CONFIG as v4', () => {
+    const parsed = ConfigSchema.parse(DEFAULT_CONFIG)
+    expect(parsed.version).toBe(4)
+    expect(parsed.screens[0].id).toBe('edge')
+    expect(parsed.theme).toBe('fremkit')
+    expect(parsed.widgets['clock-1'].widgetId).toBe('clock')
+    expect(parsed.screens[0].pages[0].items).toEqual([{ instanceId: 'clock-1', x: 0, y: 0, w: 16, h: 4 }])
   })
-  it('rejects a config without pages', () => {
-    expect(() => ConfigSchema.parse({ version: 3, pages: [] })).toThrow()
+  it('DEFAULT_CONFIG is valid and round-trips unchanged', () => {
+    expect(ConfigSchema.parse(DEFAULT_CONFIG)).toEqual(DEFAULT_CONFIG)
+  })
+  it('fills the defaults of a minimal file', () => {
+    const parsed = ConfigSchema.parse(v4())
+    expect(parsed.theme).toBe('fremkit')
+    expect(parsed.widgets).toEqual({})
+    expect(parsed.screens[0].display).toEqual({ cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0 })
+    expect(parsed.screens[0].nav).toEqual([])
+    expect(parsed.screens[0].pages[0].items).toEqual([])
+  })
+  it('refuses a v3 file', () => {
+    expect(() => ConfigSchema.parse({ ...v4(), version: 3 })).toThrow()
+  })
+  it('refuses a config with no screen', () => {
+    expect(() => ConfigSchema.parse({ version: 4, screens: [] })).toThrow()
+  })
+  it('refuses a screen with no page', () => {
+    expect(() => ConfigSchema.parse(v4({}, { pages: [] }))).toThrow()
+  })
+  it('refuses a screen id that is not a slug', () => {
+    expect(() => ConfigSchema.parse(v4({}, { id: 'Edge 1' }))).toThrow()
+    for (const id of ['', '-edge', 'a'.repeat(65)]) expect(() => ConfigSchema.parse(v4({}, { id }))).toThrow()
+    expect(ConfigSchema.parse(v4({}, { id: 'ipad-2' })).screens[0].id).toBe('ipad-2')
+  })
+  it('refuses an unknown screen kind and an empty or over-long name', () => {
+    expect(() => ConfigSchema.parse(v4({}, { kind: 'tv' }))).toThrow()
+    expect(() => ConfigSchema.parse(v4({}, { name: '' }))).toThrow()
+    expect(() => ConfigSchema.parse(v4({}, { name: 'x'.repeat(61) }))).toThrow()
+  })
+  it('refuses a theme id that is not a slug', () => {
+    expect(() => ConfigSchema.parse(v4({ theme: 'Bad Theme' }))).toThrow()
+  })
+  it('refuses a widget key that is empty or longer than 64', () => {
+    const clock = { widgetId: 'clock' }
+    expect(() => ConfigSchema.parse(v4({ widgets: { '': clock } }))).toThrow()
+    expect(() => ConfigSchema.parse(v4({ widgets: { ['a'.repeat(65)]: clock } }))).toThrow()
+  })
+})
+
+describe('ScreenSchema', () => {
+  it('drops theme and navWidgets from a screen display', () => {
+    const s = ScreenSchema.parse({ id: 'edge', name: 'E', kind: 'edge', display: { theme: 'edge', navWidgets: [] }, pages: [{ id: 'p', name: 'P' }] })
+    expect(s.display).not.toHaveProperty('theme')
+    expect(s.display).not.toHaveProperty('navWidgets')
+  })
+  it('keeps a device orientation and viewport, and refuses bad ones', () => {
+    expect(ScreenDisplaySchema.parse({ orientation: 'portrait', viewport: { width: 1032, height: 1376 } }))
+      .toMatchObject({ orientation: 'portrait', viewport: { width: 1032, height: 1376 } })
+    expect(() => ScreenDisplaySchema.parse({ orientation: 'sideways' })).toThrow()
+    expect(() => ScreenDisplaySchema.parse({ viewport: { width: 0, height: 10 } })).toThrow()
+    expect(() => ScreenDisplaySchema.parse({ viewport: { width: 10.5, height: 10 } })).toThrow()
+  })
+  it('leaves orientation and viewport absent by default', () => {
+    const d = ScreenDisplaySchema.parse({})
+    expect(d.orientation).toBeUndefined()
+    expect(d.viewport).toBeUndefined()
+  })
+})
+
+describe('PlacementSchema', () => {
+  it('keeps the geometry and nothing else', () => {
+    expect(PlacementSchema.parse({ instanceId: 'a', x: 0, y: 1, w: 2, h: 3, widgetId: 'clock' }))
+      .toEqual({ instanceId: 'a', x: 0, y: 1, w: 2, h: 3 })
+  })
+  it('refuses a negative position, an empty size and an over-long instanceId', () => {
+    expect(() => PlacementSchema.parse({ instanceId: 'a', x: -1, y: 0, w: 1, h: 1 })).toThrow()
+    expect(() => PlacementSchema.parse({ instanceId: 'a', x: 0, y: 0, w: 0, h: 1 })).toThrow()
+    expect(() => PlacementSchema.parse({ instanceId: 'a'.repeat(65), x: 0, y: 0, w: 1, h: 1 })).toThrow()
+    expect(() => PlacementSchema.parse({ instanceId: '', x: 0, y: 0, w: 1, h: 1 })).toThrow()
+  })
+})
+
+describe('WidgetSchema', () => {
+  it('drops geometry from a widget', () => {
+    const w = WidgetSchema.parse({ widgetId: 'clock', x: 1, settings: {} })
+    expect(w).not.toHaveProperty('x')
+    expect(w).toEqual({ widgetId: 'clock', showTitle: true, settings: {} })
+  })
+  it('drops the instance id and the legacy appearance keys', () => {
+    const w = WidgetSchema.parse({ widgetId: 'clock', instanceId: 'a', appearance: 'accent', accentStyle: 'outline' })
+    expect(w).not.toHaveProperty('instanceId')
+    expect(w).not.toHaveProperty('appearance')
+    expect(w).not.toHaveProperty('accentStyle')
   })
   it('rejects a bad widgetId', () => {
-    expect(() => ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P', widgets: [{ instanceId: 'a', widgetId: 'Bad Id', x: 0, y: 0, w: 1, h: 1 }] }] })).toThrow()
+    expect(() => WidgetSchema.parse({ widgetId: 'Bad Id' })).toThrow()
   })
-  const withAccent = (accentColor: unknown) =>
-    ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P', widgets: [{ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 1, h: 1, accentColor }] }] })
+  const withAccent = (accentColor: unknown) => WidgetSchema.parse({ widgetId: 'clock', accentColor })
   it('leaves accentColor absent by default', () => {
-    const parsed = ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P', widgets: [{ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 1, h: 1 }] }] })
-    expect(parsed.pages[0].widgets[0].accentColor).toBeUndefined()
+    expect(WidgetSchema.parse({ widgetId: 'clock' }).accentColor).toBeUndefined()
   })
   it('accepts an #rrggbb accentColor in either case', () => {
-    for (const color of ['#2f6feb', '#2F6FEB']) expect(withAccent(color).pages[0].widgets[0].accentColor).toBe(color)
+    for (const color of ['#2f6feb', '#2F6FEB']) expect(withAccent(color).accentColor).toBe(color)
   })
   it('rejects a malformed accentColor', () => {
     for (const color of ['#fff', '2f6feb', '#2f6feb80', 'red', '', 0x2f6feb]) expect(() => withAccent(color)).toThrow()
   })
-  const withAccentStyle = (accentStyle: unknown) =>
-    ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P', widgets: [{ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 1, h: 1, accentStyle }] }] })
-  it('leaves accentStyle absent by default, so an old instance keeps the filled look', () => {
-    const parsed = ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P', widgets: [{ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 1, h: 1 }] }] })
-    expect(parsed.pages[0].widgets[0].accentStyle).toBeUndefined()
+  const withWidgetBackground = (background: unknown) => WidgetSchema.parse({ widgetId: 'clock', background })
+  it('leaves the widget background absent by default', () => {
+    expect(WidgetSchema.parse({ widgetId: 'clock' }).background).toBeUndefined()
   })
-  it('accepts both accent styles', () => {
-    for (const style of ['fill', 'outline']) expect(withAccentStyle(style).pages[0].widgets[0].accentStyle).toBe(style)
-  })
-  it('rejects an unknown accentStyle', () => {
-    for (const style of ['Fill', 'border', '', 1]) expect(() => withAccentStyle(style)).toThrow()
-  })
-  const withWidgetBackground = (background: unknown) =>
-    ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P', widgets: [{ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 1, h: 1, background }] }] })
-  it('leaves the instance background absent by default', () => {
-    const parsed = ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P', widgets: [{ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 1, h: 1 }] }] })
-    expect(parsed.pages[0].widgets[0].background).toBeUndefined()
-  })
-  it('accepts a full instance background', () => {
-    expect(withWidgetBackground({ image: 'dunes.webp', fit: 'contain', dim: 0.6 }).pages[0].widgets[0].background)
+  it('accepts a full widget background', () => {
+    expect(withWidgetBackground({ image: 'dunes.webp', fit: 'contain', dim: 0.6 }).background)
       .toEqual({ image: 'dunes.webp', fit: 'contain', dim: 0.6 })
   })
   it('accepts an image alone, leaving fit and dim to their defaults', () => {
-    expect(withWidgetBackground({ image: 'dunes.webp' }).pages[0].widgets[0].background).toEqual({ image: 'dunes.webp' })
+    expect(withWidgetBackground({ image: 'dunes.webp' }).background).toEqual({ image: 'dunes.webp' })
   })
   it('requires the image: fit or dim alone mean nothing to draw', () => {
     expect(() => withWidgetBackground({ fit: 'cover' })).toThrow()
     expect(() => withWidgetBackground({})).toThrow()
   })
-  it('validates the instance image name exactly like the screen background', () => {
+  it('validates the widget image name exactly like the screen background', () => {
     for (const image of ['../secret.txt', 'a/b.png', '..', '.hidden.png', 'nom accentué.png']) {
       expect(() => withWidgetBackground({ image })).toThrow()
     }
   })
   it('keeps dim inside 0 and 0.9, so the image never disappears behind the overlay', () => {
-    for (const dim of [0, 0.9]) expect(withWidgetBackground({ image: 'a.png', dim }).pages[0].widgets[0].background?.dim).toBe(dim)
+    for (const dim of [0, 0.9]) expect(withWidgetBackground({ image: 'a.png', dim }).background?.dim).toBe(dim)
     for (const dim of [-0.1, 0.91, 1, '0.5']) expect(() => withWidgetBackground({ image: 'a.png', dim })).toThrow()
   })
-  const withOpacity = (opacity: unknown) =>
-    ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P', widgets: [{ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 1, h: 1, opacity }] }] })
-  it('leaves the instance opacity absent by default, so an old tile stays solid', () => {
-    const parsed = ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P', widgets: [{ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 1, h: 1 }] }] })
-    expect(parsed.pages[0].widgets[0].opacity).toBeUndefined()
+  const withOpacity = (opacity: unknown) => WidgetSchema.parse({ widgetId: 'clock', opacity })
+  it('leaves the widget opacity absent by default, so an old tile stays solid', () => {
+    expect(WidgetSchema.parse({ widgetId: 'clock' }).opacity).toBeUndefined()
   })
   it('accepts an opacity across the whole 0–1 range', () => {
-    for (const opacity of [0, 0.4, 0.55, 1]) expect(withOpacity(opacity).pages[0].widgets[0].opacity).toBe(opacity)
+    for (const opacity of [0, 0.4, 0.55, 1]) expect(withOpacity(opacity).opacity).toBe(opacity)
   })
   it('rejects an opacity outside 0–1, or one that is not a number', () => {
     for (const opacity of [1.5, -0.1, '0.5', null]) expect(() => withOpacity(opacity)).toThrow()
   })
-  const withNavOpacity = (navOpacity: unknown) =>
-    ConfigSchema.parse({ version: 3, display: { navOpacity }, pages: [{ id: 'p', name: 'P' }] })
-  it('leaves display.navOpacity absent by default, so an old file keeps a solid bar', () => {
-    expect(ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P' }] }).display.navOpacity).toBeUndefined()
+})
+
+describe('ScreenDisplaySchema', () => {
+  const withNavOpacity = (navOpacity: unknown) => ScreenDisplaySchema.parse({ navOpacity })
+  it('leaves navOpacity absent by default, so an old file keeps a solid bar', () => {
+    expect(ScreenDisplaySchema.parse({}).navOpacity).toBeUndefined()
   })
   it('accepts a nav bar opacity across the whole 0–1 range', () => {
-    for (const navOpacity of [0, 0.3, 1]) expect(withNavOpacity(navOpacity).display.navOpacity).toBe(navOpacity)
+    for (const navOpacity of [0, 0.3, 1]) expect(withNavOpacity(navOpacity).navOpacity).toBe(navOpacity)
   })
   it('rejects a nav bar opacity outside 0–1, or one that is not a number', () => {
     for (const navOpacity of [1.5, -0.1, '0.3', null]) expect(() => withNavOpacity(navOpacity)).toThrow()
   })
-  const withNavHeight = (navHeight: unknown) =>
-    ConfigSchema.parse({ version: 3, display: { navHeight }, pages: [{ id: 'p', name: 'P' }] })
-  it('leaves display.navHeight absent by default, so an old file keeps the 80 px bar untouched', () => {
-    expect(ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P' }] }).display.navHeight).toBeUndefined()
+  const withNavHeight = (navHeight: unknown) => ScreenDisplaySchema.parse({ navHeight })
+  it('leaves navHeight absent by default, so an old file keeps the 80 px bar untouched', () => {
+    expect(ScreenDisplaySchema.parse({}).navHeight).toBeUndefined()
   })
   it('accepts both nav bar heights', () => {
-    for (const height of [80, 40]) expect(withNavHeight(height).display.navHeight).toBe(height)
+    for (const height of [80, 40]) expect(withNavHeight(height).navHeight).toBe(height)
   })
   it('rejects any other nav bar height', () => {
     for (const height of [0, 60, 100, '40', null]) expect(() => withNavHeight(height)).toThrow()
   })
-  const withBackground = (background: unknown) =>
-    ConfigSchema.parse({ version: 3, display: { background }, pages: [{ id: 'p', name: 'P' }] })
-  it('leaves display.background absent by default', () => {
-    expect(ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P' }] }).display.background).toBeUndefined()
+  const withBackground = (background: unknown) => ScreenDisplaySchema.parse({ background })
+  it('leaves background absent by default', () => {
+    expect(ScreenDisplaySchema.parse({}).background).toBeUndefined()
   })
   it('accepts a full background', () => {
-    expect(withBackground({ color: '#101820', image: 'dunes.webp', fit: 'contain' }).display.background)
+    expect(withBackground({ color: '#101820', image: 'dunes.webp', fit: 'contain' }).background)
       .toEqual({ color: '#101820', image: 'dunes.webp', fit: 'contain' })
   })
   it('accepts a partial background', () => {
-    expect(withBackground({ color: '#101820' }).display.background).toEqual({ color: '#101820' })
-    expect(withBackground({}).display.background).toEqual({})
+    expect(withBackground({ color: '#101820' }).background).toEqual({ color: '#101820' })
+    expect(withBackground({}).background).toEqual({})
   })
   it('rejects a bad colour, image name or fit', () => {
     expect(() => withBackground({ color: 'blue' })).toThrow()
@@ -120,103 +198,107 @@ describe('ConfigSchema', () => {
       expect(() => withBackground({ image })).toThrow()
     }
   })
-  it('DEFAULT_CONFIG is valid', () => {
-    expect(ConfigSchema.parse(DEFAULT_CONFIG)).toEqual(DEFAULT_CONFIG)
-  })
 })
+
+/** A v4 config holding `items` on the single page of the single screen, each a `clock` unless named. */
+const withItems = (locale: 'fr' | 'en', items: Placement[], widgets: Record<string, Partial<Widget>> = {}): Config => {
+  const all: Record<string, unknown> = {}
+  for (const p of items) all[p.instanceId] = { widgetId: 'clock', ...widgets[p.instanceId] }
+  return ConfigSchema.parse(v4({ locale, widgets: all }, { pages: [{ id: 'p', name: 'P', items }] }))
+}
 
 describe('validateLayout', () => {
   // Pinned to French: these assertions are about the wording, so they must not follow the
   // machine's own language. The English side is covered by its own test below.
-  const base = () => ConfigSchema.parse({ version: 3, locale: 'fr', pages: [{ id: 'p', name: 'P', widgets: [] }] })
   it('returns no error for a valid layout', () => {
-    const c = base(); c.pages[0].widgets.push({ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 16, h: 4, showTitle: true, settings: {} })
-    expect(validateLayout(c, manifests)).toEqual([])
+    expect(validateLayout(withItems('fr', [{ instanceId: 'a', x: 0, y: 0, w: 16, h: 4 }]), manifests)).toEqual([])
   })
   it('flags overlap', () => {
-    const c = base()
-    c.pages[0].widgets.push({ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 16, h: 4, showTitle: true, settings: {} })
-    c.pages[0].widgets.push({ instanceId: 'b', widgetId: 'clock', x: 8, y: 2, w: 16, h: 4, showTitle: true, settings: {} })
+    const c = withItems('fr', [{ instanceId: 'a', x: 0, y: 0, w: 16, h: 4 }, { instanceId: 'b', x: 8, y: 2, w: 16, h: 4 }])
     expect(validateLayout(c, manifests).join()).toMatch(/chevauche/)
   })
   it('flags out of grid', () => {
-    const c = base(); c.pages[0].widgets.push({ instanceId: 'a', widgetId: 'clock', x: 56, y: 0, w: 16, h: 4, showTitle: true, settings: {} })
+    expect(validateLayout(withItems('fr', [{ instanceId: 'a', x: 56, y: 0, w: 16, h: 4 }]), manifests).join()).toMatch(/hors grille/)
+  })
+  it('checks the grid against the screen’s own display', () => {
+    const c = withItems('fr', [{ instanceId: 'a', x: 0, y: 0, w: 16, h: 4 }])
+    c.screens[0].display.cols = 10
     expect(validateLayout(c, manifests).join()).toMatch(/hors grille/)
   })
   it('flags a size smaller than the manifest minimum', () => {
-    const c = base(); c.pages[0].widgets.push({ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 4, h: 4, showTitle: true, settings: {} })
-    expect(validateLayout(c, manifests).join()).toMatch(/plus petite que le minimum/)
+    expect(validateLayout(withItems('fr', [{ instanceId: 'a', x: 0, y: 0, w: 4, h: 4 }]), manifests).join()).toMatch(/plus petite que le minimum/)
   })
   it('accepts an unknown widget (grey tile later)', () => {
-    const c = base(); c.pages[0].widgets.push({ instanceId: 'a', widgetId: 'ghost', x: 0, y: 0, w: 3, h: 3, showTitle: true, settings: {} })
+    const c = withItems('fr', [{ instanceId: 'a', x: 0, y: 0, w: 3, h: 3 }], { a: { widgetId: 'ghost' } })
     expect(validateLayout(c, manifests)).toEqual([])
   })
   it('flags duplicate instanceId', () => {
-    const c = base()
-    c.pages[0].widgets.push({ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 8, h: 4, showTitle: true, settings: {} })
-    c.pages[0].widgets.push({ instanceId: 'a', widgetId: 'clock', x: 16, y: 0, w: 8, h: 4, showTitle: true, settings: {} })
+    const c = withItems('fr', [{ instanceId: 'a', x: 0, y: 0, w: 8, h: 4 }, { instanceId: 'a', x: 16, y: 0, w: 8, h: 4 }])
     expect(validateLayout(c, manifests)).toEqual(['page p: instanceId a dupliqué'])
   })
   it('answers in English when the config asks for it', () => {
-    const c = ConfigSchema.parse({ version: 3, locale: 'en', pages: [{ id: 'p', name: 'P', widgets: [] }] })
-    c.pages[0].widgets.push({ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 8, h: 4, showTitle: true, settings: {} })
-    c.pages[0].widgets.push({ instanceId: 'a', widgetId: 'clock', x: 16, y: 0, w: 8, h: 4, showTitle: true, settings: {} })
+    const c = withItems('en', [{ instanceId: 'a', x: 0, y: 0, w: 8, h: 4 }, { instanceId: 'a', x: 16, y: 0, w: 8, h: 4 }])
     expect(validateLayout(c, manifests)).toEqual(['page p: duplicate instanceId a'])
   })
 })
 
-describe('navWidgets', () => {
+describe('the navigation bar', () => {
   // Same pin as validateLayout above: these assertions are about the French wording.
   const navManifests = new Map([
     ['clock', { minSize: [8, 4] as [number, number], compact: { width: 5 } }],
     ['plain', { minSize: [8, 4] as [number, number] }],
   ])
-  const withNav = (navWidgets: unknown[]) =>
-    ConfigSchema.parse({ version: 3, locale: 'fr', display: { navWidgets }, pages: [{ id: 'p', name: 'P', widgets: [] }] })
+  const withNav = (nav: { instanceId: string, widgetId: string, [k: string]: unknown }[], locale: 'fr' | 'en' = 'fr') => {
+    const widgets: Record<string, unknown> = {}
+    for (const { instanceId, widgetId } of nav) widgets[instanceId] = { widgetId }
+    return ConfigSchema.parse(v4({ locale, widgets }, { nav: nav.map(({ widgetId: _, ...item }) => item) }))
+  }
 
-  it('is absent when the bar carries none', () => {
-    expect(ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P', widgets: [] }] }).display.navWidgets).toBeUndefined()
-    expect(validateNavWidgets(ConfigSchema.parse({ version: 3, pages: [{ id: 'p', name: 'P', widgets: [] }] }), navManifests)).toEqual([])
+  it('is empty when the bar carries none', () => {
+    const c = ConfigSchema.parse(v4())
+    expect(c.screens[0].nav).toEqual([])
+    expect(validateNavWidgets(c, navManifests)).toEqual([])
   })
   it('accepts a widget that declares a compact rendering, on the left by default', () => {
     const c = withNav([{ instanceId: 'clock-1', widgetId: 'clock' }])
-    expect(c.display.navWidgets![0]).toEqual({ instanceId: 'clock-1', widgetId: 'clock', slot: 'left', settings: {} })
+    expect(c.screens[0].nav[0]).toEqual({ instanceId: 'clock-1', slot: 'left' })
     expect(validateNavWidgets(c, navManifests)).toEqual([])
   })
   it('keeps an explicit slot and refuses any other value', () => {
-    expect(withNav([{ instanceId: 'a', widgetId: 'clock', slot: 'right' }]).display.navWidgets![0].slot).toBe('right')
-    expect(() => withNav([{ instanceId: 'a', widgetId: 'clock', slot: 'middle' }])).toThrow()
+    expect(NavItemSchema.parse({ instanceId: 'a', slot: 'right' }).slot).toBe('right')
+    expect(() => NavItemSchema.parse({ instanceId: 'a', slot: 'middle' })).toThrow()
   })
   it('keeps popup when it is set, leaves it absent otherwise, and refuses a non-boolean', () => {
-    expect(withNav([{ instanceId: 'a', widgetId: 'clock' }]).display.navWidgets![0].popup).toBeUndefined()
-    expect(withNav([{ instanceId: 'a', widgetId: 'clock', popup: true }]).display.navWidgets![0].popup).toBe(true)
-    expect(withNav([{ instanceId: 'a', widgetId: 'clock', popup: false }]).display.navWidgets![0].popup).toBe(false)
-    expect(() => withNav([{ instanceId: 'a', widgetId: 'clock', popup: 'yes' }])).toThrow()
+    expect(NavItemSchema.parse({ instanceId: 'a' }).popup).toBeUndefined()
+    expect(NavItemSchema.parse({ instanceId: 'a', popup: true }).popup).toBe(true)
+    expect(NavItemSchema.parse({ instanceId: 'a', popup: false }).popup).toBe(false)
+    expect(() => NavItemSchema.parse({ instanceId: 'a', popup: 'yes' })).toThrow()
+  })
+  it('carries no widget settings: those live in `widgets`', () => {
+    expect(NavItemSchema.parse({ instanceId: 'a', widgetId: 'clock', settings: { x: 1 } })).toEqual({ instanceId: 'a', slot: 'left' })
+  })
+  it('refuses an empty or over-long instanceId', () => {
+    expect(() => NavItemSchema.parse({ instanceId: '' })).toThrow()
+    expect(() => NavItemSchema.parse({ instanceId: 'a'.repeat(65) })).toThrow()
   })
   it('flags a widget the catalog does not know', () => {
-    const c = withNav([{ instanceId: 'a', widgetId: 'ghost' }])
-    expect(validateNavWidgets(c, navManifests)).toEqual(['barre de navigation : widget inconnu ghost'])
+    expect(validateNavWidgets(withNav([{ instanceId: 'a', widgetId: 'ghost' }]), navManifests)).toEqual(['barre de navigation : widget inconnu ghost'])
   })
   it('flags a widget without a compact rendering', () => {
-    const c = withNav([{ instanceId: 'a', widgetId: 'plain' }])
-    expect(validateNavWidgets(c, navManifests).join()).toMatch(/n’a pas de rendu compact/)
+    expect(validateNavWidgets(withNav([{ instanceId: 'a', widgetId: 'plain' }]), navManifests).join()).toMatch(/n’a pas de rendu compact/)
   })
   it('flags a duplicate instanceId', () => {
     const c = withNav([{ instanceId: 'a', widgetId: 'clock' }, { instanceId: 'a', widgetId: 'clock' }])
     expect(validateNavWidgets(c, navManifests)).toEqual(['barre de navigation : instanceId a dupliqué'])
   })
   it('answers in English when the config asks for it', () => {
-    const c = ConfigSchema.parse({
-      version: 3, locale: 'en',
-      display: { navWidgets: [{ instanceId: 'a', widgetId: 'plain' }] },
-      pages: [{ id: 'p', name: 'P', widgets: [] }],
-    })
-    expect(validateNavWidgets(c, navManifests)).toEqual(['navigation bar: widget plain has no compact rendering'])
+    expect(validateNavWidgets(withNav([{ instanceId: 'a', widgetId: 'plain' }], 'en'), navManifests))
+      .toEqual(['navigation bar: widget plain has no compact rendering'])
   })
-  it('refuses more than six entries', () => {
+  it(`refuses more than ${MAX_NAV_WIDGETS} entries`, () => {
     const many = Array.from({ length: MAX_NAV_WIDGETS + 1 }, (_, i) => ({ instanceId: 'n' + i, widgetId: 'clock' }))
     expect(() => withNav(many)).toThrow()
-    expect(withNav(many.slice(0, MAX_NAV_WIDGETS)).display.navWidgets).toHaveLength(MAX_NAV_WIDGETS)
+    expect(withNav(many.slice(0, MAX_NAV_WIDGETS)).screens[0].nav).toHaveLength(MAX_NAV_WIDGETS)
   })
 })
 
@@ -225,8 +307,7 @@ describe('validateLayout against a converted v1 manifest', () => {
   // so [4, 2] becomes the [8, 4] minimum the layout is held to.
   const legacy = ManifestSchema.parse({ id: 'clock', name: 'Horloge', version: '1.0.0', sizes: [[8, 2], [4, 2], [8, 4]] })
   const converted = new Map([['clock', { minSize: legacy.minSize }]])
-  const layout = (w: number, h: number) =>
-    ConfigSchema.parse({ version: 3, locale: 'fr', pages: [{ id: 'p', name: 'P', widgets: [{ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w, h }] }] })
+  const layout = (w: number, h: number) => withItems('fr', [{ instanceId: 'a', x: 0, y: 0, w, h }])
 
   it('converts sizes to a doubled minimum', () => {
     expect(legacy.minSize).toEqual([8, 4])
@@ -240,7 +321,7 @@ describe('validateLayout against a converted v1 manifest', () => {
 })
 
 describe('connections in the config', () => {
-  const base = { version: 3 as const, locale: 'fr' as const, display: { cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0 }, pages: [{ id: 'home', name: 'Accueil', widgets: [] }] }
+  const base = v4({ locale: 'fr' })
 
   it('defaults connections to an empty list and picks a secrets backend', () => {
     const parsed = ConfigSchema.parse(base)
@@ -279,16 +360,15 @@ describe('connections in the config', () => {
 })
 
 describe('locale', () => {
-  const base = { version: 3, pages: [{ id: 'p', name: 'P' }] }
+  const base = v4()
 
   it('reads French from a French system locale and English from anything else', () => {
     for (const l of ['fr', 'fr-FR', 'FR-ca']) expect(defaultLocale(l)).toBe('fr')
     for (const l of ['en-US', 'de-DE', 'ja', '']) expect(defaultLocale(l)).toBe('en')
   })
 
-  it('leaves a v2 file without a locale valid and fills the system default in', () => {
-    const parsed = ConfigSchema.parse(base)
-    expect(parsed.locale).toBe(defaultLocale())
+  it('leaves a file without a locale valid and fills the system default in', () => {
+    expect(ConfigSchema.parse(base).locale).toBe(defaultLocale())
   })
 
   it('keeps an explicit locale', () => {
@@ -305,7 +385,7 @@ describe('locale', () => {
 })
 
 describe('display.adminGesture', () => {
-  const display = (extra: object) => DisplaySchema.safeParse({ cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0, ...extra })
+  const display = (extra: object) => ScreenDisplaySchema.safeParse({ cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0, ...extra })
 
   it('accepts the three gestures', () => {
     for (const adminGesture of ['both', 'longPress', 'doubleTap']) {
