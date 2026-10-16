@@ -260,7 +260,9 @@ export async function backupRoutes(
     // the plan above just stripped are absent now, so they are named here without a second list.
     return reply.send({
       ok: true,
-      pages: saved.pages.length,
+      // Over every screen: the admin says "N pages restored", and a page on a device is one too.
+      pages: saved.screens.reduce((n, screen) => n + screen.pages.length, 0),
+      screens: saved.screens.length,
       backgrounds: read.backgrounds.length,
       reenterSecrets: await missingSecrets(saved, opts.types, opts.secrets),
     })

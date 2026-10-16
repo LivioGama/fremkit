@@ -20,6 +20,7 @@ import type { ThemeCatalog } from '../themes/catalog.js'
 import { isCrossSiteFetch } from '../http/guard.js'
 import { SDK_VERSION } from '../bridge/sdk.js'
 import { tr, type MessageKey } from '../i18n.js'
+import { placeLabel } from '../config/instances.js'
 import { Registry, RegistryError, releaseOf } from './registry.js'
 import { InstallError, readPackage, removePackage, writePackage, type PackageKind, type ReadPackageResult } from './install.js'
 import { NO_PERMISSIONS, addedPermissions, grantedFor, grantedPermissions, isEmpty, permissionsOf, unionPermissions, type Permissions } from './consent.js'
@@ -137,7 +138,8 @@ export interface MarketplaceEntry extends IndexWidget {
    */
   history: { version: string; changes: string }[]
   /**
-   * The pages this widget is placed on, by name — empty for almost every row.
+   * The pages and bars this widget is shown on, as `placeLabel` names them — empty for almost
+   * every row.
    *
    * A dashboard can hold an instance of a widget that is not installed: the widget moved to the
    * registry, or the config came from another machine. The tile then paints as missing, and
@@ -190,7 +192,7 @@ function themeEntryFor(theme: IndexTheme, config: Config, themes: ThemeCatalog):
     installedVersion: installed ? record.version : null,
     updateAvailable: installed && compareSemver(theme.version, record.version) > 0,
     shadowsBuiltin: local?.source === 'builtin',
-    inUse: config.display.theme === theme.id,
+    inUse: config.theme === theme.id,
     history: historyOf(theme),
   }
 }
@@ -241,16 +243,21 @@ function entryFor(widget: IndexWidget, config: Config, catalog: WidgetCatalog): 
   }
 }
 
-/** Where a widget is still placed, so an uninstall can say what would break. */
+/**
+ * Where a widget is still shown, so an uninstall can say what would break: each page or bar once,
+ * named as `placeLabel` names it, in the order the screens hold them.
+ */
 export function usedBy(config: Config, id: string): string[] {
-  const places: string[] = []
-  for (const page of config.pages) {
-    if (page.widgets.some((w) => w.widgetId === id)) places.push(page.name)
+  const shows = (item: { instanceId: string }): boolean =>
+    Object.hasOwn(config.widgets, item.instanceId) && config.widgets[item.instanceId].widgetId === id
+  const places = new Set<string>()
+  for (const screen of config.screens) {
+    for (const page of screen.pages) {
+      if (page.items.some(shows)) places.add(placeLabel(config, { screen, page }))
+    }
+    if (screen.nav.some(shows)) places.add(placeLabel(config, { screen, page: null }))
   }
-  if ((config.display.navWidgets ?? []).some((w) => w.widgetId === id)) {
-    places.push(tr(config.locale, 'marketplace.navBar'))
-  }
-  return places
+  return [...places]
 }
 
 /**
@@ -715,7 +722,7 @@ export async function marketplaceRoutes(app: FastifyInstance, opts: MarketplaceO
     if (!recordOf(config, id, 'theme') && themes.entry(id)?.source !== 'installed') {
       return reply.code(404).send(fail('marketplace.themeNotInstalled'))
     }
-    if (config.display.theme === id) return reply.code(409).send(fail('marketplace.themeInUse'))
+    if (config.theme === id) return reply.code(409).send(fail('marketplace.themeInUse'))
 
     try { await removePackage(installedThemesDir, id) }
     catch (err) { req.log.warn({ err }, 'marketplace uninstall could not remove the theme'); return reply.code(500).send(fail('marketplace.writeFailed')) }

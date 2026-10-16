@@ -62,12 +62,17 @@ const otherType: ConnectionType = {
 // must not follow whatever language the machine running the suite would pick. `buildEn` covers
 // the other side.
 const CONFIG = {
-  version: 3,
+  version: 4,
   locale: 'fr',
-  display: { cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0 },
   connections: [],
   secrets: { backend: 'file' },
-  pages: [{ id: 'home', name: 'Accueil', widgets: [] }],
+  widgets: {},
+  screens: [{
+    id: 'edge', name: 'Xeneon Edge', kind: 'edge',
+    display: { cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0 },
+    nav: [],
+    pages: [{ id: 'home', name: 'Accueil', items: [] }],
+  }],
 }
 
 let app: FastifyInstance
@@ -301,10 +306,8 @@ describe('DELETE /api/connections/:id', () => {
   it('refuses with 409 while a widget still points at it', async () => {
     await put('ado-x1z9', body)
     const config = (await app.inject({ method: 'GET', url: '/api/config' })).json()
-    config.pages[0].widgets.push({
-      instanceId: 'ado-1', widgetId: 'ado-pipelines', x: 0, y: 0, w: 16, h: 8,
-      showTitle: true, settings: { connection: 'ado-x1z9' },
-    })
+    config.widgets['ado-1'] = { widgetId: 'ado-pipelines', showTitle: true, settings: { connection: 'ado-x1z9' } }
+    config.screens[0].pages[0].items.push({ instanceId: 'ado-1', x: 0, y: 0, w: 16, h: 8 })
     await app.inject({ method: 'PUT', url: '/api/config', payload: config })
     const res = await app.inject({ method: 'DELETE', url: '/api/connections/ado-x1z9' })
     expect(res.statusCode).toBe(409)
@@ -315,14 +318,24 @@ describe('DELETE /api/connections/:id', () => {
     await put('ado-x1z9', body)
     const config = (await app.inject({ method: 'GET', url: '/api/config' })).json()
     // `calendar` declares a `connections` setting: the id sits in an array, not in a string.
-    config.pages[0].widgets.push({
-      instanceId: 'cal-1', widgetId: 'calendar', x: 0, y: 0, w: 16, h: 10,
-      showTitle: true, settings: { calendars: ['other', 'ado-x1z9'] },
-    })
+    config.widgets['cal-1'] = { widgetId: 'calendar', showTitle: true, settings: { calendars: ['other', 'ado-x1z9'] } }
+    config.screens[0].pages[0].items.push({ instanceId: 'cal-1', x: 0, y: 0, w: 16, h: 10 })
     await app.inject({ method: 'PUT', url: '/api/config', payload: config })
     const res = await app.inject({ method: 'DELETE', url: '/api/connections/ado-x1z9' })
     expect(res.statusCode).toBe(409)
     expect(res.json().error).toMatch(/calendar/)
+  })
+
+  it('a bar widget protects its connection from deletion', async () => {
+    await put('ado-x1z9', body)
+    const config = (await app.inject({ method: 'GET', url: '/api/config' })).json()
+    // Only in the bar, on no page: it used to be invisible here, and its connection deletable.
+    config.widgets['cal-1'] = { widgetId: 'calendar', showTitle: true, settings: { calendars: ['ado-x1z9'] } }
+    config.screens[0].nav.push({ instanceId: 'cal-1', slot: 'left' })
+    expect((await app.inject({ method: 'PUT', url: '/api/config', payload: config })).statusCode).toBe(200)
+    const res = await app.inject({ method: 'DELETE', url: '/api/connections/ado-x1z9' })
+    expect(res.statusCode).toBe(409)
+    expect(res.json().error).toBe('Connexion utilisée par : calendar (la barre de navigation)')
   })
 
   it('404s on an unknown connection', async () => {
@@ -530,11 +543,11 @@ describe('PUT /api/config and connections', () => {
   it('still saves everything else in the same request', async () => {
     await put('ado-x1z9', body)
     const cfg = await readConfig()
-    cfg.pages = [{ id: 'other', name: 'Autre', widgets: [] }]
+    cfg.screens[0].pages = [{ id: 'other', name: 'Autre', items: [] }]
     cfg.connections = []
     expect((await app.inject({ method: 'PUT', url: '/api/config', payload: cfg })).statusCode).toBe(200)
     const saved = await readConfig()
-    expect(saved.pages[0].id).toBe('other')
+    expect(saved.screens[0].pages[0].id).toBe('other')
     expect(saved.connections.map((c: { id: string }) => c.id)).toEqual(['ado-x1z9'])
   })
 })
