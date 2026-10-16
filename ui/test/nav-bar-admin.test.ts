@@ -156,9 +156,9 @@ describe('the bar of one screen', () => {
 
 describe('the dots fit the room kept for them', () => {
   const pages = (n: number): Page[] => Array.from({ length: n }, (_, i) => ({ id: 'p' + i, name: 'P' + i, items: [] }))
-  /** The hit column each dot gets at full scale, as the bar hands it to its stylesheet. */
-  function column(n: number): string {
-    const wrapper = mount(NavBar, { props: { pages: pages(n), active: 0, height: 80, cell: 40 } })
+  /** The hit column each dot gets, as the bar hands it to its stylesheet; 80 px is full scale. */
+  function column(n: number, height = 80): string {
+    const wrapper = mount(NavBar, { props: { pages: pages(n), active: 0, height, cell: 40 } })
     const width = (wrapper.find('nav').element as HTMLElement).style.getPropertyValue('--dot-width')
     wrapper.unmount()
     return width
@@ -175,5 +175,11 @@ describe('the dots fit the room kept for them', () => {
 
   it('never goes under the 44 px touch minimum', () => {
     expect(column(12)).toBe('44px')
+  })
+
+  it('keeps the touch minimum on a slim bar, where only the visible dot shrinks', () => {
+    // 64 x 0.5 = 32 px would be under the minimum: the column stays 44 real px.
+    expect(column(4, 40)).toBe('44px')
+    expect(column(8, 40)).toBe('44px')
   })
 })

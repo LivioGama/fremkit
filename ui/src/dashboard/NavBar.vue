@@ -201,17 +201,19 @@ const manifestOf = (item: NavItem): WidgetManifest | undefined => {
  * dots with it. The hit areas keep spanning the whole height either way.
  */
 const scale = computed(() => props.height / DEFAULT_NAV_HEIGHT)
-/** The widest a dot's hit column gets, and the narrowest: 44 px is the touch minimum. */
+/** A dot's hit column at the 80 px design, scaled with the bar. */
 const DOT_MAX = 64
+/** The touch minimum, in real CSS px: the column never goes under it, whatever the bar's scale. */
 const DOT_MIN = 44
 /**
- * Each dot's hit column, before the bar's scale. The dots share the cells the bar-room rule keeps
- * free for them, so many pages narrow their columns instead of running over the clusters; past
- * the touch minimum they keep 44 px and may spill (about nine pages and more on a small screen).
+ * Each dot's hit column, in CSS px, already scaled. The dots share the cells the bar-room rule
+ * keeps free for them, so many pages narrow their columns instead of running over the clusters.
+ * The 44 px touch minimum wins over both the scale and the share: on a slim bar the columns stay
+ * 44 px, and past about nine pages on a 40 px cell they spill beyond the reserve.
  */
 const dotWidth = computed(() => {
   const reserve = NAV_DOTS_RESERVE_CELLS * props.cell
-  return Math.min(DOT_MAX, Math.max(DOT_MIN, reserve / Math.max(1, props.pages.length)))
+  return Math.max(DOT_MIN, Math.min(DOT_MAX * scale.value, reserve / Math.max(1, props.pages.length)))
 })
 /**
  * Only the bar's own background and top border take the opacity: the dots and the compact
@@ -263,10 +265,11 @@ const style = computed<Record<string, string | number>>(() => {
 nav { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; grid-template-areas: "left dots right";
   align-items: center; box-sizing: border-box; background: var(--nav-bg, var(--nav-surface, #0b0d10)); border-top: 1px solid var(--nav-border, var(--nav-outline, #1f2329));
   touch-action: none; user-select: none; }
-/* Each dot's hit area spans the whole bar height and a wide column: a finger on the touch
-   strip is far less precise than a pointer, and the visible dot stays small. */
+/* Each dot's hit area spans the whole bar height and a column as wide as the dots' share of the
+   bar allows, never under the 44 px touch minimum (see dotWidth): a finger on the touch strip is
+   far less precise than a pointer. Only the visible dot (::after) scales with the bar. */
 .dots { grid-area: dots; display: flex; gap: 0; align-items: stretch; height: 100%; justify-self: center; }
-.dot { width: calc(var(--dot-width, 64px) * var(--nav-scale, 1)); height: 100%; padding: 0; border: 0; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.dot { width: var(--dot-width, 64px); height: 100%; padding: 0; border: 0; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .dot::after { content: ''; width: calc(14px * var(--nav-scale, 1)); height: calc(14px * var(--nav-scale, 1)); border-radius: calc(7px * var(--nav-scale, 1)); background: var(--border-strong, #3a404a); transition: width .2s, background .2s; }
 .dot.active::after { width: calc(36px * var(--nav-scale, 1)); background: var(--accent); }
 /* Held for the admin: the accent swells and breathes, so the finger knows something is counting
