@@ -37,7 +37,8 @@ export function compactWidth(manifest: LayoutManifest | undefined, settings: Rec
 /** The cells one screen's bar takes; an entry naming a missing or unknown widget counts 0. */
 export function navCellsUsed(screen: Screen, widgets: Config['widgets'], manifests: Map<string, LayoutManifest>): number {
   return screen.nav.reduce((sum, item) => {
-    const widget = widgets[item.instanceId]
+    // Own keys only: an id such as `constructor` must not find Object.prototype's.
+    const widget = Object.hasOwn(widgets, item.instanceId) ? widgets[item.instanceId] : undefined
     return widget ? sum + compactWidth(manifests.get(widget.widgetId), widget.settings) : sum
   }, 0)
 }

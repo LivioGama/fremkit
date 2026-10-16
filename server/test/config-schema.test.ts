@@ -348,6 +348,16 @@ describe('screens', () => {
     // validateLayout reports it; the bar's own checks have nothing to add about a missing widget.
     expect(validateNavWidgets(c, screenManifests)).toEqual([])
   })
+  it('treats Object.prototype names as missing widgets, not as inherited ones', () => {
+    for (const instanceId of ['constructor', 'toString', '__proto__']) {
+      const placed = config({}, [screen('tab', 'Tablet', { pages: [page('p', [{ instanceId, x: 0, y: 0, w: 8, h: 4 }])] })], 'en')
+      expect(validateLayout(placed, screenManifests)).toEqual([`screen Tablet: ${instanceId} names no widget`])
+      const inBar = config({}, [screen('tab', 'Tablet', { nav: [{ instanceId }] })], 'en')
+      expect(validateLayout(inBar, screenManifests)).toEqual([`screen Tablet: ${instanceId} names no widget`])
+      expect(validateNavWidgets(inBar, screenManifests)).toEqual([])
+      expect(navCellsUsed(inBar.screens[0], inBar.widgets, screenManifests)).toBe(0)
+    }
+  })
   it('flags an instance on two pages of one screen', () => {
     const c = config({ 'clock-1': { widgetId: 'clock' } }, [screen('tab', 'Tablet', { pages: [
       page('p', [{ instanceId: 'clock-1', x: 0, y: 0, w: 8, h: 4 }]),

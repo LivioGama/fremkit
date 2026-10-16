@@ -452,7 +452,7 @@ export function validateLayout(config: Config, manifests: Map<string, LayoutMani
     // Pages in order, then the bar: the order `findInstances` reports them in.
     const onScreen = new Set<string>()
     const place = (instanceId: string): void => {
-      if (!(instanceId in config.widgets)) errors.push(tr(locale, 'layout.missingWidget', { screen: name, instanceId }))
+      if (!Object.hasOwn(config.widgets, instanceId)) errors.push(tr(locale, 'layout.missingWidget', { screen: name, instanceId }))
       else if (onScreen.has(instanceId)) errors.push(tr(locale, 'layout.duplicateOnScreen', { screen: name, instanceId }))
       onScreen.add(instanceId)
     }
@@ -467,7 +467,7 @@ export function validateLayout(config: Config, manifests: Map<string, LayoutMani
         if (p.x + p.w > cols || p.y + p.h > rows) {
           errors.push(tr(locale, 'layout.outsideGrid', { screen: name, page: page.id, instanceId: p.instanceId }))
         }
-        const widgetId = config.widgets[p.instanceId]?.widgetId
+        const widgetId = Object.hasOwn(config.widgets, p.instanceId) ? config.widgets[p.instanceId].widgetId : undefined
         const m = widgetId === undefined ? undefined : manifests.get(widgetId)
         if (m && (p.w < m.minSize[0] || p.h < m.minSize[1])) {
           errors.push(tr(locale, 'layout.tooSmall', {
@@ -509,7 +509,7 @@ export function validateNavWidgets(config: Config, manifests: Map<string, Layout
   for (const screen of config.screens) {
     const name = screen.name
     for (const item of screen.nav) {
-      const widgetId = config.widgets[item.instanceId]?.widgetId
+      const widgetId = Object.hasOwn(config.widgets, item.instanceId) ? config.widgets[item.instanceId].widgetId : undefined
       if (widgetId === undefined) continue
       const m = manifests.get(widgetId)
       if (!m) errors.push(tr(locale, 'navWidgets.unknownWidget', { screen: name, widgetId }))
