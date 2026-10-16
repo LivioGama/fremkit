@@ -7,6 +7,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import BaseChip from '../shared/ui/BaseChip.vue'
 import BaseIcon from '../shared/ui/BaseIcon.vue'
 import { pick } from '../shared/i18n'
+import { tileOf } from '../shared/screens'
 import { DND_TYPE, useAdminStore } from './store'
 import { fitAround, fits, moveRect, resizeRect, snapPoint, type Handle, type Rect } from './layout'
 
@@ -15,8 +16,9 @@ const s = useAdminStore()
 const root = ref<HTMLElement>()
 
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
-const cell = computed(() => s.state.config!.display.cell)
-const widgets = computed(() => s.page.value?.widgets ?? [])
+const cell = computed(() => s.screen.value!.display.cell)
+/** This page's tiles, each joined with its shared widget for its name and manifest. */
+const widgets = computed(() => (s.page.value?.items ?? []).map((p) => tileOf(s.state.config!, p)))
 const boardH = computed(() => s.grid.value.rows * cell.value)
 
 interface Drag { kind: 'move' | 'resize' | 'create'; instanceId: string; widgetId: string; start: Rect; handle: Handle; min: [number, number]; ox: number; oy: number }

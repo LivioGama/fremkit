@@ -19,7 +19,9 @@ export interface ConnectionInput { type: string; name: string; fields: Record<st
 /** What `POST /api/restore` answers: what landed, and whose secret has to be typed in again. */
 export interface RestoreResult {
   ok: true
+  /** Pages over every screen. */
   pages: number
+  screens: number
   backgrounds: number
   reenterSecrets: { id: string; name: string; type: string }[]
 }

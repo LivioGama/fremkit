@@ -28,8 +28,10 @@ function commitName(i: number, e: Event): void {
   editing.value = null
 }
 const confirm = useConfirm()
+/** Keyed by screen too: a press armed on one screen's page must not fire on another's. */
+const removeKey = (i: number): string => `page:${s.state.screenId}:${i}`
 function confirmRemove(i: number): void {
-  confirm.ask(`page:${i}`, () => s.removePage(i))
+  confirm.ask(removeKey(i), () => s.removePage(i))
 }
 </script>
 
@@ -37,16 +39,16 @@ function confirmRemove(i: number): void {
   <section>
     <h2>{{ t('admin.pages.title') }} <BaseButton variant="icon" :title="t('admin.pages.add')" @click="s.addPage()"><BaseIcon name="plus" :size="16" /></BaseButton></h2>
     <ul>
-      <li v-for="(p, i) in s.state.config!.pages" :key="p.id" :class="{ on: i === s.state.pageIndex }" @click="s.selectPage(i)">
+      <li v-for="(p, i) in s.screen.value!.pages" :key="p.id" :class="{ on: i === s.state.pageIndex }" @click="s.selectPage(i)">
         <input v-if="editing === p.id" :value="p.name" autofocus
           @click.stop @blur="commitName(i, $event)" @keydown.enter="($event.target as HTMLInputElement).blur()" @keydown.esc="cancelEdit()" />
         <span v-else class="name" @dblclick.stop="startEdit(p.id)">{{ p.name }}</span>
         <BaseButton variant="icon" :title="t('admin.pages.rename')" @click.stop="startEdit(p.id)"><BaseIcon name="pencil" :size="14" /></BaseButton>
         <BaseButton variant="icon" :title="t('common.moveUp')" :disabled="i === 0" @click.stop="s.movePage(i, -1)"><BaseIcon name="chevron-up" :size="14" /></BaseButton>
-        <BaseButton variant="icon" :title="t('common.moveDown')" :disabled="i === s.state.config!.pages.length - 1" @click.stop="s.movePage(i, 1)"><BaseIcon name="chevron-down" :size="14" /></BaseButton>
+        <BaseButton variant="icon" :title="t('common.moveDown')" :disabled="i === s.screen.value!.pages.length - 1" @click.stop="s.movePage(i, 1)"><BaseIcon name="chevron-down" :size="14" /></BaseButton>
         <BaseButton variant="icon" :title="t('common.duplicate')" @click.stop="s.duplicatePage(i)"><BaseIcon name="copy" :size="14" /></BaseButton>
-        <BaseButton v-if="confirm.armed(`page:${i}`)" variant="danger" :title="t('common.confirm')" @click.stop="confirmRemove(i)">{{ t('common.confirm') }}</BaseButton>
-        <BaseButton v-else variant="icon" :title="t('common.remove')" :disabled="s.state.config!.pages.length <= 1" @click.stop="confirmRemove(i)"><BaseIcon name="trash-2" :size="14" /></BaseButton>
+        <BaseButton v-if="confirm.armed(removeKey(i))" variant="danger" :title="t('common.confirm')" @click.stop="confirmRemove(i)">{{ t('common.confirm') }}</BaseButton>
+        <BaseButton v-else variant="icon" :title="t('common.remove')" :disabled="s.screen.value!.pages.length <= 1" @click.stop="confirmRemove(i)"><BaseIcon name="trash-2" :size="14" /></BaseButton>
       </li>
     </ul>
   </section>

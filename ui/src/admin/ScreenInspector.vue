@@ -20,7 +20,7 @@ import { useConfirm } from '../shared/useConfirm'
 import { CONTRIBUTORS, MAINTAINER, REGISTRY_REPOSITORY, REPOSITORY, VERSION } from '../shared/credits'
 import { BUILTIN_THEME, useThemes } from '../shared/theme'
 import { ADMIN_GESTURES, DEFAULT_ADMIN_GESTURE, NAV_HEIGHTS, navHeightOf,
-  type AdminGesture, type Background, type NavHeight } from '../shared/types'
+  type AdminGesture, type Background, type Config, type NavHeight, type Screen } from '../shared/types'
 import { useAdminStore } from './store'
 
 const s = useAdminStore()
@@ -44,14 +44,14 @@ const themeOptions = computed(() => {
     .sort((a, b) => (a.id === BUILTIN_THEME ? -1 : b.id === BUILTIN_THEME ? 1 : pick(a.name).localeCompare(pick(b.name))))
     .map((theme) => ({ id: theme.id, label: pick(theme.name), description: pick(theme.description ?? '') }))
   // A config naming a theme whose folder is gone still shows it, rather than an empty select.
-  const current = s.state.config!.display.theme ?? BUILTIN_THEME
+  const current = s.state.config!.theme ?? BUILTIN_THEME
   if (!list.some((o) => o.id === current)) list.push({ id: current, label: current, description: t('admin.inspector.screen.theme.missing') })
   return list
 })
-const currentTheme = computed(() => s.state.config!.display.theme ?? BUILTIN_THEME)
+const currentTheme = computed(() => s.state.config!.theme ?? BUILTIN_THEME)
 const themeNote = computed(() => themeOptions.value.find((o) => o.id === currentTheme.value)?.description ?? '')
 function setTheme(id: string): void {
-  if (id !== currentTheme.value) s.apply((c) => { c.display.theme = id })
+  if (id !== currentTheme.value) s.apply((c) => { c.theme = id })
 }
 
 /** "A, B and C" in the language in force, so a third contributor needs no new string. */
@@ -125,7 +125,10 @@ async function onRestoreFile(event: Event): Promise<void> {
   }
 }
 
-const d = computed(() => s.state.config!.display)
+/** The selected screen's display: every setting below is that screen's, not the others'. */
+const d = computed(() => s.screen.value!.display)
+/** The selected screen inside the config a mutation is handed. */
+const onScreen = (c: Config): Screen => c.screens.find((x) => x.id === s.screen.value!.id)!
 const bg = computed<Background>(() => d.value.background ?? {})
 const navHeight = computed(() => navHeightOf(d.value))
 /** "80 px" and "40 px" read the same in both languages, so the labels need no dictionary entry. */
@@ -142,27 +145,27 @@ const ADMIN_GESTURE_OPTIONS = computed(() => ADMIN_GESTURES.map((value) => ({
  */
 function setAdminGesture(value: string): void {
   const next = value as AdminGesture
-  s.apply((c) => { c.display.adminGesture = next === DEFAULT_ADMIN_GESTURE ? undefined : next })
+  s.apply((c) => { onScreen(c).display.adminGesture = next === DEFAULT_ADMIN_GESTURE ? undefined : next })
 }
 
 const navOpacityPercent = computed(() => Math.round(surfaceOpacity(d.value.navOpacity) * 100))
 /** A solid bar is the default, so it is stored as an absent key rather than an explicit 1. */
 function setNavOpacity(percent: number): void {
   const clamped = Math.min(100, Math.max(0, percent))
-  s.apply((c) => { c.display.navOpacity = clamped === 100 ? undefined : clamped / 100 })
+  s.apply((c) => { onScreen(c).display.navOpacity = clamped === 100 ? undefined : clamped / 100 })
 }
 
 const tileOpacityPercent = computed(() => Math.round(surfaceOpacity(d.value.tileOpacity) * 100))
 /** Solid is the default, so it is stored as an absent key rather than an explicit 1. */
 function setTileOpacity(percent: number): void {
   const clamped = Math.min(100, Math.max(0, percent))
-  s.apply((c) => { c.display.tileOpacity = clamped === 100 ? undefined : clamped / 100 })
+  s.apply((c) => { onScreen(c).display.tileOpacity = clamped === 100 ? undefined : clamped / 100 })
 }
 
 /** An emptied field is NaN, which the schema would reject: ignore it instead of writing it. */
 function setAutoCycle(value: string | number): void {
   const n = Number(value)
-  if (Number.isFinite(n)) s.apply((c) => { c.display.autoCycleSeconds = Math.max(0, Math.round(n)) })
+  if (Number.isFinite(n)) s.apply((c) => { onScreen(c).display.autoCycleSeconds = Math.max(0, Math.round(n)) })
 }
 
 /**
@@ -174,7 +177,7 @@ function setBackground(patch: Partial<Background>): void {
   s.apply((c) => {
     const next = { ...bg.value, ...patch } as Record<string, unknown>
     for (const [k, v] of Object.entries(next)) if (v === undefined) delete next[k]
-    c.display.background = Object.keys(next).length ? (next as Background) : undefined
+    onScreen(c).display.background = Object.keys(next).length ? (next as Background) : undefined
   })
 }
 
@@ -272,7 +275,7 @@ function setBackground(patch: Partial<Background>): void {
   <p v-else class="ro">{{ t('admin.inspector.screen.backup.hint') }}</p>
   <p v-if="restoreError" class="bad">{{ restoreError }}</p>
   <template v-if="restored">
-    <p class="ok">{{ t('admin.inspector.screen.restore.done', { pages: restored.pages, backgrounds: restored.backgrounds }) }}</p>
+    <p class="ok">{{ t('admin.inspector.screen.restore.done', { screens: restored.screens, pages: restored.pages, backgrounds: restored.backgrounds }) }}</p>
     <p v-if="restored.reenterSecrets.length" class="ro">
       {{ t('admin.inspector.screen.restore.reenter') }}
       <strong>{{ restored.reenterSecrets.map((c) => c.name).join(', ') }}</strong>

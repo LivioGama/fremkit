@@ -178,7 +178,7 @@ export const fr: Record<string, string> = {
   'admin.inspector.screen.backup.hint': 'L’archive contient la configuration et les fonds d’écran, jamais les secrets : ceux-ci restent dans le trousseau macOS. Comme ils sont associés à l’identifiant de chaque connexion, une restauration sur ce Mac les retrouve ; sur une autre machine ils devront être ressaisis, et la liste s’affiche après la restauration.',
   'admin.inspector.screen.restore.confirm': 'Restaurer cette sauvegarde remplace le tableau de bord actuel — pages, widgets, connexions et fonds d’écran. Les secrets ne sont pas dans l’archive : ceux qui manquent ensuite seront listés. Continuer ?',
   'admin.inspector.screen.restore.confirmButton': 'Remplacer le tableau de bord ?',
-  'admin.inspector.screen.restore.done': 'Restauré : {pages} page(s), {backgrounds} fond(s) d’écran.',
+  'admin.inspector.screen.restore.done': 'Restauré : {screens} écran(s), {pages} page(s), {backgrounds} fond(s) d’écran.',
   'admin.inspector.screen.restore.nothingToReenter': 'Aucun secret à ressaisir : le trousseau a retrouvé les siens.',
   'admin.inspector.screen.restore.reenter': 'Secrets à ressaisir dans Connexions :',
   'admin.inspector.screen.codexAccount': 'Lire les quotas et l’usage du compte Codex',
@@ -291,6 +291,9 @@ export const fr: Record<string, string> = {
   'admin.store.navFull': 'Plus de place dans la barre pour {id} : les groupes toucheraient les points des pages',
   'admin.store.newPage': 'Nouvelle page',
   'admin.store.pageCopy': '{name} (copie)',
+  'admin.store.lastScreen': 'Il faut au moins un écran',
+  'admin.store.newScreen': 'Nouvel écran',
+  'admin.store.alreadyOnScreen': '{name} est déjà sur cet écran',
 
   'bridge.badRequest': 'requête du widget invalide',
   'bridge.noIcon': 'pas d’icône pour ce site',

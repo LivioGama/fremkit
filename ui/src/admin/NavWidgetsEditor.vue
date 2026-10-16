@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
- * The Screen tab's "Navigation bar widgets" section: the bar's compact widgets in order, each
- * with its own settings folded away, plus a drop-down of every widget whose manifest declares a
- * compact rendering. Everything goes through the store's `apply`, so it is undoable.
+ * The Screen tab's "Navigation bar widgets" section: the selected screen's bar entries in order,
+ * each with its widget's settings folded away, plus a drop-down of every widget whose manifest
+ * declares a compact rendering. Everything goes through the store's `apply`, so it is undoable.
+ * The settings are the shared widget's: a tile of the same widget on another screen follows them.
  */
 import { computed, ref } from 'vue'
 import BaseButton from '../shared/ui/BaseButton.vue'
@@ -12,13 +13,17 @@ import BaseSegmented from '../shared/ui/BaseSegmented.vue'
 import CopySettingsFrom from './CopySettingsFrom.vue'
 import SettingsForm from './SettingsForm.vue'
 import { pick, useI18n } from '../shared/i18n'
-import { NAV_SLOTS, navWidgetsOf, type NavSlot } from '../shared/types'
+import { NAV_SLOTS, navItemsOf, type NavSlot } from '../shared/types'
 import { useAdminStore } from './store'
 
 const s = useAdminStore()
 const { t } = useI18n()
 
-const navWidgets = computed(() => navWidgetsOf(s.state.config!.display))
+/** The bar entries, each with the widget it names; an entry naming no widget shows as unknown. */
+const navWidgets = computed(() => navItemsOf(s.screen.value!).map((item) => {
+  const widget = s.state.config!.widgets[item.instanceId]
+  return { ...item, widgetId: widget?.widgetId ?? '', settings: widget?.settings ?? {} }
+}))
 /** The two clusters, named in the language in force. */
 const SLOT_OPTIONS = computed(() => NAV_SLOTS.map((value) => ({
   value, label: t(`admin.inspector.screen.navWidgets.slot.${value}`),

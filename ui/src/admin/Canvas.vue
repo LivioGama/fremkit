@@ -7,7 +7,7 @@ import NavPopover from '../dashboard/NavPopover.vue'
 import { useNavPopover } from '../dashboard/useNavPopover'
 import { useSwipe } from '../dashboard/useSwipe'
 import EditOverlay from './EditOverlay.vue'
-import { navHeightOf, navWidgetsOf } from '../shared/types'
+import { navHeightOf, navItemsOf, type NavItem } from '../shared/types'
 import { backgroundStyle } from '../shared/background'
 import { useAdminStore } from './store'
 
@@ -19,7 +19,7 @@ const host = ref<HTMLElement>()
  * at both ends the way the dashboard does. Edit mode keeps the pointer for the overlay.
  */
 function go(delta: number): void {
-  const n = s.state.config?.pages.length ?? 0
+  const n = s.screen.value?.pages.length ?? 0
   if (n < 2) return
   s.selectPage((s.state.pageIndex + delta + n) % n)
 }
@@ -31,7 +31,9 @@ const onBoardCancel = (): void => { if (testing.value) boardSwipe.cancel() }
 const onBoardWheel = (e: WheelEvent): void => { if (testing.value) boardSwipe.wheel(e) }
 const scale = ref(1)
 
-const display = computed(() => s.state.config!.display)
+/** The screen being edited: the preview takes its proportions, its bar and its pages. */
+const screen = computed(() => s.screen.value!)
+const display = computed(() => screen.value.display)
 const boardW = computed(() => display.value.cols * display.value.cell)
 const boardH = computed(() => display.value.rows * display.value.cell)
 const navH = computed(() => navHeightOf(display.value))
@@ -65,6 +67,11 @@ const popover = useNavPopover({
 // The preview's own page change, and leaving Test mode, both take the popover with them.
 watch(() => s.state.pageIndex, () => popover.close())
 watch(() => s.state.mode, () => popover.close())
+watch(() => s.state.screenId, () => popover.close())
+// Switching screens changes the board's size, and the ResizeObserver only watches the host.
+watch(() => [boardW.value, totalH.value], () => measure())
+
+const manifestOf = (item: NavItem) => s.state.manifests[s.state.config!.widgets[item.instanceId]?.widgetId ?? '']
 
 function measure(): void {
   const el = host.value
@@ -85,16 +92,17 @@ onUnmounted(() => observer?.disconnect())
   <div class="host" ref="host">
     <div class="board" ref="board" :style="boardStyle"
       @pointerdown="onBoardDown" @pointerup="onBoardUp" @pointercancel="onBoardCancel" @wheel="onBoardWheel">
-      <PageView v-if="s.page.value" :page="s.page.value" :display="display" :manifests="s.state.manifests" :edit="s.state.mode === 'edit'" />
-      <NavBar :pages="s.state.config!.pages" :active="s.state.pageIndex" :height="navH"
-        :opacity="display.navOpacity" :nav-widgets="navWidgetsOf(display)" :manifests="s.state.manifests"
+      <PageView v-if="s.page.value" :page="s.page.value" :config="s.state.config!" :display="display" :manifests="s.state.manifests" :edit="s.state.mode === 'edit'" />
+      <NavBar :pages="screen.pages" :active="s.state.pageIndex" :height="navH"
+        :opacity="display.navOpacity" :nav-items="navItemsOf(screen)" :widgets="s.state.config!.widgets" :manifests="s.state.manifests"
         :cell="display.cell" :edit="s.state.mode === 'edit'" @select="s.selectPage"
         @swipe="go" @tap="popover.toggle" />
       <!-- Test mode only: in Edit mode the overlay is inert, so no tap ever reaches here. -->
       <NavPopover v-if="popover.open.value"
-        :key="popover.open.value.widget.instanceId"
-        :nav-widget="popover.open.value.widget"
-        :manifest="s.state.manifests[popover.open.value.widget.widgetId]"
+        :key="popover.open.value.item.instanceId"
+        :item="popover.open.value.item"
+        :widgets="s.state.config!.widgets"
+        :manifest="manifestOf(popover.open.value.item)"
         :cell="display.cell"
         :anchor="popover.open.value.anchor"
         :screen="popover.open.value.screen"

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createAdminStore, SAVE_DEBOUNCE_MS, UNDO_LIMIT, type StoreDeps } from '../src/admin/store'
-import type { Config, WidgetManifest, WidgetsResponse } from '../src/shared/types'
-import { navWidgetsOf } from '../src/shared/types'
+import type { Config, Placement, Widget, WidgetManifest, WidgetsResponse } from '../src/shared/types'
 
 /** A promise this test controls: resolve()/reject() it whenever the scenario needs the "server" to answer. */
 function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void } {
@@ -24,15 +23,37 @@ const clockManifest: WidgetManifest = {
 
 function config(): Config {
   return {
-    version: 3,
-    display: { cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0 },
+    version: 4,
     connections: [],
     secrets: { backend: 'file' },
     privacy: { claudeAccountUsage: false, showAccountEmail: false, codexAccount: false, codexHistorySources: [], macmonTemperature: false },
-    pages: [{ id: 'home', name: 'Accueil', widgets: [
-      { instanceId: 'clock-1', widgetId: 'clock', x: 0, y: 0, w: 16, h: 4, showTitle: true, settings: {} },
-    ] }],
+    widgets: { 'clock-1': { widgetId: 'clock', showTitle: true, settings: {} } },
+    screens: [{
+      id: 'edge', name: 'Xeneon Edge', kind: 'edge',
+      display: { cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0 },
+      nav: [],
+      pages: [{ id: 'home', name: 'Accueil', items: [{ instanceId: 'clock-1', x: 0, y: 0, w: 16, h: 4 }] }],
+    }],
   }
+}
+
+/**
+ * The Edge plus a 13-inch iPad in landscape (34 × 23 under an 80 px bar). `clock-1` is on both,
+ * smaller on the iPad; `cpu-1` is on the iPad only.
+ */
+function twoScreens(): Config {
+  const cfg = config()
+  cfg.widgets['cpu-1'] = { widgetId: 'cpu', showTitle: true, settings: {} }
+  cfg.screens.push({
+    id: 'ipad', name: 'iPad', kind: 'device',
+    display: { cols: 34, rows: 23, cell: 40, autoCycleSeconds: 0, orientation: 'landscape', viewport: { width: 1376, height: 1032 } },
+    nav: [],
+    pages: [{ id: 'main', name: 'Main', items: [
+      { instanceId: 'clock-1', x: 0, y: 0, w: 8, h: 4 },
+      { instanceId: 'cpu-1', x: 8, y: 0, w: 8, h: 4 },
+    ] }],
+  })
+  return cfg
 }
 
 /** The bar only takes widgets whose manifest declares a compact rendering. */
@@ -55,6 +76,19 @@ function make(apiOverrides: Partial<StoreDeps['api']> = {}) {
   const store = createAdminStore({ api, subscribeConfig: (cb) => { push = cb; return () => { push = null } } })
   return { store, api, emit: (c: Config) => push?.(c) }
 }
+type Store = ReturnType<typeof make>['store']
+
+const cpuManifest: WidgetManifest = { ...clockManifest, id: 'cpu', name: 'CPU' }
+function makeTwoScreens(mutate: (c: Config) => void = () => {}) {
+  return make({
+    getConfig: vi.fn(async () => { const c = twoScreens(); mutate(c); return c }),
+    getWidgets: vi.fn(async (): Promise<WidgetsResponse> => ({ widgets: { clock: clockManifest, cpu: cpuManifest }, errors: [], sources: {}, asks: {}, sdk: 1 })),
+  })
+}
+
+/** The placements of one page of one screen, as stored. */
+const items = (store: Store, screen = 0, page = 0): Placement[] => store.state.config!.screens[screen].pages[page].items
+const widgetsOf = (store: Store): Record<string, Widget> => store.state.config!.widgets
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -63,21 +97,21 @@ describe('saving', () => {
   it('groups several mutations into a single PUT after the debounce', async () => {
     const { store, api } = make()
     await store.load()
-    store.apply((c) => { c.pages[0].widgets[0].x = 4 })
-    store.apply((c) => { c.pages[0].widgets[0].x = 8 })
-    store.apply((c) => { c.pages[0].widgets[0].x = 12 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 4 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 8 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 12 })
     expect(store.state.status).toBe('saving')
     expect(api.putConfig).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
     expect(api.putConfig).toHaveBeenCalledTimes(1)
-    expect((api.putConfig as ReturnType<typeof vi.fn>).mock.calls[0][0].pages[0].widgets[0].x).toBe(12)
+    expect((api.putConfig as ReturnType<typeof vi.fn>).mock.calls[0][0].screens[0].pages[0].items[0].x).toBe(12)
     expect(store.state.status).toBe('saved')
   })
 
   it('flush sends the pending change immediately', async () => {
     const { store, api } = make()
     await store.load()
-    store.apply((c) => { c.pages[0].name = 'Deux' })
+    store.apply((c) => { c.screens[0].pages[0].name = 'Deux' })
     await store.flush()
     expect(api.putConfig).toHaveBeenCalledTimes(1)
     expect(store.state.status).toBe('saved')
@@ -92,11 +126,11 @@ describe('single-flight', () => {
     const { store, api } = make({ putConfig })
     await store.load()
 
-    store.apply((c) => { c.pages[0].widgets[0].x = 4 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 4 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
     expect(api.putConfig).toHaveBeenCalledTimes(1) // first PUT started, still unresolved
 
-    store.apply((c) => { c.pages[0].widgets[0].x = 8 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 8 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
     // the debounce for the newer edit elapsed, but the first PUT is still in flight:
     // no second, concurrent PUT may start yet
@@ -105,7 +139,7 @@ describe('single-flight', () => {
     first.resolve(config())
     await tick()
     expect(api.putConfig).toHaveBeenCalledTimes(2)
-    expect((api.putConfig as ReturnType<typeof vi.fn>).mock.calls[1][0].pages[0].widgets[0].x).toBe(8)
+    expect((api.putConfig as ReturnType<typeof vi.fn>).mock.calls[1][0].screens[0].pages[0].items[0].x).toBe(8)
     await tick()
     expect(store.state.status).toBe('saved')
   })
@@ -125,9 +159,9 @@ describe('single-flight', () => {
     await store.load()
     const getConfigCallsAfterLoad = (api.getConfig as ReturnType<typeof vi.fn>).mock.calls.length
 
-    store.apply((c) => { c.pages[0].widgets[0].x = 4 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 4 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
-    store.apply((c) => { c.pages[0].widgets[0].x = 8 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 8 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
     expect(api.putConfig).toHaveBeenCalledTimes(1)
 
@@ -135,12 +169,12 @@ describe('single-flight', () => {
     await tick()
 
     // the newer edit (x=8) must survive: no reload clobbers it
-    expect(store.state.config!.pages[0].widgets[0].x).toBe(8)
+    expect(store.state.config!.screens[0].pages[0].items[0].x).toBe(8)
     expect(store.state.status).toBe('error')
     expect(store.state.toast).toBe('conflit')
     expect((api.getConfig as ReturnType<typeof vi.fn>).mock.calls.length).toBe(getConfigCallsAfterLoad) // no recovery reload
     expect(api.putConfig).toHaveBeenCalledTimes(2) // one retry already in flight, carrying the latest config
-    expect((api.putConfig as ReturnType<typeof vi.fn>).mock.calls[1][0].pages[0].widgets[0].x).toBe(8)
+    expect((api.putConfig as ReturnType<typeof vi.fn>).mock.calls[1][0].screens[0].pages[0].items[0].x).toBe(8)
 
     second.resolve(config())
     await tick()
@@ -153,17 +187,17 @@ describe('single-flight', () => {
     let calls = 0
     const putConfig = vi.fn(async (c: Config) => {
       calls++
-      order.push(c.pages[0].widgets[0].x)
+      order.push(c.screens[0].pages[0].items[0].x)
       return calls === 1 ? first.promise : c
     })
     const { store, api } = make({ putConfig })
     await store.load()
 
-    store.apply((c) => { c.pages[0].widgets[0].x = 4 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 4 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
-    store.apply((c) => { c.pages[0].widgets[0].x = 8 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 8 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
-    store.apply((c) => { c.pages[0].widgets[0].x = 12 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 12 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
     // the second PUT only ever starts once the first settles: still just the original call
     expect(api.putConfig).toHaveBeenCalledTimes(1)
@@ -188,15 +222,15 @@ describe('single-flight', () => {
     const second = deferred<Config>()
     ;(getConfig as ReturnType<typeof vi.fn>).mockImplementation(async () => second.promise)
 
-    store.apply((c) => { c.pages[0].widgets[0].x = 4 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 4 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
     await tick()
     // the PUT failed and the recovery GET is in flight; the user keeps editing meanwhile
-    store.apply((c) => { c.pages[0].widgets[0].x = 24 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 24 })
     second.resolve(config()) // the server still has x = 0
     await tick()
 
-    expect(store.state.config!.pages[0].widgets[0].x).toBe(24)
+    expect(store.state.config!.screens[0].pages[0].items[0].x).toBe(24)
     expect(store.state.status).toBe('error')
     expect(store.state.toast).toBe('boum')
     // the edit's own debounce still fires, so the pending change is retried
@@ -213,12 +247,12 @@ describe('degraded server', () => {
     await store.load()
     expect(store.state.degraded).toBe(true)
 
-    store.apply((c) => { c.pages[0].widgets[0].x = 8 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 8 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS * 4)
     expect(api.putConfig).not.toHaveBeenCalled()
     expect(store.state.status).toBe('error')
     expect(store.state.toast).toMatch(/illisible/)
-    expect(store.state.config!.pages[0].widgets[0].x).toBe(8) // the local edit is kept
+    expect(store.state.config!.screens[0].pages[0].items[0].x).toBe(8) // the local edit is kept
   })
 
   it('a refused save raises the banner and never reloads over the local config', async () => {
@@ -231,13 +265,13 @@ describe('degraded server', () => {
     const getConfigCalls = (api.getConfig as ReturnType<typeof vi.fn>).mock.calls.length
     degraded = true
 
-    store.apply((c) => { c.pages[0].widgets[0].x = 12 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 12 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
     await tick()
 
     expect(store.state.degraded).toBe(true)
     expect(store.state.status).toBe('error')
-    expect(store.state.config!.pages[0].widgets[0].x).toBe(12)
+    expect(store.state.config!.screens[0].pages[0].items[0].x).toBe(12)
     expect((api.getConfig as ReturnType<typeof vi.fn>).mock.calls.length).toBe(getConfigCalls)
   })
 })
@@ -246,18 +280,18 @@ describe('undo / redo', () => {
   it('walks back and forward through the snapshots', async () => {
     const { store } = make()
     await store.load()
-    store.apply((c) => { c.pages[0].widgets[0].x = 8 })
-    store.apply((c) => { c.pages[0].widgets[0].x = 16 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 8 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 16 })
     expect(store.canUndo.value).toBe(true)
     store.undo()
-    expect(store.state.config!.pages[0].widgets[0].x).toBe(8)
+    expect(store.state.config!.screens[0].pages[0].items[0].x).toBe(8)
     store.undo()
-    expect(store.state.config!.pages[0].widgets[0].x).toBe(0)
+    expect(store.state.config!.screens[0].pages[0].items[0].x).toBe(0)
     expect(store.canUndo.value).toBe(false)
     store.redo()
-    expect(store.state.config!.pages[0].widgets[0].x).toBe(8)
+    expect(store.state.config!.screens[0].pages[0].items[0].x).toBe(8)
     store.redo()
-    expect(store.state.config!.pages[0].widgets[0].x).toBe(16)
+    expect(store.state.config!.screens[0].pages[0].items[0].x).toBe(16)
     expect(store.canRedo.value).toBe(false)
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
@@ -265,12 +299,12 @@ describe('undo / redo', () => {
   it('a new mutation clears the redo stack and the stack is capped', async () => {
     const { store } = make()
     await store.load()
-    store.apply((c) => { c.pages[0].widgets[0].x = 8 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 8 })
     store.undo()
     expect(store.canRedo.value).toBe(true)
-    store.apply((c) => { c.pages[0].widgets[0].y = 4 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].y = 4 })
     expect(store.canRedo.value).toBe(false)
-    for (let i = 0; i < UNDO_LIMIT + 10; i++) store.apply((c) => { c.pages[0].widgets[0].x = i % 8 })
+    for (let i = 0; i < UNDO_LIMIT + 10; i++) store.apply((c) => { c.screens[0].pages[0].items[0].x = i % 8 })
     let undone = 0
     while (store.canUndo.value) { store.undo(); undone++ }
     expect(undone).toBe(UNDO_LIMIT)
@@ -280,15 +314,15 @@ describe('undo / redo', () => {
   it('gives a new tile the screen\'s default opacity, and leaves the placed ones alone', async () => {
     const { store } = make()
     await store.load()
-    store.apply((c) => { c.display.tileOpacity = 0.5 })
+    store.apply((c) => { c.screens[0].display.tileOpacity = 0.5 })
     store.addWidget('clock')
-    const widgets = store.state.config!.pages[0].widgets
-    expect(widgets[1].opacity).toBe(0.5)
-    expect(widgets[0].opacity).toBeUndefined()
+    const added = items(store)[1].instanceId
+    expect(widgetsOf(store)[added].opacity).toBe(0.5)
+    expect(widgetsOf(store)['clock-1'].opacity).toBeUndefined()
     // Solid is the default and is stored as an absent key, so a tile added then carries none.
-    store.apply((c) => { c.display.tileOpacity = undefined })
+    store.apply((c) => { c.screens[0].display.tileOpacity = undefined })
     store.addWidget('clock')
-    expect(store.state.config!.pages[0].widgets[2].opacity).toBeUndefined()
+    expect(widgetsOf(store)[items(store)[2].instanceId].opacity).toBeUndefined()
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
@@ -296,7 +330,7 @@ describe('undo / redo', () => {
     const { store } = make()
     await store.load()
     store.addWidget('clock')
-    const added = store.state.config!.pages[0].widgets[1].instanceId
+    const added = items(store)[1].instanceId
     expect(store.state.selectedId).toBe(added)
     store.undo()
     expect(store.state.selectedId).toBeNull()
@@ -307,19 +341,19 @@ describe('undo / redo', () => {
 describe('server errors', () => {
   it('shows the message, clears the undo stack and reloads the server config, then settles back to saved', async () => {
     const remote = config()
-    remote.pages[0].name = 'Depuis le serveur'
+    remote.screens[0].pages[0].name = 'Depuis le serveur'
     const { store } = make({
       putConfig: vi.fn(async () => { throw new Error('page home: clock-1 hors grille') }),
       getConfig: vi.fn(async () => remote),
     })
     await store.load()
-    store.apply((c) => { c.pages[0].widgets[0].x = 60 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 60 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
     // The recovery reload succeeded: local now matches the server, so status goes back to
     // 'saved' (an incoming socket push must not be ignored forever because of a past error).
     expect(store.state.status).toBe('saved')
     expect(store.state.toast).toBe('page home: clock-1 hors grille')
-    expect(store.state.config!.pages[0].name).toBe('Depuis le serveur')
+    expect(store.state.config!.screens[0].pages[0].name).toBe('Depuis le serveur')
     expect(store.canUndo.value).toBe(false)
   })
 
@@ -329,7 +363,7 @@ describe('server errors', () => {
       getConfig: vi.fn(async () => config()),
     })
     await store.load()
-    store.apply((c) => { c.pages[0].widgets[0].x = 60 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 60 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
     expect(store.state.toast).toBe('boom')
   })
@@ -346,11 +380,11 @@ describe('server errors', () => {
       }),
     })
     await store.load()
-    store.apply((c) => { c.pages[0].widgets[0].x = 60 })
+    store.apply((c) => { c.screens[0].pages[0].items[0].x = 60 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
     expect(store.state.status).toBe('error')
     expect(store.state.toast).toBe('page home: clock-1 hors grille')
-    expect(store.state.config!.pages[0].widgets[0].x).toBe(60)
+    expect(store.state.config!.screens[0].pages[0].items[0].x).toBe(60)
     expect(store.canUndo.value).toBe(false)
   })
 })
@@ -360,48 +394,68 @@ describe('remote config', () => {
     const { store, emit } = make()
     await store.load()
     const remote = config()
-    remote.pages[0].name = 'Autre onglet'
+    remote.screens[0].pages[0].name = 'Autre onglet'
     emit(remote)
-    expect(store.state.config!.pages[0].name).toBe('Autre onglet')
+    expect(store.state.config!.screens[0].pages[0].name).toBe('Autre onglet')
   })
 
   it('ignores a pushed config while a save is scheduled', async () => {
     const { store, emit } = make()
     await store.load()
-    store.apply((c) => { c.pages[0].name = 'Saisie en cours' })
+    store.apply((c) => { c.screens[0].pages[0].name = 'Saisie en cours' })
     emit(config())
-    expect(store.state.config!.pages[0].name).toBe('Saisie en cours')
+    expect(store.state.config!.screens[0].pages[0].name).toBe('Saisie en cours')
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('falls back to the Edge screen when a pushed config drops the one being edited', async () => {
+    const { store, emit } = makeTwoScreens()
+    await store.load()
+    store.selectScreen('ipad')
+    store.selectPage(0)
+    emit(config())
+    expect(store.state.screenId).toBe('edge')
+    expect(store.state.pageIndex).toBe(0)
+    expect(store.screen.value!.id).toBe('edge')
   })
 })
 
 describe('widgets', () => {
-  it('addWidget drops the widget in the first free spot and selects it', async () => {
+  it('addWidget creates a widget and its placement, in the first free spot, and selects it', async () => {
     const { store } = make()
     await store.load()
     store.addWidget('clock')
-    expect(store.state.config!.pages[0].widgets[1]).toMatchObject({ widgetId: 'clock', x: 16, y: 0, w: 16, h: 4, showTitle: true })
+    const placed = items(store)[1]
+    expect(placed).toMatchObject({ x: 16, y: 0, w: 16, h: 4 })
+    expect(widgetsOf(store)[placed.instanceId]).toMatchObject({ widgetId: 'clock', showTitle: true, settings: {} })
+    expect(store.state.selectedId).toBe(placed.instanceId)
+    expect(store.selected.value).toMatchObject({ instanceId: placed.instanceId, widgetId: 'clock', x: 16 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
   it('addWidget reports when the page is full', async () => {
     const { store } = make()
     await store.load()
-    store.apply((c) => { c.pages[0].widgets[0] = { ...c.pages[0].widgets[0], w: 64, h: 16 } })
+    store.apply((c) => { c.screens[0].pages[0].items[0] = { ...c.screens[0].pages[0].items[0], w: 64, h: 16 } })
     store.addWidget('clock')
     expect(store.state.toast).toBe('Pas de place libre sur cette page')
-    expect(store.state.config!.pages[0].widgets).toHaveLength(1)
+    expect(items(store)).toHaveLength(1)
+    expect(Object.keys(widgetsOf(store))).toEqual(['clock-1'])
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
-  it('duplicateWidget copies the appearance and settings next to the original', async () => {
+  it('duplicateWidget makes a new widget with the same appearance and settings, next to the original', async () => {
     const { store } = make()
     await store.load()
     store.updateInstance('clock-1', { accentMode: 'fill', bgColor: '#123456', title: 'Paris', settings: { seconds: true } })
     store.duplicateWidget('clock-1')
-    const copy = store.state.config!.pages[0].widgets[1]
-    expect(copy).toMatchObject({ widgetId: 'clock', x: 16, y: 0, w: 16, h: 4, accentMode: 'fill', bgColor: '#123456', title: 'Paris', settings: { seconds: true } })
+    const copy = items(store)[1]
+    expect(copy).toMatchObject({ x: 16, y: 0, w: 16, h: 4 })
     expect(copy.instanceId).not.toBe('clock-1')
+    expect(widgetsOf(store)[copy.instanceId]).toMatchObject({ widgetId: 'clock', accentMode: 'fill', bgColor: '#123456', title: 'Paris', settings: { seconds: true } })
+    // A copy, not a reference: editing one leaves the other alone.
+    store.updateInstance(copy.instanceId, { settings: { seconds: false } })
+    expect(widgetsOf(store)['clock-1'].settings).toEqual({ seconds: true })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
@@ -411,29 +465,65 @@ describe('widgets', () => {
     expect(store.others()).toEqual([{ x: 0, y: 0, w: 16, h: 4 }])
     expect(store.others('clock-1')).toEqual([])
   })
+
+  it('updateInstance keeps geometry out of the shared widget', async () => {
+    const { store } = make()
+    await store.load()
+    store.updateInstance('clock-1', { x: 4, title: 'Paris' })
+    expect(items(store)[0]).toEqual({ instanceId: 'clock-1', x: 4, y: 0, w: 16, h: 4 })
+    expect(widgetsOf(store)['clock-1']).toEqual({ widgetId: 'clock', showTitle: true, settings: {}, title: 'Paris' })
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+})
+
+describe('pages', () => {
+  it('duplicatePage copies its tiles as new widgets', async () => {
+    const { store } = make()
+    await store.load()
+    store.updateInstance('clock-1', { settings: { seconds: true } })
+    store.duplicatePage(0)
+    expect(store.state.pageIndex).toBe(1)
+    const copy = items(store, 0, 1)[0]
+    expect(copy).toMatchObject({ x: 0, y: 0, w: 16, h: 4 })
+    expect(copy.instanceId).not.toBe('clock-1')
+    expect(widgetsOf(store)[copy.instanceId]).toMatchObject({ widgetId: 'clock', settings: { seconds: true } })
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('removePage drops the widgets it alone showed, and keeps the shared ones', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.addPage()
+    store.addWidget('clock')
+    const only = items(store, 0, 1)[0].instanceId
+    store.placeExisting('cpu-1')
+    store.removePage(1)
+    expect(store.state.config!.screens[0].pages).toHaveLength(1)
+    expect(widgetsOf(store)[only]).toBeUndefined()
+    expect(widgetsOf(store)['cpu-1']).toBeDefined()
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
 })
 
 describe('moving a tile to another page', () => {
   /** The same fixture with an empty second page to move the clock onto. */
   const twoPages = (): Config => {
     const cfg = config()
-    cfg.pages.push({ id: 'two', name: 'Deux', widgets: [] })
+    cfg.screens[0].pages.push({ id: 'two', name: 'Deux', items: [] })
     return cfg
   }
   const makeTwo = (mutate: (c: Config) => void = () => {}) => make({
     getConfig: vi.fn(async () => { const c = twoPages(); mutate(c); return c }),
   })
 
-  it('carries the whole instance over and follows it to the target page', async () => {
+  it('moves the placement and follows it to the target page', async () => {
     const { store } = makeTwo()
     await store.load()
-    store.updateInstance('clock-1', { accentMode: 'fill', bgColor: '#123456', title: 'Paris', settings: { seconds: true } })
+    store.updateInstance('clock-1', { accentMode: 'fill', title: 'Paris', settings: { seconds: true } })
     store.moveWidget('clock-1', 1)
-    expect(store.state.config!.pages[0].widgets).toHaveLength(0)
-    expect(store.state.config!.pages[1].widgets[0]).toMatchObject({
-      instanceId: 'clock-1', widgetId: 'clock', x: 0, y: 0, w: 16, h: 4,
-      accentMode: 'fill', bgColor: '#123456', title: 'Paris', settings: { seconds: true },
-    })
+    expect(items(store, 0, 0)).toHaveLength(0)
+    expect(items(store, 0, 1)[0]).toEqual({ instanceId: 'clock-1', x: 0, y: 0, w: 16, h: 4 })
+    expect(widgetsOf(store)['clock-1']).toMatchObject({ accentMode: 'fill', title: 'Paris', settings: { seconds: true } })
     expect(store.state.pageIndex).toBe(1)
     expect(store.state.selectedId).toBe('clock-1')
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
@@ -441,14 +531,15 @@ describe('moving a tile to another page', () => {
 
   it('refuses a full target page and changes nothing at all', async () => {
     const { store } = makeTwo((c) => {
-      c.pages[1].widgets.push({ instanceId: 'clock-2', widgetId: 'clock', x: 0, y: 0, w: 64, h: 16, showTitle: true, settings: {} })
+      c.widgets['clock-2'] = { widgetId: 'clock', showTitle: true, settings: {} }
+      c.screens[0].pages[1].items.push({ instanceId: 'clock-2', x: 0, y: 0, w: 64, h: 16 })
     })
     await store.load()
     expect(store.canUndo.value).toBe(false)
     store.moveWidget('clock-1', 1)
     expect(store.state.toast).toBe('Pas de place sur Deux pour Horloge')
-    expect(store.state.config!.pages[0].widgets).toHaveLength(1)
-    expect(store.state.config!.pages[1].widgets).toHaveLength(1)
+    expect(items(store, 0, 0)).toHaveLength(1)
+    expect(items(store, 0, 1)).toHaveLength(1)
     expect(store.state.pageIndex).toBe(0)
     // Nothing was applied, so the move left no snapshot behind either.
     expect(store.canUndo.value).toBe(false)
@@ -460,8 +551,8 @@ describe('moving a tile to another page', () => {
     await store.load()
     store.moveWidget('clock-1', 1)
     store.undo()
-    expect(store.state.config!.pages[0].widgets.map((w) => w.instanceId)).toEqual(['clock-1'])
-    expect(store.state.config!.pages[1].widgets).toHaveLength(0)
+    expect(items(store, 0, 0).map((p) => p.instanceId)).toEqual(['clock-1'])
+    expect(items(store, 0, 1)).toHaveLength(0)
     expect(store.canUndo.value).toBe(false)
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
@@ -472,15 +563,15 @@ describe('copying settings from another instance', () => {
     const { store } = make()
     await store.load()
     store.duplicateWidget('clock-1')
-    const target = store.state.config!.pages[0].widgets[1].instanceId
+    const target = items(store)[1].instanceId
     store.updateInstance('clock-1', { settings: { seconds: true, city: 'Paris' } })
-    const source = store.state.config!.pages[0].widgets[0]
+    const source = widgetsOf(store)['clock-1']
     // What CopySettingsFrom emits: the whole settings object, through the usual update path.
     store.updateInstance(target, { settings: { ...source.settings } })
-    expect(store.state.config!.pages[0].widgets[1].settings).toEqual({ seconds: true, city: 'Paris' })
+    expect(widgetsOf(store)[target].settings).toEqual({ seconds: true, city: 'Paris' })
     store.undo()
-    expect(store.state.config!.pages[0].widgets[1].settings).toEqual({})
-    expect(store.state.config!.pages[0].widgets[0].settings).toEqual({ seconds: true, city: 'Paris' })
+    expect(widgetsOf(store)[target].settings).toEqual({})
+    expect(widgetsOf(store)['clock-1'].settings).toEqual({ seconds: true, city: 'Paris' })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
@@ -488,13 +579,13 @@ describe('copying settings from another instance', () => {
     const { store } = make({ getWidgets: vi.fn(async () => barWidgets) })
     await store.load()
     store.addNavWidget('clock')
-    const navId = navWidgetsOf(store.state.config!.display)[0].instanceId
+    const navId = store.screen.value!.nav[0].instanceId
     store.updateInstance('clock-1', { settings: { compactDate: true, seconds: true } })
-    const source = store.state.config!.pages[0].widgets[0]
+    const source = widgetsOf(store)['clock-1']
     store.updateNavWidget(navId, { settings: { ...source.settings } })
-    expect(navWidgetsOf(store.state.config!.display)[0].settings).toEqual({ compactDate: true, seconds: true })
+    expect(widgetsOf(store)[navId].settings).toEqual({ compactDate: true, seconds: true })
     store.undo()
-    expect(navWidgetsOf(store.state.config!.display)[0].settings).toEqual({})
+    expect(widgetsOf(store)[navId].settings).toEqual({})
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 })
@@ -504,10 +595,10 @@ describe('nav bar height', () => {
     const { store } = make()
     await store.load()
     store.setNavHeight(40)
-    expect(store.state.config!.display).toMatchObject({ navHeight: 40, rows: 17 })
+    expect(store.state.config!.screens[0].display).toMatchObject({ navHeight: 40, rows: 17 })
     store.setNavHeight(80)
-    expect(store.state.config!.display.navHeight).toBeUndefined()
-    expect(store.state.config!.display.rows).toBe(16)
+    expect(store.state.config!.screens[0].display.navHeight).toBeUndefined()
+    expect(store.state.config!.screens[0].display.rows).toBe(16)
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
@@ -518,7 +609,7 @@ describe('nav bar height', () => {
     store.updateInstance('clock-1', { y: 13, h: 4 })
     store.setNavHeight(80)
     expect(store.state.toast).toBe('Des widgets occupent la dernière ligne')
-    expect(store.state.config!.display).toMatchObject({ navHeight: 40, rows: 17 })
+    expect(store.state.config!.screens[0].display).toMatchObject({ navHeight: 40, rows: 17 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
@@ -527,28 +618,43 @@ describe('nav bar height', () => {
     await store.load()
     store.setNavHeight(40)
     store.duplicatePage(0)
-    store.updateInstance(store.state.config!.pages[1].widgets[0].instanceId, { y: 16, h: 1 })
+    store.updateInstance(items(store, 0, 1)[0].instanceId, { y: 16, h: 1 })
     store.selectPage(0)
     store.setNavHeight(80)
     expect(store.state.toast).toBe('Des widgets occupent la dernière ligne')
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('setNavHeight on a device screen recomputes rows from its viewport', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.selectScreen('ipad')
+    // 1376 × 1032: (1032 − 40) / 40 = 24 rows, (1032 − 80) / 40 = 23.
+    store.setNavHeight(40)
+    expect(store.state.config!.screens[1].display).toMatchObject({ navHeight: 40, rows: 24 })
+    store.setNavHeight(80)
+    expect(store.state.config!.screens[1].display.rows).toBe(23)
+    expect(store.state.config!.screens[1].display.navHeight).toBeUndefined()
+    // The Edge was not touched.
+    expect(store.state.config!.screens[0].display).toMatchObject({ rows: 16 })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 })
 
 describe('navigation bar widgets', () => {
   const makeBar = () => make({ getWidgets: vi.fn(async () => barWidgets) })
-  const bar = (store: ReturnType<typeof make>['store']) => navWidgetsOf(store.state.config!.display)
-  const ids = (store: ReturnType<typeof make>['store']) => bar(store).map((w) => w.instanceId)
+  const bar = (store: Store) => store.state.config!.screens[0].nav
+  const ids = (store: Store) => bar(store).map((w) => w.instanceId)
 
-  it('adds a widget that declares a compact rendering, on the left by default', async () => {
+  it('adds a new widget that declares a compact rendering, on the left by default', async () => {
     const { store } = makeBar()
     await store.load()
-    // An empty bar is an absent key, not an empty array.
-    expect(store.state.config!.display.navWidgets).toBeUndefined()
+    expect(bar(store)).toEqual([])
     store.addNavWidget('clock')
     const [added] = bar(store)
-    expect(added).toMatchObject({ widgetId: 'clock', slot: 'left', settings: {} })
+    expect(added).toEqual({ instanceId: added.instanceId, slot: 'left' })
     expect(added.instanceId).toMatch(/^clock-/)
+    expect(widgetsOf(store)[added.instanceId]).toMatchObject({ widgetId: 'clock', settings: {} })
     expect(store.canUndo.value).toBe(true)
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
@@ -608,13 +714,14 @@ describe('navigation bar widgets', () => {
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
-  it('patches the settings of one entry', async () => {
+  it('patches the settings of the shared widget, and the slot of the bar item', async () => {
     const { store } = makeBar()
     await store.load()
     store.addNavWidget('clock')
     const [id] = ids(store)
-    store.updateNavWidget(id, { settings: { compactDate: true } })
-    expect(bar(store)[0].settings).toEqual({ compactDate: true })
+    store.updateNavWidget(id, { settings: { compactDate: true }, slot: 'right' })
+    expect(widgetsOf(store)[id].settings).toEqual({ compactDate: true })
+    expect(bar(store)[0]).toEqual({ instanceId: id, slot: 'right' })
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
@@ -628,11 +735,11 @@ describe('navigation bar widgets', () => {
     expect(store.canUndo.value).toBe(true)
     // Off is stored as a missing key, so an untouched bar keeps the config it had.
     store.updateNavWidget(id, { popup: undefined })
-    expect(bar(store)[0].popup).toBeUndefined()
+    expect('popup' in bar(store)[0]).toBe(false)
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
-  it('removes an entry, and drops the key once the bar is empty', async () => {
+  it('removes an entry, and its widget with it when the bar was its only place', async () => {
     const { store } = makeBar()
     await store.load()
     store.addNavWidget('clock')
@@ -640,18 +747,229 @@ describe('navigation bar widgets', () => {
     const [first, second] = ids(store)
     store.removeNavWidget(second)
     expect(ids(store)).toEqual([first])
+    expect(widgetsOf(store)[second]).toBeUndefined()
     store.removeNavWidget(first)
-    expect(store.state.config!.display.navWidgets).toBeUndefined()
+    expect(bar(store)).toEqual([])
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
-  it('undoes an addition back to an absent key', async () => {
+  it('undoes an addition, widget included', async () => {
     const { store } = makeBar()
     await store.load()
     store.addNavWidget('clock')
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
     store.undo()
-    expect(store.state.config!.display.navWidgets).toBeUndefined()
+    expect(bar(store)).toEqual([])
+    expect(Object.keys(widgetsOf(store))).toEqual(['clock-1'])
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+})
+
+describe('screens', () => {
+  it('starts on the Edge screen and keeps the selected one across saves', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    expect(store.state.screenId).toBe('edge')
+    store.selectScreen('ipad')
+    expect(store.screen.value!.id).toBe('ipad')
+    expect(store.grid.value).toEqual({ cols: 34, rows: 23 })
+    store.updateInstance('clock-1', { x: 2 })
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+    expect(store.state.screenId).toBe('ipad')
+  })
+
+  it('selectScreen goes to its first page and drops the selection; an unknown id is ignored', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.select('clock-1')
+    store.selectScreen('ipad')
+    expect(store.state.pageIndex).toBe(0)
+    expect(store.state.selectedId).toBeNull()
+    store.selectScreen('nowhere')
+    expect(store.state.screenId).toBe('ipad')
+  })
+
+  it('updateInstance of a setting shows on both screens', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.selectScreen('ipad')
+    store.select('clock-1')
+    store.updateInstance('clock-1', { settings: { seconds: true }, title: 'Paris' })
+    expect(store.selected.value).toMatchObject({ settings: { seconds: true }, title: 'Paris', x: 0, w: 8 })
+    store.selectScreen('edge')
+    store.select('clock-1')
+    expect(store.selected.value).toMatchObject({ settings: { seconds: true }, title: 'Paris', x: 0, w: 16 })
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('updateInstance of geometry moves only this screen\'s placement', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.selectScreen('ipad')
+    store.updateInstance('clock-1', { x: 10, y: 2 })
+    expect(items(store, 1)[0]).toEqual({ instanceId: 'clock-1', x: 10, y: 2, w: 8, h: 4 })
+    expect(items(store, 0)[0]).toEqual({ instanceId: 'clock-1', x: 0, y: 0, w: 16, h: 4 })
+    expect(widgetsOf(store)['clock-1']).not.toHaveProperty('x')
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('removeFromScreen keeps a widget shown elsewhere', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.selectScreen('ipad')
+    store.select('clock-1')
+    expect(store.isLastPlace('clock-1')).toBe(false)
+    store.removeFromScreen('clock-1')
+    expect(items(store, 1).map((p) => p.instanceId)).toEqual(['cpu-1'])
+    expect(items(store, 0).map((p) => p.instanceId)).toEqual(['clock-1'])
+    expect(widgetsOf(store)['clock-1']).toBeDefined()
+    expect(store.state.selectedId).toBeNull()
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('removeFromScreen deletes a widget on its last place', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.selectScreen('ipad')
+    expect(store.isLastPlace('cpu-1')).toBe(true)
+    store.removeFromScreen('cpu-1')
+    expect(items(store, 1).map((p) => p.instanceId)).toEqual(['clock-1'])
+    expect(widgetsOf(store)['cpu-1']).toBeUndefined()
+    store.undo()
+    expect(widgetsOf(store)['cpu-1']).toBeDefined()
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('removeFromScreen takes a widget out of this screen\'s bar too', async () => {
+    // On the iPad the clock sits in the bar rather than on the page.
+    const { store } = makeTwoScreens((c) => {
+      c.screens[1].pages[0].items.shift()
+      c.screens[1].nav.push({ instanceId: 'clock-1', slot: 'left' })
+    })
+    await store.load()
+    store.selectScreen('ipad')
+    expect(store.isLastPlace('clock-1')).toBe(false)
+    store.removeNavWidget('clock-1')
+    expect(store.state.config!.screens[1].nav).toEqual([])
+    expect(items(store, 1).map((p) => p.instanceId)).toEqual(['cpu-1'])
+    expect(widgetsOf(store)['clock-1']).toBeDefined()
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('removeScreen refuses the last screen', async () => {
+    const { store } = make()
+    await store.load()
+    store.removeScreen('edge')
+    expect(store.state.config!.screens).toHaveLength(1)
+    expect(store.state.toast).toBe('Il faut au moins un écran')
+    expect(store.canUndo.value).toBe(false)
+  })
+
+  it('removeScreen drops widgets shown only there', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.selectScreen('ipad')
+    store.removeScreen('ipad')
+    expect(store.state.config!.screens.map((s) => s.id)).toEqual(['edge'])
+    expect(Object.keys(widgetsOf(store))).toEqual(['clock-1'])
+    expect(store.state.screenId).toBe('edge')
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('placeExisting refuses a widget already on this screen', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.placeExisting('clock-1')
+    expect(store.state.toast).toMatch(/déjà/)
+    expect(items(store, 0)).toHaveLength(1)
+    expect(store.canUndo.value).toBe(false)
+  })
+
+  it('placeExisting places the same widget, at its default size, and selects it', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.placeExisting('cpu-1')
+    expect(items(store, 0)[1]).toEqual({ instanceId: 'cpu-1', x: 16, y: 0, w: 16, h: 4 })
+    expect(Object.keys(widgetsOf(store)).sort()).toEqual(['clock-1', 'cpu-1'])
+    expect(store.state.selectedId).toBe('cpu-1')
+    expect(store.isLastPlace('cpu-1')).toBe(false)
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('placeExisting with a rectangle refuses an occupied one', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.placeExisting('cpu-1', { x: 4, y: 0, w: 8, h: 4 })
+    expect(store.state.toast).toBe('Cette position est occupée')
+    expect(items(store, 0)).toHaveLength(1)
+  })
+
+  it('undo restores the selected screen\'s previous layout', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.selectScreen('ipad')
+    store.updateInstance('cpu-1', { x: 20 })
+    store.removeFromScreen('clock-1')
+    store.undo()
+    store.undo()
+    expect(items(store, 1)).toEqual([
+      { instanceId: 'clock-1', x: 0, y: 0, w: 8, h: 4 },
+      { instanceId: 'cpu-1', x: 8, y: 0, w: 8, h: 4 },
+    ])
+    expect(store.state.screenId).toBe('ipad')
+    expect(store.screen.value!.id).toBe('ipad')
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('addScreen makes an empty device screen sized from its viewport, and selects it', async () => {
+    const { store } = make()
+    await store.load()
+    const id = store.addScreen({ name: 'iPad de test', kind: 'device', viewport: { width: 1376, height: 1032 }, orientation: 'landscape', prefill: null })
+    expect(id).toBe('ipad-de-test')
+    const added = store.state.config!.screens[1]
+    expect(added).toMatchObject({
+      id, name: 'iPad de test', kind: 'device', nav: [],
+      display: { cols: 34, rows: 23, cell: 40, orientation: 'landscape', viewport: { width: 1376, height: 1032 } },
+    })
+    expect(added.pages).toHaveLength(1)
+    expect(added.pages[0].items).toEqual([])
+    expect(store.state.screenId).toBe(id)
+    // A second one by the same name gets a free id.
+    expect(store.addScreen({ name: 'iPad de test', kind: 'edge', prefill: null })).toBe('ipad-de-test-2')
+    expect(store.state.config!.screens[2].display).toMatchObject({ cols: 64, rows: 16, cell: 40 })
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('addScreen with a pre-fill shares the widgets it places', async () => {
+    const { store } = make({ getWidgets: vi.fn(async () => barWidgets) })
+    await store.load()
+    const id = store.addScreen({
+      name: 'Bureau', kind: 'edge',
+      prefill: {
+        from: 'edge',
+        pages: [{ id: 'home', name: 'Accueil', items: [{ instanceId: 'clock-1', x: 0, y: 0, w: 16, h: 4 }] }],
+        nav: [{ instanceId: 'clock-1', slot: 'left' }],
+      },
+    })
+    expect(id).toBe('bureau')
+    const added = store.state.config!.screens[1]
+    expect(added.pages[0].items).toEqual([{ instanceId: 'clock-1', x: 0, y: 0, w: 16, h: 4 }])
+    // Once per screen: the bar copy of a widget already placed on a page is dropped.
+    expect(added.nav).toEqual([])
+    expect(Object.keys(widgetsOf(store))).toEqual(['clock-1'])
+    store.undo()
+    expect(store.state.config!.screens).toHaveLength(1)
+    expect(store.state.screenId).toBe('edge')
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('renameScreen renames, and ignores an empty name', async () => {
+    const { store } = make()
+    await store.load()
+    store.renameScreen('edge', '  Bureau  ')
+    expect(store.state.config!.screens[0].name).toBe('Bureau')
+    store.renameScreen('edge', '   ')
+    expect(store.state.config!.screens[0].name).toBe('Bureau')
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 })

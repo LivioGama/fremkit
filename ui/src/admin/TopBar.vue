@@ -27,7 +27,8 @@ const statusTone = computed(() => (s.state.status === 'error' ? 'danger' : s.sta
     {{ t('admin.topbar.degraded.after') }}
   </p>
   <header>
-    <strong class="page">{{ s.page.value?.name ?? '—' }}</strong>
+    <!-- With several screens, the page name alone does not say which layout is being edited. -->
+    <strong class="page"><span v-if="(s.state.config?.screens.length ?? 0) > 1" class="screen">{{ s.screen.value?.name }} · </span>{{ s.page.value?.name ?? '—' }}</strong>
     <BaseSegmented class="modes" :model-value="s.state.mode" :options="MODES"
       @update:model-value="s.setMode($event as Mode)" />
     <BaseButton variant="icon" :title="t('admin.topbar.undo')" :disabled="!s.canUndo.value" @click="s.undo()"><BaseIcon name="undo-2" /></BaseButton>
@@ -57,6 +58,7 @@ const statusTone = computed(() => (s.state.status === 'error' ? 'danger' : s.sta
 header { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4);
   background: var(--surface); border-bottom: 1px solid var(--border); }
 .page { font-size: var(--fs-lg); }
+.page .screen { color: var(--text-muted); font-weight: normal; }
 .modes { width: 200px; }
 .spacer { flex: 1; }
 .panel { display: inline-flex; align-items: center; gap: var(--space-2); font: inherit; font-size: var(--fs-sm);

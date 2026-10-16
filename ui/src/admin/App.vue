@@ -48,7 +48,7 @@ function onKeyDown(e: KeyboardEvent): void {
   if (e.key === 'Escape') { s.select(null); return }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault()
-    s.removeWidget(inst.instanceId)
+    s.removeFromScreen(inst.instanceId)
     return
   }
   const delta = ARROWS[e.key]

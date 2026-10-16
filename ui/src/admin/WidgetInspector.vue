@@ -108,8 +108,8 @@ function onSetting(key: string, value: unknown): void {
   s.updateInstance(inst.value!.instanceId, { settings: { ...inst.value!.settings, [key]: value } })
 }
 
-/** The pages the selected tile could go to: every one but the page it already sits on. */
-const otherPages = computed(() => (s.state.config?.pages ?? [])
+/** The pages of this screen the selected tile could go to: every one but the page it sits on. */
+const otherPages = computed(() => (s.screen.value?.pages ?? [])
   .map((p, index) => ({ index, name: p.name }))
   .filter((p) => p.index !== s.state.pageIndex))
 /** Nothing is moved until the button is pressed, so a mis-click on the list costs nothing. */
@@ -205,7 +205,7 @@ function moveToPage(): void {
 
     <div class="actions">
       <BaseButton @click="s.duplicateWidget(inst!.instanceId)"><BaseIcon name="copy" :size="16" />{{ t('common.duplicate') }}</BaseButton>
-      <BaseButton variant="danger" @click="s.removeWidget(inst!.instanceId)"><BaseIcon name="trash-2" :size="16" />{{ t('common.remove') }}</BaseButton>
+      <BaseButton variant="danger" @click="s.removeFromScreen(inst!.instanceId)"><BaseIcon name="trash-2" :size="16" />{{ t('common.remove') }}</BaseButton>
     </div>
   </template>
 </template>

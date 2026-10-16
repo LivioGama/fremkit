@@ -178,7 +178,7 @@ export const en: Record<string, string> = {
   'admin.inspector.screen.backup.hint': 'The archive holds the configuration and the backgrounds, never the secrets: those stay in the macOS keychain. Because they are keyed by connection id, a restore on this Mac finds them again; on another machine they have to be entered again, and the list is shown after the restore.',
   'admin.inspector.screen.restore.confirm': 'Restoring this backup replaces the current dashboard — pages, widgets, connections and backgrounds. Secrets are not in the archive; any that turn out to be missing afterwards are listed. Continue?',
   'admin.inspector.screen.restore.confirmButton': 'Replace the dashboard?',
-  'admin.inspector.screen.restore.done': 'Restored: {pages} page(s), {backgrounds} background(s).',
+  'admin.inspector.screen.restore.done': 'Restored: {screens} screen(s), {pages} page(s), {backgrounds} background(s).',
   'admin.inspector.screen.restore.nothingToReenter': 'No secret to enter again: the keychain still had them.',
   'admin.inspector.screen.restore.reenter': 'Secrets to enter again under Connections:',
   'admin.inspector.screen.codexAccount': 'Read Codex account quotas and usage',
@@ -291,6 +291,9 @@ export const en: Record<string, string> = {
   'admin.store.navFull': 'No room left in the bar for {id}: the clusters would reach the page dots',
   'admin.store.newPage': 'New page',
   'admin.store.pageCopy': '{name} (copy)',
+  'admin.store.lastScreen': 'At least one screen is required',
+  'admin.store.newScreen': 'New screen',
+  'admin.store.alreadyOnScreen': '{name} is already on this screen',
 
   'bridge.badRequest': 'invalid widget request',
   'bridge.noIcon': 'no icon for this site',

@@ -2,8 +2,9 @@ import { reactive, computed, watch, type ComputedRef } from 'vue'
 import { api as realApi } from '../shared/api'
 import { pick, setLocale, t } from '../shared/i18n'
 import { useSocket } from '../shared/socket'
-import type { Config, NavHeight, NavWidget, Page, WidgetInstance, WidgetManifest, WidgetPermissionSet, WidgetSource, WidgetsResponse } from '../shared/types'
-import { DEFAULT_NAV_HEIGHT, MAX_NAV_WIDGETS, ROWS_BY_NAV_HEIGHT, compactWidth, mergeSettings, navHasRoom, navWidgetsOf } from '../shared/types'
+import type { Config, NavHeight, NavItem, Page, Placement, Screen, ScreenDisplay, Widget, WidgetInstance, WidgetManifest, WidgetPermissionSet, WidgetSource, WidgetsResponse } from '../shared/types'
+import { DEFAULT_NAV_HEIGHT, MAX_NAV_WIDGETS, ROWS_BY_NAV_HEIGHT, compactWidth, mergeSettings, navHasRoom } from '../shared/types'
+import { DEVICE_CELL, deviceGrid, pickScreen, screensShowing, tileOf } from '../shared/screens'
 import { fits, largestFreeSpot, type Grid, type Rect } from './layout'
 
 export type Mode = 'edit' | 'test'
@@ -28,6 +29,12 @@ export interface AdminState {
   /** What each manifest asks for, beside what it was granted. See `WidgetsResponse.asks`. */
   asks: Record<string, WidgetPermissionSet>
   catalogErrors: { id: string; error: string }[]
+  /**
+   * The screen being edited. Empty until a config is loaded, and whenever the screen it named
+   * went away: `screen` then reads the Edge's, and the next mutation writes that id back.
+   */
+  screenId: string
+  /** Within the selected screen. */
   pageIndex: number
   selectedId: string | null
   dragWidgetId: string | null
@@ -55,6 +62,20 @@ export interface AdminApi {
   rescan(): Promise<WidgetsResponse>
 }
 
+/** What `addScreen` takes: the new screen's name and kind, and what to fill it with. */
+export interface NewScreen {
+  name: string
+  kind: 'edge' | 'device'
+  /** A device's viewport in its orientation, in CSS px; ignored for an Edge screen. */
+  viewport?: { width: number; height: number }
+  orientation?: 'landscape' | 'portrait'
+  /** Pages and bar to start from, placing existing widgets; `from` is the screen they come from. */
+  prefill: { from: string; pages: Page[]; nav: NavItem[] } | null
+}
+
+/** What `updateNavWidget` takes: the bar entry's own keys, and the shared widget's settings. */
+export type NavWidgetPatch = Partial<Pick<NavItem, 'slot' | 'popup'>> & { settings?: Record<string, unknown> }
+
 export interface StoreDeps {
   api: AdminApi
   subscribeConfig: (cb: (cfg: Config) => void) => () => void
@@ -63,6 +84,7 @@ export interface StoreDeps {
 
 export interface AdminStore {
   state: AdminState
+  screen: ComputedRef<Screen | null>
   page: ComputedRef<Page | null>
   selected: ComputedRef<WidgetInstance | null>
   grid: ComputedRef<Grid>
@@ -76,6 +98,7 @@ export interface AdminStore {
   flush(): Promise<void>
   others(ignoreId?: string): Rect[]
   select(id: string | null): void
+  selectScreen(id: string): void
   selectPage(i: number): void
   setMode(mode: Mode): void
   openModal(name: ModalName): void
@@ -98,18 +121,74 @@ export interface AdminStore {
   movePage(i: number, delta: number): void
   placeWidget(widgetId: string, rect: Rect): void
   addWidget(widgetId: string): void
+  placeExisting(instanceId: string, rect?: Rect): void
   updateInstance(instanceId: string, patch: Partial<WidgetInstance>): void
   duplicateWidget(instanceId: string): void
   moveWidget(instanceId: string, targetPageIndex: number): void
-  removeWidget(instanceId: string): void
+  removeFromScreen(instanceId: string): void
+  /** True when no other screen shows the widget: removing it from this one deletes it. */
+  isLastPlace(instanceId: string): boolean
+  addScreen(input: NewScreen): string
+  renameScreen(id: string, name: string): void
+  removeScreen(id: string): void
   addNavWidget(widgetId: string): void
   removeNavWidget(instanceId: string): void
   moveNavWidget(instanceId: string, delta: number): void
-  updateNavWidget(instanceId: string, patch: Partial<NavWidget>): void
+  updateNavWidget(instanceId: string, patch: NavWidgetPatch): void
 }
 
 const uid = (): string => Math.random().toString(36).slice(2, 8)
-const rectOf = (w: WidgetInstance): Rect => ({ x: w.x, y: w.y, w: w.w, h: w.h })
+const rectOf = (w: Placement): Rect => ({ x: w.x, y: w.y, w: w.w, h: w.h })
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+/** The keys of a patch that belong to a placement rather than to the shared widget. */
+const GEOMETRY: (keyof Rect)[] = ['x', 'y', 'w', 'h']
+/** Mirrors the server's limit on a screen name. */
+const SCREEN_NAME_MAX = 60
+/** The Edge's grid: 64 columns of 40 px cells. */
+const EDGE_COLS = 64
+const EDGE_CELL = 40
+/** What a pre-filled screen takes from the look of the one it came from. */
+const LOOK_KEYS = ['autoCycleSeconds', 'navOpacity', 'tileOpacity', 'adminGesture', 'background'] as const
+
+/** Applies a patch, dropping the keys it sets to `undefined`: defaults are stored as absent keys. */
+function patchInto(target: Record<string, unknown>, patch: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete target[key]
+    else target[key] = value
+  }
+}
+
+/** A fresh instance id for a widget, never one the config already uses. */
+function freeInstanceId(cfg: Config, widgetId: string): string {
+  let id = `${widgetId}-${uid()}`
+  while (cfg.widgets[id]) id = `${widgetId}-${uid()}`
+  return id
+}
+
+/** A page id free on that screen: `wanted` when it is, else a random one. */
+function freePageId(pages: Page[], wanted?: string): string {
+  if (wanted && !pages.some((p) => p.id === wanted)) return wanted
+  let id = 'page-' + uid()
+  while (pages.some((p) => p.id === id)) id = 'page-' + uid()
+  return id
+}
+
+/** A screen id from its name — the slug the server accepts — suffixed until it is free. */
+export function freeScreenId(name: string, taken: string[]): string {
+  const base = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 56).replace(/-+$/, '') || 'screen'
+  if (!taken.includes(base)) return base
+  let n = 2
+  while (taken.includes(`${base}-${n}`)) n++
+  return `${base}-${n}`
+}
+
+/** Deletes those of `ids` no screen shows any more: a widget lives only while it is placed. */
+function dropUnplaced(cfg: Config, ids: string[]): void {
+  for (const id of ids) {
+    if (cfg.widgets[id] && !screensShowing(cfg, id).length) delete cfg.widgets[id]
+  }
+}
 
 /** JSON with sorted keys, so two configs differing only in key order compare equal. */
 function stable(value: unknown): string {
@@ -124,7 +203,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
   const state = reactive<AdminState>({
     newConnectionType: '',
     config: null, manifests: {}, sources: {}, asks: {}, catalogErrors: [],
-    pageIndex: 0, selectedId: null, dragWidgetId: null,
+    screenId: '', pageIndex: 0, selectedId: null, dragWidgetId: null,
     mode: 'edit', modal: null, status: 'saved', toast: '', degraded: false,
   })
   // Reactive arrays: canUndo/canRedo read their .length, and a plain array here would give
@@ -145,20 +224,41 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
   // Bumped by every local mutation, so an await can tell whether the config moved under it.
   let localVersion = 0
 
-  const page = computed<Page | null>(() => state.config?.pages[state.pageIndex] ?? null)
-  const selected = computed<WidgetInstance | null>(() => page.value?.widgets.find((w) => w.instanceId === state.selectedId) ?? null)
-  const grid = computed<Grid>(() => ({ cols: state.config?.display.cols ?? 64, rows: state.config?.display.rows ?? 16 }))
+  /**
+   * The screen being edited: the selected one, or — before one is chosen, or once it is gone —
+   * the one the Edge shows. Reading through `pickScreen` means a config set directly (a test, a
+   * restore) is editable at once, before anything has synced `screenId`.
+   */
+  const screen = computed<Screen | null>(() => (state.config ? pickScreen(state.config, state.screenId || null) ?? null : null))
+  const page = computed<Page | null>(() => screen.value?.pages[state.pageIndex] ?? null)
+  /** The selected tile, joined with its shared widget: what the inspector and the keyboard edit. */
+  const selected = computed<WidgetInstance | null>(() => {
+    const placement = page.value?.items.find((p) => p.instanceId === state.selectedId)
+    return placement && state.config ? tileOf(state.config, placement) : null
+  })
+  const grid = computed<Grid>(() => ({ cols: screen.value?.display.cols ?? 64, rows: screen.value?.display.rows ?? 16 }))
   const canUndo = computed(() => undoStack.length > 0)
   const canRedo = computed(() => redoStack.length > 0)
 
   const snapshot = (): Config => JSON.parse(JSON.stringify(state.config)) as Config
   const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
+  /**
+   * Keeps the screen, page and selection pointing at things that exist. A screen that went away
+   * (an undo, a push from another tab) falls back to the Edge's, on its first page.
+   */
   function clampSelection(): void {
-    if (!state.config) return
-    state.pageIndex = Math.max(0, Math.min(state.pageIndex, state.config.pages.length - 1))
-    if (state.selectedId && !page.value?.widgets.some((w) => w.instanceId === state.selectedId)) state.selectedId = null
+    const scr = screen.value
+    if (!scr) return
+    if (state.screenId !== scr.id) { state.screenId = scr.id; state.pageIndex = 0 }
+    state.pageIndex = Math.max(0, Math.min(state.pageIndex, scr.pages.length - 1))
+    if (state.selectedId && !page.value?.items.some((p) => p.instanceId === state.selectedId)) state.selectedId = null
   }
+
+  /** The edited screen inside the config a mutation is handed. */
+  const here = (cfg: Config): Screen => cfg.screens.find((x) => x.id === screen.value!.id)!
+  /** What the user calls a widget: its own title, else its manifest's name. */
+  const nameOf = (w: Widget): string => w.title?.trim() || pick(state.manifests[w.widgetId]?.name) || w.widgetId
 
   async function send(): Promise<void> {
     if (!state.config) return
@@ -254,7 +354,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
   })
 
   const store: AdminStore = {
-    state, page, selected, grid, canUndo, canRedo,
+    state, screen, page, selected, grid, canUndo, canRedo,
 
     async load(): Promise<void> {
       const [cfg, widgets, status] = await Promise.all([deps.api.getConfig(), deps.api.getWidgets(), deps.api.getStatus()])
@@ -268,6 +368,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       undoStack.length = 0
       redoStack.length = 0
       state.status = 'saved'
+      clampSelection()
     },
 
     async rescan(): Promise<void> {
@@ -305,7 +406,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     },
 
     others(ignoreId?: string): Rect[] {
-      return (page.value?.widgets ?? []).filter((w) => w.instanceId !== ignoreId).map(rectOf)
+      return (page.value?.items ?? []).filter((w) => w.instanceId !== ignoreId).map(rectOf)
     },
 
     select(id: string | null): void { state.selectedId = id },
@@ -317,83 +418,107 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     setDragWidget(id: string | null): void { state.dragWidgetId = id },
     dismissToast(): void { state.toast = '' },
 
+    selectScreen(id: string): void {
+      if (!state.config?.screens.some((x) => x.id === id)) return
+      state.screenId = id
+      state.pageIndex = 0
+      state.selectedId = null
+    },
+
     /**
-     * The nav bar and the board share the screen: a shorter bar gives the grid one more row, a
-     * taller one takes it back. Taking it back is only possible while that last row is empty —
+     * The nav bar and the board share the screen: a shorter bar gives the grid more rows, a
+     * taller one takes them back. On the Edge that is the fixed 16/17; a device screen recomputes
+     * them from the viewport it reported. Taking rows back is only possible while they are empty —
      * widgets are never pushed out of the grid, the change is refused instead.
      */
     setNavHeight(height: NavHeight): void {
-      const cfg = state.config
-      if (!cfg) return
-      const rows = ROWS_BY_NAV_HEIGHT[height]
-      if (rows < cfg.display.rows && cfg.pages.some((p) => p.widgets.some((w) => w.y + w.h > rows))) {
+      const scr = screen.value
+      if (!scr) return
+      const viewport = scr.display.viewport
+      const rows = scr.kind === 'device' && viewport
+        ? Math.max(1, deviceGrid(viewport.width, viewport.height, height).rows)
+        : ROWS_BY_NAV_HEIGHT[height]
+      if (rows < scr.display.rows && scr.pages.some((p) => p.items.some((w) => w.y + w.h > rows))) {
         state.toast = t('admin.store.lastRowOccupied')
         return
       }
       apply((c) => {
+        const display = here(c).display
         // The default is stored as an absent key, so switching back leaves no trace in the file.
-        c.display.navHeight = height === DEFAULT_NAV_HEIGHT ? undefined : height
-        c.display.rows = rows
+        if (height === DEFAULT_NAV_HEIGHT) delete display.navHeight
+        else display.navHeight = height
+        display.rows = rows
       })
     },
 
     addPage(): void {
       apply((c) => {
-        c.pages.push({ id: 'page-' + uid(), name: t('admin.store.newPage'), widgets: [] })
-        state.pageIndex = c.pages.length - 1
+        const pages = here(c).pages
+        pages.push({ id: freePageId(pages), name: t('admin.store.newPage'), items: [] })
+        state.pageIndex = pages.length - 1
         state.selectedId = null
       })
     },
 
     renamePage(i: number, name: string): void {
-      apply((c) => { c.pages[i].name = name })
+      apply((c) => { here(c).pages[i].name = name })
     },
 
+    /** The copy's tiles are new widgets, set up like the originals: editing one leaves the other alone. */
     duplicatePage(i: number): void {
       apply((c) => {
-        const src = c.pages[i]
-        c.pages.splice(i + 1, 0, {
-          id: 'page-' + uid(),
-          name: t('admin.store.pageCopy', { name: src.name }),
-          widgets: src.widgets.map((w) => ({ ...w, instanceId: `${w.widgetId}-${uid()}`, settings: { ...w.settings } })),
-        })
+        const pages = here(c).pages
+        const src = pages[i]
+        const items: Placement[] = []
+        for (const p of src.items) {
+          const widget = c.widgets[p.instanceId]
+          if (!widget) continue
+          const id = freeInstanceId(c, widget.widgetId)
+          c.widgets[id] = clone(widget)
+          items.push({ ...p, instanceId: id })
+        }
+        pages.splice(i + 1, 0, { id: freePageId(pages), name: t('admin.store.pageCopy', { name: src.name }), items })
         state.pageIndex = i + 1
         state.selectedId = null
       })
     },
 
+    /** The widgets that page alone showed go with it; those shown elsewhere stay. */
     removePage(i: number): void {
-      if ((state.config?.pages.length ?? 0) <= 1) { state.toast = t('admin.store.lastPage'); return }
+      if ((screen.value?.pages.length ?? 0) <= 1) { state.toast = t('admin.store.lastPage'); return }
       apply((c) => {
-        c.pages.splice(i, 1)
+        const [removed] = here(c).pages.splice(i, 1)
+        dropUnplaced(c, removed.items.map((p) => p.instanceId))
         if (state.pageIndex >= i) state.pageIndex = Math.max(0, state.pageIndex - 1)
         state.selectedId = null
       })
     },
 
     movePage(i: number, delta: number): void {
-      const pages = state.config?.pages
+      const pages = screen.value?.pages
       const j = i + delta
       if (!pages || j < 0 || j >= pages.length) return
       apply((c) => {
-        const [moved] = c.pages.splice(i, 1)
-        c.pages.splice(j, 0, moved)
+        const list = here(c).pages
+        const [moved] = list.splice(i, 1)
+        list.splice(j, 0, moved)
         if (state.pageIndex === i) state.pageIndex = j
         else if (state.pageIndex === j) state.pageIndex = i
       })
     },
 
+    /** A new widget and its placement, in one mutation: the server drops a widget placed nowhere. */
     placeWidget(widgetId: string, rect: Rect): void {
       if (!fits(rect, grid.value, store.others())) { state.toast = t('admin.store.occupied'); return }
-      const instanceId = `${widgetId}-${uid()}`
       apply((c) => {
-        c.pages[state.pageIndex].widgets.push({
-          instanceId, widgetId,
-          x: rect.x, y: rect.y, w: rect.w, h: rect.h,
-          showTitle: true, settings: {},
-          // The screen's default for new tiles, copied rather than referenced: the tile owns it.
-          ...(c.display.tileOpacity !== undefined ? { opacity: c.display.tileOpacity } : {}),
-        })
+        const scr = here(c)
+        const instanceId = freeInstanceId(c, widgetId)
+        c.widgets[instanceId] = {
+          widgetId, showTitle: true, settings: {},
+          // The screen's default for new tiles, copied rather than referenced: the widget owns it.
+          ...(scr.display.tileOpacity !== undefined ? { opacity: scr.display.tileOpacity } : {}),
+        }
+        scr.pages[state.pageIndex].items.push({ instanceId, x: rect.x, y: rect.y, w: rect.w, h: rect.h })
         state.selectedId = instanceId
       })
     },
@@ -406,60 +531,202 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       store.placeWidget(widgetId, spot)
     },
 
-    updateInstance(instanceId: string, patch: Partial<WidgetInstance>): void {
+    /**
+     * Places a widget that already exists — shown on another screen — on this screen's current
+     * page: the same widget, settings and all. At `rect` when given, else at its manifest's
+     * default size in the largest free spot. A screen shows a widget at most once.
+     */
+    placeExisting(instanceId: string, rect?: Rect): void {
+      const cfg = state.config
+      const scr = screen.value
+      if (!cfg || !scr || !page.value) return
+      const widget = cfg.widgets[instanceId]
+      if (!widget) { state.toast = t('admin.store.unknownWidget', { id: instanceId }); return }
+      if (screensShowing(cfg, instanceId).some((x) => x.id === scr.id)) {
+        state.toast = t('admin.store.alreadyOnScreen', { name: nameOf(widget) })
+        return
+      }
+      let spot: Rect | null = rect ?? null
+      if (spot) {
+        if (!fits(spot, grid.value, store.others())) { state.toast = t('admin.store.occupied'); return }
+      } else {
+        const manifest = state.manifests[widget.widgetId]
+        const min = manifest?.minSize ?? [1, 1]
+        spot = largestFreeSpot(manifest?.defaultSize ?? min, min, grid.value, store.others())
+        if (!spot) { state.toast = t('admin.store.noRoom'); return }
+      }
+      const at = spot
       apply((c) => {
-        const w = c.pages[state.pageIndex].widgets.find((x) => x.instanceId === instanceId)
-        if (w) Object.assign(w, patch)
-      })
-    },
-
-    duplicateWidget(instanceId: string): void {
-      const src = page.value?.widgets.find((w) => w.instanceId === instanceId)
-      if (!src) return
-      const min = state.manifests[src.widgetId]?.minSize ?? [1, 1]
-      const spot = largestFreeSpot([src.w, src.h], min, grid.value, store.others())
-      if (!spot) { state.toast = t('admin.store.noRoom'); return }
-      const copy: WidgetInstance = { ...src, ...spot, instanceId: `${src.widgetId}-${uid()}`, settings: { ...src.settings } }
-      apply((c) => {
-        c.pages[state.pageIndex].widgets.push(copy)
-        state.selectedId = copy.instanceId
+        here(c).pages[state.pageIndex].items.push({ instanceId, x: at.x, y: at.y, w: at.w, h: at.h })
+        state.selectedId = instanceId
       })
     },
 
     /**
-     * The same instance on another page: everything it carries — settings, appearance, title,
-     * instanceId — is kept, only its rectangle is recomputed, since the target page has its own
-     * occupied cells. A page with no room refuses the move rather than stacking tiles, and the
-     * editor follows the widget so the user sees where it landed.
+     * One patch, two homes: `x/y/w/h` move this screen's placement, everything else changes the
+     * shared widget — and so every screen showing it. A key set to `undefined` is dropped.
+     */
+    updateInstance(instanceId: string, patch: Partial<WidgetInstance>): void {
+      const geometry: Partial<Rect> = {}
+      const rest: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(patch)) {
+        if (key === 'instanceId') continue
+        if (GEOMETRY.includes(key as keyof Rect)) { if (value !== undefined) geometry[key as keyof Rect] = value as number }
+        else rest[key] = value
+      }
+      apply((c) => {
+        if (Object.keys(geometry).length) {
+          for (const p of here(c).pages) {
+            const placement = p.items.find((x) => x.instanceId === instanceId)
+            if (placement) Object.assign(placement, geometry)
+          }
+        }
+        const widget = c.widgets[instanceId]
+        if (widget && Object.keys(rest).length) patchInto(widget as unknown as Record<string, unknown>, rest)
+      })
+    },
+
+    /** A new widget set up like the original, next to it on this page. */
+    duplicateWidget(instanceId: string): void {
+      const src = page.value?.items.find((p) => p.instanceId === instanceId)
+      const widget = src && state.config?.widgets[instanceId]
+      if (!src || !widget) return
+      const min = state.manifests[widget.widgetId]?.minSize ?? [1, 1]
+      const spot = largestFreeSpot([src.w, src.h], min, grid.value, store.others())
+      if (!spot) { state.toast = t('admin.store.noRoom'); return }
+      apply((c) => {
+        const id = freeInstanceId(c, widget.widgetId)
+        c.widgets[id] = clone(c.widgets[instanceId])
+        here(c).pages[state.pageIndex].items.push({ instanceId: id, ...spot })
+        state.selectedId = id
+      })
+    },
+
+    /**
+     * The same placement on another page of this screen: only its rectangle is recomputed, since
+     * the target page has its own occupied cells. A page with no room refuses the move rather
+     * than stacking tiles, and the editor follows the widget so the user sees where it landed.
      */
     moveWidget(instanceId: string, targetPageIndex: number): void {
       const cfg = state.config
-      const src = page.value?.widgets.find((w) => w.instanceId === instanceId)
-      const target = cfg?.pages[targetPageIndex]
+      const src = page.value?.items.find((p) => p.instanceId === instanceId)
+      const target = screen.value?.pages[targetPageIndex]
       if (!cfg || !src || !target || targetPageIndex === state.pageIndex) return
-      const manifest = state.manifests[src.widgetId]
-      const spot = largestFreeSpot([src.w, src.h], manifest?.minSize ?? [1, 1], grid.value, target.widgets.map(rectOf))
+      const widgetId = cfg.widgets[instanceId]?.widgetId ?? ''
+      const manifest = state.manifests[widgetId]
+      const spot = largestFreeSpot([src.w, src.h], manifest?.minSize ?? [1, 1], grid.value, target.items.map(rectOf))
       if (!spot) {
-        state.toast = t('admin.store.noRoomOnPage', { page: target.name, id: pick(manifest?.name) || src.widgetId })
+        state.toast = t('admin.store.noRoomOnPage', { page: target.name, id: pick(manifest?.name) || widgetId })
         return
       }
       apply((c) => {
-        const widgets = c.pages[state.pageIndex].widgets
-        const i = widgets.findIndex((w) => w.instanceId === instanceId)
+        const pages = here(c).pages
+        const items = pages[state.pageIndex].items
+        const i = items.findIndex((p) => p.instanceId === instanceId)
         if (i < 0) return
-        const [moved] = widgets.splice(i, 1)
-        c.pages[targetPageIndex].widgets.push({ ...moved, ...spot })
+        items.splice(i, 1)
+        pages[targetPageIndex].items.push({ instanceId, ...spot })
         state.pageIndex = targetPageIndex
         state.selectedId = instanceId
       })
     },
 
-    removeWidget(instanceId: string): void {
+    /**
+     * Takes the widget off this screen — its tile or its bar entry. When no other screen shows it,
+     * that was its last place and the widget itself goes: the editor asks before calling this then.
+     */
+    removeFromScreen(instanceId: string): void {
       apply((c) => {
-        const widgets = c.pages[state.pageIndex].widgets
-        const i = widgets.findIndex((w) => w.instanceId === instanceId)
-        if (i >= 0) widgets.splice(i, 1)
+        const scr = here(c)
+        for (const p of scr.pages) {
+          const i = p.items.findIndex((x) => x.instanceId === instanceId)
+          if (i >= 0) p.items.splice(i, 1)
+        }
+        const n = scr.nav.findIndex((x) => x.instanceId === instanceId)
+        if (n >= 0) scr.nav.splice(n, 1)
+        dropUnplaced(c, [instanceId])
         if (state.selectedId === instanceId) state.selectedId = null
+      })
+    },
+
+    isLastPlace(instanceId: string): boolean {
+      const cfg = state.config
+      const scr = screen.value
+      if (!cfg || !scr) return true
+      return !screensShowing(cfg, instanceId).some((x) => x.id !== scr.id)
+    },
+
+    /**
+     * A new screen, selected at once. A device screen takes its grid from the viewport it reported
+     * (under the default 80 px bar); an Edge screen takes the Edge's. A pre-fill places existing
+     * widgets — shared, not copied — and brings the look of the screen it came from; whatever would
+     * break the once-per-screen rule or overflow the bar is left out.
+     */
+    addScreen(input: NewScreen): string {
+      const cfg = state.config
+      if (!cfg) return ''
+      const name = input.name.trim().slice(0, SCREEN_NAME_MAX) || t('admin.store.newScreen')
+      const id = freeScreenId(name, cfg.screens.map((x) => x.id))
+      const display: ScreenDisplay = input.kind === 'device' && input.viewport
+        ? {
+          ...deviceGrid(input.viewport.width, input.viewport.height, DEFAULT_NAV_HEIGHT),
+          cell: DEVICE_CELL, autoCycleSeconds: 0,
+          viewport: { ...input.viewport },
+          ...(input.orientation ? { orientation: input.orientation } : {}),
+        }
+        : { cols: EDGE_COLS, rows: ROWS_BY_NAV_HEIGHT[DEFAULT_NAV_HEIGHT], cell: EDGE_CELL, autoCycleSeconds: 0 }
+      display.cols = Math.max(1, display.cols)
+      display.rows = Math.max(1, display.rows)
+      const from = input.prefill ? cfg.screens.find((x) => x.id === input.prefill!.from) : undefined
+      if (from) {
+        for (const key of LOOK_KEYS) {
+          if (from.display[key] !== undefined) (display as unknown as Record<string, unknown>)[key] = clone(from.display[key])
+        }
+      }
+      const seen = new Set<string>()
+      const pages: Page[] = []
+      for (const p of input.prefill?.pages ?? []) {
+        const items = p.items.filter((x) => cfg.widgets[x.instanceId] && !seen.has(x.instanceId))
+        for (const x of items) seen.add(x.instanceId)
+        pages.push({ id: freePageId(pages, p.id), name: p.name, items: items.map((x) => ({ ...x })) })
+      }
+      if (!pages.length) pages.push({ id: freePageId(pages), name: t('admin.store.newPage'), items: [] })
+      const added: Screen = { id, name, kind: input.kind, display, nav: [], pages }
+      for (const item of input.prefill?.nav ?? []) {
+        const widget = cfg.widgets[item.instanceId]
+        if (!widget || seen.has(item.instanceId) || added.nav.length >= MAX_NAV_WIDGETS) continue
+        const manifest = state.manifests[widget.widgetId]
+        const width = compactWidth(manifest, mergeSettings(manifest, widget.settings))
+        if (!width || !navHasRoom(added, cfg.widgets, state.manifests, width)) continue
+        seen.add(item.instanceId)
+        added.nav.push({ ...item })
+      }
+      apply((c) => {
+        c.screens.push(added)
+        state.screenId = id
+        state.pageIndex = 0
+        state.selectedId = null
+      })
+      return id
+    },
+
+    renameScreen(id: string, name: string): void {
+      const next = name.trim().slice(0, SCREEN_NAME_MAX)
+      const scr = state.config?.screens.find((x) => x.id === id)
+      if (!scr || !next || next === scr.name) return
+      apply((c) => { c.screens.find((x) => x.id === id)!.name = next })
+    },
+
+    /** The widgets that screen alone showed are deleted with it. The last screen stays. */
+    removeScreen(id: string): void {
+      const cfg = state.config
+      if (!cfg?.screens.some((x) => x.id === id)) return
+      if (cfg.screens.length <= 1) { state.toast = t('admin.store.lastScreen'); return }
+      apply((c) => {
+        const i = c.screens.findIndex((x) => x.id === id)
+        const [removed] = c.screens.splice(i, 1)
+        dropUnplaced(c, [...removed.nav.map((x) => x.instanceId), ...removed.pages.flatMap((p) => p.items.map((x) => x.instanceId))])
+        if (state.screenId === id) { state.screenId = ''; state.pageIndex = 0; state.selectedId = null }
       })
     },
 
@@ -473,26 +740,24 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       const manifest = state.manifests[widgetId]
       if (!manifest) { state.toast = t('admin.store.unknownWidget', { id: widgetId }); return }
       if (!manifest.compact) { state.toast = t('admin.store.notCompact', { id: widgetId }); return }
+      const scr = screen.value
+      if (!scr) return
       // Room is measured in cells, not in widgets: the clusters must not reach the dots.
-      const display = state.config!.display
       const width = compactWidth(manifest, mergeSettings(manifest, {}))
-      if (navWidgetsOf(display).length >= MAX_NAV_WIDGETS || !navHasRoom(display, state.manifests, width)) {
+      if (scr.nav.length >= MAX_NAV_WIDGETS || !navHasRoom(scr, state.config!.widgets, state.manifests, width)) {
         state.toast = t('admin.store.navFull', { id: pick(manifest.name) || widgetId })
         return
       }
       apply((c) => {
-        // Absent is how an empty bar is stored, so the list is created on the first widget.
-        c.display.navWidgets = [...navWidgetsOf(c.display), { instanceId: `${widgetId}-${uid()}`, widgetId, slot: 'left', settings: {} }]
+        const instanceId = freeInstanceId(c, widgetId)
+        c.widgets[instanceId] = { widgetId, showTitle: true, settings: {} }
+        here(c).nav.push({ instanceId, slot: 'left' })
       })
     },
 
+    /** The bar's own trash button: the same as removing a tile from this screen. */
     removeNavWidget(instanceId: string): void {
-      apply((c) => {
-        const rest = navWidgetsOf(c.display).filter((w) => w.instanceId !== instanceId)
-        // Emptying the bar restores the default exactly as it was: a missing key, not an
-        // empty array — which is what makes undo round-trip cleanly.
-        c.display.navWidgets = rest.length ? rest : undefined
-      })
+      store.removeFromScreen(instanceId)
     },
 
     /**
@@ -501,7 +766,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
      * a no-op rather than a jump across the dots.
      */
     moveNavWidget(instanceId: string, delta: number): void {
-      const list = navWidgetsOf(state.config!.display)
+      const list = screen.value?.nav ?? []
       const current = list.find((w) => w.instanceId === instanceId)
       if (!current) return
       const sameSide = list.filter((w) => w.slot === current.slot)
@@ -511,18 +776,21 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       const i = list.indexOf(current)
       const j = list.indexOf(sameSide[to])
       apply((c) => {
-        const next = navWidgetsOf(c.display)
-        const moved = next[i]
-        next[i] = next[j]
-        next[j] = moved
-        c.display.navWidgets = next
+        const nav = here(c).nav
+        const moved = nav[i]
+        nav[i] = nav[j]
+        nav[j] = moved
       })
     },
 
-    updateNavWidget(instanceId: string, patch: Partial<NavWidget>): void {
+    /** `slot` and `popup` belong to this screen's bar entry; `settings` to the shared widget. */
+    updateNavWidget(instanceId: string, patch: NavWidgetPatch): void {
+      const { settings, ...itemPatch } = patch
       apply((c) => {
-        const w = navWidgetsOf(c.display).find((x) => x.instanceId === instanceId)
-        if (w) Object.assign(w, patch)
+        const item = here(c).nav.find((x) => x.instanceId === instanceId)
+        if (item && Object.keys(itemPatch).length) patchInto(item as unknown as Record<string, unknown>, itemPatch)
+        const widget = c.widgets[instanceId]
+        if (widget && settings !== undefined) widget.settings = settings
       })
     },
   }
