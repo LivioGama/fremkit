@@ -14,7 +14,8 @@ public enum ServerProbe {
      back but a relaunch.
 
      Only the shape is checked: a JSON object with a `version` and either `pages` (config v3 and
-     before) or `screens` (v4 on), so a server of either generation is recognised. Enough to tell our server from something else, and nothing a future config version breaks.
+     before) or `screens` (v4 on), so a server of either generation is recognised. Enough to tell
+     our server from something else, and nothing a future config version breaks.
      */
     public static func looksLikeFremkitConfig(_ data: Data?) -> Bool {
         guard let data, !data.isEmpty, data.count < maxProbeBytes,

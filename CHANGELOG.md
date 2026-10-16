@@ -15,11 +15,12 @@ tagged `vX.Y.Z`.
 ### Added
 - **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another
   one, and give each its own layout. A pre-fill is shown as a preview first, naming the widgets
-  that do not fit the new screen, and the Screen panel gives each screen its own address. A widget shown on more than one screen is the same widget:
-  edit its settings once and every screen follows. Removing it from one screen keeps it on the
-  others; on its last screen the admin names it and asks before deleting it. The widget library
-  lists what your other screens show, to place the same widget here, and a tile shown on several
-  screens wears the number of screens.
+  that do not fit the new screen, and the Screen panel gives each screen its own address. A
+  widget shown on more than one screen is the same widget: edit its settings once and every
+  screen follows. Removing it from one screen keeps it on the others; on its last screen the
+  admin names it and asks before deleting it. The widget library lists what your other screens
+  show, to place the same widget here, and a tile shown on several screens wears the number of
+  screens.
 - **Fremkit as an app.** A signed, notarized `Fremkit.app`, on a DMG or with
   `brew install --cask fdussert/fremkit/fremkit`, runs the whole dashboard on its own: no
   checkout, no Node, no Xcode tools. Drag it to Applications, open it, grant two permissions.
