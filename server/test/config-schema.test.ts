@@ -2,8 +2,11 @@ import { describe, it, expect } from 'vitest'
 import {
   ConfigSchema, DEFAULT_CONFIG, MAX_NAV_WIDGETS, defaultLocale, validateConnections, validateLayout, validateNavWidgets,
   ScreenDisplaySchema, WidgetSchema, NavItemSchema, PlacementSchema, ScreenSchema, DEFAULT_ADMIN_GESTURE,
-  type Config, type Placement, type Widget,
+  type Config, type LayoutManifest, type Placement, type Widget,
 } from '../src/config/schema.js'
+import {
+  NAV_DOTS_RESERVE_CELLS, WIDE_COMPACT_SETTINGS, WIDE_COMPACT_WIDTH, compactWidth, navCellsUsed,
+} from '../src/config/nav.js'
 import { ManifestSchema } from '../src/widgets/manifest.js'
 
 const manifests = new Map([['clock', { minSize: [8, 4] as [number, number] }]])
@@ -232,13 +235,21 @@ describe('validateLayout', () => {
     const c = withItems('fr', [{ instanceId: 'a', x: 0, y: 0, w: 3, h: 3 }], { a: { widgetId: 'ghost' } })
     expect(validateLayout(c, manifests)).toEqual([])
   })
-  it('flags duplicate instanceId', () => {
+  it('flags an instance placed twice on one page', () => {
     const c = withItems('fr', [{ instanceId: 'a', x: 0, y: 0, w: 8, h: 4 }, { instanceId: 'a', x: 16, y: 0, w: 8, h: 4 }])
-    expect(validateLayout(c, manifests)).toEqual(['page p: instanceId a dupliqué'])
+    expect(validateLayout(c, manifests)).toEqual(['écran Xeneon Edge : a y figure plus d’une fois'])
   })
   it('answers in English when the config asks for it', () => {
     const c = withItems('en', [{ instanceId: 'a', x: 0, y: 0, w: 8, h: 4 }, { instanceId: 'a', x: 16, y: 0, w: 8, h: 4 }])
-    expect(validateLayout(c, manifests)).toEqual(['page p: duplicate instanceId a'])
+    expect(validateLayout(c, manifests)).toEqual(['screen Xeneon Edge: a appears more than once'])
+  })
+  it('names the screen and the page in the grid messages', () => {
+    const c = withItems('fr', [{ instanceId: 'a', x: 0, y: 0, w: 16, h: 4 }, { instanceId: 'b', x: 8, y: 2, w: 16, h: 4 }])
+    expect(validateLayout(c, manifests)).toEqual(['écran Xeneon Edge, page p : a chevauche b'])
+    expect(validateLayout(withItems('en', [{ instanceId: 'a', x: 62, y: 0, w: 4, h: 4 }]), manifests)).toEqual([
+      'screen Xeneon Edge, page p: a outside the grid',
+      'screen Xeneon Edge, page p: a size 4×4 is smaller than the 8×4 minimum of clock',
+    ])
   })
 })
 
@@ -282,23 +293,139 @@ describe('the navigation bar', () => {
     expect(() => NavItemSchema.parse({ instanceId: 'a'.repeat(65) })).toThrow()
   })
   it('flags a widget the catalog does not know', () => {
-    expect(validateNavWidgets(withNav([{ instanceId: 'a', widgetId: 'ghost' }]), navManifests)).toEqual(['barre de navigation : widget inconnu ghost'])
+    expect(validateNavWidgets(withNav([{ instanceId: 'a', widgetId: 'ghost' }]), navManifests))
+      .toEqual(['écran Xeneon Edge, barre de navigation : widget inconnu ghost'])
   })
   it('flags a widget without a compact rendering', () => {
-    expect(validateNavWidgets(withNav([{ instanceId: 'a', widgetId: 'plain' }]), navManifests).join()).toMatch(/n’a pas de rendu compact/)
+    expect(validateNavWidgets(withNav([{ instanceId: 'a', widgetId: 'plain' }]), navManifests).join())
+      .toMatch(/^écran Xeneon Edge, barre de navigation : .*n’a pas de rendu compact/)
   })
-  it('flags a duplicate instanceId', () => {
+  it('flags an instance twice in one bar, through validateLayout', () => {
     const c = withNav([{ instanceId: 'a', widgetId: 'clock' }, { instanceId: 'a', widgetId: 'clock' }])
-    expect(validateNavWidgets(c, navManifests)).toEqual(['barre de navigation : instanceId a dupliqué'])
+    expect(validateLayout(c, navManifests)).toEqual(['écran Xeneon Edge : a y figure plus d’une fois'])
+    expect(validateNavWidgets(c, navManifests)).toEqual([])
   })
   it('answers in English when the config asks for it', () => {
     expect(validateNavWidgets(withNav([{ instanceId: 'a', widgetId: 'plain' }], 'en'), navManifests))
-      .toEqual(['navigation bar: widget plain has no compact rendering'])
+      .toEqual(['screen Xeneon Edge, navigation bar: widget plain has no compact rendering'])
   })
   it(`refuses more than ${MAX_NAV_WIDGETS} entries`, () => {
     const many = Array.from({ length: MAX_NAV_WIDGETS + 1 }, (_, i) => ({ instanceId: 'n' + i, widgetId: 'clock' }))
     expect(() => withNav(many)).toThrow()
     expect(withNav(many.slice(0, MAX_NAV_WIDGETS)).screens[0].nav).toHaveLength(MAX_NAV_WIDGETS)
+  })
+})
+
+describe('screens', () => {
+  // Pinned to French like the blocks above, except where a case says otherwise.
+  const screenManifests = new Map<string, LayoutManifest>([
+    ['clock', { minSize: [8, 4], compact: { width: 4 }, settingsSchema: { compactDate: { default: false } } }],
+    ['pill', { minSize: [8, 4], compact: { width: 4 } }],
+  ])
+  const page = (id: string, items: Placement[] = []) => ({ id, name: id.toUpperCase(), items })
+  const screen = (id: string, name: string, extra: object = {}) => ({ id, name, kind: 'edge', pages: [page('p')], ...extra })
+  const config = (widgets: Record<string, unknown>, screens: object[], locale: 'fr' | 'en' = 'fr'): Config =>
+    ConfigSchema.parse({ version: 4, locale, widgets, screens })
+
+  it('flags two screens sharing an id, naming the second', () => {
+    const c = config({}, [screen('edge', 'Xeneon Edge'), screen('edge', 'Tablet')])
+    expect(validateLayout(c, screenManifests)).toEqual(['écran Tablet : identifiant edge déjà pris par un autre écran'])
+  })
+  it('flags two pages sharing an id on one screen, and allows it across screens', () => {
+    const dup = config({}, [screen('edge', 'Xeneon Edge', { pages: [page('p'), page('p')] })], 'en')
+    expect(validateLayout(dup, screenManifests)).toEqual(['screen Xeneon Edge: duplicate page p'])
+    const across = config({}, [screen('edge', 'Xeneon Edge'), screen('tab', 'Tablet')])
+    expect(validateLayout(across, screenManifests)).toEqual([])
+  })
+  it('flags a placement naming a widget that does not exist', () => {
+    const c = config({}, [screen('tab', 'Tablet', { pages: [page('p', [{ instanceId: 'ghost-1', x: 0, y: 0, w: 8, h: 4 }])] })])
+    expect(validateLayout(c, screenManifests)).toEqual(['écran Tablet : ghost-1 ne désigne aucun widget'])
+  })
+  it('flags a bar entry naming a widget that does not exist', () => {
+    const c = config({}, [screen('tab', 'Tablet', { nav: [{ instanceId: 'ghost-1' }] })], 'en')
+    expect(validateLayout(c, screenManifests)).toEqual(['screen Tablet: ghost-1 names no widget'])
+    // validateLayout reports it; the bar's own checks have nothing to add about a missing widget.
+    expect(validateNavWidgets(c, screenManifests)).toEqual([])
+  })
+  it('flags an instance on two pages of one screen', () => {
+    const c = config({ 'clock-1': { widgetId: 'clock' } }, [screen('tab', 'Tablet', { pages: [
+      page('p', [{ instanceId: 'clock-1', x: 0, y: 0, w: 8, h: 4 }]),
+      page('q', [{ instanceId: 'clock-1', x: 0, y: 0, w: 8, h: 4 }]),
+    ] })])
+    expect(validateLayout(c, screenManifests)).toEqual(['écran Tablet : clock-1 y figure plus d’une fois'])
+  })
+  it('flags an instance both in the bar and on a page of one screen', () => {
+    const c = config({ 'clock-1': { widgetId: 'clock' } }, [screen('tab', 'Tablet', {
+      nav: [{ instanceId: 'clock-1' }],
+      pages: [page('p', [{ instanceId: 'clock-1', x: 0, y: 0, w: 8, h: 4 }])],
+    })])
+    expect(validateLayout(c, screenManifests)).toEqual(['écran Tablet : clock-1 y figure plus d’une fois'])
+  })
+  it('a widget in the bar on one screen and as a tile on another is valid', () => {
+    const c = config({ 'clock-1': { widgetId: 'clock' } }, [
+      screen('edge', 'Xeneon Edge', { nav: [{ instanceId: 'clock-1' }] }),
+      screen('tab', 'Tablet', { pages: [page('p', [{ instanceId: 'clock-1', x: 0, y: 0, w: 8, h: 4 }])] }),
+    ])
+    expect(validateLayout(c, screenManifests)).toEqual([])
+    expect(validateNavWidgets(c, screenManifests)).toEqual([])
+  })
+  it('checks each screen’s grid against its own display', () => {
+    const c = config({ 'clock-1': { widgetId: 'clock' } }, [
+      screen('edge', 'Xeneon Edge', { pages: [page('p', [{ instanceId: 'clock-1', x: 30, y: 0, w: 8, h: 4 }])] }),
+      screen('tab', 'Tablet', { display: { cols: 34, rows: 23 }, pages: [page('p', [{ instanceId: 'clock-1', x: 30, y: 0, w: 8, h: 4 }])] }),
+    ])
+    expect(validateLayout(c, screenManifests)).toEqual(['écran Tablet, page p : clock-1 hors grille'])
+  })
+  it('flags a bar whose widgets leave the page dots no room', () => {
+    // 34 columns keep 24 cells for the bar's widgets: seven 4-cell pills need 28.
+    const widgets: Record<string, unknown> = {}
+    const nav = Array.from({ length: 7 }, (_, i) => { widgets['p' + i] = { widgetId: 'pill' }; return { instanceId: 'p' + i } })
+    const c = config(widgets, [screen('tab', 'Tablet', { display: { cols: 34 }, nav })])
+    expect(validateNavWidgets(c, screenManifests)).toEqual(['écran Tablet, barre de navigation : ses widgets prennent 28 cases sur les 24 laissées par les points de page'])
+    c.screens[0].nav.pop()
+    expect(validateNavWidgets(c, screenManifests)).toEqual([])
+  })
+  it('a setting that widens a shared bar widget overflows the narrow screen only', () => {
+    const shared = (compactDate: boolean) => {
+      const widgets: Record<string, unknown> = { 'clock-1': { widgetId: 'clock', settings: { compactDate } } }
+      for (const id of ['a1', 'a2', 'b1', 'b2', 'b3', 'b4', 'b5']) widgets[id] = { widgetId: 'pill' }
+      return config(widgets, [
+        // 64 columns, 12 cells: the clock and two pills.
+        screen('edge', 'Xeneon Edge', { nav: [{ instanceId: 'clock-1' }, { instanceId: 'a1' }, { instanceId: 'a2' }] }),
+        // 34 columns, 20 cells of pills plus the clock: exactly the 24 the dots leave.
+        screen('tab', 'Tablet', { display: { cols: 34 }, nav: ['b1', 'b2', 'b3', 'b4', 'b5', 'clock-1'].map((instanceId) => ({ instanceId })) }),
+      ], 'en')
+    }
+    expect(validateNavWidgets(shared(false), screenManifests)).toEqual([])
+    expect(validateNavWidgets(shared(true), screenManifests))
+      .toEqual(['screen Tablet, navigation bar: its widgets take 28 cells of the 24 the page dots leave'])
+  })
+})
+
+describe('nav.ts', () => {
+  const navManifests = new Map<string, LayoutManifest>([
+    ['clock', { minSize: [8, 4], compact: { width: 4 }, settingsSchema: { compactDate: { default: false } } }],
+    ['wide', { minSize: [8, 4], compact: { width: 4 }, settingsSchema: { compactCities: { default: true } } }],
+    ['plain', { minSize: [8, 4] }],
+  ])
+  it('widens a compact widget when a wide setting is on, from the instance or the manifest default', () => {
+    expect(compactWidth(navManifests.get('clock'), {})).toBe(4)
+    expect(compactWidth(navManifests.get('clock'), { compactDate: true })).toBe(WIDE_COMPACT_WIDTH)
+    expect(compactWidth(navManifests.get('wide'), {})).toBe(WIDE_COMPACT_WIDTH)
+    expect(compactWidth(navManifests.get('wide'), { compactCities: false })).toBe(4)
+  })
+  it('gives 0 to a widget with no compact rendering or no manifest', () => {
+    expect(compactWidth(navManifests.get('plain'), { compactDate: true })).toBe(0)
+    expect(compactWidth(undefined, {})).toBe(0)
+  })
+  it('sums a screen’s bar, counting a missing or unknown widget as 0', () => {
+    const c = ConfigSchema.parse(v4(
+      { widgets: { c: { widgetId: 'clock' }, w: { widgetId: 'wide' }, g: { widgetId: 'ghost' } } },
+      { nav: [{ instanceId: 'c' }, { instanceId: 'w' }, { instanceId: 'g' }, { instanceId: 'missing' }] },
+    ))
+    expect(navCellsUsed(c.screens[0], c.widgets, navManifests)).toBe(4 + WIDE_COMPACT_WIDTH)
+    expect(NAV_DOTS_RESERVE_CELLS).toBe(10)
+    expect(WIDE_COMPACT_SETTINGS).toEqual(['compactDate', 'compactCities'])
   })
 })
 

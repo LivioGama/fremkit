@@ -12,6 +12,14 @@ import type { FastifyInstance } from 'fastify'
 let dir: string
 let app: FastifyInstance
 
+/** A v4 config with one screen and one page holding `items`, each a `clock` widget. */
+const onePage = (items: { instanceId: string, x: number, y: number, w: number, h: number }[], extra: object = {}) => ({
+  version: 4,
+  widgets: Object.fromEntries(items.map((p) => [p.instanceId, { widgetId: 'clock' }])),
+  screens: [{ id: 'edge', name: 'Xeneon Edge', kind: 'edge', pages: [{ id: 'p', name: 'P', items }] }],
+  ...extra,
+})
+
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'fremkit-app-'))
   await mkdir(join(dir, 'widgets', 'clock'), { recursive: true })
@@ -26,23 +34,23 @@ describe('config routes', () => {
   it('GET /api/config returns the default config', async () => {
     const res = await app.inject({ url: '/api/config' })
     expect(res.statusCode).toBe(200)
-    expect(res.json().pages[0].id).toBe('home')
+    expect(res.json().screens[0].pages[0].id).toBe('home')
   })
   it('PUT /api/config validates shape and layout', async () => {
-    const bad = await app.inject({ method: 'PUT', url: '/api/config', payload: { version: 3, pages: [] } })
+    const bad = await app.inject({ method: 'PUT', url: '/api/config', payload: { version: 4, screens: [] } })
     expect(bad.statusCode).toBe(400)
-    const overlapping = (locale: 'fr' | 'en') => ({ version: 3, locale, pages: [{ id: 'p', name: 'P', widgets: [
-      { instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 16, h: 4 }, { instanceId: 'b', widgetId: 'clock', x: 8, y: 2, w: 16, h: 4 } ] }] })
+    const overlapping = (locale: 'fr' | 'en') => onePage([
+      { instanceId: 'a', x: 0, y: 0, w: 16, h: 4 }, { instanceId: 'b', x: 8, y: 2, w: 16, h: 4 } ], { locale })
     const overlap = await app.inject({ method: 'PUT', url: '/api/config', payload: overlapping('fr') })
     expect(overlap.statusCode).toBe(400)
-    expect(overlap.json().errors[0]).toMatch(/chevauche/)
+    expect(overlap.json().errors[0]).toBe('écran Xeneon Edge, page p : a chevauche b')
     // The config being saved carries the language, so the refusal comes back in it.
     const overlapEn = await app.inject({ method: 'PUT', url: '/api/config', payload: overlapping('en') })
     expect(overlapEn.statusCode).toBe(400)
-    expect(overlapEn.json().errors[0]).toMatch(/overlaps/)
-    const ok = await app.inject({ method: 'PUT', url: '/api/config', payload: { version: 3, pages: [{ id: 'p', name: 'P', widgets: [{ instanceId: 'a', widgetId: 'clock', x: 0, y: 0, w: 16, h: 4 }] }] } })
+    expect(overlapEn.json().errors[0]).toBe('screen Xeneon Edge, page p: a overlaps b')
+    const ok = await app.inject({ method: 'PUT', url: '/api/config', payload: onePage([{ instanceId: 'a', x: 0, y: 0, w: 16, h: 4 }]) })
     expect(ok.statusCode).toBe(200)
-    expect((await app.inject({ url: '/api/config' })).json().pages[0].id).toBe('p')
+    expect((await app.inject({ url: '/api/config' })).json().screens[0].pages[0].id).toBe('p')
   })
   it('PUT /api/config with malformed JSON still returns 400', async () => {
     // The claude plugin registers a lenient application/json parser; it must stay
@@ -53,7 +61,7 @@ describe('config routes', () => {
   it('reports a healthy store and lets a normal PUT through', async () => {
     expect((await app.inject({ url: '/api/config/status' })).json()).toEqual({ degraded: false })
     expect((await app.inject({ url: '/api/config' })).headers['x-fremkit-degraded']).toBeUndefined()
-    const ok = await app.inject({ method: 'PUT', url: '/api/config', payload: { version: 3, pages: [{ id: 'p', name: 'P', widgets: [] }] } })
+    const ok = await app.inject({ method: 'PUT', url: '/api/config', payload: onePage([]) })
     expect(ok.statusCode).toBe(200)
   })
   it('refuses to save, and never writes, while the config on disk cannot be read', async () => {
@@ -66,7 +74,7 @@ describe('config routes', () => {
     err.mockRestore()
     expect((await app.inject({ url: '/api/config' })).headers['x-fremkit-degraded']).toBe('1')
     expect((await app.inject({ url: '/api/config/status' })).json()).toEqual({ degraded: true })
-    const put = await app.inject({ method: 'PUT', url: '/api/config', payload: { version: 3, pages: [{ id: 'p', name: 'P', widgets: [] }] } })
+    const put = await app.inject({ method: 'PUT', url: '/api/config', payload: onePage([]) })
     expect(put.statusCode).toBe(409)
     // A degraded store has no user config to read a language from, so it answers in the one the
     // machine would have picked.
@@ -76,7 +84,7 @@ describe('config routes', () => {
 })
 
 describe('the request gate', () => {
-  const page = { version: 3, pages: [{ id: 'p', name: 'P', widgets: [] }] }
+  const page = onePage([])
 
   it('refuses every request whose Host is not one of ours', async () => {
     for (const host of ['evil.example', 'evil.example:4242', 'fremkit.local']) {
@@ -104,7 +112,7 @@ describe('the request gate', () => {
       expect(res.json().error).toMatch(/origine non autorisée|origin not allowed/)
     }
     // The refusal happens before the route, so nothing was saved.
-    expect((await app.inject({ url: '/api/config' })).json().pages[0].id).toBe('home')
+    expect((await app.inject({ url: '/api/config' })).json().screens[0].pages[0].id).toBe('home')
   })
   it('lets a write from our own origin, and one with no Origin at all, through', async () => {
     expect((await app.inject({ method: 'PUT', url: '/api/config', payload: page,

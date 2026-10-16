@@ -4,6 +4,7 @@ import { BUILTIN_THEME } from '../themes/theme.js'
 import { defaultSecretsBackend } from '../secrets/index.js'
 import { tr } from '../i18n.js'
 import { DEFAULT_BACKGROUND } from '../backgrounds/seed.js'
+import { NAV_DOTS_RESERVE_CELLS, navCellsUsed } from './nav.js'
 
 export const WIDGET_ID_RE = /^[a-z0-9_-]+$/
 /** Colours are stored as `#rrggbb` only: no short form, no alpha, no named colour. */
@@ -431,38 +432,57 @@ function overlaps(a: Placement, b: Placement): boolean {
 }
 
 /**
- * Each screen's pages are checked against that screen's own grid. A placement naming an instance
- * missing from `widgets` skips the size check. Messages come back in the language the config
- * being checked asks for.
+ * The checks a config must pass beyond its shape, screen by screen. Screen ids are unique, and
+ * page ids unique within a screen. Every placement and bar entry names a widget in `widgets`, and
+ * a widget appears at most once per screen, its bar and its pages counted together — it may
+ * appear on any number of screens. Each page is then checked against its own screen's grid:
+ * inside it, at least the widget's minimum size, no overlap. A placement naming a missing widget
+ * skips the size check. Screens are named by their `name`, the one the user knows them by.
+ * Messages come back in the language the config being checked asks for.
  */
 export function validateLayout(config: Config, manifests: Map<string, LayoutManifest>): string[] {
   const errors: string[] = []
   const locale = config.locale
+  const screenIds = new Set<string>()
   for (const screen of config.screens) {
+    const name = screen.name
+    if (screenIds.has(screen.id)) errors.push(tr(locale, 'layout.duplicateScreen', { screen: name, id: screen.id }))
+    screenIds.add(screen.id)
+
+    // Pages in order, then the bar: the order `findInstances` reports them in.
+    const onScreen = new Set<string>()
+    const place = (instanceId: string): void => {
+      if (!(instanceId in config.widgets)) errors.push(tr(locale, 'layout.missingWidget', { screen: name, instanceId }))
+      else if (onScreen.has(instanceId)) errors.push(tr(locale, 'layout.duplicateOnScreen', { screen: name, instanceId }))
+      onScreen.add(instanceId)
+    }
+
     const { cols, rows } = screen.display
+    const pageIds = new Set<string>()
     for (const page of screen.pages) {
-      const seen = new Set<string>()
+      if (pageIds.has(page.id)) errors.push(tr(locale, 'layout.duplicatePage', { screen: name, page: page.id }))
+      pageIds.add(page.id)
       for (const p of page.items) {
-        if (seen.has(p.instanceId)) errors.push(tr(locale, 'layout.duplicateInstance', { page: page.id, instanceId: p.instanceId }))
-        seen.add(p.instanceId)
+        place(p.instanceId)
         if (p.x + p.w > cols || p.y + p.h > rows) {
-          errors.push(tr(locale, 'layout.outsideGrid', { page: page.id, instanceId: p.instanceId }))
+          errors.push(tr(locale, 'layout.outsideGrid', { screen: name, page: page.id, instanceId: p.instanceId }))
         }
         const widgetId = config.widgets[p.instanceId]?.widgetId
         const m = widgetId === undefined ? undefined : manifests.get(widgetId)
         if (m && (p.w < m.minSize[0] || p.h < m.minSize[1])) {
           errors.push(tr(locale, 'layout.tooSmall', {
-            page: page.id, instanceId: p.instanceId, w: p.w, h: p.h, minW: m.minSize[0], minH: m.minSize[1], widgetId,
+            screen: name, page: page.id, instanceId: p.instanceId, w: p.w, h: p.h, minW: m.minSize[0], minH: m.minSize[1], widgetId,
           }))
         }
       }
       for (let i = 0; i < page.items.length; i++) {
         for (let j = i + 1; j < page.items.length; j++) {
           const a = page.items[i], b = page.items[j]
-          if (overlaps(a, b)) errors.push(tr(locale, 'layout.overlap', { page: page.id, a: a.instanceId, b: b.instanceId }))
+          if (overlaps(a, b)) errors.push(tr(locale, 'layout.overlap', { screen: name, page: page.id, a: a.instanceId, b: b.instanceId }))
         }
       }
     }
+    for (const item of screen.nav) place(item.instanceId)
   }
   return errors
 }
@@ -470,23 +490,27 @@ export function validateLayout(config: Config, manifests: Map<string, LayoutMani
 /**
  * The navigation bar only draws widgets that have a compact rendering, so a bar entry naming a
  * widget the catalog does not know — or one that declares no `compact` — is refused rather than
- * silently dropped. Each screen's bar is checked on its own. Messages come back in the language
- * the config asks for, like the layout ones.
+ * silently dropped. Each screen's bar is checked on its own, and must leave the page dots their
+ * `NAV_DOTS_RESERVE_CELLS` of that screen's `cols`: the admin enforces this while editing one
+ * screen, but a setting changed on a widget shared with another screen can widen that screen's
+ * bar too, and only the save sees every screen. A bar entry naming a missing widget is left to
+ * `validateLayout`. Messages name the screen and come back in the language the config asks for.
  */
 export function validateNavWidgets(config: Config, manifests: Map<string, LayoutManifest>): string[] {
   const errors: string[] = []
   const locale = config.locale
   for (const screen of config.screens) {
-    const seen = new Set<string>()
+    const name = screen.name
     for (const item of screen.nav) {
-      if (seen.has(item.instanceId)) errors.push(tr(locale, 'navWidgets.duplicateInstance', { instanceId: item.instanceId }))
-      seen.add(item.instanceId)
       const widgetId = config.widgets[item.instanceId]?.widgetId
       if (widgetId === undefined) continue
       const m = manifests.get(widgetId)
-      if (!m) errors.push(tr(locale, 'navWidgets.unknownWidget', { widgetId }))
-      else if (!m.compact) errors.push(tr(locale, 'navWidgets.notCompact', { widgetId }))
+      if (!m) errors.push(tr(locale, 'navWidgets.unknownWidget', { screen: name, widgetId }))
+      else if (!m.compact) errors.push(tr(locale, 'navWidgets.notCompact', { screen: name, widgetId }))
     }
+    const used = navCellsUsed(screen, config.widgets, manifests)
+    const room = screen.display.cols - NAV_DOTS_RESERVE_CELLS
+    if (used > room) errors.push(tr(locale, 'navWidgets.noRoom', { screen: name, used, room }))
   }
   return errors
 }
