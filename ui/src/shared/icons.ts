@@ -31,6 +31,7 @@ export const ICONS: Record<string, string> = {
   'chevron-up': '<path d="m18 15-6-6-6 6"/>',
   'chevron-down': '<path d="m6 9 6 6 6-6"/>',
   monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
+  tablet: '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 18h.01"/>',
   play: '<path d="M6 3 20 12 6 21Z"/>',
   pencil: '<path d="M21.2 6.8a2.7 2.7 0 0 0-3.8-3.8L4.3 16.1a2 2 0 0 0-.5.8l-1.3 4.3a.5.5 0 0 0 .6.7l4.4-1.3a2 2 0 0 0 .8-.5Z"/><path d="m15 5 4 4"/>',
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',

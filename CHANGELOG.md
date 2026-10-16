@@ -14,7 +14,8 @@ tagged `vX.Y.Z`.
 
 ### Added
 - **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another
-  one, and give each its own layout. A widget shown on more than one screen is the same widget:
+  one, and give each its own layout. A pre-fill is shown as a preview first, naming the widgets
+  that do not fit the new screen, and the Screen panel gives each screen its own address. A widget shown on more than one screen is the same widget:
   edit its settings once and every screen follows. Removing it from one screen keeps it on the
   others; on its last screen the admin names it and asks before deleting it.
 - **Fremkit as an app.** A signed, notarized `Fremkit.app`, on a DMG or with

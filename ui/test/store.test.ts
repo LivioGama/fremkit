@@ -963,6 +963,18 @@ describe('screens', () => {
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 
+  it('addScreen refuses a device screen without a usable viewport', async () => {
+    const { store } = make()
+    await store.load()
+    expect(store.addScreen({ name: 'Tablet', kind: 'device', prefill: null })).toBe('')
+    // 30 px wide is less than one 40 px column; 100 px tall leaves no row under the 80 px bar.
+    expect(store.addScreen({ name: 'Tablet', kind: 'device', viewport: { width: 30, height: 800 }, prefill: null })).toBe('')
+    expect(store.addScreen({ name: 'Tablet', kind: 'device', viewport: { width: 800, height: 100 }, prefill: null })).toBe('')
+    expect(store.state.config!.screens).toHaveLength(1)
+    expect(store.state.toast).not.toBe('')
+    expect(store.canUndo.value).toBe(false)
+  })
+
   it('renameScreen renames, and ignores an empty name', async () => {
     const { store } = make()
     await store.load()

@@ -7,6 +7,7 @@ import NavPopover from '../dashboard/NavPopover.vue'
 import { useNavPopover } from '../dashboard/useNavPopover'
 import { useSwipe } from '../dashboard/useSwipe'
 import EditOverlay from './EditOverlay.vue'
+import ScreenSelector from './ScreenSelector.vue'
 import { navHeightOf, navItemsOf, type NavItem } from '../shared/types'
 import { backgroundStyle } from '../shared/background'
 import { useAdminStore } from './store'
@@ -89,6 +90,8 @@ onUnmounted(() => observer?.disconnect())
 </script>
 
 <template>
+  <div class="canvas">
+  <ScreenSelector />
   <div class="host" ref="host">
     <div class="board" ref="board" :style="boardStyle"
       @pointerdown="onBoardDown" @pointerup="onBoardUp" @pointercancel="onBoardCancel" @wheel="onBoardWheel">
@@ -110,10 +113,12 @@ onUnmounted(() => observer?.disconnect())
       <EditOverlay v-if="s.state.mode === 'edit'" :scale="scale" />
     </div>
   </div>
+  </div>
 </template>
 
 <style scoped>
-.host { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: var(--space-4); overflow: hidden; }
+.canvas { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.host { flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; padding: var(--space-4); overflow: hidden; }
 .board { position: relative; flex: 0 0 auto; transform-origin: center center; background: var(--bg);
   border-radius: var(--radius-md); box-shadow: var(--shadow); overflow: hidden; }
 </style>

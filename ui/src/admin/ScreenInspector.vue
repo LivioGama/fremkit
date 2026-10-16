@@ -21,7 +21,7 @@ import { CONTRIBUTORS, MAINTAINER, REGISTRY_REPOSITORY, REPOSITORY, VERSION } fr
 import { BUILTIN_THEME, useThemes } from '../shared/theme'
 import { ADMIN_GESTURES, DEFAULT_ADMIN_GESTURE, NAV_HEIGHTS, navHeightOf,
   type AdminGesture, type Background, type Config, type NavHeight, type Screen } from '../shared/types'
-import { screensShowing } from '../shared/screens'
+import { pickScreen, screensShowing } from '../shared/screens'
 import { useAdminStore } from './store'
 
 const s = useAdminStore()
@@ -152,7 +152,13 @@ const bg = computed<Background>(() => d.value.background ?? {})
 const navHeight = computed(() => navHeightOf(d.value))
 /** "80 px" and "40 px" read the same in both languages, so the labels need no dictionary entry. */
 const NAV_OPTIONS = NAV_HEIGHTS.map((h) => ({ value: String(h), label: `${h} px` }))
-const kioskUrl = `${location.origin}/?kiosk=1`
+/**
+ * The selected screen's own dashboard address. `/?kiosk=1` alone shows the first Edge screen,
+ * which is what the helper opens; naming the screen is what opens any other one.
+ */
+const kioskUrl = computed(() => `${location.origin}/?screen=${encodeURIComponent(scr.value.id)}&kiosk=1`)
+/** An Edge screen other than the one the helper shows is drawn nowhere yet. */
+const unshownEdge = computed(() => scr.value.kind === 'edge' && pickScreen(s.state.config!, null).id !== scr.value.id)
 
 /** The slider works in whole percents; the config stores the 0–1 opacity itself. */
 const ADMIN_GESTURE_OPTIONS = computed(() => ADMIN_GESTURES.map((value) => ({
@@ -301,6 +307,7 @@ function setBackground(patch: Partial<Background>): void {
   <BaseField :label="t('admin.inspector.screen.kioskUrl')">
     <p class="ro mono">{{ kioskUrl }}</p>
   </BaseField>
+  <p v-if="unshownEdge" class="ro">{{ t('admin.screens.edgeNote') }}</p>
 
   </BaseSection>
 

@@ -66,10 +66,17 @@ export interface AdminApi {
 export interface NewScreen {
   name: string
   kind: 'edge' | 'device'
-  /** A device's viewport in its orientation, in CSS px; ignored for an Edge screen. */
+  /**
+   * A device's viewport in its orientation, in CSS px; ignored for an Edge screen. Required for a
+   * device, and large enough for at least one 40 px column and one row under the bar.
+   */
   viewport?: { width: number; height: number }
   orientation?: 'landscape' | 'portrait'
-  /** Pages and bar to start from, placing existing widgets; `from` is the screen they come from. */
+  /**
+   * Pages and bar to start from, placing existing widgets; `from` is the screen they come from.
+   * They must already be arranged for the new screen's grid — `arrangeInto` (`./arrange`) is what
+   * produces them, and what the preview shows. `addScreen` does not re-check that they fit.
+   */
   prefill: { from: string; pages: Page[]; nav: NavItem[] } | null
 }
 
@@ -660,11 +667,17 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
      * A new screen, selected at once. A device screen takes its grid from the viewport it reported
      * (under the default 80 px bar); an Edge screen takes the Edge's. A pre-fill places existing
      * widgets — shared, not copied — and brings the look of the screen it came from; whatever would
-     * break the once-per-screen rule or overflow the bar is left out.
+     * break the once-per-screen rule or overflow the bar is left out (an `arrangeInto` result never
+     * has any). A device screen with no viewport, or one too small for a single cell, is refused.
      */
     addScreen(input: NewScreen): string {
       const cfg = state.config
       if (!cfg) return ''
+      if (input.kind === 'device') {
+        const vp = input.viewport
+        const g = vp ? deviceGrid(vp.width, vp.height, DEFAULT_NAV_HEIGHT) : null
+        if (!vp || !g || !(g.cols >= 1) || !(g.rows >= 1)) { state.toast = t('admin.store.badViewport'); return '' }
+      }
       const name = input.name.trim().slice(0, SCREEN_NAME_MAX) || t('admin.store.newScreen')
       const id = freeScreenId(name, cfg.screens.map((x) => x.id))
       const display: ScreenDisplay = input.kind === 'device' && input.viewport
