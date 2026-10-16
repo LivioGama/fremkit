@@ -469,7 +469,7 @@ export function validateLayout(config: Config, manifests: Map<string, LayoutMani
         }
         const widgetId = Object.hasOwn(config.widgets, p.instanceId) ? config.widgets[p.instanceId].widgetId : undefined
         const m = widgetId === undefined ? undefined : manifests.get(widgetId)
-        if (m && (p.w < m.minSize[0] || p.h < m.minSize[1])) {
+        if (m && widgetId !== undefined && (p.w < m.minSize[0] || p.h < m.minSize[1])) {
           errors.push(tr(locale, 'layout.tooSmall', {
             screen: name, page: page.id, instanceId: p.instanceId, w: p.w, h: p.h, minW: m.minSize[0], minH: m.minSize[1], widgetId,
           }))
