@@ -66,6 +66,13 @@ bun run dev                       # server + Vite with hot reload for the UI
 bun run helper:build && bun run helper:install && bun run helper:test
 ```
 
+`server/` is on TypeScript 7, the native compiler; `ui/` is still on 5.9, and that is not an
+oversight. `vue-tsc` loads the TypeScript compiler's own JavaScript API (`typescript/lib/tsc`) and
+patches it, and TypeScript 7 ships a native binary with no such entry point, so it dies with
+`ERR_PACKAGE_PATH_NOT_EXPORTED: Package subpath './lib/tsc' is not defined by "exports"`. Plain
+`tsc` is no substitute: it skips every `.vue` file, templates, props and emits included. The UI
+moves to 7 when `vue-tsc` runs on the native compiler.
+
 Restarting the live server when the helper runs it: kill only the node process listening on
 4242 (`kill $(lsof -nP -iTCP:4242 -sTCP:LISTEN -t)`), the helper respawns it within seconds.
 Never kill `FremkitHelper` itself. A second checkout can run beside the live one with
