@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// A future window fence can register here and share the dashboard visibility rule.
     private var fenceUpdates: [(Bool) -> Void] = []
     private var dockBadges: DockBadges?
+    private var brightness: BrightnessController?
     private var watcher: EdgeDisplay.Watcher?
     private var kiosk: KioskWindow?
     /// The server's access secret: made at launch, presented by everything that talks to the server.
@@ -96,6 +97,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         self.dockBadges = dockBadges
 
+        let brightness = BrightnessController(port: config.port, access: access, kioskURL: URL(string: config.url))
+        brightness.onMenuState = { [weak self] state in
+            self?.menu?.update { $0.brightness = state }
+        }
+        menu.onBrightness = { [weak brightness] level in brightness?.setFromMenu(level) }
+        self.brightness = brightness
+
         admin = AdminWindow(url: Self.parseURL(config.adminUrl, what: "adminUrl"), access: access)
 
         let server = ServerProcess(config: config, access: access)
@@ -122,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if permissions.isWaiting { startPermissionSequence() }
         syncFences()
         if config.dock { dockBadges.start() }
+        brightness.start()
 
         // An orphan from a crashed helper still holds the port and would be mistaken for an
         // external dev server, so clear it before anything probes.
@@ -176,6 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         driver?.stop()
         fence?.stop()
         dockBadges?.stop()
+        brightness?.stop()
         kiosk?.close()
     }
 
@@ -297,6 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.edge = edge
         driver?.displayBounds = edge
         fence?.edge = edge
+        brightness?.displayDidChange(edge == nil ? nil : EdgeDisplay.findID(width: config.display.width, height: config.display.height))
 
         if let edge {
             let frame = NSRect.fromCGDisplayBounds(edge, primaryHeight: NSRect.primaryScreenHeight)

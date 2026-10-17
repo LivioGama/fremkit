@@ -25,6 +25,8 @@ struct MenuState {
     var loginNeedsApproval = false
     /// True in the app, which updates itself; the developer helper has no updater to offer.
     var updates = false
+    /// The kiosk display's brightness, or why it cannot be set.
+    var brightness: BrightnessMenuState = .unavailable(.brightnessUnavailable)
 
     /// The text of the touch line, which also decides whether clicking it fixes something.
     var touchKey: L10nKey {
@@ -77,6 +79,10 @@ final class StatusMenu: NSObject {
     private let manageServerToggle: NSMenuItem
     private let launchAtLoginToggle: NSMenuItem
     private let checkForUpdatesItem = NSMenuItem()
+    /// A title line and a slider, as one custom view: a menu item cannot hold a slider otherwise.
+    private let brightnessItem = NSMenuItem()
+    private let brightnessLabel = NSTextField(labelWithString: "")
+    private let brightnessSlider = NSSlider(value: 50, minValue: 0, maxValue: 100, target: nil, action: nil)
 
     var onOpenAdmin: (() -> Void)?
     var onOpenAdminInBrowser: (() -> Void)?
@@ -91,6 +97,8 @@ final class StatusMenu: NSObject {
     var onCheckForUpdates: (() -> Void)?
     var onFix: ((PermissionFix) -> Void)?
     var onQuit: (() -> Void)?
+    /// The slider moved; called continuously while it is dragged (the controller throttles).
+    var onBrightness: ((Int) -> Void)?
 
     /// The fix each clickable status line currently offers, looked up when it is clicked.
     private var fixes: [ObjectIdentifier: PermissionFix] = [:]
@@ -171,6 +179,10 @@ final class StatusMenu: NSObject {
         menu.addItem(actionItem(L10n.string(.reloadDashboard), #selector(reload)))
         menu.addItem(.separator())
 
+        brightnessItem.view = brightnessView()
+        menu.addItem(brightnessItem)
+        menu.addItem(.separator())
+
         for toggle in [touchToggle, fenceToggle, dockToggle, manageServerToggle, launchAtLoginToggle] {
             toggle.target = self
             toggle.isEnabled = true
@@ -189,6 +201,20 @@ final class StatusMenu: NSObject {
         menu.addItem(quit)
 
         return menu
+    }
+
+    private func brightnessView() -> NSView {
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 50))
+        brightnessLabel.frame = NSRect(x: 20, y: 28, width: 230, height: 17)
+        brightnessLabel.font = .menuFont(ofSize: 0)
+        brightnessLabel.textColor = .secondaryLabelColor
+        brightnessSlider.frame = NSRect(x: 18, y: 4, width: 224, height: 22)
+        brightnessSlider.isContinuous = true
+        brightnessSlider.target = self
+        brightnessSlider.action = #selector(brightnessMoved)
+        view.addSubview(brightnessLabel)
+        view.addSubview(brightnessSlider)
+        return view
     }
 
     private func actionItem(_ title: String, _ action: Selector) -> NSMenuItem {
@@ -214,6 +240,17 @@ final class StatusMenu: NSObject {
         loginApprovalLine.isHidden = !state.loginNeedsApproval
         offer(loginApprovalLine, PermissionFix.forLine(.loginNeedsApproval))
         checkForUpdatesItem.isHidden = !state.updates
+
+        switch state.brightness {
+        case let .level(level):
+            brightnessLabel.stringValue = L10n.string(.brightnessLevel, level)
+            brightnessSlider.isEnabled = true
+            // Not while the user is dragging it: the echo of their own move would fight them.
+            if !brightnessDragging { brightnessSlider.integerValue = level }
+        case let .unavailable(key):
+            brightnessLabel.stringValue = L10n.string(key)
+            brightnessSlider.isEnabled = false
+        }
 
         touchToggle.state = state.touchEnabled ? .on : .off
         fenceToggle.state = state.fenceEnabled ? .on : .off
@@ -242,6 +279,14 @@ final class StatusMenu: NSObject {
     @objc private func openLog() { onOpenLog?() }
     @objc private func checkForUpdates() { onCheckForUpdates?() }
     @objc private func quit() { onQuit?() }
+
+    private var brightnessDragging = false
+    @objc private func brightnessMoved() {
+        let event = NSApp.currentEvent
+        brightnessDragging = event?.type == .leftMouseDragged || event?.type == .leftMouseDown
+        brightnessLabel.stringValue = L10n.string(.brightnessLevel, brightnessSlider.integerValue)
+        onBrightness?(brightnessSlider.integerValue)
+    }
 
     @objc private func toggleTouch() { onToggleTouch?(!state.touchEnabled) }
     @objc private func toggleFence() { onToggleFence?(!state.fenceEnabled) }

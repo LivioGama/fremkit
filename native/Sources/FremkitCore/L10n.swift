@@ -59,6 +59,13 @@ public enum L10nKey: String, CaseIterable {
     case checkForUpdates
     case quit
 
+    // Brightness of the kiosk's display, in the status menu
+    /// One `%d`: the level, 0–100.
+    case brightnessLevel
+    case brightnessUnavailable
+    case brightnessNoDDC
+    case brightnessAmbiguous
+
     // Admin window and its menu bar
     case adminWindowTitle
     case menuHideFremkit
@@ -117,6 +124,11 @@ public enum L10n {
         .checkForUpdates: "Rechercher les mises à jour…",
         .quit: "Quitter",
 
+        .brightnessLevel: "Luminosité de l'écran : %d %%",
+        .brightnessUnavailable: "Luminosité : écran absent",
+        .brightnessNoDDC: "Luminosité : non réglable sur cet écran (DDC)",
+        .brightnessAmbiguous: "Luminosité : écran non identifié avec certitude",
+
         .adminWindowTitle: "Fremkit — admin",
         .menuHideFremkit: "Masquer Fremkit",
         .menuQuitFremkit: "Quitter Fremkit",
@@ -171,6 +183,11 @@ public enum L10n {
         .openLog: "Log…",
         .checkForUpdates: "Check for Updates…",
         .quit: "Quit",
+
+        .brightnessLevel: "Display brightness: %d %%",
+        .brightnessUnavailable: "Brightness: no display",
+        .brightnessNoDDC: "Brightness: not adjustable on this display (DDC)",
+        .brightnessAmbiguous: "Brightness: display not identified for sure",
 
         .adminWindowTitle: "Fremkit — admin",
         .menuHideFremkit: "Hide Fremkit",
