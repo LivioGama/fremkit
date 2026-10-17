@@ -22,6 +22,7 @@ data/backgrounds/
 # Widgets installed from the marketplace: third-party code the user chose, never ours to commit.
 data/widgets/
 data/fremkit.json
+data/fremkit.v3.json
 # Working notes of the coding agents: local only
 docs/superpowers/
 .superpowers/
