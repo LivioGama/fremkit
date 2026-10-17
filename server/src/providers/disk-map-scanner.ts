@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { access, constants, stat } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { createInterface } from 'node:readline'
+import { z } from 'zod'
 import { applyBudget, pruneTree, validateTree, type DiskNode, type DiskPolicy } from './disk-map-tree.js'
 
 /**
@@ -22,6 +23,12 @@ export interface ScanProgress {
   files: number
   /** Where the walk is, the first one or two levels below the scanned folder. */
   path: string[]
+  /**
+   * A folder whose opening macOS is holding, below the scanned folder ([] for that folder itself):
+   * it is asking the user for access in a privacy prompt. null when nothing is held. Only the
+   * native scanner ever sets it.
+   */
+  waiting: string[] | null
 }
 
 export interface ScanStats {
@@ -103,6 +110,12 @@ export async function resolveScannerBinary(env: NodeJS.ProcessEnv = process.env)
   }
 }
 
+/** `{"type":"waiting","path":[…] | null}`: bounded, since it is published to the widget as is. */
+const WaitingLine = z.object({
+  type: z.literal('waiting'),
+  path: z.array(z.string().max(1024)).max(256).nullable(),
+})
+
 /** Parses the scanner's JSON lines; exported for the tests. */
 export function nativeLineHandler(onProgress: (p: ScanProgress) => void): {
   line(text: string): void
@@ -110,6 +123,8 @@ export function nativeLineHandler(onProgress: (p: ScanProgress) => void): {
 } {
   let done: ScanOutcome | null = null
   let failure: ScanFailure | null = null
+  let last: ScanProgress = { directories: 0, files: 0, path: [], waiting: null }
+  const report = (next: ScanProgress) => { last = next; onProgress(next) }
   return {
     line(text) {
       let message: Record<string, unknown>
@@ -124,8 +139,13 @@ export function nativeLineHandler(onProgress: (p: ScanProgress) => void): {
       const count = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0)
       switch (message.type) {
         case 'progress':
-          onProgress({ directories: count(message.directories), files: count(message.files), path: strings(message.path) })
+          report({ directories: count(message.directories), files: count(message.files), path: strings(message.path), waiting: last.waiting })
           break
+        case 'waiting': {
+          const parsed = WaitingLine.safeParse(message)
+          if (parsed.success) report({ ...last, waiting: parsed.data.path })
+          break
+        }
         case 'cancelled':
           failure = 'cancelled'
           break
@@ -356,7 +376,7 @@ export function createDuScanner(spawnImpl: Spawn = spawn, du = '/usr/bin/du'): D
         const now = Date.now()
         if (segments && now - lastProgress >= 250) {
           lastProgress = now
-          onProgress({ directories: parser.directories, files: 0, path: segments.slice(0, 2) })
+          onProgress({ directories: parser.directories, files: 0, path: segments.slice(0, 2), waiting: null })
         }
       }, (line) => parser.errorLine(line), spawnImpl)
       const result = run.exited.then(

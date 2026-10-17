@@ -91,6 +91,15 @@
   html.accent-fill .cta .go,html.accent-fill .cta .go:active{background:var(--on-surface,#0b0d10);color:var(--accent, #d9b36a)}
   .cta .note{font-size:calc(13px * var(--text-scale, 1));color:var(--text-muted, #8b93a0);max-width:32em}
   html.on-light .cta .note,html.accent-fill .cta .note{color:var(--on-surface,#0b0d10);opacity:.75}
+  /* macOS holds the scan behind a privacy prompt: said over the tile, wide or narrow. */
+  .ask{position:absolute;left:8px;right:8px;bottom:8px;display:flex;align-items:center;gap:10px;box-sizing:border-box;padding:8px 12px;
+    border-radius:12px;border-left:4px solid var(--accent, #d9b36a);background:rgba(128,128,128,.3);
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:var(--text, #e6e8eb);font-size:calc(14px * var(--text-scale, 1));line-height:1.3}
+  .ask .text{flex:1;min-width:0}
+  .ask .btn{white-space:nowrap}
+  html.on-light .ask{color:var(--on-surface,#0b0d10)}
+  html.accent-fill .ask{border-left-color:var(--on-surface,#0b0d10);color:var(--on-surface,#0b0d10)}
+  html.compact .ask{display:none!important}
 </style></head>
 <body>
 <div class="wrap" id="wrap">
@@ -126,6 +135,7 @@
     <button class="btn go" id="ctaBtn" type="button"></button>
     <div class="note" id="ctaNote"></div>
   </div>
+  <div class="ask" id="ask" role="status" hidden><span class="text" id="askText"></span><button class="btn" id="askShow" type="button"></button></div>
   <div class="toast" id="toast" hidden></div>
 </div>
 <script src="sunburst.js"></script>
@@ -134,6 +144,9 @@
     home: { fr: 'Dossier personnel', en: 'Home folder' },
     scanning: { fr: 'Analyse… {n} dossiers', en: 'Scanning… {n} folders' },
     scanningIn: { fr: 'Analyse… {n} dossiers · {where}', en: 'Scanning… {n} folders · {where}' },
+    asking: { fr: 'macOS demande à Fremkit l’accès à «\u00a0{name}\u00a0» — réponds à la fenêtre sur le Mac (elle peut être derrière le dashboard).',
+      en: 'macOS is asking whether Fremkit may open “{name}” — answer the window on the Mac (it may be behind the dashboard).' },
+    showPrompt: { fr: 'Afficher la demande', en: 'Show the request' },
     queued: { fr: 'En attente : une autre analyse est en cours', en: 'Waiting: another scan is running' },
     scanned: { fr: 'Analysé {ago}', en: 'Scanned {ago}' },
     viaDu: { fr: 'Analysé {ago} · du (sans l’assistant)', en: 'Scanned {ago} · du (no helper)' },
@@ -420,6 +433,12 @@
       children.forEach(function (c) { list.appendChild(rowFor(c, maxSize, arcIndex)) })
     }
 
+    /** The held folder below the scanned one; [] is the scanned folder itself. */
+    function waitingName(sc, waiting) {
+      if (waiting.length) return waiting.join('/')
+      return sc.path && sc.path.length ? sc.path[sc.path.length - 1] : rootLabel()
+    }
+
     function renderStatus() {
       var r = result()
       var status = ''
@@ -446,6 +465,13 @@
         $('ctaNote').textContent = currentError() ? status : Fremkit.t(L.firstScan)
       }
       $('progress').hidden = !scanningNow
+      // The scan is held by a privacy prompt: say which folder, and where the question is.
+      var waiting = scanningNow && Array.isArray(snap.scanning.waiting) ? snap.scanning.waiting : null
+      $('ask').hidden = !waiting
+      if (waiting) {
+        $('askText').textContent = Fremkit.t(L.asking, { name: waitingName(snap.scanning, waiting) })
+        $('askShow').textContent = Fremkit.t(L.showPrompt)
+      }
       var label = busy ? '✕' : '↻'
       $('scanBtn').textContent = label
       $('floatScan').textContent = label
@@ -595,6 +621,13 @@
       Fremkit.sendCommand('disk-map', 'openPrivacy', {}).catch(function () { toast(Fremkit.t(L.failed)) })
     }
     $('fda').addEventListener('click', openPrivacy)
+    // The prompt opens under the dashboard on the Edge: the helper lowers it for a while.
+    // Without the helper (a browser on `pnpm dev`) the command answers "failed" and nothing moves.
+    $('askShow').addEventListener('click', function () {
+      Fremkit.sendCommand('disk-map', 'revealPrompt', {}).then(function (r) {
+        if (!r || !r.ok) toast(Fremkit.t(L.failed))
+      }, function () { toast(Fremkit.t(L.failed)) })
+    })
 
     // ---- wiring -------------------------------------------------------------------------------
 

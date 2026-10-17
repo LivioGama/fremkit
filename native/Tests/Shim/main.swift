@@ -107,6 +107,7 @@ let suites: [(String, () -> XCTestCase, [TestMethod])] = [
     ]),
     ("HelperURLTests", { HelperURLTests() }, [
         ("testAdminHostOpensTheAdmin", { ($0 as! HelperURLTests).testAdminHostOpensTheAdmin() }),
+        ("testRevealHostLetsTheDialogsBeSeen", { ($0 as! HelperURLTests).testRevealHostLetsTheDialogsBeSeen() }),
         ("testTargetIsCaseInsensitiveAndIgnoresPathAndQuery", { ($0 as! HelperURLTests).testTargetIsCaseInsensitiveAndIgnoresPathAndQuery() }),
         ("testHostlessSpellingIsAccepted", { ($0 as! HelperURLTests).testHostlessSpellingIsAccepted() }),
         ("testAnotherSchemeIsIgnored", { ($0 as! HelperURLTests).testAnotherSchemeIsIgnored() }),

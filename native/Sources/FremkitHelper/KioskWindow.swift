@@ -68,6 +68,8 @@ private final class FirstMouseWebView: WKWebView {
 /// single reload three seconds later, so the window comes up black and fills in once the dashboard
 /// answers.
 final class KioskWindow: NSObject, WKNavigationDelegate {
+    /// Above the menu bar and status items (see `init`). System alerts are drawn below it.
+    static let kioskLevel = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
     /// Delay between a failed navigation and the next attempt.
     private static let retryDelay: TimeInterval = 3
 
@@ -86,7 +88,7 @@ final class KioskWindow: NSObject, WKNavigationDelegate {
                                defer: false)
         // Above the menu bar and status items: with "Displays have separate Spaces" macOS draws
         // a menu bar on every display, and a floating window would leave it visible on the Edge.
-        window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        window.level = Self.kioskLevel
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.backgroundColor = .black
         window.isMovable = false
@@ -184,7 +186,36 @@ final class KioskWindow: NSObject, WKNavigationDelegate {
     }
 
     func close() {
+        endReveal()
         window.orderOut(nil)
+    }
+
+    // MARK: - Reveal
+
+    /// Pending return to the kiosk level after a reveal.
+    private var revealWork: DispatchWorkItem?
+
+    /// Lets what sits behind the dashboard be seen and touched for `seconds`: a macOS dialog — a
+    /// privacy prompt the disk map is waiting on — opens on the Edge *under* the kiosk, which sits
+    /// above the status bar. The window drops to the normal level, behind the other windows, and
+    /// comes back on its own; a second reveal starts the time again.
+    func reveal(for seconds: TimeInterval) {
+        revealWork?.cancel()
+        window.level = .normal
+        // A dashboard the user hid stays hidden: ordering it back would show it.
+        if visibility.shouldShow { window.orderBack(nil) }
+        let work = DispatchWorkItem { [weak self] in self?.endReveal() }
+        revealWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+
+    /// Back to the kiosk level, at once; nothing to do when no reveal is running.
+    func endReveal() {
+        guard let work = revealWork else { return }
+        work.cancel()
+        revealWork = nil
+        window.level = Self.kioskLevel
+        if visibility.shouldShow { window.orderFrontRegardless() }
     }
 
     // MARK: - WKNavigationDelegate

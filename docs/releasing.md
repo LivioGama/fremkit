@@ -36,24 +36,17 @@ Done already:
 - the **Developer ID Application** certificate of team `874TMS6WBS`, in the login keychain;
 - the notarytool keychain profile **`fremkit-notary`**
   (`xcrun notarytool store-credentials fremkit-notary --apple-id … --team-id 874TMS6WBS`).
+- **Sparkle's EdDSA keys**: the private key in the login keychain (item "Private key for signing
+  Sparkle updates", account `ed25519`), the public key in `packaging/sparkle/public-key.txt`.
+  `native/.build/app/sparkle-2.10.0/bin/generate_keys` created them, after a
+  `bash scripts/build-app.sh` had downloaded Sparkle; `generate_keys -x <file>` exports the
+  private key for a backup, kept off this repository and off any cloud folder. **An app signed
+  with a public key can only ever be updated by its private key**: losing it means every
+  installed copy has to be reinstalled by hand.
 
 Still to do:
 
-1. **Sparkle's EdDSA keys.** After any `bash scripts/build-app.sh` has downloaded Sparkle:
-
-   ```sh
-   native/.build/app/sparkle-2.10.0/bin/generate_keys
-   ```
-
-   It creates the key pair in the login keychain (item "Private key for signing Sparkle
-   updates", account `ed25519`) and prints the public key. Paste that base64 string, alone, on
-   the first non-comment line of `packaging/sparkle/public-key.txt`, and commit it. Back the
-   private key up somewhere safe (`generate_keys -x <file>` exports it; keep that file off this
-   repository and off any cloud folder): **an app signed with a public key can only ever be
-   updated by its private key**, and losing it means every installed copy has to be reinstalled
-   by hand.
-
-2. **The Homebrew tap.** Create the public repository `fdussert/homebrew-fremkit` with one file,
+1. **The Homebrew tap.** Create the public repository `fdussert/homebrew-fremkit` with one file,
    `Casks/fremkit.rb`, copied from `packaging/homebrew/fremkit.rb` after the first release (the
    release script fills its `version` and `sha256`), and a README saying
    `brew install --cask fdussert/fremkit/fremkit`. Nothing else is needed.
@@ -61,8 +54,9 @@ Still to do:
 ## Each release
 
 1. On `main`, rename `## Unreleased` in `CHANGELOG.md` to `## X.Y.Z`, bump the four `version`
-   fields (`package.json`, `server/package.json`, `ui/package.json`, `server/src/version.ts`),
-   commit.
+   fields (`package.json`, `server/package.json`, `ui/package.json`, `server/src/version.ts`)
+   and every `data-fremkit-version` in `site/index.html` (the landing page names the version it
+   offers, and Cloudflare Pages publishes it when the commit reaches `main`), commit.
 2. `bash scripts/release.sh X.Y.Z`. It refuses a dirty tree or a version that does not match,
    then builds and signs the app, notarizes and staples it, builds, signs, notarizes and staples
    the DMG, zips the app for Sparkle and signs the zip with the private key from the keychain

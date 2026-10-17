@@ -67,6 +67,11 @@ check_version ui/package.json "$(json_version ui/package.json)"
 # shellcheck source=lib/version.sh
 source scripts/lib/version.sh
 check_version server/src/version.ts "$(fremkit_version)"
+# The landing page names the version it offers; every mention must follow the release.
+for site_version in $(grep -o 'data-fremkit-version>[^<]*' site/index.html | cut -d'>' -f2 | sort -u); do
+    check_version site/index.html "$site_version"
+done
+grep -q 'data-fremkit-version>' site/index.html || check_version site/index.html ""
 [ "$mismatch" -eq 0 ] || exit 1
 
 mkdir -p "$DIST"

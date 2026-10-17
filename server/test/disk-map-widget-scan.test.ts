@@ -84,4 +84,27 @@ describe('disk map widget', () => {
     w.doc.getElementById('scanBtn')!.dispatchEvent(new w.doc.defaultView!.MouseEvent('click', { bubbles: true }))
     expect(w.commands.at(-1)).toEqual(['disk-map', 'cancel', { root: 'home' }])
   })
+
+  it('says which folder macOS is asking about while the scan waits, and nothing once it moves on', async () => {
+    const w = load()
+    const scanning = { root: 'home', path: [], startedAt: 0, directories: 12, files: 0, current: ['Library'] }
+    w.publish({ ...neverScanned, scanning: { ...scanning, waiting: ['Documents'] } })
+    await flush()
+    const ask = w.doc.getElementById('ask')!
+    expect(ask.hidden).toBe(false)
+    expect(w.doc.getElementById('askText')!.textContent).toBe(
+      'macOS is asking whether Fremkit may open “Documents” — answer the window on the Mac (it may be behind the dashboard).')
+    expect(w.doc.getElementById('askShow')!.textContent).toBe('Show the request')
+    w.doc.getElementById('askShow')!.dispatchEvent(new w.doc.defaultView!.MouseEvent('click', { bubbles: true }))
+    expect(w.commands.at(-1)).toEqual(['disk-map', 'revealPrompt', {}])
+    // The scan's own progress stays on.
+    expect(w.doc.getElementById('progress')!.hidden).toBe(false)
+    w.publish({ ...neverScanned, scanning: { ...scanning, waiting: null } })
+    await flush()
+    expect(ask.hidden).toBe(true)
+    // A scanned subfolder held itself is named by its own name.
+    w.publish({ ...neverScanned, scanning: { ...scanning, path: ['Library', 'Mobile Documents'], waiting: [] } })
+    await flush()
+    expect(w.doc.getElementById('askText')!.textContent).toContain('“Mobile Documents”')
+  })
 })

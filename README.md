@@ -2,6 +2,8 @@
 
 # Fremkit
 
+**[fremkit.app](https://fremkit.app)** · [Download](https://github.com/fdussert/fremkit/releases/latest) · `brew install --cask fdussert/fremkit/fremkit`
+
 Fremkit turns the Corsair Xeneon Edge — a 2560 × 720 touch strip — into a widget dashboard for
 your Mac. Pages of tiles show the clock, the machine's load, your calendar, your build pipelines,
 your 3D printer, your smart home; you arrange them by dragging them around in a browser-based
@@ -81,14 +83,18 @@ Touchscreen Gestures must not be running (the panel takes one owner).
    below for the launchd agent that relaunches Touchscreen Gestures.
 
 3. **Open Fremkit.** It lives in the menu bar (the **F**), starts its own server and opens the
-   dashboard on the Edge. macOS asks for two permissions, both under System Settings → Privacy &
-   Security, both for **Fremkit**: **Accessibility** (to post the touch panel's clicks and
-   scrolls, and read the Dock's badges) and **Input Monitoring** (to read the touch panel).
-   Grant them, then quit Fremkit from its menu and open it again: grants take effect on the
-   next launch.
+   dashboard on the Edge. macOS then asks for two permissions for **Fremkit**, one after the
+   other: **Input Monitoring** (to read the touch panel), then **Accessibility** (to post the
+   touch panel's clicks and scrolls, and read the Dock's badges). A permission still missing
+   shows as a line in the menu bar menu; clicking it opens the right pane of System Settings →
+   Privacy & Security. Touch starts on its own once Input Monitoring is granted, or the menu
+   says "Touch: allowed — quit and reopen Fremkit…" and clicking it does that.
 
 4. **Allow Local Network** when macOS asks — the first time the server reaches a device on your
    LAN, a printer or a Homey.
+
+5. **Full Disk Access, optionally**, for the disk map to measure the folders macOS protects:
+   Privacy & Security → Full Disk Access → "Fremkit". See step 8 of the source install below.
 
 Updates arrive by themselves (Sparkle, signed by the project), or with **Check for Updates…** in
 the menu. Your dashboard, connections and backgrounds live in
@@ -134,8 +140,9 @@ Already running the developer helper from a checkout? Nothing changes until you 
    the synthetic mouse and scroll events the touch driver generates, and to read the Dock's
    badges.
 
-6. **Relaunch the helper** — quit it from the menu bar **F**, then open it again from
-   `~/Applications`. Grants only take effect on the next launch.
+6. **Relaunch the helper if it asks.** Touch starts on its own once Input Monitoring is granted;
+   when macOS wants the helper reopened first, the menu bar **F** says "Touch: allowed — quit and
+   reopen Fremkit…", and clicking it does that.
 
 7. **Allow Local Network** when macOS asks. It asks the first time the server reaches a device on
    your LAN — a Bambu printer, a Homey. The app to allow is "Fremkit Helper".
@@ -397,7 +404,7 @@ itself (Sparkle's system profile is off).
 | A shortcut button to a NAS or a router has no icon | Expected: favicons of private and local addresses are not fetched. The button still works |
 | The admin shows an old version of itself | Reopen it, or Cmd+R in its window; it keeps one web view for the helper's lifetime |
 | Widgets break after pulling a new version | Restart the server: the widget bridge is read once, at start |
-| The disk map shows locked folders | Give "Fremkit Helper" Full Disk Access, or leave them unmeasured |
+| The disk map shows locked folders | Give "Fremkit" (or "Fremkit Helper" for a source install) Full Disk Access, or leave them unmeasured |
 | The disk map says "du (no helper)" | Expected under `pnpm dev`: the bundled `fremkit-scan` is only there under the helper |
 
 The rest, with the reasoning: **[docs/troubleshooting.md](docs/troubleshooting.md)**.

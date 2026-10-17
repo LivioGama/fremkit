@@ -29,4 +29,14 @@ let scanSuites: [(String, () -> XCTestCase, [TestMethod])] = [
         ("testTooDeepIsUnreadableNotEntered", { try ($0 as! DiskWalkerTests).testTooDeepIsUnreadableNotEntered() }),
         ("testFinishedDirectoriesAreReportedDownToTheProgressDepth", { try ($0 as! DiskWalkerTests).testFinishedDirectoriesAreReportedDownToTheProgressDepth() }),
     ]),
+    ("DirectoryOpenerTests", { DirectoryOpenerTests() }, [
+        ("testABlockedOpenIsReportedThenGivenUpAndTheWalkGoesOn", { try ($0 as! DirectoryOpenerTests).testABlockedOpenIsReportedThenGivenUpAndTheWalkGoesOn() }),
+        ("testAnOpenAnsweredAfterTheGraceIsUsed", { try ($0 as! DirectoryOpenerTests).testAnOpenAnsweredAfterTheGraceIsUsed() }),
+        ("testCancellationWhileWaitingStopsTheWalk", { ($0 as! DirectoryOpenerTests).testCancellationWhileWaitingStopsTheWalk() }),
+        ("testABlockedRootIsUnreadable", { ($0 as! DirectoryOpenerTests).testABlockedRootIsUnreadable() }),
+        ("testAnAbandonedOpenIsClosedWhenItFinallyReturns", { ($0 as! DirectoryOpenerTests).testAnAbandonedOpenIsClosedWhenItFinallyReturns() }),
+        ("testWhileAPromptIsUnansweredLaterOpensGiveUpAfterTheGrace", { try ($0 as! DirectoryOpenerTests).testWhileAPromptIsUnansweredLaterOpensGiveUpAfterTheGrace() }),
+        ("testOnlyTheTopOfTheTreeGoesThroughTheOpener", { try ($0 as! DirectoryOpenerTests).testOnlyTheTopOfTheTreeGoesThroughTheOpener() }),
+        ("testPastTheCapTheWalkWaitsForAnAnswerRatherThanLeaveAThread", { try ($0 as! DirectoryOpenerTests).testPastTheCapTheWalkWaitsForAnAnswerRatherThanLeaveAThread() }),
+    ]),
 ]

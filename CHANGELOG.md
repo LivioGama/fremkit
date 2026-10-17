@@ -10,7 +10,18 @@ Anything that changes what the dashboard, the admin or a widget can do gets a li
 (`package.json`, `server/package.json`, `ui/package.json`, `server/src/version.ts`) and is
 tagged `vX.Y.Z`.
 
-## Unreleased
+## 0.4.1 — 2026-10-16
+
+### Fixed
+- **The disk map no longer looks stuck while macOS asks for access to a folder.** When a scan
+  reaches Documents, Desktop, Downloads, iCloud Drive or a removable volume for the first time,
+  macOS asks whether Fremkit may open it, and the scan cannot go on until somebody answers — a
+  question that could sit unseen behind the dashboard. The tile now says which folder macOS is
+  asking about, and its **Show the request** button moves the dashboard out of the way for 45
+  seconds so the window can be answered on the Edge; after 30 seconds without an answer, the scan
+  goes on without that folder and counts it as unreadable.
+
+## 0.4.0 — 2026-10-16
 
 ### Added
 - **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another

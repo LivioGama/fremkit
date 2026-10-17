@@ -42,6 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Period of the Input Monitoring check while the launch prompts wait on it.
     private static let permissionInterval: TimeInterval = 1
 
+    /// How long `fremkit://reveal` keeps the dashboard behind the other windows.
+    private static let revealDuration: TimeInterval = 45
+
     private static var uptime: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -154,6 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func perform(_ action: HelperURLAction) {
         switch action {
         case .openAdmin: admin?.show()
+        case .reveal: kiosk?.reveal(for: Self.revealDuration)
         }
     }
 

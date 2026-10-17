@@ -47,8 +47,27 @@ describe('nativeLineHandler', () => {
     h.line('not json')
     expect(h.outcome()).toBeNull()
     h.line('{"type":"done","tree":{"name":"x","kind":"d","size":5},"stats":{"directories":1,"files":2,"unreadable":0,"ms":7}}')
-    expect(seen).toEqual([{ directories: 3, files: 9, path: ['a', 'b'] }])
+    expect(seen).toEqual([{ directories: 3, files: 9, path: ['a', 'b'], waiting: null }])
     expect(h.outcome()).toEqual({ tree: { name: 'x', kind: 'd', size: 5 }, stats: { directories: 1, files: 2, unreadable: 0, ms: 7 } })
+  })
+  it('reports the folder macOS holds behind a privacy prompt, until the walk moves on', () => {
+    const seen: unknown[] = []
+    const h = nativeLineHandler((p) => seen.push(p))
+    h.line('{"type":"progress","directories":3,"files":9,"path":["Library"]}')
+    h.line('{"type":"waiting","path":["Documents"]}')
+    h.line('{"type":"progress","directories":4,"files":9,"path":["Library"]}')
+    h.line('{"type":"waiting","path":null}')
+    // Malformed waiting lines are ignored, never published.
+    h.line('{"type":"waiting","path":"Documents"}')
+    h.line('{"type":"waiting","path":[1,2]}')
+    h.line(`{"type":"waiting","path":["${'x'.repeat(2000)}"]}`)
+    h.line('{"type":"waiting"}')
+    expect(seen).toEqual([
+      { directories: 3, files: 9, path: ['Library'], waiting: null },
+      { directories: 3, files: 9, path: ['Library'], waiting: ['Documents'] },
+      { directories: 4, files: 9, path: ['Library'], waiting: ['Documents'] },
+      { directories: 4, files: 9, path: ['Library'], waiting: null },
+    ])
   })
   it('maps the error lines and refuses a tree that does not validate', () => {
     const a = nativeLineHandler(() => {})

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { tr } from '../i18n.js'
 import { execCommand, type Exec } from './exec.js'
+import { HELPER_REVEAL_URL, openHelperUrl } from '../helper/routes.js'
 import {
   createDuScanner, createNativeScanner, resolveScannerBinary, ScanError,
   type DiskScanner, type ScanFailure, type ScanHandle, type ScanProgress, type ScanStats,
@@ -46,7 +47,11 @@ export interface RootSummary {
 export interface DiskMapSnapshot {
   scanner: DiskScanner['kind'] | null
   roots: { id: string; label: string; kind: DiskRoot['kind'] }[]
-  scanning: { root: string; path: string[]; startedAt: number; directories: number; files: number; current: string[] } | null
+  scanning: {
+    root: string; path: string[]; startedAt: number; directories: number; files: number; current: string[]
+    /** The folder macOS is asking the user about (a privacy prompt), below `path`; null otherwise. */
+    waiting: string[] | null
+  } | null
   /** Roots waiting for the running scan to finish, in the order they will run. */
   queued: string[]
   results: Record<string, RootSummary>
@@ -137,6 +142,8 @@ export interface DiskMapOptions {
   mounts?: () => Promise<string>
   /** Runs `/usr/bin/open` with these arguments. */
   open?: (args: string[]) => Promise<unknown>
+  /** Asks the helper to lower the dashboard for a while (`fremkit://reveal`). */
+  revealHelper?: () => Promise<void>
   now?: () => number
 }
 
@@ -163,6 +170,7 @@ export function createDiskMapProvider(opts: DiskMapOptions): Provider<DiskMapSna
   const run: Exec = execCommand
   const mounts = opts.mounts ?? (() => run('/sbin/mount', []))
   const open = opts.open ?? ((args: string[]) => run('/usr/bin/open', args))
+  const revealHelper = opts.revealHelper ?? (() => openHelperUrl(HELPER_REVEAL_URL))
   const saveDir = join(opts.dataDir, 'disk-map')
 
   let scannerPromise: Promise<DiskScanner> | null = null
@@ -282,7 +290,7 @@ export function createDiskMapProvider(opts: DiskMapOptions): Provider<DiskMapSna
     running?.handle.cancel()
     const id = nextId++
     const handle = s.start(path, policy, (progress) => { if (running?.id === id) running.progress = progress })
-    running = { id, root: rootId, segments, startedAt: now(), progress: { directories: 0, files: 0, path: [] }, handle }
+    running = { id, root: rootId, segments, startedAt: now(), progress: { directories: 0, files: 0, path: [], waiting: null }, handle }
     handle.result.then(async (outcome) => {
       if (running?.id !== id) return
       running = null
@@ -349,6 +357,7 @@ export function createDiskMapProvider(opts: DiskMapOptions): Provider<DiskMapSna
       scanning: running && {
         root: running.root, path: running.segments, startedAt: running.startedAt,
         directories: running.progress.directories, files: running.progress.files, current: running.progress.path,
+        waiting: running.progress.waiting,
       },
       queued: [...queue.keys()],
       results,
@@ -413,6 +422,23 @@ export function createDiskMapProvider(opts: DiskMapOptions): Provider<DiskMapSna
         }
         try {
           await open(['-R', target])
+          return { ok: true }
+        } catch {
+          return { ok: false, error: 'failed' }
+        }
+      },
+      /**
+       * Lowers the dashboard behind the other windows for a while, so the privacy prompt a scan
+       * waits on can be seen and answered: on the Edge it opens under the kiosk. The widget cannot
+       * call `/api/helper/reveal` from its sandboxed frame, so it asks here. Without the helper
+       * (`pnpm dev`) `open` fails or finds nobody, and the answer says so; nothing else happens.
+       */
+      revealPrompt: async (payload, ctx?: CommandContext) => {
+        if (!ctx?.loopback) return localOnly()
+        const parsed = EmptyPayload.safeParse(payload ?? {})
+        if (!parsed.success) return invalid(parsed.error)
+        try {
+          await revealHelper()
           return { ok: true }
         } catch {
           return { ok: false, error: 'failed' }

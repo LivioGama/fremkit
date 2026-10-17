@@ -51,19 +51,49 @@ public final class DiskWalker {
     /// failed opens counted as nothing, or in a large allocation.
     public static let defaultMaxDepth = 128
     private let maxDepth: Int
+    private let opener: DirectoryOpener
+    private let onWaiting: (_ path: [String]?) -> Void
 
+    /// How deep, counted in components of the absolute path, a directory's open goes through the
+    /// `DirectoryOpener`; deeper ones are opened directly.
+    ///
+    /// The folders macOS asks about all sit near the top: `/Volumes/X` (a removable or network
+    /// volume), `~/Desktop`, `~/Documents`, `~/Downloads`, `~/Library/Mobile Documents` (iCloud
+    /// Drive), `~/Library/Containers/X` and `~/Library/Group Containers/X` (other apps' data), and
+    /// `~/Library/Containers/X/Data` at 6. The hand-off to the opener's thread costs a few
+    /// microseconds; on a home folder of 236 000 directories, paying it for every one of them made
+    /// a warm scan some 15 % slower, while the directories down to this depth are a few thousand.
+    public static let defaultGuardedDepth = 6
+    private let guardedDepth: Int
+    /// Components of the root's path, `/Users/me` being 2.
+    private var rootComponents = 0
+
+    /// `onWaiting` gets the path (below the root, [] for the root itself) of a directory whose open
+    /// macOS is holding, typically behind a privacy prompt, and nil once that open is over.
     public init(builder: DiskTreeBuilder,
                 isCancelled: @escaping () -> Bool = { false },
                 tickEvery: TimeInterval = 0.25,
                 maxDepth: Int = DiskWalker.defaultMaxDepth,
+                opener: DirectoryOpener = DirectoryOpener(),
+                guardedDepth: Int = DiskWalker.defaultGuardedDepth,
                 onDirectory: @escaping (_ path: [String], _ node: DiskNode) -> Void = { _, _ in },
-                onTick: @escaping (_ stats: DiskWalkStats, _ path: [String]) -> Void = { _, _ in }) {
+                onTick: @escaping (_ stats: DiskWalkStats, _ path: [String]) -> Void = { _, _ in },
+                onWaiting: @escaping (_ path: [String]?) -> Void = { _ in }) {
         self.builder = builder
         self.isCancelled = isCancelled
         self.tickEvery = tickEvery
         self.maxDepth = maxDepth
+        self.opener = opener
+        self.guardedDepth = guardedDepth
         self.onDirectory = onDirectory
         self.onTick = onTick
+        self.onWaiting = onWaiting
+    }
+
+    /// `path` is only built when the open is slow: on the fast path it would cost an array per directory.
+    private func guardedOpen(_ parent: Int32, _ name: String, flags: Int32, path: @autoclosure () -> [String]) -> GuardedOpenResult {
+        opener.open(parent: parent, path: name, flags: flags, isCancelled: isCancelled,
+                    onWaiting: { waiting in self.onWaiting(waiting ? path() : nil) })
     }
 
     deinit {
@@ -74,9 +104,14 @@ public final class DiskWalker {
     public func walk(root: String) throws -> DiskNode {
         // The root is the one path that is followed if it is a symlink, like `du`: it is what
         // the caller asked for. Nothing below it is.
-        let fd = open(root, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
-        if fd < 0 {
-            let code = errno
+        // Guarded too: a scan of ~/Documents itself is held by the same privacy prompt.
+        rootComponents = root.split(separator: "/").count
+        let fd: Int32
+        switch guardedOpen(AT_FDCWD, root, flags: O_RDONLY | O_DIRECTORY | O_CLOEXEC, path: []) {
+        case .opened(let opened): fd = opened
+        case .cancelled: throw DiskWalkError.cancelled
+        case .timedOut: throw DiskWalkError.rootUnreadable(ETIMEDOUT)
+        case .failed(let code):
             switch code {
             case ENOENT: throw DiskWalkError.rootMissing
             case ENOTDIR: throw DiskWalkError.rootNotADirectory
@@ -191,12 +226,23 @@ public final class DiskWalker {
             stats.unreadable += 1
             return
         }
-        var fd: Int32
-        repeat {
-            fd = openat(parent, subdirectory.name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        } while fd < 0 && errno == EINTR
-        if fd < 0 {
-            switch errno {
+        let fd: Int32
+        let flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+        let opened = rootComponents + builder.depth + 1 <= guardedDepth
+            ? guardedOpen(parent, subdirectory.name, flags: flags, path: builder.path + [subdirectory.name])
+            : DirectoryOpener.outcome(DirectoryOpener.system(parent, subdirectory.name, flags))
+        switch opened {
+        case .opened(let opened):
+            fd = opened
+        case .cancelled:
+            throw DiskWalkError.cancelled
+        case .timedOut:
+            // Nobody answered the privacy prompt in time: unreadable, exactly like a refusal.
+            builder.addUnreadable(name: subdirectory.name)
+            stats.unreadable += 1
+            return
+        case .failed(let code):
+            switch code {
             case EACCES, EPERM:
                 builder.addUnreadable(name: subdirectory.name)
                 stats.unreadable += 1

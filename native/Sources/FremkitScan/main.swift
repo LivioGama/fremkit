@@ -8,9 +8,17 @@
 //   {"type":"start","root":"/abs/path"}
 //   {"type":"dir","path":["Library"],"size":…,"files":…,"unreadable":…}   a finished directory
 //   {"type":"progress","directories":…,"files":…,"bytes":…,"path":[…]}    at most every 250 ms
+//   {"type":"waiting","path":["Documents"]}   a directory's open has been held for 2 s, which is
+//                                               macOS asking the user for access (a TCC prompt)
+//   {"type":"waiting","path":null}            that open is over: answered, refused, or given up
 //   {"type":"done","tree":{…},"stats":{…}}                                 the last line
 //   {"type":"cancelled"} after SIGTERM/SIGINT, {"type":"error","code":"…"} when the root fails.
 // The tree's nodes are documented in FremkitCore/DiskTree.swift.
+//
+// A "waiting" path is relative to the root like the others, [] for the root itself. An open nobody
+// answers within 30 s is given up: that directory counts as unreadable and the walk goes on (see
+// FremkitCore/DirectoryOpener.swift). A waiting line is always followed by its `null` before any
+// other waiting line.
 
 import Darwin
 import Foundation
@@ -74,6 +82,9 @@ let walker = DiskWalker(
     },
     onTick: { stats, path in
         emit("{\"type\":\"progress\",\"directories\":\(stats.directories),\"files\":\(stats.files),\"unreadable\":\(stats.unreadable),\"path\":\(DiskScanJSON.path(Array(path.prefix(2))))}")
+    },
+    onWaiting: { path in
+        emit("{\"type\":\"waiting\",\"path\":\(path.map { DiskScanJSON.path($0) } ?? "null")}")
     }
 )
 

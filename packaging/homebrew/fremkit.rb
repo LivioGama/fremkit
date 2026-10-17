@@ -2,13 +2,13 @@
 # Casks/fremkit.rb; scripts/release.sh fills `version` and `sha256` here and prints the commands
 # that copy it there. Install: brew install --cask fdussert/fremkit/fremkit
 cask "fremkit" do
-  version "0.2.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  version "0.4.1"
+  sha256 "c6072504a1626d9bc15ff4be30189469cec9c5a8950e211b5b52cd0e270ce9a0"
 
   url "https://github.com/fdussert/fremkit/releases/download/v#{version}/Fremkit-#{version}.dmg"
   name "Fremkit"
   desc "Widget dashboard for the Corsair Xeneon Edge touch display"
-  homepage "https://github.com/fdussert/fremkit"
+  homepage "https://fremkit.app"
 
   livecheck do
     url :url
