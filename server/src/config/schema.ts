@@ -207,6 +207,39 @@ export const ScreenDisplaySchema = z.object({
   }).optional(),
 })
 
+/** `HH:MM`, 24-hour, in the Mac's own time zone. */
+export const ClockTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+
+/**
+ * How a screen's brightness is driven when nobody touches it. Both modes are off by default, and
+ * an absent `brightness` is the same as both off: the display keeps whatever level it was left
+ * at. The level itself is *not* here — the display remembers it, and a slider drag is not a
+ * config write. See `server/src/brightness/`.
+ */
+export const BrightnessSettingsSchema = z.object({
+  /** Two levels, switching at sunrise and sunset (or at fixed times), with a ramp between. */
+  dayNight: z.object({
+    enabled: z.boolean().default(false),
+    day: z.number().int().min(0).max(100).default(80),
+    night: z.number().int().min(0).max(100).default(30),
+    /** `sun`: computed locally from `latitude`/`longitude`, no network. `fixed`: `dayAt`/`nightAt`. */
+    schedule: z.enum(['sun', 'fixed']).default('sun'),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    dayAt: ClockTimeSchema.default('07:00'),
+    nightAt: ClockTimeSchema.default('21:00'),
+    /** How long the change from one level to the other takes, starting at the transition. */
+    rampMinutes: z.number().int().min(0).max(120).default(20),
+  }).prefault({}),
+  /** The screen follows the Mac's built-in display: `level = builtin% × scale + offset`. */
+  followMac: z.object({
+    enabled: z.boolean().default(false),
+    scale: z.number().min(0.2).max(3).default(1),
+    offset: z.number().int().min(-100).max(100).default(0),
+  }).prefault({}),
+})
+export type BrightnessSettings = z.infer<typeof BrightnessSettingsSchema>
+
 /** A screen id is a slug: it is stable, it goes in the dashboard's `?screen=` and in device records. */
 export const SCREEN_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
 
@@ -223,6 +256,8 @@ export const ScreenSchema = z.object({
   /** Compact widgets drawn in this screen's navigation bar, in cluster order. */
   nav: z.array(NavItemSchema).max(MAX_NAV_WIDGETS).default([]),
   pages: z.array(PageSchema).min(1),
+  /** Automatic brightness for this screen. Absent in every file written before it existed: both modes off. */
+  brightness: BrightnessSettingsSchema.optional(),
 })
 
 /** A connection id is a slug: it becomes a channel suffix and a secret-key segment. */

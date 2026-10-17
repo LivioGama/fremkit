@@ -95,6 +95,24 @@ export interface Screen {
   /** Compact widgets drawn in this screen's bar, in cluster order. */
   nav: NavItem[]
   pages: Page[]
+  /** Automatic brightness for this screen; absent means both modes off. */
+  brightness?: BrightnessSettings
+}
+/** Mirrors `BrightnessSettingsSchema`: how a screen's brightness is driven when nobody touches it. */
+export interface BrightnessSettings {
+  dayNight: {
+    enabled: boolean
+    day: number
+    night: number
+    schedule: 'sun' | 'fixed'
+    latitude?: number
+    longitude?: number
+    /** `HH:MM`, the Mac's time zone. */
+    dayAt: string
+    nightAt: string
+    rampMinutes: number
+  }
+  followMac: { enabled: boolean; scale: number; offset: number }
 }
 export interface Connection { id: string; type: string; name: string; fields: Record<string, string> }
 export type SecretsBackend = 'keychain' | 'file'

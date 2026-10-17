@@ -89,6 +89,40 @@ describe('ScreenSchema', () => {
   })
 })
 
+describe('screen brightness settings', () => {
+  it('leaves a file written before brightness existed untouched: no key, both modes off', () => {
+    // The whole migration story: an absent key means "nothing automatic", so no version bump.
+    const parsed = ConfigSchema.parse(v4())
+    expect(parsed.screens[0]).not.toHaveProperty('brightness')
+    expect(ConfigSchema.parse(DEFAULT_CONFIG).screens[0]).not.toHaveProperty('brightness')
+  })
+  it('fills every default once the key is there, with both modes off', () => {
+    const parsed = ConfigSchema.parse(v4({}, { brightness: {} }))
+    expect(parsed.screens[0].brightness).toEqual({
+      dayNight: { enabled: false, day: 80, night: 30, schedule: 'sun', dayAt: '07:00', nightAt: '21:00', rampMinutes: 20 },
+      followMac: { enabled: false, scale: 1, offset: 0 },
+    })
+  })
+  it('round-trips a filled-in setting', () => {
+    const brightness = {
+      dayNight: { enabled: true, day: 90, night: 10, schedule: 'fixed', latitude: 48.85, longitude: 2.35, dayAt: '06:30', nightAt: '22:15', rampMinutes: 45 },
+      followMac: { enabled: true, scale: 1.5, offset: -10 },
+    }
+    const once = ConfigSchema.parse(v4({}, { brightness }))
+    expect(ConfigSchema.parse(once)).toEqual(once)
+    expect(once.screens[0].brightness).toEqual(brightness)
+  })
+  it('refuses levels, times and coordinates out of range', () => {
+    const bad = [
+      { dayNight: { day: 101 } }, { dayNight: { night: -1 } }, { dayNight: { day: 50.5 } },
+      { dayNight: { dayAt: '24:00' } }, { dayNight: { nightAt: '7:00' } }, { dayNight: { schedule: 'moon' } },
+      { dayNight: { latitude: 91 } }, { dayNight: { longitude: -181 } }, { dayNight: { rampMinutes: 121 } },
+      { followMac: { scale: 0 } }, { followMac: { offset: 200 } },
+    ]
+    for (const brightness of bad) expect(() => ConfigSchema.parse(v4({}, { brightness })), JSON.stringify(brightness)).toThrow()
+  })
+})
+
 describe('PlacementSchema', () => {
   it('keeps the geometry and nothing else', () => {
     expect(PlacementSchema.parse({ instanceId: 'a', x: 0, y: 1, w: 2, h: 3, widgetId: 'clock' }))
