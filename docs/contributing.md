@@ -31,8 +31,10 @@ docs/      This documentation
 
 ```sh
 pnpm dev          # server on 4242 + Vite on 5173 (dashboard http://localhost:5173, admin /admin)
+pnpm open --dev   # signs the browser in on the Vite server (add /admin for the admin)
 pnpm build        # ui + server
 pnpm start        # production: http://127.0.0.1:4242 and /admin
+pnpm open         # signs the browser in on 4242 (pnpm open /admin, pnpm open --print)
 pnpm test         # vitest, server + ui
 pnpm typecheck
 pnpm helper:build   # native/dist/Fremkit Helper.app
@@ -48,6 +50,28 @@ not trust 5173: it is Vite's default port, so any unrelated project serving on i
 trusted to save this dashboard's config. Running Vite by hand (`pnpm --filter ui dev`) against a
 server started without the flag gives a dashboard whose WebSocket is refused — export
 `FREMKIT_DEV=1` for the server too.
+
+### Signing in: the access secret
+
+The server answers only callers holding its access secret ([SECURITY.md](../SECURITY.md#the-local-access-secret)),
+which it writes to `~/Library/Application Support/Fremkit/access-<port>.token` (under
+`FREMKIT_SUPPORT_DIR` when set). The helper's windows need nothing. A browser needs a one-time
+link: `pnpm open` mints one through `POST /api/auth/code` and opens `/auth?code=…&next=…`, which
+sets the cookie and lands on the page. Under `pnpm dev`, `pnpm open --dev` opens it on Vite's
+origin instead — Vite proxies `/auth`, so the cookie belongs to `localhost:5173` — and `dev.sh`
+exports one secret for the session, so `tsx watch` restarting the server does not sign you out.
+
+Scripts send `Authorization: Bearer <secret>`; `scripts/lib/access.sh` has the helpers, and
+hands the header to curl through a file descriptor rather than on the command line:
+
+```sh
+. scripts/lib/access.sh
+curl -X POST -H @<(fremkit_auth_header 4242) http://127.0.0.1:4242/api/widgets/rescan
+```
+
+A second checkout on `FREMKIT_PORT=4301` writes `access-4301.token` and names its cookie after
+its port, so it never signs the live one out: `FREMKIT_PORT=4301 pnpm open`. Vite follows
+`FREMKIT_PORT` too.
 
 ### Installing from a registry you are building
 

@@ -38,8 +38,11 @@ Fremkit does not edit this file for you: it is Claude Code's, and holds your own
 }
 ```
 
-Both scripts POST to `/api/hooks/claude`. The hooks are asynchronous and never block Claude Code,
-even when Fremkit is not running. The status line needs `jq` and degrades to one line of text
+Both scripts POST to `/api/hooks/claude`, with the server's access secret read from
+`~/Library/Application Support/Fremkit/access-4242.token` (the port follows `FREMKIT_HOOK_URL`;
+`FREMKIT_ACCESS_TOKEN_FILE` names another file). They source `lib/access.sh` from beside
+themselves, so keep the two together if you copy them. The hooks are asynchronous and never block
+Claude Code, even when Fremkit is not running. The status line needs `jq` and degrades to one line of text
 without it.
 
 ## What is sent

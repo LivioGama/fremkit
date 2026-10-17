@@ -162,12 +162,16 @@ to its bundle, including the `fremkit://` URL scheme the dashboard's long press 
 admin window: an older copy ignores it.
 
 The dashboard then opens by itself on the Edge. If you would rather not run the helper at all,
-`pnpm start` serves everything and `pnpm kiosk` opens a full-screen Chrome window on the Edge —
-you lose the touch driver, the mouse fence and the Dock badges.
+`pnpm start` serves everything and `pnpm kiosk` opens a full-screen Chrome window on the Edge,
+signed in through a one-time link — you lose the touch driver, the mouse fence and the Dock
+badges.
 
 ## First run
 
-1. **Open the admin** — from the menu bar **F** menu, or at <http://127.0.0.1:4242/admin>.
+1. **Open the admin** — from the menu bar **F** menu: in its own window, or in your browser with
+   *Open the admin in the browser*. The server answers only callers holding its access secret,
+   so typing <http://127.0.0.1:4242/admin> by hand shows a page saying how to get in instead
+   (see [Security](#security)); from a checkout, `pnpm open /admin` does the same as the menu.
 2. **Add a page** with the **+** in the Pages list, and name it.
 3. **Add widgets** — click a card in the widget library to drop it in the first free spot, or drag
    it onto the canvas. Drag it to move it, pull a handle to resize it.
@@ -401,6 +405,7 @@ itself (Sparkle's system profile is off).
 | Permissions reset after every rebuild | Run `scripts/create-signing-identity.sh` and rebuild |
 | A LAN device answers `ping` but not Fremkit | Allow Local Network for the app running the server |
 | "Server: external" | Something else answers port 4242 — expected under `pnpm dev` |
+| The browser shows "Open Fremkit from the F menu" | The server asks for its access secret. Use *Open the admin in the browser* in the **F** menu, or `pnpm open` |
 | A shortcut button to a NAS or a router has no icon | Expected: favicons of private and local addresses are not fetched. The button still works |
 | The admin shows an old version of itself | Reopen it, or Cmd+R in its window; it keeps one web view for the helper's lifetime |
 | Widgets break after pulling a new version | Restart the server: the widget bridge is read once, at start |
@@ -412,7 +417,8 @@ The rest, with the reasoning: **[docs/troubleshooting.md](docs/troubleshooting.m
 ## Development
 
 ```sh
-pnpm dev          # server on 4242 + Vite on 5173 (dashboard http://localhost:5173, admin /admin)
+pnpm dev          # server on 4242 + Vite on 5173; then pnpm open --dev [/admin] to sign in
+pnpm open         # opens http://127.0.0.1:4242 signed in (pnpm open /admin for the admin)
 pnpm build        # ui + server
 pnpm start        # production: http://127.0.0.1:4242 and /admin
 pnpm test         # vitest, server + ui
@@ -447,6 +453,15 @@ Building, notarizing and publishing a release: **[docs/releasing.md](docs/releas
 Feeding the Claude Code widgets: **[docs/claude-code.md](docs/claude-code.md)**.
 
 ## Security
+
+The server answers only callers holding a secret made at each launch: the helper's windows get
+it on their own, a browser through a one-time link (the **F** menu, `pnpm open`), and scripts read
+it from `~/Library/Application Support/Fremkit/access-4242.token` and send it as
+`Authorization: Bearer`. For example:
+
+```sh
+curl -X POST -H @<(printf "Authorization: Bearer %s" "$(cat ~/Library/Application\ Support/Fremkit/access-4242.token)") http://127.0.0.1:4242/api/widgets/rescan
+```
 
 The threat model, what a widget can and cannot do, what the helper's permissions mean, the known
 limits, and how to report a problem: **[SECURITY.md](SECURITY.md)**.

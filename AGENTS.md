@@ -21,7 +21,8 @@ Fremkit turns a Corsair Xeneon Edge (a 2560 × 720 touch strip) into a widget da
   sandboxed iframe, talking to the host through the `Fremkit` global injected from
   `server/src/bridge/fremkit.js`. The SDK is documented in
   [docs/writing-widgets.md](docs/writing-widgets.md). After adding or editing a manifest:
-  `curl -X POST http://127.0.0.1:4242/api/widgets/rescan`.
+  `curl -X POST -H @<(printf "Authorization: Bearer %s" "$(cat ~/Library/Application\ Support/Fremkit/access-4242.token)") http://127.0.0.1:4242/api/widgets/rescan`
+  (the server answers only holders of its access secret; see below).
   **What belongs here and what does not:** the core ships what works on any Mac with no account,
   no hardware and no third-party application. Everything else is published on the registry. A
   *provider* or a *connection type* is not the widget and stays here whatever the widget does:
@@ -66,7 +67,13 @@ pnpm dev                          # server + Vite with hot reload for the UI
 pnpm helper:build && pnpm helper:install && pnpm helper:test
 ```
 
-Restarting the live server when the helper runs it: kill only the node process listening on
+**Every request needs the local access secret** (SECURITY.md): a `curl` without
+`Authorization: Bearer $(cat ~/Library/Application\ Support/Fremkit/access-<port>.token)` gets 401,
+and a browser needs a one-time link — `pnpm open [/admin]`, `pnpm open --dev` under `pnpm dev`, or
+`FREMKIT_URL=http://127.0.0.1:4301 pnpm open --print` for a second checkout. Pass the header
+through `-H @<(printf …)` rather than on the command line, as the scripts do. Only `/auth`,
+`/fremkit.js` and `/widgets/<id>/…` answer without it (`server/src/http/access.ts`); a new route
+is behind it with nothing to do. Restarting the live server when the helper runs it: kill only the node process listening on
 4242 (`kill $(lsof -nP -iTCP:4242 -sTCP:LISTEN -t)`), the helper respawns it within seconds.
 Never kill `FremkitHelper` itself. A second checkout can run beside the live one with
 `FREMKIT_PORT=4301 pnpm exec tsx src/index.ts` from `server/`.

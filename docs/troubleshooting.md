@@ -310,6 +310,18 @@ pnpm helper:build && pnpm helper:install
 Then quit the helper from the menu bar **F** and open it again from `~/Applications`. In an
 ordinary browser the same press opens `/admin` in a new tab and needs no helper at all.
 
+## The browser says "Open Fremkit from the F menu"
+
+The server answers only callers holding its access secret, and this browser does not have it:
+the address was typed or bookmarked, or the helper was relaunched since (each launch makes a new
+secret). Use *Open the admin in the browser* in the menu bar **F** menu, or `pnpm open` in a
+checkout; either hands the browser a one-time link that signs it in. "This link has expired or
+was already used" means the link was more than a minute old or had been opened once already: ask
+for a new one the same way.
+
+A script getting **401** is missing the `Authorization: Bearer` header, or read the token file of
+another port: see [contributing](contributing.md#signing-in-the-access-secret).
+
 ## The menu says "Server: external"
 
 Something already answers port 4242, so the helper steps aside rather than starting a second one.
