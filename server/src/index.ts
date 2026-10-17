@@ -3,6 +3,7 @@ import { buildApp } from './app.js'
 import { providers } from './providers/index.js'
 import { shippedPaths } from './paths.js'
 import { DEFAULT_BACKGROUND } from './backgrounds/seed.js'
+import { accessTokenPath, resolveAccessToken, writeAccessToken } from './http/access-file.js'
 
 // A checkout's own folders, or the app bundle's when the helper sets `FREMKIT_ROOT`: see paths.ts.
 let shipped: ReturnType<typeof shippedPaths>
@@ -62,8 +63,20 @@ if (requestedRegistry && !dev) {
 
 // Not a top-level await: the app's bundled server is CommonJS (see server/scripts/bundle.mjs),
 // which has none. A failure still ends the process with a non-zero status, as it did.
+/**
+ * The local access secret (see `http/access.ts`): the helper's, passed in the environment, or a
+ * new one for a server started by hand. Read here, before anything else can spawn a child that
+ * would inherit the variable. Never printed.
+ */
+const access = resolveAccessToken(process.env)
+if (access.rejected) console.error('fremkit: FREMKIT_ACCESS_TOKEN is not a valid secret (base64url, 32 bytes or more); using a new one')
+const tokenFile = accessTokenPath(port)
+
 async function main(): Promise<void> {
+  // Written before the server listens, so whoever sees the port answer can already read it.
+  await writeAccessToken(tokenFile, access.token)
   const app = await buildApp({
+    accessToken: access.token,
     dataDir,
     widgetsDir: shipped.widgetsDir,
     ...(registryUrl ? { registryUrl, registryDev: true } : {}),
@@ -76,6 +89,7 @@ async function main(): Promise<void> {
     port,
   })
   await app.listen({ port, host: '127.0.0.1' })
+  app.log.info({ tokenFile, source: access.source }, 'local access secret written')
 }
 
 main().catch((error: unknown) => {

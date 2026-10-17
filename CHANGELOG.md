@@ -40,6 +40,15 @@ tagged `vX.Y.Z`.
   now keeps its connection from being deleted; before, the connection could be removed while the
   bar widget still used it.
 
+### Security
+- **The dashboard asks for a key.** Fremkit's server now answers only callers that show a secret
+  made fresh each time the helper starts, so a web page or another account's program can no
+  longer read your dashboard or change it. The Edge and the admin window keep working with
+  nothing to do. In a browser, open the admin from the **F** menu (*Open the admin in the
+  browser*) or with `pnpm open`; typing `127.0.0.1:4242` by hand now shows a page saying so.
+  Scripts calling the server read the secret from
+  `~/Library/Application Support/Fremkit/access-4242.token` (see the README).
+
 ## 0.4.1 — 2026-10-16
 
 ### Fixed

@@ -16,6 +16,7 @@
     "typecheck": "pnpm -r typecheck",
     "start": "pnpm --filter server start",
     "kiosk": "bash scripts/kiosk.sh",
+    "open": "bash scripts/open.sh",
     "helper:build": "bash scripts/build-helper.sh",
     "helper:install": "bash scripts/install-helper.sh",
     "helper:test": "bash scripts/test-helper.sh"

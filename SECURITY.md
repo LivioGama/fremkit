@@ -5,12 +5,55 @@ against, what it deliberately does not, and what you are trusting when you run i
 
 ## The shape of it
 
-The server listens on `127.0.0.1:4242` and nowhere else. It has **no authentication**, by design:
-anything that can open a socket to it is already running as you on your Mac, and a process
-running as you can read your keychain whatever Fremkit does. Adding a password would protect
-nothing and would be one more secret to keep.
+The server listens on `127.0.0.1:4242` and nowhere else, and answers only a caller that shows
+its **local access secret**. That leaves three attackers worth defending against, and the code is
+written around them; the secret is described first because every one of them meets it.
 
-That leaves three attackers worth defending against, and the code is written around them.
+### The local access secret
+
+Every launch of the helper makes a new secret — 32 random bytes — and hands it to the server it
+starts, in an environment variable the server removes as soon as it has read it. A server started
+by hand (`pnpm start`, `pnpm dev`) makes its own. The server writes it to
+`~/Library/Application Support/Fremkit/access-<port>.token` (under `FREMKIT_SUPPORT_DIR` when that
+is set), readable by your account only (mode `0600`), replacing the file in one rename at every
+start. It is never logged, never returned by the API and never quoted in an error.
+
+Every request must carry it, in one of two ways:
+
+- **`Authorization: Bearer <secret>`**, for programs: the helper, the Claude Code hook scripts,
+  `curl`. The scripts hand it to `curl` through a file descriptor, never on the command line,
+  where any account on the Mac could read it with `ps`.
+- **A cookie**, `HttpOnly` and `SameSite=Strict`, for pages. The helper writes it straight into
+  its own web views — the Edge and the admin window — before loading them. A browser gets it by
+  following a one-time link, `/auth?code=…`: the code is minted by someone who already holds the
+  secret (*Open the admin in the browser* in the **F** menu, `pnpm open`), works once, and
+  expires after a minute. Opening `127.0.0.1:4242` without it shows a page saying how to get in.
+
+The comparison takes the same time wherever two values differ. A request without the secret is
+told **401**.
+
+Three routes answer without it, and only to reads:
+
+- `/auth`, which is where the cookie is obtained, and which takes a one-time code instead.
+- `/fremkit.js` and `/widgets/<id>/…`, the widgets' own files. A widget runs in a sandboxed frame
+  with an opaque origin, and a browser treats every request such a frame makes as cross-site, so
+  a `SameSite` cookie never goes with them (Chrome drops it; Safari's engine happens to send it,
+  which is not something to build on). These files are the bytes the repository and the registry
+  publish, carry no data of yours, and come with the widget CSP whatever opens them; everything a
+  widget *does* goes through the host page, which holds the cookie. The cost is that a page can
+  tell which widgets are installed by asking for them.
+
+The exemption is decided by the route the server matched, not by the text of the path, so a
+path that only *looks* like a widget file is not let through.
+
+**What the secret does not protect against.** Anything running as you can read the token file,
+just as it can read your keychain, your config and your clipboard without Fremkit's help: the
+secret keeps out other accounts on the Mac and anything that can reach the port without being
+able to read your files, not malware in your own account. A browser holding the cookie is signed
+in until it forgets the cookie or the helper restarts; a page in that browser is still held off by
+the Host and Origin checks below, which stay in place, not by the secret. The Host and Origin
+checks still run first: a request from a rebinding page is told 421, and a write from another
+site 403, whatever it carries.
 
 ### A web page in your browser
 
@@ -21,8 +64,12 @@ enforces that — but it can *send*, and it can embed. So:
   a **421**. That is what kills DNS rebinding, where a page gets `evil.example` to resolve to
   `127.0.0.1` and then talks to us as itself.
 - Every request that is not a read requires an `Origin` we serve. A request with no `Origin` at
-  all passes: that is `curl`, the Claude Code hook scripts and the native helper, none of which
-  is a browser doing cross-site work.
+  all passes this check: that is `curl`, the Claude Code hook scripts and the native helper, none
+  of which is a browser doing cross-site work — and each of which still has to show the secret.
+- The cookie is `SameSite=Strict`, so a page on another site that sends a request to us — a form,
+  an `<img>`, a `fetch` with `no-cors` — sends it without the cookie and is refused before any
+  route runs. These checks were the whole defence before the secret existed; they stay, so a
+  mistake in one is not the end of the other.
 - The reads that *cause* something — fetching a favicon, proxying for a widget, asking a device
   for its options, downloading a backup — additionally refuse a request whose `Sec-Fetch-Site`
   says `cross-site`, which is the only signal a cross-site `<img>` or `<script>` gives.
@@ -159,7 +206,10 @@ These are real and not fixed. They are here so you can decide whether they matte
   that can answer for the printer's address can receive the LAN access code. See
   [docs/connections.md](docs/connections.md#what-the-tls-does-and-does-not-prove).
 - **A same-user process is out of scope.** It can read your keychain, your config and your
-  clipboard without going through Fremkit at all.
+  clipboard without going through Fremkit at all — and the access secret's token file, which is
+  readable by your account by design so the scripts can use it.
+- **The widgets' own files are served without the secret** (see above), so a page you visit can
+  find out which widgets are installed, though not how they are set up or what they show.
 - **The registry is trusted to be curated, not to be safe.** An installed widget can do
   everything you granted it, and a permission list that looks reasonable can still be used
   badly — there is no sandbox that tells "shows my calendar" from "sends my calendar somewhere".

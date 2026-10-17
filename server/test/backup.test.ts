@@ -28,7 +28,7 @@ let dir: string
 let app: FastifyInstance
 
 async function build(dataDir: string): Promise<FastifyInstance> {
-  return buildApp({ dataDir, widgetsDir: join(process.cwd(), '..', 'widgets'), providers: [] })
+  return buildApp({ accessToken: null, dataDir, widgetsDir: join(process.cwd(), '..', 'widgets'), providers: [] })
 }
 
 beforeEach(async () => {

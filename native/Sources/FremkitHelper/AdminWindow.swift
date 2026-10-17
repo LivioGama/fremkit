@@ -21,12 +21,18 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
     private var window: NSWindow?
     private var webView: WKWebView?
     private let url: URL
+    /// Puts the server's cookie in the web view's store before a load.
+    private let access: ServerAccess
+    /// Set after a refused page was retried once with a fresh cookie, cleared by any other answer,
+    /// so a server that keeps refusing shows its page instead of reloading for ever.
+    private var retriedAfterRefusal = false
     /// The Edge display's frame in AppKit space, kept in step by the helper as displays come and
     /// go. The kiosk covers it above the status-bar level, so the admin must never sit there.
     var kioskFrame: NSRect?
 
-    init(url: URL) {
+    init(url: URL, access: ServerAccess) {
         self.url = url
+        self.access = access
     }
 
     /// Shows the window, creating it on first use.
@@ -44,7 +50,7 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
             // lifetime, so without this the admin shows whatever was built when it was first
             // opened — which after an upgrade means settings that exist in the code and not on
             // screen. A window already in front is left alone: that is a raise, not an open.
-            if !window.isVisible { webView?.reload() }
+            if !window.isVisible { reloadAdmin() }
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             return
@@ -71,8 +77,10 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
         // Without a navigation delegate it silently drops downloads too: the backup is served as
         // an attachment, which WebKit neither shows nor saves on its own.
         webView.navigationDelegate = self
-        webView.load(URLRequest(url: url))
         window.contentView = webView
+        access.installCookie(for: [url]) { [weak webView, url] in
+            webView?.load(URLRequest(url: url))
+        }
 
         self.window = window
         self.webView = webView
@@ -106,8 +114,13 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
     }
 
     /// Reloads the admin page. Wired to Cmd+R and used when a hidden window is reopened.
+    /// The cookie is written again first, from the token file: the server may have been restarted
+    /// with another secret since the page was loaded.
     @objc func reloadAdmin() {
-        webView?.reload()
+        access.installCookie(for: [url]) { [weak self] in
+            guard let self, let webView = self.webView else { return }
+            if webView.url == nil { webView.load(URLRequest(url: self.url)) } else { webView.reload() }
+        }
     }
 
     // MARK: - WKUIDelegate
@@ -170,6 +183,16 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
                  decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         guard navigationResponse.isForMainFrame else { decisionHandler(.allow); return }
+        if (navigationResponse.response as? HTTPURLResponse)?.statusCode == 401 {
+            // Refused: show the server's page, and try once more with the cookie written again.
+            decisionHandler(.allow)
+            if !retriedAfterRefusal {
+                retriedAfterRefusal = true
+                reloadAdmin()
+            }
+            return
+        }
+        retriedAfterRefusal = false
         let disposition = (navigationResponse.response as? HTTPURLResponse)?
             .value(forHTTPHeaderField: "Content-Disposition") ?? ""
         let attachment = disposition.lowercased().hasPrefix("attachment")

@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dockBadges: DockBadges?
     private var watcher: EdgeDisplay.Watcher?
     private var kiosk: KioskWindow?
+    /// The server's access secret: made at launch, presented by everything that talks to the server.
+    private var access: ServerAccess?
     private var admin: AdminWindow?
     private var server: ServerProcess?
     private var menu: StatusMenu?
@@ -84,15 +86,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             else { fence?.stop() }
         }
 
-        let dockBadges = DockBadges(port: config.port)
+        // Made first: the server, the Dock reader and both web windows present this secret.
+        let access = ServerAccess(port: config.port)
+        self.access = access
+
+        let dockBadges = DockBadges(port: config.port, access: access)
         dockBadges.onState = { [weak self] state in
             self?.menu?.update { $0.dock = state }
         }
         self.dockBadges = dockBadges
 
-        admin = AdminWindow(url: Self.parseURL(config.adminUrl, what: "adminUrl"))
+        admin = AdminWindow(url: Self.parseURL(config.adminUrl, what: "adminUrl"), access: access)
 
-        let server = ServerProcess(config: config)
+        let server = ServerProcess(config: config, access: access)
         server.onStateChange = { [weak self] state in
             self?.serverDidChange(state)
         }
@@ -299,9 +305,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             admin?.kioskFrame = frame
             if let kiosk {
                 kiosk.setEdgeFrame(edge)
-            } else {
+            } else if let access {
                 let url = Self.parseURL(config.url, what: "url")
-                kiosk = KioskWindow(frame: frame, url: url)
+                kiosk = KioskWindow(frame: frame, url: url, access: access)
                 kiosk?.onVisibilityChange = { [weak self] in
                     self?.syncFences()
                     self?.refreshDashboardMenu()
@@ -345,9 +351,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.onOpenAdmin = { [weak self] in self?.admin?.show() }
 
+        // The browser has a cookie jar of its own: it is handed a one-time sign-in link instead.
+        // Without one (the server is down, or refuses) the plain address still opens, and the
+        // server's page there says how to get in.
         menu.onOpenAdminInBrowser = { [weak self] in
-            guard let self else { return }
-            NSWorkspace.shared.open(Self.parseURL(self.config.adminUrl, what: "adminUrl"))
+            guard let self, let access = self.access else { return }
+            let admin = Self.parseURL(self.config.adminUrl, what: "adminUrl")
+            access.signInURL(for: admin) { url in
+                NSWorkspace.shared.open(url ?? admin)
+            }
         }
 
         menu.onReload = { [weak self] in self?.kiosk?.reload() }

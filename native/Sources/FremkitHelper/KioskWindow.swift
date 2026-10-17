@@ -76,11 +76,14 @@ final class KioskWindow: NSObject, WKNavigationDelegate {
     private let window: NSWindow
     private let webView: WKWebView
     private let url: URL
+    /// Puts the server's cookie in the web view's store before every load.
+    private let access: ServerAccess
     /// Pending retry, so a burst of failures queues only one and a manual reload can cancel it.
     private var retryWork: DispatchWorkItem?
 
-    init(frame: NSRect, url: URL) {
+    init(frame: NSRect, url: URL, access: ServerAccess) {
         self.url = url
+        self.access = access
 
         window = KioskNSWindow(contentRect: frame,
                                styleMask: .borderless,
@@ -123,8 +126,13 @@ final class KioskWindow: NSObject, WKNavigationDelegate {
 
     // MARK: - Content
 
+    /// Loads the dashboard, with the server's current cookie written first: a server started by
+    /// someone else, or restarted with another secret, is caught up with on the next load.
     private func load() {
-        webView.load(URLRequest(url: url))
+        access.installCookie(for: [url]) { [weak self] in
+            guard let self else { return }
+            self.webView.load(URLRequest(url: self.url))
+        }
     }
 
     /// Reloads the dashboard; used when the server comes up or restarts.
@@ -244,6 +252,23 @@ final class KioskWindow: NSObject, WKNavigationDelegate {
             NSLog("fremkit: kiosk refused a navigation away from the dashboard")
             decisionHandler(.cancel)
         }
+    }
+
+    /**
+     A dashboard the server refused (401) is retried like one that failed to load.
+
+     It happens when the server holds a secret the cookie does not match — a `pnpm dev` that was
+     restarted, or one whose token file the helper read before it was rewritten. The server's
+     refusal page is shown meanwhile, and the retry writes the cookie again from the token file.
+     */
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if navigationResponse.isForMainFrame,
+           (navigationResponse.response as? HTTPURLResponse)?.statusCode == 401 {
+            scheduleRetry()
+        }
+        decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

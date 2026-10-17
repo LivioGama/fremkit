@@ -41,6 +41,7 @@ final class DockBadges {
     private static let axTimeout: Float = 1
 
     private let port: Int
+    private let access: ServerAccess
     private var timer: Timer?
     private var lastSignature: String?
     /// Ticks since the last report left the helper, for the heartbeat above.
@@ -56,8 +57,9 @@ final class DockBadges {
 
     var onState: ((DockReaderState) -> Void)?
 
-    init(port: Int) {
+    init(port: Int, access: ServerAccess) {
         self.port = port
+        self.access = access
     }
 
     func start() {
@@ -191,6 +193,7 @@ final class DockBadges {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = data
         request.timeoutInterval = 5
+        access.authorize(&request)
         URLSession.shared.dataTask(with: request) { _, response, _ in
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             let ok = (200..<300).contains(code)

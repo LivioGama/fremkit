@@ -89,7 +89,16 @@ let suites: [(String, () -> XCTestCase, [TestMethod])] = [
         ("testIsFalseForEqualVersions", { ($0 as! NodeVersionOrderTests).testIsFalseForEqualVersions() }),
         ("testSurvivesSomethingThatIsNotAVersion", { ($0 as! NodeVersionOrderTests).testSurvivesSomethingThatIsNotAVersion() }),
     ]),
+    ("AccessTokenTests", { AccessTokenTests() }, [
+        ("testGeneratesThirtyTwoByteBase64URLSecrets", { ($0 as! AccessTokenTests).testGeneratesThirtyTwoByteBase64URLSecrets() }),
+        ("testWellFormedMatchesTheServer", { ($0 as! AccessTokenTests).testWellFormedMatchesTheServer() }),
+        ("testReadsTheTokenFileForAPort", { try ($0 as! AccessTokenTests).testReadsTheTokenFileForAPort() }),
+        ("testCookieMatchesWhatTheServerSets", { ($0 as! AccessTokenTests).testCookieMatchesWhatTheServerSets() }),
+        ("testReadsTheCodeOutOfTheServersAnswer", { ($0 as! AccessTokenTests).testReadsTheCodeOutOfTheServersAnswer() }),
+        ("testSignInURLStaysOnTheTargetsOrigin", { ($0 as! AccessTokenTests).testSignInURLStaysOnTheTargetsOrigin() }),
+    ]),
     ("ServerProbeTests", { ServerProbeTests() }, [
+        ("testA401WithOurChallengeIsOurs", { ($0 as! ServerProbeTests).testA401WithOurChallengeIsOurs() }),
         ("testRecognisesAFremkitConfig", { ($0 as! ServerProbeTests).testRecognisesAFremkitConfig() }),
         ("testRecognisesAV4Config", { ($0 as! ServerProbeTests).testRecognisesAV4Config() }),
         ("testRefusesAnythingElseAnsweringOnThePort", { ($0 as! ServerProbeTests).testRefusesAnythingElseAnsweringOnThePort() }),
@@ -134,6 +143,7 @@ let suites: [(String, () -> XCTestCase, [TestMethod])] = [
         ("testCheckoutEnvironmentKeepsTheDeveloperPath", { ($0 as! ServerLaunchTests).testCheckoutEnvironmentKeepsTheDeveloperPath() }),
         ("testBundledEnvironmentNamesTheBundleAndTheData", { ($0 as! ServerLaunchTests).testBundledEnvironmentNamesTheBundleAndTheData() }),
         ("testBothLaunchesNameTheDiskScannerWhenThereIsOne", { ($0 as! ServerLaunchTests).testBothLaunchesNameTheDiskScannerWhenThereIsOne() }),
+        ("testPassesTheHelpersAccessSecretAndNoOther", { ($0 as! ServerLaunchTests).testPassesTheHelpersAccessSecretAndNoOther() }),
     ]),
     ("HelperPathsTests", { HelperPathsTests() }, [
         ("testDefaultsAreUnderLibrary", { ($0 as! HelperPathsTests).testDefaultsAreUnderLibrary() }),

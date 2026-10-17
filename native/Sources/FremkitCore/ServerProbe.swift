@@ -23,6 +23,19 @@ public enum ServerProbe {
         else { return false }
         return object["version"] != nil && (object["pages"] is [Any] || object["screens"] is [Any])
     }
+
+    /**
+     Whether a probe's answer comes from our server.
+
+     A 200 carrying a Fremkit config, as before; or a 401 carrying our challenge, which is what a
+     server holding a different access secret than the helper's answers (a `pnpm dev` started
+     by hand, before the helper has read its token file). It is still ours, and the helper must
+     still stand aside rather than spawn a second server onto a port that is taken.
+     */
+    public static func isFremkitAnswer(status: Int?, body: Data?, challenge: String?) -> Bool {
+        if status == 200 { return looksLikeFremkitConfig(body) }
+        return status == 401 && challenge == AccessToken.challenge
+    }
 }
 
 /// Ordering the version directories a Node version manager keeps.
