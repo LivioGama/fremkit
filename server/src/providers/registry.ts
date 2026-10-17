@@ -23,6 +23,8 @@ interface State {
   inFlight: boolean
   /** Poll again as soon as the one in flight returns: it may have read a setting since changed. */
   pollAgain: boolean
+  /** A `refresh()` arrived while a poll was in flight: poll once more, and publish that one. */
+  refreshAgain: boolean
 }
 
 export class ProviderRegistry {
@@ -50,7 +52,7 @@ export class ProviderRegistry {
     // away because the connection behind it was edited, so the replacement inherits them.
     const subscribers = previous?.subscribers ?? 0
     if (previous) this.teardown(previous, 'gone')
-    const state: State = { provider, subscribers, started: false, timer: null, backoffMs: 0, lastJson: undefined, inFlight: false, pollAgain: false }
+    const state: State = { provider, subscribers, started: false, timer: null, backoffMs: 0, lastJson: undefined, inFlight: false, pollAgain: false, refreshAgain: false }
     this.states.set(provider.channel, state)
     if (state.subscribers > 0) this.activate(state)
   }
@@ -86,6 +88,18 @@ export class ProviderRegistry {
   }
 
   has(channel: string): boolean { return this.states.has(channel) }
+
+  /**
+   * Polls a watched channel now rather than at its next tick: for a provider whose state changes
+   * by push (a command, a report from the helper) and that wants the change on screen at once.
+   * Does nothing when nobody is watching; the first subscriber polls anyway.
+   */
+  refresh(channel: string): void {
+    const s = this.states.get(channel)
+    if (!s || s.subscribers === 0 || !s.provider.poll) return
+    if (s.inFlight) s.refreshAgain = true
+    else this.schedule(s, 0)
+  }
 
   addSubscriber(channel: string): void {
     const s = this.states.get(channel)
@@ -203,6 +217,8 @@ export class ProviderRegistry {
       s.lastJson = json
       this.publish(s.provider.channel, data)
     }
-    if (s.subscribers > 0) this.schedule(s, s.backoffMs || s.provider.intervalMs || MAX_BACKOFF_MS)
+    const again = s.refreshAgain
+    s.refreshAgain = false
+    if (s.subscribers > 0) this.schedule(s, again ? 0 : s.backoffMs || s.provider.intervalMs || MAX_BACKOFF_MS)
   }
 }

@@ -398,3 +398,21 @@ describe('ProviderRegistry.reconsiderAccountEmail', () => {
     reg.stop()
   })
 })
+
+describe('ProviderRegistry.refresh', () => {
+  it('polls a watched channel at once, and leaves an unwatched one alone', async () => {
+    const published: unknown[] = []
+    let n = 0
+    const reg = new ProviderRegistry((_c, d) => published.push(d))
+    reg.register({ channel: 'x', intervalMs: 60_000, poll: async () => ({ n: n++ }) })
+    reg.refresh('x')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(published).toEqual([])
+    reg.addSubscriber('x')
+    await vi.advanceTimersByTimeAsync(10)
+    reg.refresh('x')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(published).toEqual([{ n: 0 }, { n: 1 }])
+    reg.stop()
+  })
+})
