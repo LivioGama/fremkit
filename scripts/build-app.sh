@@ -188,6 +188,9 @@ rsync -a --exclude '.DS_Store' ui/dist "$RES/ui/"
 rsync -a --exclude '.DS_Store' brand/wallpaper "$RES/brand/"
 # The Claude Code hook and status line, for settings.json to name without a checkout.
 cp scripts/claude-hook.sh scripts/claude-statusline.sh "$RES/scripts/"
+# What they read the server's access secret with: they source it from beside themselves.
+mkdir -p "$RES/scripts/lib"
+cp scripts/lib/access.sh "$RES/scripts/lib/access.sh"
 
 # Sparkle, minus its XPC services: those exist for sandboxed apps, and Fremkit is not sandboxed
 # (Sparkle's documentation says they may then be removed). Less code shipped, less to sign.
