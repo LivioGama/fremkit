@@ -59,6 +59,7 @@ Fremkit turns a Corsair Xeneon Edge (a 2560 × 720 touch strip) into a widget da
 ```bash
 bun install                       # once
 bun run typecheck                 # server + ui (vue-tsc)
+bun run lint                      # oxlint, whole repo
 bun run test                      # vp test, server + ui
 bun run --filter server test test/<file>.test.ts
 bun run --filter ui build         # required before the server shows a UI change

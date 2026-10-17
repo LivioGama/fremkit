@@ -35,13 +35,14 @@ bun run build        # ui + server
 bun run start        # production: http://127.0.0.1:4242 and /admin
 bun run test         # vp test, server + ui
 bun run typecheck
+bun run lint           # oxlint, whole repo
 bun run helper:build   # native/dist/Fremkit Helper.app
 bun run helper:install
 bun run helper:test
 ```
 
 `ui/` and `server/` are driven by [Vite+](https://vite.plus) (`vp`): `vp dev`, `vp build` and
-`vp test` read each package's `vite.config.ts`, and Vite, Vitest, Oxlint and Oxfmt come from it
+`vp test` read each package's `vite.config.ts`, and Vite, Vitest and Oxlint come from it
 instead of being dependencies of their own. The `vite` entry in `ui/package.json` is an alias to
 Vite+'s own copy of Vite, which is what the Vue plugin and `defineConfig` are typed against.
 
@@ -208,7 +209,7 @@ delete it by hand if it grows.
 
 Fork, branch, and open the pull request against `main`. Every pull request runs
 `.github/workflows/ci.yml` on Ubuntu with Node 22: `bun install --frozen-lockfile`, then
-`bun run typecheck`, `bun run test` and `bun run build`. The widget catalogue test reads the real
+`bun run typecheck`, `bun run lint`, `bun run test` and `bun run build`. The widget catalogue test reads the real
 `widgets/` folder, so a broken manifest fails the run.
 
 Locale parity *is* checked: `ui/test/i18n.test.ts` fails when a key exists on one side and not the

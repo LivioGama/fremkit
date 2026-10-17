@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "fremkit",
+      "devDependencies": {
+        "vite-plus": "1.3.0",
+      },
     },
     "server": {
       "name": "server",

@@ -413,6 +413,7 @@ bun run build        # ui + server
 bun run start        # production: http://127.0.0.1:4242 and /admin
 bun run test         # vp test, server + ui
 bun run typecheck
+bun run lint         # oxlint, whole repo
 bun run helper:build   # native/dist/Fremkit Helper.app
 bun run helper:install
 bun run helper:test

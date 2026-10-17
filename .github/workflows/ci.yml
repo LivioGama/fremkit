@@ -40,6 +40,8 @@ jobs:
 
       - run: bun run typecheck
 
+      - run: bun run lint
+
       # The widget catalogue test reads the real widgets/ folder, so a broken
       # manifest fails here.
       - run: bun run test
