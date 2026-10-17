@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { createShortcutsProvider, argvFor, OpenPayloadSchema, resolveButton } from '../src/providers/shortcuts.js'
 import type { InstanceLookup } from '../src/config/instances.js'
 
-const LOCAL = { loopback: true }
+const LOCAL = { loopback: true, paired: false }
 const INSTANCE = 'sc-1'
 
 /** The buttons the three `open` tests below press, as the user would have saved them. */
@@ -108,7 +108,7 @@ describe('shortcuts open', () => {
   })
   it('refuses a command that did not come from this machine', async () => {
     const { run, p } = provider()
-    expect(await p.commands!.open(press(0), { loopback: false })).toMatchObject({ ok: false })
+    expect(await p.commands!.open(press(0), { loopback: false, paired: false })).toMatchObject({ ok: false })
     expect(await p.commands!.open(press(0))).toMatchObject({ ok: false })
     expect(run).not.toHaveBeenCalled()
   })

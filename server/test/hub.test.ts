@@ -75,7 +75,7 @@ describe('Hub', () => {
 describe('the cached last value of a channel', () => {
   const subscribe = (hub: Hub, channel: string) => {
     const socket = new FakeSocket()
-    hub.attach(socket, { loopback: true })
+    hub.attach(socket, { loopback: true, paired: false })
     socket.receive({ type: 'subscribe', channel })
     return socket
   }
@@ -170,7 +170,7 @@ describe('what one socket may ask for', () => {
     const registry = new ProviderRegistry((c, d) => hub.broadcast(c, d), (c) => hub.forget(c))
     hub = new Hub(registry)
     const socket = new FakeSocket()
-    hub.attach(socket, { loopback: true })
+    hub.attach(socket, { loopback: true, paired: false })
     for (let i = 0; i < MAX_CHANNELS_PER_SOCKET + 5; i++) {
       socket.receive({ type: 'subscribe', channel: `ch-${i}` })
     }
@@ -184,7 +184,7 @@ describe('what one socket may ask for', () => {
     const registry = new ProviderRegistry((c, d) => hub.broadcast(c, d), (c) => hub.forget(c))
     hub = new Hub(registry)
     const socket = new FakeSocket()
-    hub.attach(socket, { loopback: true })
+    hub.attach(socket, { loopback: true, paired: false })
     for (let i = 0; i < MAX_CHANNELS_PER_SOCKET * 2; i++) {
       socket.receive({ type: 'subscribe', channel: 'volume' })
     }
@@ -196,7 +196,7 @@ describe('what one socket may ask for', () => {
     const registry = new ProviderRegistry((c, d) => hub.broadcast(c, d), (c) => hub.forget(c))
     hub = new Hub(registry)
     const socket = new FakeSocket()
-    hub.attach(socket, { loopback: true })
+    hub.attach(socket, { loopback: true, paired: false })
     for (let i = 0; i < MAX_CHANNELS_PER_SOCKET; i++) socket.receive({ type: 'subscribe', channel: `ch-${i}` })
     socket.receive({ type: 'unsubscribe', channel: 'ch-0' })
     socket.receive({ type: 'subscribe', channel: 'something-new' })
@@ -211,7 +211,7 @@ describe('what one socket may ask for', () => {
     registry.addSubscriber = (channel: string) => { subscribed.push(channel); add(channel) }
     hub = new Hub(registry)
     const socket = new FakeSocket()
-    hub.attach(socket, { loopback: true })
+    hub.attach(socket, { loopback: true, paired: false })
     socket.receive({ type: 'subscribe', channel: '' })
     expect(subscribed).toEqual([])
     // It falls through to the same refusal any malformed message gets.

@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import type { CommandContext, Provider } from './types.js'
+import { isTrusted, type CommandContext, type Provider } from './types.js'
 import { tr } from '../i18n.js'
 
 /**
@@ -264,7 +264,7 @@ export function createClipboardProvider(pasteboard: Pasteboard = pbPasteboard, n
     commands: {
       copy: async (payload, ctx?: CommandContext) => {
         // Writing the pasteboard acts on the user's Mac: only a client on that Mac may ask.
-        if (!ctx?.loopback) return { ok: false, error: tr(undefined, 'provider.localOnly') }
+        if (!isTrusted(ctx)) return { ok: false, error: tr(undefined, 'provider.localOnly') }
         const parsed = CopyPayloadSchema.safeParse(payload)
         if (!parsed.success) return { ok: false, error: tr(undefined, 'provider.invalidPayload') }
         const entry = entries.find((e) => e.id === parsed.data.id)
@@ -282,7 +282,7 @@ export function createClipboardProvider(pasteboard: Pasteboard = pbPasteboard, n
       clear: async (_payload, ctx?: CommandContext) => {
         // Emptying the history is acting on what the user's Mac has copied, exactly as `copy` is:
         // same gate, for the same reason.
-        if (!ctx?.loopback) return { ok: false, error: tr(undefined, 'provider.localOnly') }
+        if (!isTrusted(ctx)) return { ok: false, error: tr(undefined, 'provider.localOnly') }
         entries = []
         hashes.clear()
         // `lastHash` deliberately survives: it is what keeps the text still sitting on the

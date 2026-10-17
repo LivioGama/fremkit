@@ -214,13 +214,13 @@ describe('createAzureDevOpsProvider', () => {
 
   it('opens only an Azure DevOps URL, and only from this machine', async () => {
     const opened: string[] = []
-    const local = { loopback: true }
+    const local = { loopback: true, paired: false }
     const { fetchFn } = responder({ builds: BUILDS, timeline: STAGES })
     const provider = createAzureDevOpsProvider(ctx, { fetchFn, now: () => 0, open: async (u) => { opened.push(u) } })
     const run = 'https://dev.azure.com/example-org/example-project/_build/results?buildId=4821'
     await provider.commands!.open({ url: run }, local)
     expect(opened).toHaveLength(1)
-    await expect(provider.commands!.open({ url: run }, { loopback: false })).rejects.toThrow('commande réservée à cette machine')
+    await expect(provider.commands!.open({ url: run }, { loopback: false, paired: false })).rejects.toThrow('commande réservée à cette machine')
     await expect(provider.commands!.open({ url: run })).rejects.toThrow('commande réservée à cette machine')
     await expect(provider.commands!.open({ url: 'file:///etc/passwd' }, local)).rejects.toThrow('URL refusée')
     await expect(provider.commands!.open({ url: 'https://example.com/' }, local)).rejects.toThrow('URL refusée')

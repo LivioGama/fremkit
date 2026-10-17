@@ -39,7 +39,7 @@ export class Hub {
   constructor(private readonly registry: ProviderRegistry) {}
 
   /** A socket with no known origin is treated as remote: only the route can vouch for one. */
-  attach(socket: SocketLike, ctx: CommandContext = { loopback: false }): void {
+  attach(socket: SocketLike, ctx: CommandContext = { loopback: false, paired: false }): void {
     const channels = new Set<string>()
     this.clients.set(socket, channels)
     this.contexts.set(socket, ctx)
@@ -103,7 +103,7 @@ export class Hub {
       }
       case 'command': {
         const { id, channel, name, payload } = msg
-        const ctx = this.contexts.get(socket) ?? { loopback: false }
+        const ctx = this.contexts.get(socket) ?? { loopback: false, paired: false }
         this.registry.runCommand(channel, name, payload, ctx).then(
           (result) => this.safeSend(socket, JSON.stringify({ type: 'result', id, result: result ?? null })),
           (err: Error) => this.safeSend(socket, JSON.stringify({ type: 'error', id, error: err.message })),

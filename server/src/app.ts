@@ -109,6 +109,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // explicitly, or an inline object literal sends TypeScript down Fastify's http2 overload.
   const serverOptions: FastifyServerOptions = { logger: opts.logger ? LOGGER_OPTIONS : false }
   const app = Fastify(serverOptions)
+  // The paired device a remote request authenticated as (see `net/remote.ts`). Declared up front
+  // with a null value so every request has the same shape; only the devices gate sets it.
+  app.decorateRequest('deviceId', null)
 
   const store = new ConfigStore(join(opts.dataDir, 'fremkit.json'))
   await store.load()

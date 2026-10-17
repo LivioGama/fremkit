@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { isLoopbackAddress } from '../net/loopback.js'
+import { isLocalRequest, pairedDeviceOf } from '../net/remote.js'
 import { tr } from '../i18n.js'
 import { summarize, type InstalledApps } from './installed.js'
 
@@ -12,7 +12,7 @@ import { summarize, type InstalledApps } from './installed.js'
  */
 export async function appsRoutes(app: FastifyInstance, opts: { apps: InstalledApps }): Promise<void> {
   app.get('/api/apps/installed', async (req, reply) => {
-    if (!isLoopbackAddress(req.ip)) return reply.code(403).send({ error: tr(undefined, 'dock.notLocal') })
+    if (!isLocalRequest(req) && pairedDeviceOf(req) === null) return reply.code(403).send({ error: tr(undefined, 'dock.notLocal') })
     const list = await opts.apps.list()
     // The scan is already cached for ten minutes; this only keeps the admin from re-asking per keystroke.
     return reply.header('cache-control', 'private, max-age=60').send(list.map(summarize))

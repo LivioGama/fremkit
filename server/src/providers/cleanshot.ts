@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { z } from 'zod'
-import type { CommandContext, Provider } from './types.js'
+import { isTrusted, type CommandContext, type Provider } from './types.js'
 import { tr } from '../i18n.js'
 
 /**
@@ -122,7 +122,7 @@ export function createCleanshotProvider(run: Runner = runProgram): Provider {
       run: async (payload, ctx?: CommandContext): Promise<RunResult> => {
         // `open` acts on the user's Mac, so only a client on that Mac may ask for it. Fail
         // closed: a caller that provides no context is treated as remote.
-        if (!ctx?.loopback) return { ok: false, error: tr(undefined, 'provider.localOnly') }
+        if (!isTrusted(ctx)) return { ok: false, error: tr(undefined, 'provider.localOnly') }
         const parsed = RunPayloadSchema.safeParse(payload)
         if (!parsed.success) {
           return { ok: false, error: parsed.error.issues[0]?.message ?? tr(undefined, 'provider.invalidPayload') }

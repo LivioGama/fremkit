@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import type { Hub } from './hub.js'
-import { isLoopbackAddress } from '../net/loopback.js'
+import { isLocalRequest } from '../net/remote.js'
 
 /**
  * Origins allowed to drive this server — the WebSocket, and every write, through the gate in
@@ -33,6 +33,6 @@ export async function wsRoutes(app: FastifyInstance, opts: { hub: Hub }): Promis
       socket.close(1008, 'origin not allowed')
       return
     }
-    opts.hub.attach(socket, { loopback: isLoopbackAddress(req.ip) })
+    opts.hub.attach(socket, { loopback: isLocalRequest(req), paired: false })
   })
 }

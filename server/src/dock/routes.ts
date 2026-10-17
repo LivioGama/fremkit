@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { BUNDLE_ID_RE, isPng, MAX_ICON_BYTES, MAX_ICONS, type DockState } from './state.js'
-import { isLoopbackAddress } from '../net/loopback.js'
+import { isLocalRequest } from '../net/remote.js'
 import { tr } from '../i18n.js'
 import { isCrossSiteFetch } from '../http/guard.js'
 
@@ -11,15 +11,11 @@ import { isCrossSiteFetch } from '../http/guard.js'
  */
 const BODY_LIMIT = Math.ceil(MAX_ICON_BYTES * 4 / 3) * 2 + 4096
 
-/** The helper runs on this machine; nothing else has any business posting Dock state. */
-export function isLocalRequest(req: FastifyRequest): boolean {
-  return isLoopbackAddress(req.ip)
-}
-
 /** Extracts an icon from an installed bundle; the icon route falls back to it. See `apps/icons.ts`. */
 export interface AppIconSource { get(bundleId: string): Promise<Buffer | null> }
 
 export async function dockRoutes(app: FastifyInstance, opts: { state: DockState; appIcons?: AppIconSource }): Promise<void> {
+  /** The helper runs on this machine; nothing else has any business posting Dock state. */
   const local = async (req: FastifyRequest, reply: { code: (n: number) => { send: (b: unknown) => unknown } }): Promise<boolean> => {
     if (isLocalRequest(req)) return true
     reply.code(403).send({ error: tr(undefined, 'dock.notLocal') })

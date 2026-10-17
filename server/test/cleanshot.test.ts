@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createCleanshotProvider, urlFor, RunPayloadSchema, ACTION_NAMES, CLEANSHOT_BUNDLE_ID, openArgs } from '../src/providers/cleanshot.js'
 
-const LOCAL = { loopback: true }
+const LOCAL = { loopback: true, paired: false }
 
 function provider() {
   // `lsappinfo` answers nothing by default, so `open` targets the bundle id.
@@ -114,7 +114,7 @@ describe('cleanshot run', () => {
   })
   it('refuses a command that did not come from this machine', async () => {
     const { run, p } = provider()
-    expect(await p.commands!.run({ action: 'capture-area' }, { loopback: false })).toMatchObject({ ok: false })
+    expect(await p.commands!.run({ action: 'capture-area' }, { loopback: false, paired: false })).toMatchObject({ ok: false })
     expect(await p.commands!.run({ action: 'capture-area' })).toMatchObject({ ok: false })
     expect(run).not.toHaveBeenCalled()
   })

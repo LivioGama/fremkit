@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import type { FastifyInstance } from 'fastify'
-import { isLoopbackAddress } from '../net/loopback.js'
+import { isLocalRequest } from '../net/remote.js'
 import { isOriginAllowed } from '../ws/routes.js'
 import { tr } from '../i18n.js'
 
@@ -99,7 +99,7 @@ export async function helperRoutes(app: FastifyInstance, opts: { run?: Runner } 
    * widget's sandboxed frame cannot call these routes itself.
    */
   const route = (path: string, url: HelperUrl) => app.post(path, async (req, reply) => {
-    if (!isLoopbackAddress(req.ip)) return reply.code(403).send({ ok: false, error: tr(undefined, 'helper.notLocal') })
+    if (!isLocalRequest(req)) return reply.code(403).send({ ok: false, error: tr(undefined, 'helper.notLocal') })
     if (!isOriginAllowed(req.headers.origin)) {
       return reply.code(403).send({ ok: false, error: tr(undefined, 'connections.originNotAllowed') })
     }

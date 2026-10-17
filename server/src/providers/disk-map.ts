@@ -10,7 +10,7 @@ import {
   type DiskScanner, type ScanFailure, type ScanHandle, type ScanProgress, type ScanStats,
 } from './disk-map-scanner.js'
 import { buildView, DEFAULT_POLICY, findNode, resize, validateTree, type DiskNode, type DiskPolicy, type ViewNode } from './disk-map-tree.js'
-import type { CommandContext, Provider } from './types.js'
+import { isTrusted, type CommandContext, type Provider } from './types.js'
 
 /**
  * The `disk-map` channel: what fills a disk, for the DaisyDisk-style ring of `widgets/disk-map`.
@@ -389,13 +389,13 @@ export function createDiskMapProvider(opts: DiskMapOptions): Provider<DiskMapSna
         return { ok: true, view, path, scannedAt: h.scannedAt, generation: h.generation }
       },
       scan: async (payload, ctx?: CommandContext) => {
-        if (!ctx?.loopback) return localOnly()
+        if (!isTrusted(ctx)) return localOnly()
         const parsed = TargetPayload.safeParse(payload ?? {})
         if (!parsed.success) return invalid(parsed.error)
         return startScan(parsed.data.root, parsed.data.path)
       },
       cancel: async (payload, ctx?: CommandContext) => {
-        if (!ctx?.loopback) return localOnly()
+        if (!isTrusted(ctx)) return localOnly()
         const parsed = CancelPayload.safeParse(payload ?? {})
         if (!parsed.success) return invalid(parsed.error)
         const { root } = parsed.data
@@ -405,7 +405,7 @@ export function createDiskMapProvider(opts: DiskMapOptions): Provider<DiskMapSna
       },
       /** Shows the folder in Finder — the path comes from the server's tree, never the payload. */
       reveal: async (payload, ctx?: CommandContext) => {
-        if (!ctx?.loopback) return localOnly()
+        if (!isTrusted(ctx)) return localOnly()
         const parsed = TargetPayload.safeParse(payload)
         if (!parsed.success) return invalid(parsed.error)
         await load()
@@ -434,7 +434,7 @@ export function createDiskMapProvider(opts: DiskMapOptions): Provider<DiskMapSna
        * (`pnpm dev`) `open` fails or finds nobody, and the answer says so; nothing else happens.
        */
       revealPrompt: async (payload, ctx?: CommandContext) => {
-        if (!ctx?.loopback) return localOnly()
+        if (!isTrusted(ctx)) return localOnly()
         const parsed = EmptyPayload.safeParse(payload ?? {})
         if (!parsed.success) return invalid(parsed.error)
         try {
@@ -446,7 +446,7 @@ export function createDiskMapProvider(opts: DiskMapOptions): Provider<DiskMapSna
       },
       /** System Settings at Privacy & Security → Full Disk Access. */
       openPrivacy: async (payload, ctx?: CommandContext) => {
-        if (!ctx?.loopback) return localOnly()
+        if (!isTrusted(ctx)) return localOnly()
         const parsed = EmptyPayload.safeParse(payload ?? {})
         if (!parsed.success) return invalid(parsed.error)
         try {

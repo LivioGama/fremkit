@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { FaviconStore } from './store.js'
-import { isLoopbackAddress } from '../net/loopback.js'
+import { isLocalRequest, pairedDeviceOf } from '../net/remote.js'
 import { resolvesToPrivate } from '../net/private.js'
 import { isCrossSiteFetch } from '../http/guard.js'
 
@@ -23,7 +23,7 @@ export async function faviconRoutes(app: FastifyInstance, opts: { dir: string; s
   await store.purgeUnservable()
 
   app.get<{ Querystring: { url?: string; image?: string } }>('/api/favicon', async (req, reply) => {
-    if (!isLoopbackAddress(req.ip)) return reply.code(403).send()
+    if (!isLocalRequest(req) && pairedDeviceOf(req) === null) return reply.code(403).send()
     // A page on another site can embed this as an <img> and send no Origin at all, which would
     // make the server go and fetch whatever host that page named. A widget's own <img> looks the
     // same — its sandboxed frame has an opaque origin, which is cross-site to everything — so a

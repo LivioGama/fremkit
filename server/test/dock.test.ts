@@ -146,22 +146,22 @@ describe('createDockProvider', () => {
     const provider = createDockProvider(state, { activate: async (b) => { activated.push(b) } })
     expect(provider.channel).toBe('dock')
     expect(await provider.poll!()).toEqual({ apps: APPS, available: true })
-    await provider.commands!.activate({ bundleId: 'com.example.mail' }, { loopback: true })
+    await provider.commands!.activate({ bundleId: 'com.example.mail' }, { loopback: true, paired: false })
     expect(activated).toEqual(['com.example.mail'])
-    await expect(provider.commands!.activate({ bundleId: '../etc' }, { loopback: true })).rejects.toThrow('identifiant de bundle invalide')
+    await expect(provider.commands!.activate({ bundleId: '../etc' }, { loopback: true, paired: false })).rejects.toThrow('identifiant de bundle invalide')
   })
 
   it('refuses activate from a socket that is not on this machine', async () => {
     const state = new DockState({ iconsDir: join(await mkdtemp(join(tmpdir(), 'fremkit-dock-')), 'icons') })
     const activated: string[] = []
     const provider = createDockProvider(state, { activate: async (b) => { activated.push(b) } })
-    await expect(provider.commands!.activate({ bundleId: 'com.example.mail' }, { loopback: false }))
+    await expect(provider.commands!.activate({ bundleId: 'com.example.mail' }, { loopback: false, paired: false }))
       .rejects.toThrow('commande réservée à cette machine')
     // No context at all is treated the same way: fail closed.
     await expect(provider.commands!.activate({ bundleId: 'com.example.mail' }))
       .rejects.toThrow('commande réservée à cette machine')
     expect(activated).toEqual([])
-    await provider.commands!.activate({ bundleId: 'com.example.mail' }, { loopback: true })
+    await provider.commands!.activate({ bundleId: 'com.example.mail' }, { loopback: true, paired: false })
     expect(activated).toEqual(['com.example.mail'])
   })
 })
@@ -186,14 +186,14 @@ describe('the hub carries the socket origin into the dock command', () => {
   it('refuses activate from a remote socket and runs it from a local one', async () => {
     const { hub, activated } = await setup()
     const remote = new FakeSocket()
-    hub.attach(remote, { loopback: false })
+    hub.attach(remote, { loopback: false, paired: false })
     remote.receive({ type: 'command', id: '1', channel: 'dock', name: 'activate', payload: { bundleId: 'com.example.mail' } })
     await new Promise((r) => setImmediate(r))
     expect(remote.sent).toEqual([{ type: 'error', id: '1', error: 'commande réservée à cette machine' }])
     expect(activated).toEqual([])
 
     const local = new FakeSocket()
-    hub.attach(local, { loopback: true })
+    hub.attach(local, { loopback: true, paired: false })
     local.receive({ type: 'command', id: '2', channel: 'dock', name: 'activate', payload: { bundleId: 'com.example.mail' } })
     await new Promise((r) => setImmediate(r))
     expect(activated).toEqual(['com.example.mail'])

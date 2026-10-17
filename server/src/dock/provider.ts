@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import type { CommandContext, Provider } from '../providers/types.js'
+import { isTrusted, type CommandContext, type Provider } from '../providers/types.js'
 import { assertBundleId, type DockSnapshot, type DockState } from './state.js'
 import { tr } from '../i18n.js'
 
@@ -24,7 +24,7 @@ export function createDockProvider(state: DockState, deps: { activate?: (bundleI
         // `activate` brings an app to the front of the user's Mac, so only a client on that Mac
         // may ask for it. Fail closed: a caller that provides no context is treated as remote,
         // so an older call site cannot quietly hand this command to the network.
-        if (!ctx?.loopback) throw new Error(tr(undefined, 'provider.localOnly'))
+        if (!isTrusted(ctx)) throw new Error(tr(undefined, 'provider.localOnly'))
         const bundleId = String((payload as { bundleId?: unknown })?.bundleId ?? '')
         assertBundleId(bundleId)
         await activate(bundleId)

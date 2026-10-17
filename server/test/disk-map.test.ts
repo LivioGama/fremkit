@@ -7,7 +7,7 @@ import { ScanError, type DiskScanner, type ScanOutcome, type ScanProgress } from
 import type { DiskNode, DiskPolicy } from '../src/providers/disk-map-tree.js'
 import type { Provider } from '../src/providers/types.js'
 
-const LOCAL = { loopback: true }
+const LOCAL = { loopback: true, paired: false }
 
 interface Started {
   path: string; policy: DiskPolicy; resolve(o: ScanOutcome): void; reject(e: Error): void; cancelled: boolean
@@ -75,7 +75,7 @@ describe('disk-map provider', () => {
   let opened: string[][]
   let revealed: number
   let provider: Provider<DiskMapSnapshot>
-  const cmd = (name: string, payload: unknown, ctx: { loopback: boolean } | undefined = LOCAL) =>
+  const cmd = (name: string, payload: unknown, ctx: { loopback: boolean; paired: boolean } | undefined = LOCAL) =>
     provider.commands![name](payload, ctx) as Promise<Record<string, any>>
 
   const make = () => createDiskMapProvider({
@@ -164,7 +164,7 @@ describe('disk-map provider', () => {
 
   it('acts on the Mac only for a local client', async () => {
     for (const name of ['scan', 'cancel', 'reveal', 'openPrivacy', 'revealPrompt']) {
-      expect((await cmd(name, { root: 'home' }, { loopback: false })).ok).toBe(false)
+      expect((await cmd(name, { root: 'home' }, { loopback: false, paired: false })).ok).toBe(false)
       expect((await provider.commands![name]({ root: 'home' })) as { ok: boolean }).toMatchObject({ ok: false })
     }
     expect(scanner.started).toHaveLength(0)
