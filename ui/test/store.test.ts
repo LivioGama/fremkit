@@ -581,9 +581,24 @@ describe('navigation bar widgets', () => {
       c.pages = Array.from({ length: 12 }, (_, i) => ({ id: `page-${i}`, name: `Page ${i}`, widgets: [] }))
       c.display.navStyle = 'names'
     })
+    // Twelve names fill the 1200 px centre cap, leaving 680 px a side: three 5-cell clocks
+    // (648 px with gaps and padding) fit, a fourth (860 px) would push the names off centre.
     for (let i = 0; i < 5; i++) store.addNavWidget('clock')
-    expect(bar(store)).toHaveLength(4)
+    expect(bar(store)).toHaveLength(3)
     expect(store.state.toast).toMatch(/buttons|boutons/)
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('reserves only the width a few names take', async () => {
+    const { store } = makeBar()
+    await store.load()
+    store.apply((c) => {
+      c.pages = Array.from({ length: 3 }, (_, i) => ({ id: `page-${i}`, name: `Page ${i}`, widgets: [] }))
+      c.display.navStyle = 'names'
+    })
+    // Three names take 376 px, so five clocks (1072 px) still fit on one side.
+    for (let i = 0; i < 6; i++) store.addNavWidget('clock')
+    expect(bar(store)).toHaveLength(5)
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
   })
 

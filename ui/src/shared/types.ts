@@ -339,6 +339,9 @@ export function navWiderClusterWidth(
   return Math.max(clusterWidth('left'), clusterWidth('right'))
 }
 
+/** The widest the named-page centre grows, at the default bar height: NavBar.vue's centre track cap. */
+export const NAV_NAMES_MAX_WIDTH = 1200
+
 export function navHasRoom(
   display: Display,
   manifests: Record<string, WidgetManifest>,
@@ -347,10 +350,11 @@ export function navHasRoom(
   slot: NavSlot = 'left',
 ): boolean {
   const scale = navHeightOf(display) / DEFAULT_NAV_HEIGHT
-  const visibleNames = Math.min(Math.max(pageCount, 1), 5)
+  // Names take their natural width up to the centre track's cap in NavBar.vue (1200 px, scaled).
+  // Reserving less lets a side cluster eat into that track, and the names drift off centre.
+  const names = Math.max(pageCount, 1)
   const centreWidth = display.navStyle === 'names'
-    ? (visibleNames * 120 + Math.max(0, visibleNames - 1) * 8) * scale
-      + (pageCount > visibleNames ? 112 : 0)
+    ? Math.min(names * 120 + (names - 1) * 8, NAV_NAMES_MAX_WIDTH) * scale
     : NAV_CENTRE_RESERVE_CELLS * display.cell
   return 2 * navWiderClusterWidth(display, manifests, width, slot) + centreWidth <= display.cols * display.cell
 }
