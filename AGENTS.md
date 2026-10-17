@@ -33,7 +33,11 @@ Fremkit turns a Corsair Xeneon Edge (a 2560 × 720 touch strip) into a widget da
   an external server it finds on 4242. Built with `scripts/build-helper.sh` (plain `swiftc`, no
   Xcode project), tested with `scripts/test-helper.sh`. The bundle also carries `fremkit-scan`
   (`native/Sources/FremkitScan`), the disk map's scanner, which the server runs by the path the
-  helper passes in `FREMKIT_SCANNER`; without it the server falls back to `du`.
+  helper passes in `FREMKIT_SCANNER`; without it the server falls back to `du`. It also carries
+  `fremkit-nowplaying` (`native/Sources/FremkitNowPlaying`), the media reader named by
+  `FREMKIT_NOWPLAYING`: since macOS 15.4 MediaRemote answers only entitled software, so that
+  executable is a launcher for a library `adapter.pl` loads into `/usr/bin/perl`, and the three
+  files must stay side by side.
 - `scripts/` — setup, dev, build/install/test of the helper, signing identity, and the
   downloadable app: `build-app.sh` (self-contained, signed `Fremkit.app` with Sparkle and the
   server as a Node single executable), `notarize.sh`, `release.sh` (builds a release and stops

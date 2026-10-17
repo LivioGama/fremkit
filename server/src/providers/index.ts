@@ -9,6 +9,7 @@ import { createClipboardProvider } from './clipboard.js'
 import { createNetworkProvider } from './network.js'
 import { createBatteryProvider } from './battery.js'
 import { createRtkProvider } from './rtk.js'
+import { createNowPlayingProvider } from './now-playing.js'
 
 export const providers: Provider[] = [
   createDockerProvider(),
@@ -22,4 +23,5 @@ export const providers: Provider[] = [
   createNetworkProvider(),
   createBatteryProvider(),
   createRtkProvider(),
+  createNowPlayingProvider(),
 ]

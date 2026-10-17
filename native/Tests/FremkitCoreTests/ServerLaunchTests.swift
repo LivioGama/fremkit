@@ -85,4 +85,15 @@ final class ServerLaunchTests: XCTestCase {
                                             home: "/Users/u", scanner: "")["FREMKIT_SCANNER"])
         }
     }
+
+    func testBothLaunchesNameTheMediaPlayerWhenThereIsOne() {
+        let nowPlaying = "/Applications/Fremkit.app/Contents/MacOS/fremkit-nowplaying"
+        for launch in [ServerLaunch.checkout(repoPath: "/r"), .bundled(resourcesPath: resources)] {
+            let env = launch.environment(inheriting: [:], port: 4242, dataDirectory: "/support",
+                                         home: "/Users/u", nowPlaying: nowPlaying)
+            XCTAssertEqual(env["FREMKIT_NOWPLAYING"], nowPlaying)
+            XCTAssertNil(launch.environment(inheriting: [:], port: 4242, dataDirectory: "/support",
+                                            home: "/Users/u", nowPlaying: "")["FREMKIT_NOWPLAYING"])
+        }
+    }
 }

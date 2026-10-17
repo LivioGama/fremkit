@@ -378,7 +378,8 @@ final class ServerProcess {
             port: config.port,
             dataDirectory: HelperPaths.supportDirectory().path,
             home: NSHomeDirectory(),
-            scanner: Self.diskScanner())
+            scanner: Self.diskScanner(),
+            nowPlaying: Self.nowPlaying())
 
         // The handle has to exist before run(), so a failed launch closes it again rather than
         // leaking a descriptor on every retry of the backoff loop.
@@ -598,14 +599,22 @@ final class ServerProcess {
         Self.removePidFile()
     }
 
-    /// The executable `pid` runs, as the kernel knows it (symlinks resolved), or nil.
-    /// The disk map's scanner, built into `Contents/MacOS` beside this executable, if it is there.
-    private static func diskScanner() -> String? {
-        guard let scanner = Bundle.main.executableURL?.deletingLastPathComponent()
-            .appendingPathComponent("fremkit-scan"),
-            FileManager.default.isExecutableFile(atPath: scanner.path) else { return nil }
-        return scanner.path
+    /// An executable built into `Contents/MacOS` beside this one, if it is there. The helpers the
+    /// server may run are named by absolute path, never put on `PATH`.
+    private static func bundledExecutable(_ name: String) -> String? {
+        guard let url = Bundle.main.executableURL?.deletingLastPathComponent()
+            .appendingPathComponent(name),
+            FileManager.default.isExecutableFile(atPath: url.path) else { return nil }
+        return url.path
     }
+
+    /// The disk map's scanner, which walks the folders the server asks about.
+    private static func diskScanner() -> String? { bundledExecutable("fremkit-scan") }
+
+    /// The media player's reader, which asks MediaRemote what is playing.
+    private static func nowPlaying() -> String? { bundledExecutable("fremkit-nowplaying") }
+
+    /// The executable `pid` runs, as the kernel knows it (symlinks resolved), or nil.
 
     private static func executablePath(of pid: pid_t) -> String? {
         var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN) * 4)

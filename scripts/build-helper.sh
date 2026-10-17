@@ -38,12 +38,32 @@ echo "==> fremkit-scan"
     -I "$OUT" -L "$OUT" -lFremkitCore \
     -o "$OUT/fremkit-scan"
 
+# The media player's reader. Since macOS 15.4 `mediaremoted` refuses MediaRemote reads from
+# software Apple has not signed ("Operation not permitted"), so the calls live in a library that
+# `adapter.pl` loads into `/usr/bin/perl`, which is entitled. The executable named to the server
+# by FREMKIT_NOWPLAYING is only a launcher for those two: all three must stay in the same folder.
+echo "==> fremkit-nowplaying"
+"$SWIFTC" -O -sdk "$SDK" -target "$TARGET" -swift-version "$SWIFT_VERSION" \
+    -module-name FremkitNowPlaying \
+    native/Sources/FremkitNowPlaying/main.swift \
+    -o "$OUT/fremkit-nowplaying"
+"$SWIFTC" -O -sdk "$SDK" -target "$TARGET" -swift-version "$SWIFT_VERSION" \
+    -module-name FremkitMediaRemote -emit-library \
+    native/Sources/FremkitNowPlaying/MediaRemote.swift \
+    native/Sources/FremkitNowPlaying/Adapter.swift \
+    -framework AppKit \
+    -o "$OUT/libFremkitMediaRemote.dylib"
+cp native/Sources/FremkitNowPlaying/adapter.pl "$OUT/fremkit-nowplaying.pl"
+
 echo "==> app bundle"
 APP="native/dist/Fremkit Helper.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$OUT/FremkitHelper" "$APP/Contents/MacOS/FremkitHelper"
 cp "$OUT/fremkit-scan" "$APP/Contents/MacOS/fremkit-scan"
+cp "$OUT/fremkit-nowplaying" "$APP/Contents/MacOS/fremkit-nowplaying"
+cp "$OUT/fremkit-nowplaying.pl" "$APP/Contents/MacOS/fremkit-nowplaying.pl"
+cp "$OUT/libFremkitMediaRemote.dylib" "$APP/Contents/MacOS/libFremkitMediaRemote.dylib"
 cp native/Resources/Info.plist "$APP/Contents/Info.plist"
 fremkit_stamp_version "$APP/Contents/Info.plist" "$VERSION"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
@@ -64,8 +84,9 @@ IDENTITY="${FREMKIT_SIGN_IDENTITY:-Fremkit Helper Dev}"
 # `--options runtime` turns on the hardened runtime, which is what makes the bundle's TCC grants
 # (Input Monitoring, Accessibility) belong to *this* signed code rather than to whatever happens
 # to sit at the path. `--deep` is deprecated and signs nested code with the outer identity
-# instead of its own. The one nested executable, fremkit-scan, is signed on its own first, with
-# its own identifier, and the bundle after it: inside out.
+# instead of its own. Each piece of nested code (fremkit-scan, fremkit-nowplaying and the library
+# it loads) is signed on its own first, with its own identifier, and the bundle after it: inside
+# out.
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "\"$IDENTITY\""; then
     echo "signing with: $IDENTITY"
     SIGN_AS="$IDENTITY"
@@ -74,6 +95,12 @@ else
     SIGN_AS="-"
 fi
 codesign --force --options runtime --identifier dev.fremkit.scan --sign "$SIGN_AS" "$APP/Contents/MacOS/fremkit-scan"
+codesign --force --options runtime --identifier dev.fremkit.nowplaying.library --sign "$SIGN_AS" "$APP/Contents/MacOS/libFremkitMediaRemote.dylib"
+# The adapter is a script: codesign seals it as generic code, which is what lets the bundle pass
+# --verify --strict at all. It is not executed directly — the launcher hands it to /usr/bin/perl.
+chmod +x "$APP/Contents/MacOS/fremkit-nowplaying.pl"
+codesign --force --identifier dev.fremkit.nowplaying.script --sign "$SIGN_AS" "$APP/Contents/MacOS/fremkit-nowplaying.pl"
+codesign --force --options runtime --identifier dev.fremkit.nowplaying --sign "$SIGN_AS" "$APP/Contents/MacOS/fremkit-nowplaying"
 codesign --force --options runtime --sign "$SIGN_AS" "$APP"
 codesign --verify --strict "$APP"
 

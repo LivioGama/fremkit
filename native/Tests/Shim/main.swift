@@ -133,6 +133,7 @@ let suites: [(String, () -> XCTestCase, [TestMethod])] = [
         ("testCheckoutEnvironmentKeepsTheDeveloperPath", { ($0 as! ServerLaunchTests).testCheckoutEnvironmentKeepsTheDeveloperPath() }),
         ("testBundledEnvironmentNamesTheBundleAndTheData", { ($0 as! ServerLaunchTests).testBundledEnvironmentNamesTheBundleAndTheData() }),
         ("testBothLaunchesNameTheDiskScannerWhenThereIsOne", { ($0 as! ServerLaunchTests).testBothLaunchesNameTheDiskScannerWhenThereIsOne() }),
+        ("testBothLaunchesNameTheMediaPlayerWhenThereIsOne", { ($0 as! ServerLaunchTests).testBothLaunchesNameTheMediaPlayerWhenThereIsOne() }),
     ]),
     ("HelperPathsTests", { HelperPathsTests() }, [
         ("testDefaultsAreUnderLibrary", { ($0 as! HelperPathsTests).testDefaultsAreUnderLibrary() }),
