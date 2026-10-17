@@ -278,6 +278,10 @@ const fr = {
   // helper/routes.ts
   'helper.notLocal': 'hôte non local',
   'helper.unavailable': 'assistant Fremkit indisponible',
+
+  // brightness/ — the brightness of a screen
+  'brightness.unknownScreen': 'écran inconnu',
+  'brightness.unavailable': 'luminosité non réglable sur cet écran',
 }
 
 export type MessageKey = keyof typeof fr
@@ -525,6 +529,9 @@ const en: Record<MessageKey, string> = {
 
   'helper.notLocal': 'host is not local',
   'helper.unavailable': 'Fremkit Helper is unavailable',
+
+  'brightness.unknownScreen': 'unknown screen',
+  'brightness.unavailable': 'brightness cannot be set on this screen',
 }
 
 const DICTIONARIES: Record<Locale, Record<string, string>> = { fr, en }

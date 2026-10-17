@@ -57,6 +57,9 @@ import { createShortcutsProvider } from './providers/shortcuts.js'
 import { createServiceStatusProvider } from './providers/service-status.js'
 import { createSystemProvider } from './providers/system.js'
 import { createDiskMapProvider } from './providers/disk-map.js'
+import { BrightnessService } from './brightness/service.js'
+import { createBrightnessProvider } from './brightness/provider.js'
+import { brightnessRoutes } from './brightness/routes.js'
 import { findInstance, findInstances } from './config/instances.js'
 import { migrateHomeySecret } from './config/migrate.js'
 import { BYTES_CSP, isByteRoute } from './http/headers.js'
@@ -220,6 +223,10 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const instances = (instanceId: string) => findInstance(store.get(), instanceId)
   registry.register(createShortcutsProvider(undefined, instances))
   registry.register(createServiceStatusProvider({}, instances))
+  // Per-screen settings from the store, reports from the helper: see brightness/service.ts.
+  const brightness = new BrightnessService({ config: () => store.get() })
+  const brightnessChanged = (): void => registry.refresh('brightness')
+  registry.register(createBrightnessProvider(brightness, brightnessChanged))
   const secrets = createSecretStore(store.get().secrets.backend, opts.dataDir)
   // v2 → v3 moved the Homey connection to the type its widget declares, and the declaration
   // calls the key `token` where the coded type called it `apiKey`. The config half of that is in
@@ -270,6 +277,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     }
     syncDeclared()
     hub.broadcast('config', cfg)
+    brightnessChanged()
     // Fire and forget: a failed sync must not break the save that triggered it.
     void connections.sync(cfg.connections)
       .then(() => retainCameras(cfg))
@@ -369,6 +377,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await app.register(dockRoutes, { state: dock, appIcons })
   await app.register(appsRoutes, { apps: installedApps })
   await app.register(helperRoutes)
+  await app.register(brightnessRoutes, { service: brightness, changed: brightnessChanged })
   await app.register(bambuRoutes, { cameras: bambuCameras })
   await app.register(wsRoutes, { hub })
 
