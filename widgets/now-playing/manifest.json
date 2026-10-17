@@ -1,0 +1,32 @@
+{
+  "id": "now-playing",
+  "name": {
+    "fr": "Lecture en cours",
+    "en": "Now Playing"
+  },
+  "version": "1.0.0",
+  "sdk": 1,
+  "description": {
+    "fr": "Affiche l\u2019application, le titre, l\u2019artiste et l\u2019album, avec les commandes de lecture.",
+    "en": "Shows the app, title, artist and album with playback controls."
+  },
+  "category": "media",
+  "icon": "music",
+  "minSize": [
+    8,
+    4
+  ],
+  "defaultSize": [
+    16,
+    6
+  ],
+  "compact": {
+    "width": 8
+  },
+  "subscriptions": [
+    "now-playing"
+  ],
+  "commands": [
+    "now-playing"
+  ]
+}

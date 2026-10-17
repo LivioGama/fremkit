@@ -22,6 +22,7 @@ To write your own, see [writing-widgets.md](writing-widgets.md).
 | [uptime](#uptime) | Time since the Mac last booted | — | — | 8 × 4 |
 | [network](#network) | Live network throughput | — | 6 cells | 12 × 4 |
 | [notifications](#notifications) | Unread badges read from the Dock | — | — | 16 × 4 |
+| [now-playing](#now-playing) | What the Mac is playing, with transport controls | — | — | 16 × 6 |
 | [pomodoro](#pomodoro) | A work and break timer | — | 5 cells | 8 × 6 |
 | [processes](#processes) | Top processes | — | — | 16 × 8 |
 | [service-status](#service-status) | A dot per service, up, warn or down | — | 4 cells | 8 × 6 |
@@ -248,6 +249,20 @@ Minimum size 8 × 3, default 16 × 4.
 |---|---|---|---|---|
 | `apps` | apps | `[]` | both | Which of the apps the Dock currently shows to draw, in the order you set |
 | `size` | enum `petite` \| `normale` | `normale` | both | Icon size (small / normal) |
+
+## now-playing
+
+*Now Playing* — the app, title, artist and album of whatever the Mac is playing, its cover, and
+previous / play-pause / next. It follows the system's Now Playing session rather than one named
+service, so Music, Spotify, a browser tab and QuickTime all work: the core's `now-playing`
+channel asks MediaRemote through a small `fremkit-nowplaying` helper, and the tile shows which
+app owns the session.
+
+macOS 15.4 and later refuse MediaRemote reads to software Apple has not signed, so the helper
+borrows `/usr/bin/perl`'s entitlement to make the call. On a Mac where the helper is missing the
+tile says **Media unavailable**; where nothing is playing it says **Nothing is playing**. It has
+no settings, and its play button reads the state before sending Play or Pause — some players
+ignore MediaRemote's toggle command.
 
 ## pomodoro
 

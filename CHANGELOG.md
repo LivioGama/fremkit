@@ -10,6 +10,16 @@ Anything that changes what the dashboard, the admin or a widget can do gets a li
 (`package.json`, `server/package.json`, `ui/package.json`, `server/src/version.ts`) and is
 tagged `vX.Y.Z`.
 
+## Unreleased
+
+### Added
+- **A Now Playing tile for whatever the Mac is playing.** The app, title, artist and album, the
+  player's cover art, and previous / play-pause / next, whichever app owns the session rather
+  than one named service. macOS refuses MediaRemote reads to software Apple has not signed since
+  15.4, so the reading comes from a small `fremkit-nowplaying` helper that loads its calls into
+  `/usr/bin/perl`, which is entitled; it ships beside `fremkit-scan` and falls back to "nothing
+  playing" without it.
+
 ## 0.4.1 — 2026-10-16
 
 ### Fixed
