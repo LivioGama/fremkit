@@ -56,6 +56,8 @@ export interface NavItem {
 export interface Background { color?: string; image?: string; fit?: BackgroundFit }
 /** Mirrors the server schema: the two heights the navigation bar may take. */
 export type NavHeight = 80 | 40
+export type NavStyle = 'dots' | 'names'
+export const DEFAULT_NAV_STYLE: NavStyle = 'dots'
 /**
  * Mirrors the server schema: the grid and the look of one screen. The theme is the config's,
  * the same on every screen, and the bar's content is the screen's `nav`.
@@ -64,6 +66,8 @@ export interface ScreenDisplay {
   cols: number; rows: number; cell: number; autoCycleSeconds: number
   /** Absent means `DEFAULT_NAV_HEIGHT`; the default is stored as a missing key. */
   navHeight?: NavHeight
+  /** Absent keeps the existing dot navigation. */
+  navStyle?: NavStyle
   /** Opacity of the navigation bar's background, 0–1; absent means solid. */
   navOpacity?: number
   /** The opacity a tile gets when it is added; absent means solid. */
@@ -322,8 +326,8 @@ export const navItemsIn = (screen: Screen, slot: NavSlot): NavItem[] =>
 
 /** A sanity ceiling on a screen's bar widget count; mirrors the server's `MAX_NAV_WIDGETS`. */
 export const MAX_NAV_WIDGETS = 12
-/** Cells kept free in the middle of the bar for the page dots, whatever the clusters hold. */
-export const NAV_DOTS_RESERVE_CELLS = 10
+/** Minimum width retained for dot navigation. */
+export const NAV_CENTRE_RESERVE_CELLS = 10
 /**
  * The two settings that make a compact widget need more room than its manifest asks for, and
  * the width it then gets. A widget cannot resize its own iframe, so the rule lives on the host
@@ -358,9 +362,62 @@ export function navCellsUsed(screen: Screen, widgets: Config['widgets'], manifes
   }, 0)
 }
 
-/** Whether one more compact widget of that width still leaves that screen's dots their room. */
-export function navHasRoom(screen: Screen, widgets: Config['widgets'], manifests: Record<string, WidgetManifest>, width: number): boolean {
-  return navCellsUsed(screen, widgets, manifests) + width <= screen.display.cols - NAV_DOTS_RESERVE_CELLS
+/**
+ * The bar centres its pages between two equally wide side tracks, each as wide as the wider
+ * cluster. Budget against that side, gaps and padding included, or a full cluster disappears
+ * behind the centre. `width` cells are counted as one more widget in `slot`. Mirrors
+ * `navWiderClusterWidth` in `server/src/config/nav.ts`.
+ */
+export function navWiderClusterWidth(
+  screen: Screen,
+  widgets: Config['widgets'],
+  manifests: Record<string, WidgetManifest>,
+  width = 0,
+  slot: NavSlot = 'left',
+): number {
+  const display = screen.display
+  const scale = navHeightOf(display) / DEFAULT_NAV_HEIGHT
+  const clusterWidth = (side: NavSlot): number => {
+    const items = navItemsIn(screen, side)
+    const content = items.reduce((sum, item) => {
+      const widget = widgets[item.instanceId]
+      if (!widget) return sum
+      const manifest = manifests[widget.widgetId]
+      return sum + compactWidth(manifest, mergeSettings(manifest, widget.settings)) * display.cell
+    }, 0)
+    const count = items.length + (side === slot && width > 0 ? 1 : 0)
+    return content + (side === slot ? width * display.cell : 0)
+      + Math.max(0, count - 1) * 12 * scale + 24 * scale
+  }
+  return Math.max(clusterWidth('left'), clusterWidth('right'))
+}
+
+/** The widest the named-page centre grows, at the default bar height: NavBar.vue's centre track cap. */
+export const NAV_NAMES_MAX_WIDTH = 1200
+
+/** The width one screen's bar keeps for its pages: the dots' cells, or the names up to their cap. */
+export function navCentreWidth(screen: Screen): number {
+  const display = screen.display
+  if (display.navStyle !== 'names') return NAV_CENTRE_RESERVE_CELLS * display.cell
+  // Names take their natural width up to the centre track's cap in NavBar.vue (1200 px, scaled).
+  // Reserving less lets a side cluster eat into that track, and the names drift off centre.
+  const names = Math.max(screen.pages.length, 1)
+  return Math.min(names * 120 + (names - 1) * 8, NAV_NAMES_MAX_WIDTH) * navHeightOf(display) / DEFAULT_NAV_HEIGHT
+}
+
+/**
+ * Whether one more compact widget of `width` cells in `slot` still leaves that screen's pages
+ * their centre. Mirrors `navHasRoom` in `server/src/config/nav.ts`, which applies it at save.
+ */
+export function navHasRoom(
+  screen: Screen,
+  widgets: Config['widgets'],
+  manifests: Record<string, WidgetManifest>,
+  width: number,
+  slot: NavSlot = 'left',
+): boolean {
+  return 2 * navWiderClusterWidth(screen, widgets, manifests, width, slot) + navCentreWidth(screen)
+    <= screen.display.cols * screen.display.cell
 }
 
 /**

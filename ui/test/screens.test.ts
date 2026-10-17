@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { compactOf, deviceGrid, pickScreen, screensShowing, tileOf } from '../src/shared/screens'
 import {
-  navCellsUsed, navHasRoom, navItemsIn, navItemsOf,
+  navCellsUsed, navCentreWidth, navHasRoom, navItemsIn, navItemsOf, navWiderClusterWidth,
   type Config, type Screen, type WidgetManifest,
 } from '../src/shared/types'
 
@@ -127,11 +127,29 @@ describe('bar helpers per screen', () => {
     expect(navCellsUsed(orphan, widgets, manifests)).toBe(0)
   })
 
-  it('measures room against that screen\'s cols minus the dots', () => {
-    // 64 − 10 = 54 on the Edge; 25 − 10 = 15 on the iPad, which holds 13.
-    expect(navHasRoom(wide, widgets, manifests, 41)).toBe(true)
-    expect(navHasRoom(wide, widgets, manifests, 42)).toBe(false)
-    expect(navHasRoom(narrow, widgets, manifests, 2)).toBe(true)
-    expect(navHasRoom(narrow, widgets, manifests, 3)).toBe(false)
+  it('measures room against the wider cluster, on that screen\'s own width', () => {
+    // The Edge is 2560 px and the dots keep 400, so each side may take 1080. The left cluster
+    // holds the 5-cell clock (200 px); one more widget adds its cells, a 12 px gap and the
+    // cluster's 24 px of padding is already counted: 236 + 40 × w.
+    expect(navHasRoom(wide, widgets, manifests, 21)).toBe(true)
+    expect(navHasRoom(wide, widgets, manifests, 22)).toBe(false)
+    // The right one holds the 8-cell weather (320 px): 356 + 40 × w.
+    expect(navHasRoom(wide, widgets, manifests, 18, 'right')).toBe(true)
+    expect(navHasRoom(wide, widgets, manifests, 19, 'right')).toBe(false)
+    // The iPad is 1000 px, 300 a side: both widgets on one side already take 556.
+    expect(navHasRoom(narrow, widgets, manifests, 0)).toBe(false)
+  })
+
+  it('reserves the named pages\' own width instead of the dots\'', () => {
+    const named = { ...wide, display: { ...wide.display, navStyle: 'names' as const } }
+    // One name takes 120 px, leaving 1220 a side.
+    expect(navCentreWidth(named)).toBe(120)
+    expect(navHasRoom(named, widgets, manifests, 24)).toBe(true)
+    expect(navHasRoom(named, widgets, manifests, 25)).toBe(false)
+    // Twelve take the 1200 px cap, halved on the slim bar with the gaps.
+    const many = { ...named, pages: Array.from({ length: 12 }, (_, i) => ({ id: 'p' + i, name: 'P' + i, items: [] })) }
+    expect(navCentreWidth(many)).toBe(1200)
+    expect(navCentreWidth({ ...many, display: { ...many.display, navHeight: 40 } })).toBe(600)
+    expect(navWiderClusterWidth(wide, widgets, manifests)).toBe(344)
   })
 })

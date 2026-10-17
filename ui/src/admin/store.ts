@@ -3,7 +3,7 @@ import { api as realApi } from '../shared/api'
 import { pick, setLocale, t } from '../shared/i18n'
 import { useSocket } from '../shared/socket'
 import type { Config, NavHeight, NavItem, Page, Placement, Screen, ScreenDisplay, Widget, WidgetInstance, WidgetManifest, WidgetPermissionSet, WidgetSource, WidgetsResponse } from '../shared/types'
-import { DEFAULT_NAV_HEIGHT, MAX_NAV_WIDGETS, ROWS_BY_NAV_HEIGHT, compactWidth, mergeSettings, navHasRoom } from '../shared/types'
+import { DEFAULT_NAV_HEIGHT, MAX_NAV_WIDGETS, ROWS_BY_NAV_HEIGHT, compactWidth, mergeSettings, navHasRoom, navWiderClusterWidth } from '../shared/types'
 import { DEVICE_CELL, DEVICE_NAV_HEIGHT, deviceGrid, pickScreen, screensShowing, tileOf } from '../shared/screens'
 import { fits, largestFreeSpot, type Grid, type Rect } from './layout'
 
@@ -723,7 +723,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
         if (!widget || seen.has(item.instanceId) || added.nav.length >= MAX_NAV_WIDGETS) continue
         const manifest = state.manifests[widget.widgetId]
         const width = compactWidth(manifest, mergeSettings(manifest, widget.settings))
-        if (!width || !navHasRoom(added, cfg.widgets, state.manifests, width)) continue
+        if (!width || !navHasRoom(added, cfg.widgets, state.manifests, width, item.slot)) continue
         seen.add(item.instanceId)
         added.nav.push({ ...item })
       }
@@ -768,7 +768,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       if (!manifest.compact) { state.toast = t('admin.store.notCompact', { id: widgetId }); return }
       const scr = screen.value
       if (!scr) return
-      // Room is measured in cells, not in widgets: the clusters must not reach the dots.
+      // The wider cluster sets both side tracks, keeping the page dots or names centred and visible.
       const width = compactWidth(manifest, mergeSettings(manifest, {}))
       if (scr.nav.length >= MAX_NAV_WIDGETS || !navHasRoom(scr, state.config!.widgets, state.manifests, width)) {
         state.toast = t('admin.store.navFull', { id: pick(manifest.name) || widgetId })
@@ -809,9 +809,32 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       })
     },
 
-    /** `slot` and `popup` belong to this screen's bar entry; `settings` to the shared widget. */
+    /**
+     * `slot` and `popup` belong to this screen's bar entry; `settings` to the shared widget. A
+     * change that widens this bar's wider cluster past its room is refused; one that does not is
+     * let through even on a bar already over the limit, so an old over-full bar stays editable.
+     * Other screens showing the widget are the server's to check, at save.
+     */
     updateNavWidget(instanceId: string, patch: NavWidgetPatch): void {
       const { settings, ...itemPatch } = patch
+      const cfg = state.config
+      const scr = screen.value
+      const current = scr?.nav.find((x) => x.instanceId === instanceId)
+      if (!cfg || !scr || !current) return
+      const widget = cfg.widgets[instanceId]
+      const candidate: Screen = {
+        ...scr, nav: scr.nav.map((x) => (x.instanceId === instanceId ? { ...x, ...itemPatch } : x)),
+      }
+      const candidateWidgets = widget && settings !== undefined
+        ? { ...cfg.widgets, [instanceId]: { ...widget, settings } }
+        : cfg.widgets
+      const growsWiderSide = navWiderClusterWidth(candidate, candidateWidgets, state.manifests)
+        > navWiderClusterWidth(scr, cfg.widgets, state.manifests)
+      if (growsWiderSide && !navHasRoom(candidate, candidateWidgets, state.manifests, 0)) {
+        const manifest = widget ? state.manifests[widget.widgetId] : undefined
+        state.toast = t('admin.store.navFull', { id: pick(manifest?.name) || widget?.widgetId || instanceId })
+        return
+      }
       apply((c) => {
         const item = here(c).nav.find((x) => x.instanceId === instanceId)
         if (item && Object.keys(itemPatch).length) patchInto(item as unknown as Record<string, unknown>, itemPatch)

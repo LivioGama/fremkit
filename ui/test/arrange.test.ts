@@ -92,14 +92,15 @@ describe('arrangeInto', () => {
   })
 
   it('copies the bar while it fits and turns the rest into tiles', () => {
-    // 20 columns leave 10 for the bar after the dots: two 5-cell items fit, the third does not.
+    // A 30-column bar is 1200 px; the dots keep 400, so each side may take 400. A 5-cell item
+    // takes 224 with its padding: one fits on each side, a second on the right (436) does not.
     const src = screen([{ id: 'home', name: 'Home', items: [at('small-p', 0, 0, 8, 4)] }], [
       { instanceId: 'small-1', slot: 'left' },
       { instanceId: 'small-2', slot: 'right', popup: true },
       { instanceId: 'small-3', slot: 'right' },
     ])
     const widgets = widgetsFor(['small-p', 'small-1', 'small-2', 'small-3'])
-    const out = arrangeInto(src, { cols: 20, rows: 8, navCols: 20 }, widgets, MANIFESTS)
+    const out = arrangeInto(src, { cols: 20, rows: 8, navCols: 30 }, widgets, MANIFESTS)
     expect(out.nav).toEqual([{ instanceId: 'small-1', slot: 'left' }, { instanceId: 'small-2', slot: 'right', popup: true }])
     expect(out.navToTiles).toEqual(['small-3'])
     expect(ids(out.pages[0])).toEqual(['small-p', 'small-3'])
@@ -108,9 +109,24 @@ describe('arrangeInto', () => {
 
     // No room on the first page for it either: reported.
     const full = screen([{ id: 'home', name: 'Home', items: [at('small-p', 0, 0, 20, 8)] }], src.nav)
-    const none = arrangeInto(full, { cols: 20, rows: 8, navCols: 20 }, widgets, MANIFESTS)
+    const none = arrangeInto(full, { cols: 20, rows: 8, navCols: 30 }, widgets, MANIFESTS)
     expect(none.navToTiles).toEqual([])
     expect(none.leftOut).toEqual(['small-3'])
+  })
+
+  it('checks the new bar against page dots and its own bar height, whatever the source uses', () => {
+    // Twelve named pages would keep 1200 px of a 64-column bar, 680 a side: four 5-cell items
+    // (860 px) would not fit. The new screen starts with dots, 1080 a side, so they all do.
+    const pages = Array.from({ length: 12 }, (_, i) => ({ id: 'p' + i, name: 'P' + i, items: [] }))
+    const nav = ['small-1', 'small-2', 'small-3', 'small-4'].map((instanceId) => ({ instanceId, slot: 'left' as const }))
+    const src = { ...screen(pages, nav), display: { cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0, navStyle: 'names' as const } }
+    const out = arrangeInto(src, { cols: 64, rows: 16, navCols: 64 }, widgetsFor(nav.map((x) => x.instanceId)), MANIFESTS)
+    expect(out.nav).toEqual(nav)
+    // A 31-column bar leaves 420 px a side. Two items take 400 + 6 + 12 = 418 under a slim
+    // 40 px bar, and 400 + 12 + 24 = 436 under the 80 px one: the target's height decides.
+    const ids4 = widgetsFor(nav.map((x) => x.instanceId))
+    expect(arrangeInto(src, { cols: 31, rows: 16, navCols: 31, navHeight: 40 }, ids4, MANIFESTS).nav).toHaveLength(2)
+    expect(arrangeInto(src, { cols: 31, rows: 16, navCols: 31 }, ids4, MANIFESTS).nav).toHaveLength(1)
   })
 
   it('never creates a widget', () => {

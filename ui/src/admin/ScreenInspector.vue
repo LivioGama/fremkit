@@ -19,8 +19,8 @@ import { pick, useI18n, type Locale } from '../shared/i18n'
 import { useConfirm } from '../shared/useConfirm'
 import { CONTRIBUTORS, MAINTAINER, REGISTRY_REPOSITORY, REPOSITORY, VERSION } from '../shared/credits'
 import { BUILTIN_THEME, useThemes } from '../shared/theme'
-import { ADMIN_GESTURES, DEFAULT_ADMIN_GESTURE, NAV_HEIGHTS, navHeightOf,
-  type AdminGesture, type Background, type Config, type NavHeight, type Screen } from '../shared/types'
+import { ADMIN_GESTURES, DEFAULT_ADMIN_GESTURE, DEFAULT_NAV_STYLE, NAV_HEIGHTS, navHasRoom, navHeightOf,
+  type AdminGesture, type Background, type Config, type NavHeight, type NavStyle, type Screen } from '../shared/types'
 import { pickScreen, screensShowing } from '../shared/screens'
 import { useAdminStore } from './store'
 
@@ -159,6 +159,22 @@ const NAV_OPTIONS = NAV_HEIGHTS.map((h) => ({ value: String(h), label: `${h} px`
 const kioskUrl = computed(() => `${location.origin}/?screen=${encodeURIComponent(scr.value.id)}&kiosk=1`)
 /** An Edge screen other than the one the helper shows is drawn nowhere yet. */
 const unshownEdge = computed(() => scr.value.kind === 'edge' && pickScreen(s.state.config!, null).id !== scr.value.id)
+const NAV_STYLE_OPTIONS = computed(() => (['dots', 'names'] as const).map((value) => ({
+  value, label: t(`admin.inspector.screen.navStyle.${value}`),
+})))
+/**
+ * Dots or names in this screen's bar. Names take more of the centre, so the switch is refused
+ * when this screen's clusters would not leave them their room.
+ */
+function setNavStyle(value: string): void {
+  const next = value as NavStyle
+  const candidate: Screen = { ...scr.value, display: { ...d.value, navStyle: next } }
+  if (!navHasRoom(candidate, s.state.config!.widgets, s.state.manifests, 0)) {
+    s.state.toast = t('admin.inspector.screen.navStyle.noRoom')
+    return
+  }
+  s.apply((c) => { onScreen(c).display.navStyle = next === DEFAULT_NAV_STYLE ? undefined : next })
+}
 
 /** The slider works in whole percents; the config stores the 0–1 opacity itself. */
 const ADMIN_GESTURE_OPTIONS = computed(() => ADMIN_GESTURES.map((value) => ({
@@ -265,6 +281,10 @@ function setBackground(patch: Partial<Background>): void {
   <BaseField :label="t('admin.inspector.screen.navHeight')" :hint="t('admin.inspector.screen.navHeight.hint')">
     <BaseSegmented :model-value="String(navHeight)" :options="NAV_OPTIONS"
       @update:model-value="s.setNavHeight(Number($event) as NavHeight)" />
+  </BaseField>
+  <BaseField :label="t('admin.inspector.screen.navStyle')" :hint="t('admin.inspector.screen.navStyle.hint')">
+    <BaseSegmented :model-value="d.navStyle ?? DEFAULT_NAV_STYLE" :options="NAV_STYLE_OPTIONS"
+      @update:model-value="setNavStyle($event)" />
   </BaseField>
   <BaseField :label="t('admin.inspector.screen.adminGesture')"
     :hint="t('admin.inspector.screen.adminGesture.hint')">

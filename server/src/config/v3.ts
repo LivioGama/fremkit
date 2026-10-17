@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { BUILTIN_THEME } from '../themes/theme.js'
 import {
   WIDGET_ID_RE, HEX_COLOR_RE, AccentModeSchema,
-  WidgetBackgroundSchema, OpacitySchema, BackgroundSchema, NavHeightSchema, MAX_NAV_WIDGETS, NavSlotSchema,
+  WidgetBackgroundSchema, OpacitySchema, BackgroundSchema, NavHeightSchema, NavStyleSchema, MAX_NAV_WIDGETS, NavSlotSchema,
   AdminGestureSchema, ConnectionSchema, SecretsSchema, LocaleSchema, defaultLocale, PrivacySchema, MarketplaceSchema,
 } from './schema.js'
 
@@ -82,6 +82,11 @@ export const DisplaySchema = z.object({
   theme: z.string().regex(/^[a-z0-9_-]+$/).default(BUILTIN_THEME),
   /** Absent means 80: the default is stored as a missing key, never as a value. */
   navHeight: NavHeightSchema.optional(),
+  /**
+   * Dots or page names in the bar; absent means dots. Named pages landed while files were still
+   * v3, so a v3 file can carry it, and v4 keeps it on the Edge screen's display.
+   */
+  navStyle: NavStyleSchema.optional(),
   /** Opacity of the navigation bar's background. Absent means a solid bar. */
   navOpacity: OpacitySchema.optional(),
   /**

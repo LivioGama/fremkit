@@ -21,6 +21,9 @@ tagged `vX.Y.Z`.
   admin names it and asks before deleting it. The widget library lists what your other screens
   show, to place the same widget here, and a tile shown on several screens wears the number of
   screens.
+- **Choose page names in the bar.** Each screen can keep the familiar page dots or show
+  scrolling names with a current-page marker. Arrows move by a visible page, and the admin
+  reserves room for compact widgets. Page taps still work with the admin gestures.
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer

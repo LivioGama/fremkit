@@ -481,6 +481,13 @@ describe('v3 → v4', () => {
     expect(c.widgets).toEqual({ 'clock-1': { widgetId: 'clock', showTitle: true, settings: {} } })
   })
 
+  it('keeps the named-page style on the Edge screen, and leaves dots absent', () => {
+    const named = migrateConfig({ ...example, display: { ...example.display, navStyle: 'names' } })
+    expect(named.screens[0].display.navStyle).toBe('names')
+    expect('navStyle' in migrateConfig(example).screens[0].display).toBe(false)
+    expect(() => migrateConfig({ ...example, display: { ...example.display, navStyle: 'tabs' } })).toThrow()
+  })
+
   it('moves the theme to the top and keeps the rest of the display', () => {
     const c = migrateConfig(realFixture)
     expect(c.theme).toBe('edge')

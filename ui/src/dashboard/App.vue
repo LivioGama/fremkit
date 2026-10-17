@@ -131,6 +131,7 @@ watch(() => config.value?.locale, (l) => setLocale(l))
     <NavBar class="bar" :style="{ width: gridWidth }" :pages="screen.pages" :active="pageIndex" :height="navHeightOf(display)"
       :opacity="display.navOpacity" :nav-items="navItemsOf(screen)" :widgets="config.widgets"
       :manifests="manifests" :cell="display.cell" :admin-gesture="display.adminGesture"
+      :nav-style="display.navStyle"
       @select="select" @swipe="go"
       @tap="popover.toggle" @admin="openAdmin" />
     <!-- Drawn by the root, above the stage and the bar, so it is never clipped by either. -->

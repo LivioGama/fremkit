@@ -31,7 +31,7 @@ const fr = {
   'layout.overlap': 'écran {screen}, page {page} : {a} chevauche {b}',
   'navWidgets.unknownWidget': 'écran {screen}, barre de navigation : widget inconnu {widgetId}',
   'navWidgets.notCompact': 'écran {screen}, barre de navigation : le widget {widgetId} n’a pas de rendu compact',
-  'navWidgets.noRoom': 'écran {screen}, barre de navigation : ses widgets prennent {used} cases sur les {room} laissées par les points de page',
+  'navWidgets.noRoom': 'écran {screen}, barre de navigation : son groupe de widgets le plus large prend {used} px sur les {room} px que les pages laissent de chaque côté',
   'config.duplicateConnection': 'connexion {id} déclarée deux fois',
   'config.degraded': 'configuration sur disque illisible : corrigez data/fremkit.json puis redémarrez le serveur',
 
@@ -282,7 +282,7 @@ const en: Record<MessageKey, string> = {
   'layout.overlap': 'screen {screen}, page {page}: {a} overlaps {b}',
   'navWidgets.unknownWidget': 'screen {screen}, navigation bar: unknown widget {widgetId}',
   'navWidgets.notCompact': 'screen {screen}, navigation bar: widget {widgetId} has no compact rendering',
-  'navWidgets.noRoom': 'screen {screen}, navigation bar: its widgets take {used} cells of the {room} the page dots leave',
+  'navWidgets.noRoom': 'screen {screen}, navigation bar: its wider widget cluster takes {used} px of the {room} px the pages leave on each side',
   'config.duplicateConnection': 'connection {id} declared twice',
   'config.degraded': 'configuration on disk is unreadable: fix data/fremkit.json then restart the server',
 

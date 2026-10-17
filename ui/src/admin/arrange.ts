@@ -1,11 +1,14 @@
 import {
   MAX_NAV_WIDGETS, compactWidth, mergeSettings, navHasRoom,
-  type Config, type NavItem, type Page, type Placement, type Screen, type WidgetManifest,
+  type Config, type NavHeight, type NavItem, type Page, type Placement, type Screen, type WidgetManifest,
 } from '../shared/types'
 import { firstFreeSpot, largestFreeSpot, type Grid } from './layout'
 
-/** The grid a screen is being pre-filled for; `navCols` is the width its bar's room is checked against. */
-export interface ArrangeTarget { cols: number; rows: number; navCols: number }
+/**
+ * The grid a screen is being pre-filled for; `navCols` is the width its bar's room is checked
+ * against, and `navHeight` the height of that bar (absent: the default), which scales its gaps.
+ */
+export interface ArrangeTarget { cols: number; rows: number; navCols: number; navHeight?: NavHeight }
 
 /** What a pre-fill would give the new screen, before anything is saved. */
 export interface Arrangement {
@@ -82,9 +85,11 @@ export function arrangeInto(
   }
 
   // The bar is checked as it fills, against the target's width, by the same rule the editor uses.
+  // A new screen starts with page dots, whatever style the source uses: `addScreen` does not copy it.
+  const { navStyle: _style, navHeight: _height, ...look } = source.display
   const bar: Screen = {
     ...source, nav: [], pages: [],
-    display: { ...source.display, cols: target.navCols },
+    display: { ...look, cols: target.navCols, ...(target.navHeight ? { navHeight: target.navHeight } : {}) },
   }
   for (const item of source.nav) {
     const widget = widgets[item.instanceId]
@@ -92,7 +97,7 @@ export function arrangeInto(
     seen.add(item.instanceId)
     const manifest = manifests[widget.widgetId]
     const width = compactWidth(manifest, mergeSettings(manifest, widget.settings))
-    if (width && bar.nav.length < MAX_NAV_WIDGETS && navHasRoom(bar, widgets, manifests, width)) {
+    if (width && bar.nav.length < MAX_NAV_WIDGETS && navHasRoom(bar, widgets, manifests, width, item.slot)) {
       bar.nav.push({ ...item })
       continue
     }

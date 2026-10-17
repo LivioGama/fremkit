@@ -5,7 +5,8 @@ import {
   type Config, type LayoutManifest, type Placement, type Widget,
 } from '../src/config/schema.js'
 import {
-  NAV_DOTS_RESERVE_CELLS, WIDE_COMPACT_SETTINGS, WIDE_COMPACT_WIDTH, compactWidth, navCellsUsed,
+  NAV_CENTRE_RESERVE_CELLS, NAV_NAMES_MAX_WIDTH, WIDE_COMPACT_SETTINGS, WIDE_COMPACT_WIDTH, compactWidth, navCellsUsed,
+  navCentreWidth, navHasRoom, navWiderClusterWidth,
 } from '../src/config/nav.js'
 import { ManifestSchema } from '../src/widgets/manifest.js'
 import { readFileSync } from 'node:fs'
@@ -182,6 +183,11 @@ describe('ScreenDisplaySchema', () => {
   })
   it('rejects any other nav bar height', () => {
     for (const height of [0, 60, 100, '40', null]) expect(() => withNavHeight(height)).toThrow()
+  })
+  it('keeps the page dots by default and accepts an explicit named style', () => {
+    expect(ScreenDisplaySchema.parse({}).navStyle).toBeUndefined()
+    expect(ScreenDisplaySchema.parse({ navStyle: 'names' }).navStyle).toBe('names')
+    expect(() => ScreenDisplaySchema.parse({ navStyle: 'tabs' })).toThrow()
   })
   const withBackground = (background: unknown) => ScreenDisplaySchema.parse({ background })
   it('leaves background absent by default', () => {
@@ -387,58 +393,95 @@ describe('screens', () => {
     ])
     expect(validateLayout(c, screenManifests)).toEqual(['écran Tablet, page p : clock-1 hors grille'])
   })
-  it('flags a bar whose widgets leave the page dots no room', () => {
-    // 34 columns keep 24 cells for the bar's widgets: seven 4-cell pills need 28.
+  // Room is measured in CSS px against the wider cluster (navHasRoom in nav.ts): a 34-column
+  // Tablet is 1360 px, the dots keep 400, so each side may take 480. A 4-cell pill is 160 px,
+  // plus 12 px between widgets and 24 px of padding: two pills on a side take 356, three 528.
+  const pills = (widgets: Record<string, unknown>, ids: string[], slot: 'left' | 'right' = 'left') =>
+    ids.map((instanceId) => { widgets[instanceId] ??= { widgetId: 'pill' }; return { instanceId, slot } })
+  it('flags a bar whose wider cluster leaves the page dots no room', () => {
     const widgets: Record<string, unknown> = {}
-    const nav = Array.from({ length: 7 }, (_, i) => { widgets['p' + i] = { widgetId: 'pill' }; return { instanceId: 'p' + i } })
+    const nav = pills(widgets, ['p0', 'p1', 'p2'])
     const c = config(widgets, [screen('tab', 'Tablet', { display: { cols: 34 }, nav })])
-    expect(validateNavWidgets(c, screenManifests)).toEqual(['écran Tablet, barre de navigation : ses widgets prennent 28 cases sur les 24 laissées par les points de page'])
+    expect(validateNavWidgets(c, screenManifests)).toEqual(['écran Tablet, barre de navigation : son groupe de widgets le plus large prend 528 px sur les 480 px que les pages laissent de chaque côté'])
     c.screens[0].nav.pop()
     expect(validateNavWidgets(c, screenManifests)).toEqual([])
+  })
+  it('counts the wider side only: the same pills split between both sides fit', () => {
+    const widgets: Record<string, unknown> = {}
+    const nav = [...pills(widgets, ['p0', 'p1']), ...pills(widgets, ['p2', 'p3'], 'right')]
+    const c = config(widgets, [screen('tab', 'Tablet', { display: { cols: 34 }, nav })])
+    expect(validateNavWidgets(c, screenManifests)).toEqual([])
+  })
+  it('reserves the named pages\' width, up to the centre track\'s cap', () => {
+    // The Edge is 2560 px. Twelve names take the 1200 px cap, leaving 680 a side: three pills
+    // (528) fit, four (700) do not. Three names take 376, so four pills fit beside them.
+    const edge = (pageCount: number, n: number) => {
+      const widgets: Record<string, unknown> = {}
+      const pages = Array.from({ length: pageCount }, (_, i) => page('p' + i))
+      return config(widgets, [screen('edge', 'Xeneon Edge', {
+        display: { navStyle: 'names' }, pages, nav: pills(widgets, Array.from({ length: n }, (_, i) => 'p' + i)),
+      })], 'en')
+    }
+    expect(navCentreWidth(edge(12, 0).screens[0])).toBe(NAV_NAMES_MAX_WIDTH)
+    expect(validateNavWidgets(edge(12, 3), screenManifests)).toEqual([])
+    expect(validateNavWidgets(edge(12, 4), screenManifests))
+      .toEqual(['screen Xeneon Edge, navigation bar: its wider widget cluster takes 700 px of the 680 px the pages leave on each side'])
+    expect(navCentreWidth(edge(3, 0).screens[0])).toBe(376)
+    expect(validateNavWidgets(edge(3, 4), screenManifests)).toEqual([])
+  })
+  it('scales the gaps and the names with a slim bar', () => {
+    const widgets: Record<string, unknown> = {}
+    const c = config(widgets, [screen('edge', 'Xeneon Edge', {
+      display: { navHeight: 40, navStyle: 'names' }, pages: Array.from({ length: 12 }, (_, i) => page('p' + i)),
+      nav: pills(widgets, ['p0', 'p1']),
+    })])
+    // Two pills at half the gaps and padding: 320 + 6 + 12.
+    expect(navWiderClusterWidth(c.screens[0], c.widgets, screenManifests)).toBe(338)
+    expect(navCentreWidth(c.screens[0])).toBe(600)
+    expect(navHasRoom(c.screens[0], c.widgets, screenManifests)).toBe(true)
   })
   it('a setting that widens a shared bar widget overflows the narrow screen only', () => {
     const shared = (compactDate: boolean) => {
       const widgets: Record<string, unknown> = { 'clock-1': { widgetId: 'clock', settings: { compactDate } } }
-      for (const id of ['a1', 'a2', 'b1', 'b2', 'b3', 'b4', 'b5']) widgets[id] = { widgetId: 'pill' }
       return config(widgets, [
-        // 64 columns, 12 cells: the clock and two pills.
-        screen('edge', 'Xeneon Edge', { nav: [{ instanceId: 'clock-1' }, { instanceId: 'a1' }, { instanceId: 'a2' }] }),
-        // 34 columns, 20 cells of pills plus the clock: exactly the 24 the dots leave.
-        screen('tab', 'Tablet', { display: { cols: 34 }, nav: ['b1', 'b2', 'b3', 'b4', 'b5', 'clock-1'].map((instanceId) => ({ instanceId })) }),
+        // 2560 px: the clock and two pills on one side never come near the 1080 px a side.
+        screen('edge', 'Xeneon Edge', { nav: [{ instanceId: 'clock-1' }, ...pills(widgets, ['a1', 'a2'])] }),
+        // 480 px a side: a pill and the clock take 356, and 516 once the clock shows its date.
+        screen('tab', 'Tablet', { display: { cols: 34 }, nav: [...pills(widgets, ['b1', 'b2']), ...pills(widgets, ['b3'], 'right'), { instanceId: 'clock-1', slot: 'right' }] }),
       ], 'en')
     }
     expect(validateNavWidgets(shared(false), screenManifests)).toEqual([])
     expect(validateNavWidgets(shared(true), screenManifests))
-      .toEqual(['screen Tablet, navigation bar: its widgets take 28 cells of the 24 the page dots leave'])
+      .toEqual(['screen Tablet, navigation bar: its wider widget cluster takes 516 px of the 480 px the pages leave on each side'])
   })
 
   describe('against the config being replaced', () => {
-    // Tablet: 34 columns, 24 cells for the bar. `n` 4-cell pills, plus a renamed page to stand
-    // for an edit that has nothing to do with the bar.
+    // Tablet: 480 px a side. `n` pills on the left, plus a renamed page to stand for an edit that
+    // has nothing to do with the bar.
     const tablet = (n: number, pageName = 'P', id = 'tab') => {
       const widgets: Record<string, unknown> = {}
-      const nav = Array.from({ length: n }, (_, i) => { widgets['p' + i] = { widgetId: 'pill' }; return { instanceId: 'p' + i } })
+      const nav = pills(widgets, Array.from({ length: n }, (_, i) => 'p' + i))
       return config(widgets, [screen(id, 'Tablet', { display: { cols: 34 }, nav, pages: [{ id: 'p', name: pageName, items: [] }] })], 'en')
     }
-    const refusal = (used: number) => [`screen Tablet, navigation bar: its widgets take ${used} cells of the 24 the page dots leave`]
+    const refusal = (used: number) => [`screen Tablet, navigation bar: its wider widget cluster takes ${used} px of the 480 px the pages leave on each side`]
 
     it('lets an unrelated save through when the stored bar is already over the limit', () => {
-      expect(validateNavWidgets(tablet(7, 'Renamed'), screenManifests, tablet(7))).toEqual([])
+      expect(validateNavWidgets(tablet(3, 'Renamed'), screenManifests, tablet(3))).toEqual([])
     })
     it('lets a save that narrows an over-full bar through, even if still over', () => {
-      expect(validateNavWidgets(tablet(7), screenManifests, tablet(8))).toEqual([])
+      expect(validateNavWidgets(tablet(3), screenManifests, tablet(4))).toEqual([])
     })
     it('refuses a save that widens a bar already over the limit', () => {
-      expect(validateNavWidgets(tablet(8), screenManifests, tablet(7))).toEqual(refusal(32))
+      expect(validateNavWidgets(tablet(4), screenManifests, tablet(3))).toEqual(refusal(700))
     })
     it('refuses a save that takes a bar over the limit', () => {
-      expect(validateNavWidgets(tablet(7), screenManifests, tablet(6))).toEqual(refusal(28))
+      expect(validateNavWidgets(tablet(3), screenManifests, tablet(2))).toEqual(refusal(528))
     })
     it('refuses a new screen over the limit', () => {
-      expect(validateNavWidgets(tablet(7, 'P', 'tab-2'), screenManifests, tablet(7))).toEqual(refusal(28))
+      expect(validateNavWidgets(tablet(3, 'P', 'tab-2'), screenManifests, tablet(3))).toEqual(refusal(528))
     })
     it('without the previous config, refuses any bar over the limit', () => {
-      expect(validateNavWidgets(tablet(7, 'Renamed'), screenManifests)).toEqual(refusal(28))
+      expect(validateNavWidgets(tablet(3, 'Renamed'), screenManifests)).toEqual(refusal(528))
     })
   })
 })
@@ -465,7 +508,7 @@ describe('nav.ts', () => {
       { nav: [{ instanceId: 'c' }, { instanceId: 'w' }, { instanceId: 'g' }, { instanceId: 'missing' }] },
     ))
     expect(navCellsUsed(c.screens[0], c.widgets, navManifests)).toBe(4 + WIDE_COMPACT_WIDTH)
-    expect(NAV_DOTS_RESERVE_CELLS).toBe(10)
+    expect(NAV_CENTRE_RESERVE_CELLS).toBe(10)
     expect(WIDE_COMPACT_SETTINGS).toEqual(['compactDate', 'compactCities'])
   })
 })
@@ -579,7 +622,8 @@ describe('nav.ts mirrors the UI', () => {
   // server's tests free of the UI's imports.
   const ui = readFileSync(new URL('../../ui/src/shared/types.ts', import.meta.url), 'utf8')
   it('has the same constants as ui/src/shared/types.ts', () => {
-    expect(ui).toMatch(new RegExp(`export const NAV_DOTS_RESERVE_CELLS = ${NAV_DOTS_RESERVE_CELLS}\\b`))
+    expect(ui).toMatch(new RegExp(`export const NAV_CENTRE_RESERVE_CELLS = ${NAV_CENTRE_RESERVE_CELLS}\\b`))
+    expect(ui).toMatch(new RegExp(`export const NAV_NAMES_MAX_WIDTH = ${NAV_NAMES_MAX_WIDTH}\\b`))
     expect(ui).toMatch(new RegExp(`export const WIDE_COMPACT_WIDTH = ${WIDE_COMPACT_WIDTH}\\b`))
     const list = WIDE_COMPACT_SETTINGS.map((k) => `'${k}'`).join(', ')
     expect(ui).toContain(`export const WIDE_COMPACT_SETTINGS = [${list}] as const`)

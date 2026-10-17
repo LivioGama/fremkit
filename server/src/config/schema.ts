@@ -4,7 +4,7 @@ import { BUILTIN_THEME } from '../themes/theme.js'
 import { defaultSecretsBackend } from '../secrets/index.js'
 import { tr } from '../i18n.js'
 import { DEFAULT_BACKGROUND } from '../backgrounds/seed.js'
-import { NAV_DOTS_RESERVE_CELLS, navCellsUsed } from './nav.js'
+import { navHasRoom, navSideRoom, navWiderClusterWidth } from './nav.js'
 
 export const WIDGET_ID_RE = /^[a-z0-9_-]+$/
 /** Colours are stored as `#rrggbb` only: no short form, no alpha, no named colour. */
@@ -127,6 +127,7 @@ export type Background = z.infer<typeof BackgroundSchema>
  */
 export const NavHeightSchema = z.union([z.literal(80), z.literal(40)])
 export type NavHeight = z.infer<typeof NavHeightSchema>
+export const NavStyleSchema = z.enum(['dots', 'names'])
 
 /**
  * A sanity ceiling on the bar's widget count. The real limit is width: the admin refuses a
@@ -177,6 +178,8 @@ export const ScreenDisplaySchema = z.object({
   autoCycleSeconds: z.number().int().min(0).default(0),
   /** Absent means 80: the default is stored as a missing key, never as a value. */
   navHeight: NavHeightSchema.optional(),
+  /** Absent preserves the existing page dots. */
+  navStyle: NavStyleSchema.optional(),
   /** Opacity of the navigation bar's background. Absent means a solid bar. */
   navOpacity: OpacitySchema.optional(),
   /**
@@ -490,8 +493,9 @@ export function validateLayout(config: Config, manifests: Map<string, LayoutMani
 /**
  * The navigation bar only draws widgets that have a compact rendering, so a bar entry naming a
  * widget the catalog does not know — or one that declares no `compact` — is refused rather than
- * silently dropped. Each screen's bar is checked on its own, and must leave the page dots their
- * `NAV_DOTS_RESERVE_CELLS` of that screen's `cols`: the admin enforces this while editing one
+ * silently dropped. Each screen's bar is checked on its own, and its wider cluster must leave the
+ * pages their centre — the dots' `NAV_CENTRE_RESERVE_CELLS`, or the names' width up to
+ * `NAV_NAMES_MAX_WIDTH` (`navHasRoom` in `nav.ts`): the admin enforces this while editing one
  * screen, but a setting changed on a widget shared with another screen can widen that screen's
  * bar too, and only the save sees every screen. A bar entry naming a missing widget is left to
  * `validateLayout`. Messages name the screen and come back in the language the config asks for.
@@ -499,8 +503,8 @@ export function validateLayout(config: Config, manifests: Map<string, LayoutMani
  * `previous`, the config being replaced, keeps an already over-full bar from locking every save:
  * a bar can be over the limit before this save (a wide setting switched on earlier, a manifest
  * whose compact width grew), and an unrelated edit must still go through. With it, a screen's
- * bar is refused only when it is over the limit *and* this save makes it use more cells than the
- * screen with the same id did in `previous`; a screen `previous` does not have is refused as soon
+ * bar is refused only when it is over the limit *and* this save widens its wider cluster beyond
+ * what the screen with the same id had in `previous`; a screen `previous` does not have is refused as soon
  * as it is over. Without it, any bar over the limit is refused.
  */
 export function validateNavWidgets(config: Config, manifests: Map<string, LayoutManifest>, previous?: Config): string[] {
@@ -515,11 +519,13 @@ export function validateNavWidgets(config: Config, manifests: Map<string, Layout
       if (!m) errors.push(tr(locale, 'navWidgets.unknownWidget', { screen: name, widgetId }))
       else if (!m.compact) errors.push(tr(locale, 'navWidgets.notCompact', { screen: name, widgetId }))
     }
-    const used = navCellsUsed(screen, config.widgets, manifests)
-    const room = screen.display.cols - NAV_DOTS_RESERVE_CELLS
+    if (navHasRoom(screen, config.widgets, manifests)) continue
+    const used = navWiderClusterWidth(screen, config.widgets, manifests)
     const before = previous?.screens.find((s) => s.id === screen.id)
-    const grew = before === undefined || used > navCellsUsed(before, previous!.widgets, manifests)
-    if (used > room && grew) errors.push(tr(locale, 'navWidgets.noRoom', { screen: name, used, room }))
+    const grew = before === undefined || used > navWiderClusterWidth(before, previous!.widgets, manifests)
+    if (grew) {
+      errors.push(tr(locale, 'navWidgets.noRoom', { screen: name, used: Math.ceil(used), room: Math.floor(navSideRoom(screen)) }))
+    }
   }
   return errors
 }

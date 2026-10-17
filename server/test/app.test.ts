@@ -86,21 +86,22 @@ describe('config routes', () => {
     await mkdir(join(dir, 'widgets', 'pill'), { recursive: true })
     await writeFile(join(dir, 'widgets', 'pill', 'manifest.json'), JSON.stringify({ id: 'pill', name: 'Pill', version: '1.0.0', minSize: [4, 2], defaultSize: [4, 2], compact: { width: 4 } }))
     await writeFile(join(dir, 'widgets', 'pill', 'index.html'), '<!doctype html><html><head><title>p</title></head><body>p</body></html>')
-    // 34 columns leave the bar 24 cells: seven 4-cell pills (28) are already over, as a bar
-    // can be after a manifest's compact width grew.
+    // 34 columns (1360 px) leave each side 480 px after the dots: three 4-cell pills on one side
+    // (528 px with gaps and padding) are already over, as a bar can be after a manifest's compact
+    // width grew.
     const tablet = (pills: number, pageName: string) => {
       const widgets: Record<string, unknown> = {}
       const nav = Array.from({ length: pills }, (_, i) => { widgets['p' + i] = { widgetId: 'pill' }; return { instanceId: 'p' + i } })
       return { version: 4, locale: 'en', widgets, screens: [{ id: 'tab', name: 'Tablet', kind: 'device', display: { cols: 34, rows: 23 }, nav, pages: [{ id: 'p', name: pageName }] }] }
     }
     await mkdir(join(dir, 'data'), { recursive: true })
-    await writeFile(join(dir, 'data', 'fremkit.json'), JSON.stringify(tablet(7, 'P')))
+    await writeFile(join(dir, 'data', 'fremkit.json'), JSON.stringify(tablet(3, 'P')))
     app = await buildApp({ dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets') })
-    const renamed = await app.inject({ method: 'PUT', url: '/api/config', payload: tablet(7, 'Renamed') })
+    const renamed = await app.inject({ method: 'PUT', url: '/api/config', payload: tablet(3, 'Renamed') })
     expect(renamed.statusCode).toBe(200)
-    const widened = await app.inject({ method: 'PUT', url: '/api/config', payload: tablet(8, 'Renamed') })
+    const widened = await app.inject({ method: 'PUT', url: '/api/config', payload: tablet(4, 'Renamed') })
     expect(widened.statusCode).toBe(400)
-    expect(widened.json().errors).toEqual(['screen Tablet, navigation bar: its widgets take 32 cells of the 24 the page dots leave'])
+    expect(widened.json().errors).toEqual(['screen Tablet, navigation bar: its wider widget cluster takes 700 px of the 480 px the pages leave on each side'])
   })
 })
 

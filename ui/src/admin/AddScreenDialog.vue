@@ -73,7 +73,10 @@ const defaultName = computed(() => (kind.value === 'edge'
 const arrangement = computed<Arrangement | null>(() => {
   const cfg = s.state.config
   if (!cfg || !source.value || !sizeOk.value) return null
-  return arrangeInto(source.value, { ...grid.value, navCols: grid.value.cols }, cfg.widgets, s.state.manifests)
+  return arrangeInto(source.value, {
+    ...grid.value, navCols: grid.value.cols,
+    ...(kind.value === 'device' ? { navHeight: DEVICE_NAV_HEIGHT } : {}),
+  }, cfg.widgets, s.state.manifests)
 })
 
 /** How a widget is named to the user: its title, else its manifest's name, else its widget id. */
