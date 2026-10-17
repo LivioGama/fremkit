@@ -59,12 +59,20 @@ Fremkit turns a Corsair Xeneon Edge (a 2560 × 720 touch strip) into a widget da
 ```bash
 bun install                       # once
 bun run typecheck                 # server + ui (vue-tsc)
-bun run test                      # vitest, server + ui
+bun run test                      # vp test, server + ui
 bun run --filter server test test/<file>.test.ts
 bun run --filter ui build         # required before the server shows a UI change
-bun run dev                       # server + Vite with hot reload for the UI
+bun run dev                       # server + Vite+ with hot reload for the UI
 bun run helper:build && bun run helper:install && bun run helper:test
 ```
+
+`bun run dev` runs `vp dev` for the UI; `vp test` runs both suites (Vitest 5 under Vite+, not the
+`vitest` binary directly), and `vite` and `vitest` are no longer dependencies of their own. The
+`vite` entry in `ui/package.json` is an alias to `@voidzero-dev/vite-plus-core`, Vite+'s own Vite,
+and it has to stay one: with a second copy of real Vite on disk — which is what `@vitejs/plugin-vue`
+pulls in for its peer — TypeScript crashes on `plugins: [vue()]` inside `defineConfig` with
+`Debug Failure. False expression: parameter should have errors when reporting errors`. `vp build`
+also refuses to run until the alias is aligned.
 
 `server/` is on TypeScript 7, the native compiler; `ui/` is still on 5.9, and that is not an
 oversight. `vue-tsc` loads the TypeScript compiler's own JavaScript API (`typescript/lib/tsc`) and

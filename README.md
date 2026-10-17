@@ -411,7 +411,7 @@ The rest, with the reasoning: **[docs/troubleshooting.md](docs/troubleshooting.m
 bun run dev          # server on 4242 + Vite on 5173 (dashboard http://localhost:5173, admin /admin)
 bun run build        # ui + server
 bun run start        # production: http://127.0.0.1:4242 and /admin
-bun run test         # vitest, server + ui
+bun run test         # vp test, server + ui
 bun run typecheck
 bun run helper:build   # native/dist/Fremkit Helper.app
 bun run helper:install

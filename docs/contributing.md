@@ -33,21 +33,26 @@ docs/      This documentation
 bun run dev          # server on 4242 + Vite on 5173 (dashboard http://localhost:5173, admin /admin)
 bun run build        # ui + server
 bun run start        # production: http://127.0.0.1:4242 and /admin
-bun run test         # vitest, server + ui
+bun run test         # vp test, server + ui
 bun run typecheck
 bun run helper:build   # native/dist/Fremkit Helper.app
 bun run helper:install
 bun run helper:test
 ```
 
+`ui/` and `server/` are driven by [Vite+](https://vite.plus) (`vp`): `vp dev`, `vp build` and
+`vp test` read each package's `vite.config.ts`, and Vite, Vitest, Oxlint and Oxfmt come from it
+instead of being dependencies of their own. The `vite` entry in `ui/package.json` is an alias to
+Vite+'s own copy of Vite, which is what the Vue plugin and `defineConfig` are typed against.
+
 `bun run dev` exports `FREMKIT_DEV=1`, which is what puts the Vite origin
 (`http://localhost:5173`, `http://127.0.0.1:5173`) on the list of origins the server accepts a
 WebSocket and a write from. Without it only `http://127.0.0.1:4242` and `http://localhost:4242`
 are trusted, plus the port `FREMKIT_PORT` moved a second checkout to. A production instance must
 not trust 5173: it is Vite's default port, so any unrelated project serving on it would be
-trusted to save this dashboard's config. Running Vite by hand (`bun run --filter ui dev`) against a
-server started without the flag gives a dashboard whose WebSocket is refused — export
-`FREMKIT_DEV=1` for the server too.
+trusted to save this dashboard's config. Running the dev server by hand
+(`bun run --filter ui dev`) against a server started without the flag gives a dashboard whose
+WebSocket is refused — export `FREMKIT_DEV=1` for the server too.
 
 ### Installing from a registry you are building
 
