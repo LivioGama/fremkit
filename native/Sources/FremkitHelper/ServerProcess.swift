@@ -47,6 +47,8 @@ final class ServerProcess {
     private static let quietTimeout: TimeInterval = 4
 
     private let config: HelperConfig
+    /// The access secret this helper hands its servers and presents to whichever one answers.
+    private let access: ServerAccess
     /// Checkout or bundle, decided once at launch from `repoPath` and what the bundle carries.
     let launch: ServerLaunch
     private let probeQueue = DispatchQueue(label: "dev.fremkit.helper.server.probe")
@@ -88,8 +90,9 @@ final class ServerProcess {
         }
     }
 
-    init(config: HelperConfig) {
+    init(config: HelperConfig, access: ServerAccess) {
         self.config = config
+        self.access = access
         // Resolved like proc_pidpath resolves the child's executable, for the orphan guard.
         let resources = Bundle.main.resourcePath.map(Self.realPath)
         launch = ServerLaunch.decide(repoPath: config.repoPath, resourcesPath: resources) {
@@ -346,14 +349,17 @@ final class ServerProcess {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = Self.probeTimeout
+        access.authorize(&request)
 
         session.dataTask(with: request) { data, response, _ in
             // Any 2xx-4xx from anything at all used to count as "a server is here", so a
             // completely unrelated program on 4242 made the helper stand down and stop
             // supervising — with no way back but a relaunch. The answer has to look like ours:
-            // a 200 whose body is a Fremkit config.
+            // a 200 whose body is a Fremkit config, or our server refusing a secret it does not
+            // hold (see `ServerProbe.isFremkitAnswer`).
             let http = response as? HTTPURLResponse
-            let ok = http?.statusCode == 200 && ServerProbe.looksLikeFremkitConfig(data)
+            let ok = ServerProbe.isFremkitAnswer(status: http?.statusCode, body: data,
+                                                 challenge: http?.value(forHTTPHeaderField: "WWW-Authenticate"))
             session.finishTasksAndInvalidate()
             DispatchQueue.main.async { alive(ok) }
         }.resume()
@@ -378,7 +384,8 @@ final class ServerProcess {
             port: config.port,
             dataDirectory: HelperPaths.supportDirectory().path,
             home: NSHomeDirectory(),
-            scanner: Self.diskScanner())
+            scanner: Self.diskScanner(),
+            accessToken: access.launchToken)
 
         // The handle has to exist before run(), so a failed launch closes it again rather than
         // leaking a descriptor on every retry of the backoff loop.
