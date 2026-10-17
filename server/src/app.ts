@@ -61,6 +61,8 @@ import { findInstance, findInstances } from './config/instances.js'
 import { migrateHomeySecret } from './config/migrate.js'
 import { BYTES_CSP, isByteRoute } from './http/headers.js'
 import { isAllowedHost, isReadMethod } from './http/guard.js'
+import { AccessGate } from './http/access.js'
+import { installAccessGate } from './http/access-routes.js'
 import { LOGGER_OPTIONS } from './http/logging.js'
 import { MAX_WS_PAYLOAD_BYTES } from './ws/hub.js'
 import { isOriginAllowed } from './ws/routes.js'
@@ -93,6 +95,13 @@ export interface AppOptions {
    * alone.
    */
   port?: number
+  /**
+   * The local access secret every request must carry (see `http/access.ts`), or `null` for no
+   * gate at all. Required rather than optional so that leaving the gate out is something a
+   * caller writes down: `index.ts` always passes one, the tests that exercise other things pass
+   * `null`.
+   */
+  accessToken: string | null
 }
 
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
@@ -250,6 +259,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       return reply.code(403).send({ error: tr(store.get().locale, 'http.originNotAllowed') })
     }
   })
+  // Then who sent it: the local access secret, as a bearer token or the session cookie (see
+  // http/access.ts). A hook of its own, after the one above, so a rebinding attempt is still
+  // told 421 and a cross-site write 403 whatever it carries.
+  if (opts.accessToken !== null) {
+    installAccessGate(app, { gate: new AccessGate(opts.accessToken, { port: opts.port }) })
+  }
 
   // Never let a browser re-guess a type we declared, and make the answers that carry bytes from
   // elsewhere inert if one is ever opened as a document. A route that sets its own CSP — the

@@ -86,7 +86,7 @@ beforeEach(async () => {
   dataDir = await mkdtemp(join(tmpdir(), 'fremkit-conn-'))
   await writeFile(join(dataDir, 'fremkit.json'), JSON.stringify(CONFIG), 'utf8')
   connCache = new ConnCache()
-  app = await buildApp({ dataDir, widgetsDir: join(process.cwd(), '..', 'widgets'), providers: [], connectionTypes: [fakeType, otherType], connCache })
+  app = await buildApp({ accessToken: null, dataDir, widgetsDir: join(process.cwd(), '..', 'widgets'), providers: [], connectionTypes: [fakeType, otherType], connCache })
 })
 afterEach(async () => { await app.close() })
 
@@ -96,7 +96,7 @@ const put = (id: string, payload: object) => app.inject({ method: 'PUT', url: `/
 async function buildEn(): Promise<FastifyInstance> {
   const dir = await mkdtemp(join(tmpdir(), 'fremkit-conn-en-'))
   await writeFile(join(dir, 'fremkit.json'), JSON.stringify({ ...CONFIG, locale: 'en' }), 'utf8')
-  return buildApp({ dataDir: dir, widgetsDir: join(process.cwd(), '..', 'widgets'), providers: [], connectionTypes: [fakeType, otherType] })
+  return buildApp({ accessToken: null, dataDir: dir, widgetsDir: join(process.cwd(), '..', 'widgets'), providers: [], connectionTypes: [fakeType, otherType] })
 }
 
 describe('GET /api/connections/types', () => {
@@ -601,7 +601,7 @@ describe('the connections API while the config on disk is unreadable', () => {
     const onDisk = JSON.stringify({ version: 99, pages: [{ id: 'mine', name: 'Mienne' }] })
     await writeFile(join(dir, 'fremkit.json'), onDisk, 'utf8')
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const built = await buildApp({ dataDir: dir, widgetsDir: join(process.cwd(), '..', 'widgets'), providers: [], connectionTypes: [fakeType, otherType] })
+    const built = await buildApp({ accessToken: null, dataDir: dir, widgetsDir: join(process.cwd(), '..', 'widgets'), providers: [], connectionTypes: [fakeType, otherType] })
     err.mockRestore()
     return { app: built, dir, onDisk }
   }

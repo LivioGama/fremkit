@@ -225,7 +225,7 @@ describe('dock routes', () => {
         pages: [{ id: 'home', name: 'Accueil', items: [] }],
       }],
     }), 'utf8')
-    app = await buildApp({ dataDir, widgetsDir: join(process.cwd(), '..', 'widgets'), providers: [], connectionTypes: [] })
+    app = await buildApp({ accessToken: null, dataDir, widgetsDir: join(process.cwd(), '..', 'widgets'), providers: [], connectionTypes: [] })
   })
   afterEach(async () => { await app.close() })
 

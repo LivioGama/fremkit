@@ -26,7 +26,7 @@ beforeEach(async () => {
   await writeFile(join(dir, 'widgets', 'clock', 'manifest.json'), JSON.stringify({ id: 'clock', name: 'Clock', version: '1.0.0', minSize: [8, 4], defaultSize: [16, 4] }))
   await writeFile(join(dir, 'widgets', 'clock', 'index.html'), '<!doctype html><html><head><title>c</title></head><body>hi</body></html>')
   await writeFile(join(dir, 'widgets', 'clock', 'style.css'), 'body{color:red}')
-  app = await buildApp({ dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets') })
+  app = await buildApp({ accessToken: null, dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets') })
 })
 afterEach(async () => { await app.close() })
 
@@ -70,7 +70,7 @@ describe('config routes', () => {
     await mkdir(join(dir, 'data'), { recursive: true })
     await writeFile(join(dir, 'data', 'fremkit.json'), mine)
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
-    app = await buildApp({ dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets') })
+    app = await buildApp({ accessToken: null, dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets') })
     err.mockRestore()
     expect((await app.inject({ url: '/api/config' })).headers['x-fremkit-degraded']).toBe('1')
     expect((await app.inject({ url: '/api/config/status' })).json()).toEqual({ degraded: true })
@@ -95,7 +95,7 @@ describe('config routes', () => {
     }
     await mkdir(join(dir, 'data'), { recursive: true })
     await writeFile(join(dir, 'data', 'fremkit.json'), JSON.stringify(tablet(7, 'P')))
-    app = await buildApp({ dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets') })
+    app = await buildApp({ accessToken: null, dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets') })
     const renamed = await app.inject({ method: 'PUT', url: '/api/config', payload: tablet(7, 'Renamed') })
     expect(renamed.statusCode).toBe(200)
     const widened = await app.inject({ method: 'PUT', url: '/api/config', payload: tablet(8, 'Renamed') })
@@ -115,7 +115,7 @@ describe('the request gate', () => {
     }
   })
   it('refuses a Host on a port that is not the one we listen on', async () => {
-    const other = await buildApp({ dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets'), port: 4242 })
+    const other = await buildApp({ accessToken: null, dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets'), port: 4242 })
     expect((await other.inject({ url: '/api/config', headers: { host: '127.0.0.1:4242' } })).statusCode).toBe(200)
     expect((await other.inject({ url: '/api/config', headers: { host: '127.0.0.1:8080' } })).statusCode).toBe(421)
     await other.close()
@@ -213,7 +213,7 @@ describe('widget routes', () => {
     expect(widgetCsp(4301)).not.toContain(':5173')
   })
   it('serves a second checkout with its own widget origin', async () => {
-    const other = await buildApp({ dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets'), port: 4301 })
+    const other = await buildApp({ accessToken: null, dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets'), port: 4301 })
     try {
       const res = await other.inject({ url: '/widgets/clock/index.html', headers: { host: '127.0.0.1:4301' } })
       expect(res.statusCode).toBe(200)

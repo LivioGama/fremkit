@@ -137,6 +137,7 @@ const fr = {
   'marketplace.navBar': 'la barre de navigation',
   'http.hostNotAllowed': 'hôte non autorisé',
   'http.originNotAllowed': 'origine non autorisée',
+  'http.unauthorized': 'accès refusé : le secret d’accès local manque ou est faux',
 
   // connections/routes.ts
   'connections.originNotAllowed': 'origine non autorisée',
@@ -387,6 +388,7 @@ const en: Record<MessageKey, string> = {
   'marketplace.navBar': 'the navigation bar',
   'http.hostNotAllowed': 'host not allowed',
   'http.originNotAllowed': 'origin not allowed',
+  'http.unauthorized': 'access denied: the local access secret is missing or wrong',
   'connections.originNotAllowed': 'origin not allowed',
   'connections.invalidId': 'invalid connection id: {id}',
   'connections.secretBound': 'the stored secret is tied to the “{field}” field: re-enter it to change it',
