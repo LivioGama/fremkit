@@ -75,6 +75,7 @@ describe('the add-screen dialog', () => {
     expect(selects[0].findAll('option').map((o) => o.text())).toEqual([
       'iPad Pro 13" landscape — 1376 × 1032', 'iPad Pro 13" portrait — 1032 × 1376',
       'iPad Pro 11" landscape — 1210 × 834', 'iPad Pro 11" portrait — 834 × 1210',
+      'iPad Pro 11" landscape, “More Space” — 1408 × 950',
       'iPad Air 13" landscape — 1366 × 1024', 'iPad Air 13" portrait — 1024 × 1366',
       'iPad Air 11" landscape — 1180 × 820', 'iPad Air 11" portrait — 820 × 1180',
       'Custom',

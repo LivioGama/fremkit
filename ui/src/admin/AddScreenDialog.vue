@@ -23,13 +23,15 @@ const { t } = useI18n()
 
 /**
  * Device sizes offered, in CSS px (points) in the orientation they name, as each iPad reports them
- * in its standard display mode. "More Space" reports more; a paired device reports its own size.
+ * in its standard display mode. "More Space" reports more: its one preset is the size measured in a
+ * full-screen app on an iPad Pro 11" (M5). A paired device reports its own size.
  */
 const PRESETS = [
   { id: 'ipadPro13Landscape', width: 1376, height: 1032 },
   { id: 'ipadPro13Portrait', width: 1032, height: 1376 },
   { id: 'ipadPro11Landscape', width: 1210, height: 834 },
   { id: 'ipadPro11Portrait', width: 834, height: 1210 },
+  { id: 'ipadPro11MoreSpaceLandscape', width: 1408, height: 950 },
   { id: 'ipadAir13Landscape', width: 1366, height: 1024 },
   { id: 'ipadAir13Portrait', width: 1024, height: 1366 },
   { id: 'ipadAir11Landscape', width: 1180, height: 820 },

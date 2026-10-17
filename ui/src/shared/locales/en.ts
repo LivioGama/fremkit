@@ -339,6 +339,7 @@ export const en: Record<string, string> = {
   'admin.screens.preset.ipadPro13Portrait': 'iPad Pro 13" portrait',
   'admin.screens.preset.ipadPro11Landscape': 'iPad Pro 11" landscape',
   'admin.screens.preset.ipadPro11Portrait': 'iPad Pro 11" portrait',
+  'admin.screens.preset.ipadPro11MoreSpaceLandscape': 'iPad Pro 11" landscape, “More Space”',
   'admin.screens.preset.ipadAir13Landscape': 'iPad Air 13" landscape',
   'admin.screens.preset.ipadAir13Portrait': 'iPad Air 13" portrait',
   'admin.screens.preset.ipadAir11Landscape': 'iPad Air 11" landscape',
