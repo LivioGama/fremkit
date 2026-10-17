@@ -67,13 +67,22 @@ public enum ServerLaunch: Equatable {
      `scanner` is the disk map's `fremkit-scan`, which ships beside the helper's executable in
      both setups. The server runs it by this absolute path, and falls back to `du` without it;
      nothing goes on `PATH`.
+
+     `accessToken` is the helper's local access secret (`AccessToken`), the same for every child
+     of one helper launch. One inherited from the helper's own environment is never passed on:
+     the server would take it, and it is not the one the helper presents.
      */
     public func environment(inheriting base: [String: String],
                             port: Int,
                             dataDirectory: String,
                             home: String,
-                            scanner: String? = nil) -> [String: String] {
+                            scanner: String? = nil,
+                            accessToken: String? = nil) -> [String: String] {
         var environment = base
+        environment.removeValue(forKey: AccessToken.environmentKey)
+        if let accessToken, AccessToken.isWellFormed(accessToken) {
+            environment[AccessToken.environmentKey] = accessToken
+        }
         let inherited = base["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
         let homebrew = "/opt/homebrew/bin:/usr/local/bin"
         environment["FREMKIT_PORT"] = String(port)

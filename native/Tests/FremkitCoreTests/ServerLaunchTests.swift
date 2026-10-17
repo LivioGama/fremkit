@@ -85,4 +85,18 @@ final class ServerLaunchTests: XCTestCase {
                                             home: "/Users/u", scanner: "")["FREMKIT_SCANNER"])
         }
     }
+
+    func testPassesTheHelpersAccessSecretAndNoOther() {
+        let mine = AccessToken.generate()
+        for launch in [ServerLaunch.checkout(repoPath: "/r"), .bundled(resourcesPath: resources)] {
+            let inherited = ["FREMKIT_ACCESS_TOKEN": AccessToken.generate()]
+            let env = launch.environment(inheriting: inherited, port: 4242, dataDirectory: "/support",
+                                         home: "/Users/u", accessToken: mine)
+            XCTAssertEqual(env["FREMKIT_ACCESS_TOKEN"], mine)
+            XCTAssertNil(launch.environment(inheriting: inherited, port: 4242, dataDirectory: "/support",
+                                            home: "/Users/u")["FREMKIT_ACCESS_TOKEN"])
+            XCTAssertNil(launch.environment(inheriting: [:], port: 4242, dataDirectory: "/support",
+                                            home: "/Users/u", accessToken: "weak")["FREMKIT_ACCESS_TOKEN"])
+        }
+    }
 }

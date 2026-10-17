@@ -28,6 +28,17 @@ final class ServerProbeTests: XCTestCase {
         XCTAssertFalse(ServerProbe.looksLikeFremkitConfig(json("[]")))
     }
 
+    func testA401WithOurChallengeIsOurs() {
+        // A server holding another access secret still answers for the port: the helper must
+        // stand aside, not spawn a second server onto it.
+        XCTAssertTrue(ServerProbe.isFremkitAnswer(status: 401, body: nil, challenge: AccessToken.challenge))
+        XCTAssertTrue(ServerProbe.isFremkitAnswer(status: 200, body: json(#"{"version":4,"screens":[]}"#), challenge: nil))
+        XCTAssertFalse(ServerProbe.isFremkitAnswer(status: 401, body: nil, challenge: "Basic realm=\"x\""))
+        XCTAssertFalse(ServerProbe.isFremkitAnswer(status: 401, body: nil, challenge: nil))
+        XCTAssertFalse(ServerProbe.isFremkitAnswer(status: 200, body: json("{}"), challenge: AccessToken.challenge))
+        XCTAssertFalse(ServerProbe.isFremkitAnswer(status: nil, body: nil, challenge: nil))
+    }
+
     func testRefusesNothingAtAll() {
         XCTAssertFalse(ServerProbe.looksLikeFremkitConfig(nil))
         XCTAssertFalse(ServerProbe.looksLikeFremkitConfig(Data()))
