@@ -10,6 +10,33 @@ Anything that changes what the dashboard, the admin or a widget can do gets a li
 (`package.json`, `server/package.json`, `ui/package.json`, `server/src/version.ts`) and is
 tagged `vX.Y.Z`.
 
+## Unreleased
+
+### Added
+- **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another
+  one, and give each its own layout. A pre-fill is shown as a preview first, naming the widgets
+  that do not fit the new screen, and the Screen panel gives each screen its own address. A
+  widget shown on more than one screen is the same widget: edit its settings once and every
+  screen follows. Removing it from one screen keeps it on the others; on its last screen the
+  admin names it and asks before deleting it. The widget library lists what your other screens
+  show, to place the same widget here, and a tile shown on several screens wears the number of
+  screens.
+
+### Changed
+- **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer
+  together instead of running over the bar's widgets, down to a size a finger can still hit.
+- **Upgrading the dashboard file.** Your dashboard is converted to the new screens layout the
+  first time this version starts, and the previous file is kept as `data/fremkit.v3.json` — the
+  file as it was at that first upgrade, never overwritten after: to go back to an older version,
+  put it back as `data/fremkit.json`, knowing that changes made since are not in it. Rebuild
+  and reinstall the helper with this version (`pnpm helper:build && pnpm helper:install`), or it
+  will not recognise the new server.
+
+### Fixed
+- **A connection used only by the navigation bar is protected.** A widget shown only in the bar
+  now keeps its connection from being deleted; before, the connection could be removed while the
+  bar widget still used it.
+
 ## 0.4.1 — 2026-10-16
 
 ### Fixed
@@ -24,14 +51,6 @@ tagged `vX.Y.Z`.
 ## 0.4.0 — 2026-10-16
 
 ### Added
-- **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another
-  one, and give each its own layout. A pre-fill is shown as a preview first, naming the widgets
-  that do not fit the new screen, and the Screen panel gives each screen its own address. A
-  widget shown on more than one screen is the same widget: edit its settings once and every
-  screen follows. Removing it from one screen keeps it on the others; on its last screen the
-  admin names it and asks before deleting it. The widget library lists what your other screens
-  show, to place the same widget here, and a tile shown on several screens wears the number of
-  screens.
 - **Fremkit as an app.** A signed, notarized `Fremkit.app`, on a DMG or with
   `brew install --cask fdussert/fremkit/fremkit`, runs the whole dashboard on its own: no
   checkout, no Node, no Xcode tools. Drag it to Applications, open it, grant two permissions.
@@ -58,14 +77,6 @@ tagged `vX.Y.Z`.
   today, in total, and over the last 30 days, read from the `rtk` program when it is installed.
 
 ### Changed
-- **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer
-  together instead of running over the bar's widgets, down to a size a finger can still hit.
-- **Upgrading the dashboard file.** Your dashboard is converted to the new screens layout the
-  first time this version starts, and the previous file is kept as `data/fremkit.v3.json` — the
-  file as it was at that first upgrade, never overwritten after: to go back to an older version,
-  put it back as `data/fremkit.json`, knowing that changes made since are not in it. Rebuild and reinstall the helper
-  with this version (`pnpm helper:build && pnpm helper:install`), or it will not recognise the
-  new server.
 - **Missing permissions say where to go.** A menu bar line such as "Touch: Input Monitoring
   missing — open Settings…" or "Fence: Accessibility missing — open Settings…" can be clicked: it
   opens the right pane of System Settings → Privacy & Security, with Fremkit listed there. The
@@ -83,9 +94,6 @@ tagged `vX.Y.Z`.
   Accessibility, which none of the three is using.
 
 ### Fixed
-- **A connection used only by the navigation bar is protected.** A widget shown only in the bar
-  now keeps its connection from being deleted; before, the connection could be removed while the
-  bar widget still used it.
 - **Input Monitoring is asked on a first launch.** Fremkit asked for Accessibility and Input
   Monitoring at the same moment, and macOS, which shows one such prompt at a time, dropped the
   second: touch said "permission missing" and Fremkit was not even listed under Input Monitoring.
