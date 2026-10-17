@@ -147,9 +147,10 @@ To publish, in this order:
 
   # 3. The GitHub release. appcast.xml is one of its assets: the app's feed is
   #    $REPO_URL/releases/latest/download/appcast.xml, so publishing the release is what
-  #    offers the update to every installed app, and nothing else has to be committed.
+  #    offers the update to every installed app, and nothing else has to be committed. The
+  #    release also opens a thread in the Announcements discussions, where people can comment.
   gh release create $TAG "$DMG" "$ZIP" "$DIST/appcast.xml" \\
-      --title "Fremkit $VERSION" --notes-file "$NOTES"
+      --title "Fremkit $VERSION" --notes-file "$NOTES" --discussion-category Announcements
 
   # 4. The tap (a clone of fdussert/homebrew-fremkit next to this checkout).
   cp $CASK ../homebrew-fremkit/Casks/fremkit.rb
