@@ -157,6 +157,7 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
       'GET /fremkit.js',
       'GET /widgets/:id/*',
       'GET /ws',
+      'POST /api/devices/me/brightness',
       'POST /api/pair',
       'POST /api/proxy/:widgetId/conn',
     ])

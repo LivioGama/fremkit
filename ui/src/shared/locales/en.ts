@@ -392,7 +392,7 @@ export const en: Record<string, string> = {
   'brightness.admin.reason.no-display': 'The kiosk’s display is not connected.',
   'brightness.admin.reason.no-ddc': 'Not adjustable on this display: it does not answer DDC/CI (see troubleshooting).',
   'brightness.admin.reason.ambiguous': 'The kiosk’s display could not be identified for sure: nothing is changed, so as not to touch the wrong display.',
-  'brightness.admin.reason.device-unsupported': 'Not adjustable on a paired device yet.',
+  'brightness.admin.reason.no-device': 'The iPad is not showing this screen right now.',
   'brightness.admin.mode.manual': 'Manual',
   'brightness.admin.mode.day-night': 'Day / night',
   'brightness.admin.mode.follow-mac': 'Follows the Mac’s screen',

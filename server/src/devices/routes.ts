@@ -4,8 +4,8 @@
  * - the admin, on this Mac: everything under `/api/devices` but `/me`. These are absent from the
  *   remote allow-list, so the devices gate already answers 404 on the remote listener; each one
  *   also refuses a remote request itself, in case the allow-list ever grows by mistake.
- * - a device, on the remote listener: `POST /api/pair` (public, it is how a token is obtained) and
- *   `GET /api/devices/me` (token). Pairing answers 404 locally: a code typed on the Mac itself
+ * - a device, on the remote listener: `POST /api/pair` (public, it is how a token is obtained),
+ *   `GET /api/devices/me` and `POST /api/devices/me/brightness` (token). Pairing answers 404 locally: a code typed on the Mac itself
  *   would pair nothing that could use it.
  */
 
@@ -14,12 +14,15 @@ import { z } from 'zod'
 import type { ConfigStore } from '../config/store.js'
 import { tr, type MessageKey } from '../i18n.js'
 import { isRemoteRequest, pairedDeviceOf } from '../net/remote.js'
+import { DeviceReportSchema, type DeviceReport } from '../brightness/service.js'
 import type { DeviceService } from './service.js'
 import { ViewportSchema } from './store.js'
 
 export interface DeviceRoutesOptions {
   service: DeviceService
   config: ConfigStore
+  /** Hands a device's brightness report to whoever decides brightness (injected, not imported). */
+  reportBrightness?: (screenId: string, report: DeviceReport) => void
 }
 
 const NameSchema = z.string().trim().min(1).max(60)
@@ -80,6 +83,19 @@ export async function deviceRoutes(app: FastifyInstance, opts: DeviceRoutesOptio
     if (!me) return reply.code(401).send({ error: tr(locale(), 'devices.unauthorized') })
     reply.header('cache-control', 'no-store')
     return me
+  })
+
+  app.post('/api/devices/me/brightness', { bodyLimit: 1024 }, async (req, reply) => {
+    const deviceId = pairedDeviceOf(req)
+    if (!isRemoteRequest(req) || deviceId === null) return reply.callNotFound()
+    reply.header('cache-control', 'no-store')
+    const parsed = DeviceReportSchema.safeParse(req.body)
+    if (!parsed.success) return badBody(reply, parsed.error)
+    // The screen is the device's now, never one the body names.
+    const screenId = service.deviceScreenOf(deviceId)
+    if (screenId === null) return reply.code(409).send({ error: tr(locale(), 'device.noScreen') })
+    opts.reportBrightness?.(screenId, parsed.data)
+    return reply.code(204).send()
   })
 
   // --- the admin --------------------------------------------------------------------------------

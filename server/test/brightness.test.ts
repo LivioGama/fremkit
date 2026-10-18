@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { BrightnessSettingsSchema, ConfigSchema, type BrightnessSettings, type Config } from '../src/config/schema.js'
 import { phaseAt, sunEvents, transitionsAround } from '../src/brightness/schedule.js'
 import { decide, FOLLOW_RELEASE, followLevel, type Held } from '../src/brightness/decide.js'
-import { BrightnessService, HELPER_STALE_MS, HelperReportSchema } from '../src/brightness/service.js'
+import { BrightnessService, DEVICE_STALE_MS, DeviceReportSchema, HELPER_STALE_MS, HelperReportSchema } from '../src/brightness/service.js'
 import { createBrightnessProvider, mayCommandBrightness } from '../src/brightness/provider.js'
 import { buildApp } from '../src/app.js'
 import Fastify from 'fastify'
@@ -160,14 +160,60 @@ describe('BrightnessService', () => {
     expect(svc.snapshot().screens.edge).toMatchObject({ available: false, reason: 'no-ddc' })
     expect(() => svc.set(undefined, 50)).toThrow('unavailable')
   })
-  it('marks a device screen unsupported and a second Edge screen without a helper', () => {
+  it('marks a device screen without a device and a second Edge screen without a helper', () => {
     cfg = config([{}, { kind: 'device' }, {}])
     svc.helperReport(report())
     const s = svc.snapshot().screens
-    expect(s.s1).toMatchObject({ available: false, reason: 'device-unsupported' })
+    expect(s.s1).toMatchObject({ available: false, reason: 'no-device' })
     expect(s.s2).toMatchObject({ available: false, reason: 'no-helper' })
     expect(() => svc.set('s1', 50)).toThrow('unavailable')
     expect(() => svc.set('nope', 50)).toThrow('unknown-screen')
+  })
+  it('makes a device screen available while its device reports, and unavailable once it goes quiet', () => {
+    cfg = config([{}, { kind: 'device' }])
+    expect(DeviceReportSchema.safeParse({ value: 101 }).success).toBe(false)
+    expect(DeviceReportSchema.safeParse({ value: 50.5 }).success).toBe(false)
+    svc.deviceReport('s1', DeviceReportSchema.parse({ value: 64 }))
+    expect(svc.snapshot().screens.s1).toMatchObject({ available: true, value: 64, builtin: false })
+    now += DEVICE_STALE_MS - 1
+    expect(svc.snapshot().screens.s1.available).toBe(true)
+    now += 1
+    expect(svc.snapshot().screens.s1).toMatchObject({ available: false, reason: 'no-device', value: null, target: null })
+    svc.deviceReport('s1', { value: 40 })
+    expect(svc.snapshot().screens.s1).toMatchObject({ available: true, value: 40 })
+  })
+  it('keeps one device\'s report off every other screen', () => {
+    cfg = config([{}, { kind: 'device' }, { kind: 'device' }])
+    svc.deviceReport('s1', { value: 64 })
+    expect(svc.snapshot().screens.s2).toMatchObject({ available: false, reason: 'no-device' })
+  })
+  it('sets a device screen, and takes its read-back once it applied the latest seq', () => {
+    cfg = config([{}, { kind: 'device' }])
+    svc.deviceReport('s1', { value: 64 })
+    expect(svc.set('s1', 30)).toEqual({ screen: 's1', value: 30 })
+    expect(svc.snapshot().screens.s1).toMatchObject({ target: 30, seq: 1, value: 30 })
+    svc.deviceReport('s1', { value: 64 })
+    expect(svc.snapshot().screens.s1.value).toBe(30)
+    svc.deviceReport('s1', { value: 31, applied: 1 })
+    expect(svc.snapshot().screens.s1).toMatchObject({ value: 31, target: 30, seq: 1 })
+    // A level chosen on the device itself afterwards is reported, not fought.
+    svc.deviceReport('s1', { value: 80, applied: 1 })
+    expect(svc.snapshot().screens.s1).toMatchObject({ value: 80, seq: 1 })
+  })
+  it('tells listeners which screens got a new target or seq', () => {
+    cfg = config([{}, { kind: 'device' }])
+    const seen: string[][] = []
+    svc.onChange((ids) => seen.push(ids))
+    svc.snapshot()
+    svc.deviceReport('s1', { value: 64 })
+    svc.set('s1', 30)
+    svc.snapshot()
+    expect(seen).toEqual([['s1']])
+    svc.snapshot()
+    expect(seen).toHaveLength(1)
+    svc.set('s1', 30)
+    svc.snapshot()
+    expect(seen).toEqual([['s1'], ['s1']])
   })
   it('drives the screen the kiosk names, when it names an Edge screen', () => {
     cfg = config([{}, {}])

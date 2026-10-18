@@ -14,6 +14,9 @@ tagged `vX.Y.Z`.
 
 ### Added
 
+- **The iPad sets its own brightness.** A paired iPad now reports its screen's brightness and applies
+  the level chosen for it, including the day/night schedule, from the admin or the Brightness
+  widget. When the app is not open on that screen, the controls say so.
 - **A fingerprint for your Mac's key.** Under the pairing code, the Devices section shows four words
   derived from the Mac's key; a device that shows the same four words is talking to this Mac. The Mac
   is also announced on the network under its computer name rather than "Fremkit".

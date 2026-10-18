@@ -392,7 +392,7 @@ export const fr: Record<string, string> = {
   'brightness.admin.reason.no-display': 'L’écran du kiosque n’est pas branché.',
   'brightness.admin.reason.no-ddc': 'Pas réglable sur cet écran : il ne répond pas en DDC/CI (voir le dépannage).',
   'brightness.admin.reason.ambiguous': 'L’écran du kiosque n’a pas pu être identifié avec certitude : rien n’est réglé, pour ne pas toucher au mauvais écran.',
-  'brightness.admin.reason.device-unsupported': 'Pas encore réglable sur un appareil appairé.',
+  'brightness.admin.reason.no-device': 'L’iPad n’est pas ouvert sur cet écran.',
   'brightness.admin.mode.manual': 'Réglage manuel',
   'brightness.admin.mode.day-night': 'Jour / nuit',
   'brightness.admin.mode.follow-mac': 'Suit l’écran du Mac',

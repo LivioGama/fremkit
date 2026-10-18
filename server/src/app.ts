@@ -58,7 +58,7 @@ import { createServiceStatusProvider } from './providers/service-status.js'
 import { createSystemProvider } from './providers/system.js'
 import { createDiskMapProvider } from './providers/disk-map.js'
 import { BrightnessService } from './brightness/service.js'
-import { createBrightnessProvider } from './brightness/provider.js'
+import { createBrightnessProvider, BRIGHTNESS_INTERVAL_MS } from './brightness/provider.js'
 import { brightnessRoutes } from './brightness/routes.js'
 import { findInstance, findInstances } from './config/instances.js'
 import { migrateHomeySecret } from './config/migrate.js'
@@ -121,6 +121,8 @@ export interface AppOptions {
   onRoute?: (route: RouteOptions) => void
   /** The port paired devices reach the remote listener on. 4243; the tests pass 0. */
   devicesPort?: number
+  /** Tests: the brightness service to use instead of one over the live config. */
+  brightness?: BrightnessService
   /**
    * Test seam for the device service: a fixed host name and addresses, and an advertiser that
    * does not run `dns-sd`.
@@ -224,8 +226,17 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   registry.register(createShortcutsProvider(undefined, instances))
   registry.register(createServiceStatusProvider({}, instances))
   // Per-screen settings from the store, reports from the helper: see brightness/service.ts.
-  const brightness = new BrightnessService({ config: () => store.get() })
-  const brightnessChanged = (): void => registry.refresh('brightness')
+  const brightness = opts.brightness ?? new BrightnessService({ config: () => store.get() })
+  const brightnessChanged = (): void => {
+    registry.refresh('brightness')
+    // Also decides now, so a device is told of a new target even when nothing watches the channel.
+    brightness.snapshot()
+  }
+  // The clock moves a ramp and ends a manual hold with nobody asking; a paired device does not
+  // watch the `brightness` channel, so something has to keep deciding for it.
+  const brightnessTick = setInterval(() => brightness.snapshot(), BRIGHTNESS_INTERVAL_MS)
+  brightnessTick.unref()
+  app.addHook('onClose', async () => { clearInterval(brightnessTick) })
   // A paired device may set only its own screen's brightness: see mayCommandBrightness. Read
   // at command time, so a device moved to another screen (or unpaired) is judged as it is now.
   registry.register(createBrightnessProvider(brightness, brightnessChanged, (id) => deviceService.me(id)?.screenId ?? null))
@@ -392,10 +403,20 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     config: store,
     hub,
     catalog,
+    brightnessOf: (screenId) => {
+      const s = brightness.snapshot().screens[screenId]
+      return s ? { target: s.target, seq: s.seq } : null
+    },
     listenerPort: opts.devicesPort ?? REMOTE_PORT,
     ...opts.devices,
   })
-  await app.register(deviceRoutes, { service: deviceService, config: store })
+  // A new target for a screen reaches the devices bound to it over the `device` channel.
+  brightness.onChange((screens) => deviceService.screensChanged(screens))
+  await app.register(deviceRoutes, {
+    service: deviceService,
+    config: store,
+    reportBrightness: (screenId, report) => { brightness.deviceReport(screenId, report); brightnessChanged() },
+  })
   app.addHook('onClose', async () => { await deviceService.close() })
 
   if (opts.uiDist && (await access(opts.uiDist).then(() => true, () => false))) {

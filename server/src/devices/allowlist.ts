@@ -36,6 +36,7 @@ const RULES: Rule[] = [
   { method: 'GET', path: /^\/api\/themes$/, access: 'token' },
   { method: 'GET', path: new RegExp(`^/api/backgrounds/${SEG}$`), access: 'token' },
   { method: 'GET', path: /^\/api\/devices\/me$/, access: 'token' },
+  { method: 'POST', path: /^\/api\/devices\/me\/brightness$/, access: 'token' },
   { method: 'GET', path: /^\/ws$/, access: 'token' },
   { method: 'GET', path: new RegExp(`^/api/proxy/${SEG}$`), access: 'token' },
   { method: 'POST', path: new RegExp(`^/api/proxy/${SEG}/conn$`), access: 'token' },

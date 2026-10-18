@@ -8,8 +8,10 @@
  * - the **helper**, for the screen the kiosk shows: it reports over `POST /api/hooks/brightness`
  *   (DDC availability, the level it read back, the Mac's built-in display) and applies the
  *   `target` it reads from this channel, which it subscribes to like any widget;
- * - later, the **paired device's app**, for a `device` screen, with `UIScreen.brightness`. Until
- *   it exists a device screen reports `device-unsupported`, and the controls say so.
+ * - the **paired device's app**, for a `device` screen, with `UIScreen.brightness`: it reports its
+ *   level over `POST /api/devices/me/brightness` and applies the `target` the `device` channel
+ *   carries, so it needs no subscription to this channel. A device screen whose app has not
+ *   reported lately is `no-device`, and the controls say so.
  *
  * Keeping the decisions here rather than in the helper is what lets an iPad follow the same
  * day/night schedule as the Edge without a second implementation of it.
@@ -39,7 +41,19 @@ export const HelperReportSchema = z.object({
 })
 export type HelperReport = z.infer<typeof HelperReportSchema>
 
-export type Unavailable = 'no-helper' | 'no-display' | 'no-ddc' | 'ambiguous' | 'device-unsupported'
+/** With no report from a device's app for this long, its screen is considered unreachable. */
+export const DEVICE_STALE_MS = 30_000
+
+/** What a paired device's app says about its own screen. Validated in full: it arrives over HTTP. */
+export const DeviceReportSchema = z.object({
+  /** The level the device's screen is at, 0–100. */
+  value: z.number().int().min(0).max(100),
+  /** The last `seq` the app has applied, if any. */
+  applied: z.number().int().min(0).optional(),
+})
+export type DeviceReport = z.infer<typeof DeviceReportSchema>
+
+export type Unavailable = 'no-helper' | 'no-display' | 'no-ddc' | 'ambiguous' | 'no-device'
 
 export interface ScreenBrightness {
   available: boolean
@@ -83,6 +97,10 @@ export class BrightnessService {
   private report: HelperReport | null = null
   private reportedAt = 0
   private readonly runtime = new Map<string, Runtime>()
+  private readonly deviceReports = new Map<string, { value: number; at: number }>()
+  private readonly listeners = new Set<(screens: string[]) => void>()
+  /** `target:seq` of each screen as last announced to the listeners. */
+  private announced: Map<string, string> | null = null
 
   constructor(private readonly opts: BrightnessServiceOptions) {
     this.now = opts.now ?? Date.now
@@ -97,6 +115,29 @@ export class BrightnessService {
     const kiosk = this.kioskScreen()
     const r = kiosk && this.runtime.get(kiosk.id)
     if (r && report.applied !== undefined && report.applied >= r.seq) r.sent = null
+    this.snapshot()
+  }
+
+  /** Takes a report from a paired device's app for its screen (already validated, screen already judged a device screen). */
+  deviceReport(screenId: string, report: DeviceReport): void {
+    this.deviceReports.set(screenId, { value: report.value, at: this.now() })
+    const r = this.runtime.get(screenId)
+    if (r && report.applied !== undefined && report.applied >= r.seq) r.sent = null
+    this.snapshot()
+  }
+
+  /**
+   * Called with the screens whose target or `seq` moved, whenever a snapshot is taken. It is how
+   * a device learns of a new target without watching the `brightness` channel. The first snapshot
+   * only sets the baseline.
+   */
+  onChange(listener: (screens: string[]) => void): void {
+    this.listeners.add(listener)
+  }
+
+  private fresh(screenId: string): { value: number; at: number } | undefined {
+    const rep = this.deviceReports.get(screenId)
+    return rep && this.now() - rep.at < DEVICE_STALE_MS ? rep : undefined
   }
 
   /** The screen the helper drives: the one it names when that is an Edge screen, else the first Edge screen. */
@@ -117,7 +158,7 @@ export class BrightnessService {
 
   /** What stops a screen from being driven, or undefined when it can be. */
   private unavailable(screen: Screen, kioskId: string | undefined): Unavailable | undefined {
-    if (screen.kind === 'device') return 'device-unsupported'
+    if (screen.kind === 'device') return this.fresh(screen.id) ? undefined : 'no-device'
     // Several Edges on one Mac is step 4 of the screens spec: only the kiosk's screen has a hand.
     if (screen.id !== kioskId || !this.helperFresh()) return 'no-helper'
     if (!this.report!.available) return this.report!.reason ?? 'no-ddc'
@@ -153,6 +194,7 @@ export class BrightnessService {
     r.target = level
     r.sent = level
     r.seq++
+    this.snapshot()
     return { screen: screen.id, value: level }
   }
 
@@ -168,6 +210,7 @@ export class BrightnessService {
   resume(screenId: string | undefined): { screen: string } {
     const screen = this.resolve(screenId)
     this.rt(screen.id).held = null
+    this.snapshot()
     return { screen: screen.id }
   }
 
@@ -192,7 +235,7 @@ export class BrightnessService {
         r.seq++
       }
       const isKiosk = screen.id === kiosk?.id && this.helperFresh()
-      const read = isKiosk ? this.report!.value : null
+      const read = isKiosk ? this.report!.value : screen.kind === 'device' ? this.fresh(screen.id)?.value ?? null : null
       screens[screen.id] = {
         available: reason === undefined,
         ...(reason ? { reason } : {}),
@@ -210,6 +253,16 @@ export class BrightnessService {
         ...(isKiosk && this.report!.display ? { display: this.report!.display } : {}),
       }
     }
+    this.announce(screens)
     return { kiosk: kiosk?.id ?? null, screens }
+  }
+
+  private announce(screens: Record<string, ScreenBrightness>): void {
+    const next = new Map(Object.entries(screens).map(([id, s]) => [id, `${s.target}:${s.seq}`]))
+    const previous = this.announced
+    this.announced = next
+    if (!previous) return
+    const changed = [...next].filter(([id, key]) => previous.get(id) !== key).map(([id]) => id)
+    if (changed.length > 0) for (const listener of this.listeners) listener(changed)
   }
 }

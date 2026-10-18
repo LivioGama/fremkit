@@ -44,13 +44,18 @@ export type DeviceStatus = {
 
 export type PairingOffer = { code: string; expiresAt: number; url: string }
 
-export type DeviceInfo = { id: string; name: string; screenId: string | null }
+/** What the page of a device needs to apply its screen's brightness; null when the screen has none. */
+export type DeviceBrightness = { target: number | null; seq: number }
+
+export type DeviceInfo = { id: string; name: string; screenId: string | null; brightness: DeviceBrightness | null }
 
 export type PairResult =
   | { token: string; device: PublicDevice }
   | { error: 'wrong' | 'expired' | 'limited' }
 
 export interface DeviceServiceOptions {
+  /** The brightness decided for a screen, injected so this module does not import brightness. */
+  brightnessOf?: (screenId: string) => DeviceBrightness | null
   app: FastifyInstance
   store: DeviceStore
   codes: PairingCodes
@@ -110,6 +115,7 @@ export class DeviceService {
   private timer: NodeJS.Timeout | null = null
   /** The granted catalogue, as the policy reads it; dropped when the config or catalogue moves. */
   private manifests: Map<string, ChannelManifest> | null = null
+  private readonly brightnessOf: (screenId: string) => DeviceBrightness | null
 
   constructor(opts: DeviceServiceOptions) {
     this.app = opts.app
@@ -118,6 +124,7 @@ export class DeviceService {
     this.secrets = opts.secrets
     this.config = opts.config
     this.hub = opts.hub
+    this.brightnessOf = opts.brightnessOf ?? (() => null)
     this.catalog = opts.catalog
     this.exec = opts.exec ?? execFileAsync
     this.advertiser = opts.advertise ?? bonjourAdvertise
@@ -265,7 +272,22 @@ export class DeviceService {
 
   me(deviceId: string): DeviceInfo | null {
     const device = this.store.list().find((d) => d.id === deviceId)
-    return device ? { id: device.id, name: device.name, screenId: device.screenId } : null
+    if (!device) return null
+    const brightness = device.screenId === null ? null : this.brightnessOf(device.screenId)
+    return { id: device.id, name: device.name, screenId: device.screenId, brightness }
+  }
+
+  /** The screen a device is bound to, only while it is a device screen: where its brightness goes. */
+  deviceScreenOf(deviceId: string): string | null {
+    const screenId = this.store.list().find((d) => d.id === deviceId)?.screenId ?? null
+    return screenId !== null && isDeviceScreen(this.config.get(), screenId) ? screenId : null
+  }
+
+  /** Re-sends the `device` payload to every device bound to one of these screens. */
+  screensChanged(screenIds: string[]): void {
+    for (const d of this.store.list()) {
+      if (d.screenId !== null && screenIds.includes(d.screenId)) this.hub.refreshDevice(d.id)
+    }
   }
 
   // --- internals -------------------------------------------------------------------------------

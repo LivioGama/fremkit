@@ -10,6 +10,8 @@ export interface DeviceInfo {
   name: string
   /** The screen the admin assigned to the device, or null when none is. */
   screenId: string | null
+  /** What the app should do with its screen's brightness; null when the screen has none. */
+  brightness?: { target: number | null; seq: number } | null
 }
 
 function isDeviceInfo(v: unknown): v is DeviceInfo {

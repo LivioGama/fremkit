@@ -371,8 +371,9 @@ menu, the `brightness` widget and *Screen → Brightness* all say why when it ca
 - **"no display"** — the kiosk's display is not connected.
 - **"Fremkit Helper is not running"** (widget, admin) — brightness needs the helper; a browser
   alone cannot reach the display.
-- **"not adjustable on a paired device yet"** — a device screen's settings are kept, and apply
-  once the device's app can set its own brightness.
+- **"the iPad is not showing this screen right now"** — a device screen's brightness is set by
+  the Fremkit app on the iPad bound to it, which reports its level every few seconds. Open the app
+  and show that screen; the settings are kept meanwhile and apply as soon as it reports.
 
 *Follow the Mac* needs a built-in display to follow: a Mac mini or Mac Studio has none, and a
 MacBook with its lid closed has none in use. The admin says so under the option.

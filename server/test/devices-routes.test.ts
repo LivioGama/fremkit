@@ -7,7 +7,8 @@ import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { CONFIG_VERSION } from '../src/config/schema.js'
+import { CONFIG_VERSION, ConfigSchema } from '../src/config/schema.js'
+import { BrightnessService } from '../src/brightness/service.js'
 import { noAdvertise } from '../src/devices/bonjour.js'
 import { RemoteListener } from '../src/devices/listener.js'
 import { fingerprintWords } from '../src/devices/fingerprint.js'
@@ -45,6 +46,7 @@ const CONFIG = {
 }
 
 let dir: string
+let brightness: BrightnessService
 let app: FastifyInstance
 let port: number
 
@@ -78,12 +80,14 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'fremkit-devices-'))
     await writeFile(join(dir, 'fremkit.json'), JSON.stringify(CONFIG))
+    brightness = new BrightnessService({ config: () => ConfigSchema.parse(CONFIG) })
     app = await buildApp({
       accessToken: null,
       dataDir: dir,
       widgetsDir: join(process.cwd(), '..', 'widgets'),
       providers: [],
       devicesPort: 0,
+      brightness,
       devices: { exec, advertise: noAdvertise, lanAddresses: () => [ADDRESS] },
     })
     const on = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
@@ -113,7 +117,7 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     const { token, deviceId } = await pairWith({ width: 1180, height: 820 })
     const res = await me(token)
     expect(res.status).toBe(200)
-    expect(JSON.parse(res.body)).toEqual({ id: deviceId, name: 'iPad', screenId: 'ipad' })
+    expect(JSON.parse(res.body)).toEqual({ id: deviceId, name: 'iPad', screenId: 'ipad', brightness: { target: null, seq: 0 } })
   })
 
   it('attaches by viewport in either orientation, and only when one screen fits', async () => {
@@ -233,11 +237,75 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     expect((await app.inject({ method: 'PATCH', url: `/api/devices/${b.deviceId}`, payload: { screenId: 'tab-a' } })).statusCode).toBe(200)
     const meA = JSON.parse((await me(a.token)).body)
     const meB = JSON.parse((await me(b.token)).body)
-    expect(meA).toEqual({ id: a.deviceId, name: 'Kitchen', screenId: null })
-    expect(meB).toEqual({ id: b.deviceId, name: 'Hall', screenId: 'tab-a' })
+    expect(meA).toEqual({ id: a.deviceId, name: 'Kitchen', screenId: null, brightness: null })
+    expect(meB).toEqual({ id: b.deviceId, name: 'Hall', screenId: 'tab-a', brightness: { target: null, seq: 0 } })
     // Whatever the query asks for.
     const asked = await remote(port, { path: `/api/devices/me?id=${b.deviceId}`, host: host(), headers: cookie(a.token) })
     expect(JSON.parse(asked.body).id).toBe(a.deviceId)
+  })
+
+  describe('brightness', () => {
+    const report = (token: string | null, body: unknown, method = 'POST') =>
+      remote(port, { method, path: '/api/devices/me/brightness', host: host(), headers: { ...(token ? cookie(token) : {}), ...json }, body: JSON.stringify(body) })
+    const value = (screen: string) => brightness.snapshot().screens[screen]
+
+    const attach = async (deviceId: string, screenId: string) =>
+      expect((await app.inject({ method: 'PATCH', url: `/api/devices/${deviceId}`, payload: { screenId } })).statusCode).toBe(200)
+
+    it('takes a level from the device for its own screen, and from no other device', async () => {
+      const a = await pairWith({ width: 640, height: 480 }, 'A')
+      const b = await pairWith({ width: 640, height: 480 }, 'B')
+      await attach(a.deviceId, 'tab-a')
+      await attach(b.deviceId, 'tab-b')
+      const res = await report(a.token, { value: 42 })
+      expect(res.status).toBe(204)
+      expect(res.headers['cache-control']).toBe('no-store')
+      expect(value('tab-a')).toMatchObject({ available: true, value: 42 })
+      expect(value('tab-b')).toMatchObject({ available: false, reason: 'no-device' })
+      expect((await report(b.token, { value: 10 })).status).toBe(204)
+      expect(value('tab-a').value).toBe(42)
+      expect(value('tab-b').value).toBe(10)
+    })
+
+    it('needs the token, and is not answered on this Mac', async () => {
+      expect((await report(null, { value: 5 })).status).toBe(401)
+      expect((await app.inject({ method: 'POST', url: '/api/devices/me/brightness', payload: { value: 5 } })).statusCode).toBe(404)
+    })
+
+    it('refuses a bad level, and a device with no device screen', async () => {
+      const a = await pairWith({ width: 640, height: 480 }, 'A')
+      await attach(a.deviceId, 'tab-a')
+      expect((await report(a.token, { value: 101 })).status).toBe(400)
+      expect((await report(a.token, { value: 'x' })).status).toBe(400)
+      const none = await pairWith({ width: 640, height: 480 }, 'None')
+      const res = await report(none.token, { value: 50 })
+      expect(res.status).toBe(409)
+      expect(JSON.parse(res.body).error).toEqual(expect.any(String))
+    })
+
+    it('reads the screen at request time: a device moved to another screen reports for that one', async () => {
+      const a = await pairWith({ width: 640, height: 480 }, 'Mover')
+      expect((await app.inject({ method: 'PATCH', url: `/api/devices/${a.deviceId}`, payload: { screenId: 'tab-b' } })).statusCode).toBe(200)
+      expect((await report(a.token, { value: 33 })).status).toBe(204)
+      expect(value('tab-b').value).toBe(33)
+    })
+
+    it('puts the new target and seq on the device channel when the admin side sets one', async () => {
+      const a = await pairWith({ width: 640, height: 480 }, 'Pushed')
+      expect((await app.inject({ method: 'PATCH', url: `/api/devices/${a.deviceId}`, payload: { screenId: 'tab-a' } })).statusCode).toBe(200)
+      expect((await report(a.token, { value: 20 })).status).toBe(204)
+      const refresh = vi.spyOn(Hub.prototype, 'refreshDevice')
+      try {
+        const before = JSON.parse((await me(a.token)).body).brightness.seq as number
+        brightness.set('tab-a', 55)
+        expect(refresh).toHaveBeenCalledWith(a.deviceId)
+        const after = JSON.parse((await me(a.token)).body).brightness
+        expect(after.target).toBe(55)
+        expect(after.seq).toBeGreaterThan(before)
+      } finally {
+        refresh.mockRestore()
+      }
+    })
   })
 
   it('resetting the certificate changes the pin and unpairs every device', async () => {
