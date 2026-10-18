@@ -79,6 +79,10 @@ tagged `vX.Y.Z`.
   page saying so.
   Scripts calling the server read the secret from
   `~/Library/Application Support/Fremkit/access-4242.token` (see the README).
+- **A browser holds a session, not the key.** Signing a browser in now gives it a session of its
+  own that ends after a day unused, after a week at most, or when Fremkit restarts, instead of
+  the key itself. Another program listening on your Mac can no longer pick the key up from the
+  browser's cookies.
 
 ## 0.4.1 — 2026-10-16
 

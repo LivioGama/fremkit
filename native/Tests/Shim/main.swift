@@ -93,7 +93,6 @@ let suites: [(String, () -> XCTestCase, [TestMethod])] = [
         ("testGeneratesThirtyTwoByteBase64URLSecrets", { ($0 as! AccessTokenTests).testGeneratesThirtyTwoByteBase64URLSecrets() }),
         ("testWellFormedMatchesTheServer", { ($0 as! AccessTokenTests).testWellFormedMatchesTheServer() }),
         ("testReadsTheTokenFileForAPort", { try ($0 as! AccessTokenTests).testReadsTheTokenFileForAPort() }),
-        ("testCookieMatchesWhatTheServerSets", { ($0 as! AccessTokenTests).testCookieMatchesWhatTheServerSets() }),
         ("testReadsTheCodeOutOfTheServersAnswer", { ($0 as! AccessTokenTests).testReadsTheCodeOutOfTheServersAnswer() }),
         ("testSignInURLStaysOnTheTargetsOrigin", { ($0 as! AccessTokenTests).testSignInURLStaysOnTheTargetsOrigin() }),
     ]),

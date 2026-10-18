@@ -65,21 +65,31 @@ export function installAccessGate(app: FastifyInstance, { gate, appliesTo = () =
    * session without putting the secret itself in a URL — the helper's "open in the browser",
    * `pnpm open`, `scripts/kiosk.sh`. Behind the gate like everything else.
    */
-  app.post('/api/auth/code', async (_req, reply) => {
+  app.post('/api/auth/code', async (req, reply) => {
     reply.header('cache-control', 'no-store')
+    // The secret itself, not a session: a session that leaked (another loopback port sees the
+    // cookie) must not be able to open sessions of its own and outlive its expiry.
+    if (!gate.hasBearer(req.headers)) return refuse(req, reply)
     return { code: gate.mintCode(), expiresInSeconds: Math.floor(CODE_TTL_MS / 1000) }
   })
 
+  /** Ends the caller's own session (signing out) and clears its cookie. */
+  app.delete('/api/auth/session', async (req, reply) => {
+    const id = gate.sessionOf(req.headers)
+    if (id !== undefined) gate.revokeSession(id)
+    return reply.header('cache-control', 'no-store').header('set-cookie', gate.clearCookieHeader()).code(204).send()
+  })
+
   /**
-   * Redeems a one-time code: sets the cookie and sends the browser on to `next`, a path on this
-   * server. The code is gone whether it worked or not. Nothing about it is logged: the request
+   * Redeems a one-time code: opens a session, sets its cookie and sends the browser on to `next`,
+   * a path on this server. The code is gone whether it worked or not. Nothing about it is logged: the request
    * log drops the query string (see `logging.ts`).
    */
   app.get<{ Querystring: { code?: string; next?: string } }>('/auth', async (req, reply) => {
     reply.header('cache-control', 'no-store').header('referrer-policy', 'no-referrer')
     if (!gate.redeem(req.query.code)) return refuse(req, reply, true)
     return reply
-      .header('set-cookie', gate.setCookieHeader())
+      .header('set-cookie', gate.setCookieHeader(gate.openSession()))
       .redirect(safeNext(req.query.next), 303)
   })
 }

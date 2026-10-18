@@ -23,11 +23,16 @@ Every request must carry it, in one of two ways:
 - **`Authorization: Bearer <secret>`**, for programs: the helper, the Claude Code hook scripts,
   `curl`. The scripts hand it to `curl` through a file descriptor, never on the command line,
   where any account on the Mac could read it with `ps`.
-- **A cookie**, `HttpOnly` and `SameSite=Strict`, for pages. The helper writes it straight into
-  its own web views — the Edge and the admin window — before loading them. A browser gets it by
-  following a one-time link, `/auth?code=…`: the code is minted by someone who already holds the
-  secret (*Open the admin in the browser* in the **F** menu, `pnpm open`), works once, and
-  expires after a minute. Opening `127.0.0.1:4242` without it shows a page saying how to get in.
+- **A session cookie**, `HttpOnly` and `SameSite=Strict`, for pages. A page gets it by following
+  a one-time link, `/auth?code=…`: the code is minted by someone who already holds the secret
+  (*Open the admin in the browser* in the **F** menu, `pnpm open`, the helper itself for the Edge
+  and the admin window), works once, and expires after a minute. Following it opens a *session*:
+  the cookie holds a random session id the server keeps in memory, **never the secret**. A
+  session ends after a day unused, after a week at most, when the page signs out
+  (`DELETE /api/auth/session`), and for every page at once when the server stops. Browsers send a
+  host's cookies to every port on that host, so a program listening on another loopback port can
+  see the cookie; what it sees cannot mint a code, cannot be presented as a bearer, and dies with
+  the session. Opening `127.0.0.1:4242` without either shows a page saying how to get in.
 
 The comparison takes the same time wherever two values differ. A request without the secret is
 told **401**.
@@ -50,7 +55,7 @@ path that only *looks* like a widget file is not let through.
 just as it can read your keychain, your config and your clipboard without Fremkit's help: the
 secret keeps out other accounts on the Mac and anything that can reach the port without being
 able to read your files, not malware in your own account. A browser holding the cookie is signed
-in until it forgets the cookie or the helper restarts; a page in that browser is still held off by
+in until its session ends (see above) or the server restarts; a page in that browser is still held off by
 the Host and Origin checks below, which stay in place, not by the secret. The Host and Origin
 checks still run first: a request from a rebinding page is told 421, and a write from another
 site 403, whatever it carries.

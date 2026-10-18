@@ -32,17 +32,6 @@ final class AccessTokenTests: XCTestCase {
         XCTAssertNil(AccessToken.read(from: file))
     }
 
-    func testCookieMatchesWhatTheServerSets() {
-        let token = AccessToken.generate()
-        let cookie = AccessToken.cookie(token: token, port: 4242, for: URL(string: "http://127.0.0.1:4242/?kiosk=1")!)
-        XCTAssertEqual(cookie?.name, "fremkit_access_4242")
-        XCTAssertEqual(cookie?.value, token)
-        XCTAssertEqual(cookie?.domain, "127.0.0.1")
-        XCTAssertEqual(cookie?.path, "/")
-        XCTAssertEqual(cookie?.isHTTPOnly, true)
-        XCTAssertNil(AccessToken.cookie(token: token, port: 4242, for: URL(fileURLWithPath: "/")))
-    }
-
     func testReadsTheCodeOutOfTheServersAnswer() {
         let code = AccessToken.generate()
         XCTAssertEqual(AccessToken.code(fromResponse: Data(#"{"code":"\#(code)","expiresInSeconds":60}"#.utf8)), code)

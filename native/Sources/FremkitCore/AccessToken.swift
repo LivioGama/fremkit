@@ -56,28 +56,6 @@ public enum AccessToken {
         return isWellFormed(token) ? token : nil
     }
 
-    /// The cookie's name. It carries the port because browsers scope cookies by host only.
-    public static func cookieName(port: Int) -> String {
-        "fremkit_access_\(port)"
-    }
-
-    /// The cookie the server would set at `/auth`, for a web view's cookie store, scoped to the
-    /// host of `url`. Nil when the URL has no host.
-    public static func cookie(token: String, port: Int, for url: URL) -> HTTPCookie? {
-        guard let host = url.host, !host.isEmpty else { return nil }
-        var properties: [HTTPCookiePropertyKey: Any] = [
-            .name: cookieName(port: port),
-            .value: token,
-            .domain: host,
-            .path: "/",
-            HTTPCookiePropertyKey("HttpOnly"): "TRUE",
-        ]
-        if #available(macOS 10.15, *) {
-            properties[.sameSitePolicy] = HTTPCookieStringPolicy.sameSiteStrict
-        }
-        return HTTPCookie(properties: properties)
-    }
-
     /// `Authorization` header value for a secret.
     public static func bearer(_ token: String) -> String {
         "Bearer \(token)"

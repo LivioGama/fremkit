@@ -1,6 +1,5 @@
 import Foundation
 import FremkitCore
-import WebKit
 
 /// The server's access secret, as the helper presents it (see `AccessToken` in FremkitCore).
 ///
@@ -30,32 +29,13 @@ final class ServerAccess {
     }
 
     /**
-     Writes the session cookie into the web views' shared store for each URL's host, then calls
-     `done` on the main thread. Every web view the helper makes uses the default data store, so
-     the kiosk and the admin window share it.
-
-     The cookie is the one `/auth` would set, written directly: the helper holds the secret, so
-     there is no one-time link to follow and no navigation to show.
-     */
-    func installCookie(for urls: [URL], done: @escaping () -> Void) {
-        let token = current
-        let store = WKWebsiteDataStore.default().httpCookieStore
-        let cookies = urls.compactMap { AccessToken.cookie(token: token, port: port, for: $0) }
-        let group = DispatchGroup()
-        for cookie in cookies {
-            group.enter()
-            store.setCookie(cookie) { group.leave() }
-        }
-        group.notify(queue: .main, execute: done)
-    }
-
-    /**
-     A one-time link that signs the default browser in and lands on `target`, or nil when the
+     A one-time link that signs a browser or a web view in and lands on `target`, or nil when the
      server would not mint one. `done` runs on the main thread.
 
-     The browser has its own cookie jar that the helper cannot write, and the secret itself must
-     not travel in a URL (it would sit in the browser's history), so the server is asked for a
-     code that works once, within a minute.
+     Following it opens a session on the server, whose cookie is what the page then carries: the
+     cookie never holds the secret itself (browsers hand a host's cookies to every port on it),
+     and neither does the URL (it would sit in a browser's history). The code works once, within
+     a minute. The kiosk and the admin window sign in this way too.
      */
     func signInURL(for target: URL, done: @escaping (URL?) -> Void) {
         guard let endpoint = URL(string: "http://127.0.0.1:\(port)/api/auth/code") else {

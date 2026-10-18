@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import {
-  AccessGate, CODE_TTL_MS, MAX_PENDING_CODES, cookieName, generateToken, isPublicRoute, isWellFormedToken,
+  AccessGate, CODE_TTL_MS, MAX_PENDING_CODES, MAX_SESSIONS, SESSION_IDLE_MS, SESSION_MAX_MS, cookieName, generateToken, isPublicRoute, isWellFormedToken,
   readBearer, readCookie, safeEqual, safeNext,
 } from '../src/http/access.js'
 import { ACCESS_TOKEN_ENV, accessTokenPath, resolveAccessToken, supportDirectory, writeAccessToken } from '../src/http/access-file.js'
@@ -15,10 +15,11 @@ import { serializeRequest } from '../src/http/logging.js'
 const TOKEN = generateToken()
 const PORT = 4301
 const HOST = `127.0.0.1:${PORT}`
-const COOKIE = `${cookieName(PORT)}=${TOKEN}`
 
 let dir: string
 let app: FastifyInstance
+/** A session cookie, opened the way a browser opens one: by following a one-time link. */
+let COOKIE: string
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'fremkit-access-'))
@@ -30,6 +31,7 @@ beforeEach(async () => {
   await writeFile(join(dir, 'ui', 'index.html'), '<!doctype html><title>dash</title>')
   await writeFile(join(dir, 'ui', 'admin.html'), '<!doctype html><title>admin</title>')
   app = await buildApp({ accessToken: TOKEN, port: PORT, dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets'), uiDist: join(dir, 'ui') })
+  COOKIE = await signIn()
 })
 afterEach(async () => {
   await app.close()
@@ -43,6 +45,13 @@ async function mint(): Promise<string> {
   const res = await app.inject({ method: 'POST', url: '/api/auth/code', headers: { host: HOST, authorization: `Bearer ${TOKEN}` } })
   expect(res.statusCode).toBe(200)
   return res.json().code
+}
+
+/** Follows a fresh one-time link and returns the `name=value` cookie it set. */
+async function signIn(): Promise<string> {
+  const res = await get(`/auth?code=${await mint()}`)
+  expect(res.statusCode).toBe(303)
+  return String(res.headers['set-cookie']).split(';')[0]
 }
 
 describe('the access gate', () => {
@@ -109,13 +118,16 @@ describe('the access gate', () => {
 })
 
 describe('the one-time link', () => {
-  it('sets the cookie and sends the browser on', async () => {
+  it('sets a session cookie and sends the browser on', async () => {
     const code = await mint()
     const res = await get(`/auth?code=${code}&next=${encodeURIComponent('/admin?tab=screen')}`)
     expect(res.statusCode).toBe(303)
     expect(res.headers.location).toBe('/admin?tab=screen')
     const cookie = String(res.headers['set-cookie'])
-    expect(cookie).toContain(`${cookieName(PORT)}=${TOKEN}`)
+    expect(cookie.startsWith(`${cookieName(PORT)}=`)).toBe(true)
+    // A session id, never the secret itself.
+    expect(cookie).not.toContain(TOKEN)
+    expect(cookie.split(';')[0].slice(cookieName(PORT).length + 1)).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(cookie).toMatch(/HttpOnly/)
     expect(cookie).toMatch(/SameSite=Strict/)
     expect(cookie).toMatch(/Path=\//)
@@ -141,6 +153,93 @@ describe('the one-time link', () => {
       const res = await get(`/auth?code=${await mint()}&next=${encodeURIComponent(next)}`)
       expect(res.headers.location, next).toBe('/')
     }
+  })
+})
+
+describe('the session cookie', () => {
+  it('is not the secret: the secret in the cookie is refused', async () => {
+    expect((await get('/api/config', { cookie: `${cookieName(PORT)}=${TOKEN}` })).statusCode).toBe(401)
+  })
+  it('is a different session for every sign-in', async () => {
+    const other = await signIn()
+    expect(other).not.toBe(COOKIE)
+    expect((await get('/api/config', { cookie: other })).statusCode).toBe(200)
+    expect((await get('/api/config', { cookie: COOKIE })).statusCode).toBe(200)
+  })
+  it('cannot mint a one-time code: only the secret can', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/auth/code', headers: { host: HOST, cookie: COOKIE } })
+    expect(res.statusCode).toBe(401)
+  })
+  it('cannot be presented as a bearer', async () => {
+    const id = COOKIE.split('=')[1]
+    expect((await get('/api/config', { authorization: `Bearer ${id}` })).statusCode).toBe(401)
+  })
+  it('signs out: the session ends and the cookie is cleared', async () => {
+    const other = await signIn()
+    const res = await app.inject({ method: 'DELETE', url: '/api/auth/session', headers: { host: HOST, cookie: COOKIE } })
+    expect(res.statusCode).toBe(204)
+    expect(String(res.headers['set-cookie'])).toMatch(/Max-Age=0/)
+    expect((await get('/api/config', { cookie: COOKIE })).statusCode).toBe(401)
+    // Only that one.
+    expect((await get('/api/config', { cookie: other })).statusCode).toBe(200)
+  })
+  it('dies with the server: a new process knows none of the old sessions', async () => {
+    const again = await buildApp({ accessToken: TOKEN, port: PORT, dataDir: join(dir, 'data2'), widgetsDir: join(dir, 'widgets'), uiDist: join(dir, 'ui') })
+    try {
+      const res = await again.inject({ url: '/api/config', headers: { host: HOST, cookie: COOKIE } })
+      expect(res.statusCode).toBe(401)
+    } finally {
+      await again.close()
+    }
+  })
+})
+
+describe('AccessGate sessions', () => {
+  const cookieFor = (gate: AccessGate, id: string) => ({ cookie: `${gate.cookie}=${id}` })
+  it('expire after a day unused', () => {
+    let now = 1_000_000
+    const gate = new AccessGate(TOKEN, { now: () => now })
+    const id = gate.openSession()
+    now += SESSION_IDLE_MS - 1
+    expect(gate.isAuthorized(cookieFor(gate, id))).toBe(true)
+    now += SESSION_IDLE_MS - 1
+    expect(gate.isAuthorized(cookieFor(gate, id))).toBe(true)
+    now += SESSION_IDLE_MS
+    expect(gate.isAuthorized(cookieFor(gate, id))).toBe(false)
+  })
+  it('expire after a week however much they are used', () => {
+    let now = 1_000_000
+    const gate = new AccessGate(TOKEN, { now: () => now })
+    const id = gate.openSession()
+    for (let t = 0; t < SESSION_MAX_MS - 3_600_000; t += 3_600_000) {
+      now = 1_000_000 + t
+      expect(gate.isAuthorized(cookieFor(gate, id))).toBe(true)
+    }
+    now = 1_000_000 + SESSION_MAX_MS
+    expect(gate.isAuthorized(cookieFor(gate, id))).toBe(false)
+  })
+  it('are revoked one by one or all at once', () => {
+    const gate = new AccessGate(TOKEN)
+    const a = gate.openSession()
+    const b = gate.openSession()
+    gate.revokeSession(a)
+    expect(gate.isAuthorized(cookieFor(gate, a))).toBe(false)
+    expect(gate.isAuthorized(cookieFor(gate, b))).toBe(true)
+    gate.revokeAllSessions()
+    expect(gate.isAuthorized(cookieFor(gate, b))).toBe(false)
+  })
+  it('are bounded, dropping the least recently used', () => {
+    let now = 1_000_000
+    const gate = new AccessGate(TOKEN, { now: () => now })
+    const first = gate.openSession()
+    const second = gate.openSession()
+    now += 120_000
+    // Using the first one makes the second the least recently used.
+    expect(gate.isAuthorized(cookieFor(gate, first))).toBe(true)
+    for (let i = 0; i < MAX_SESSIONS - 1; i++) gate.openSession()
+    expect(gate.sessionCount).toBe(MAX_SESSIONS)
+    expect(gate.isAuthorized(cookieFor(gate, first))).toBe(true)
+    expect(gate.isAuthorized(cookieFor(gate, second))).toBe(false)
   })
 })
 
@@ -242,12 +341,13 @@ describe('the token file', () => {
 })
 
 describe('the secret stays out of what the server says', () => {
-  it('is in no response but the cookie /auth sets', async () => {
+  it('is in no response, the cookie /auth sets included', async () => {
     const auth = { authorization: `Bearer ${TOKEN}` }
     const answers = await Promise.all([
       get('/api/config'), get('/api/config', auth), get('/api/widgets', auth), get('/', { cookie: COOKIE }),
       get('/auth?code=nope'), get('/fremkit.js'), get('/widgets/clock/index.html'),
       app.inject({ method: 'POST', url: '/api/auth/code', headers: { host: HOST, ...auth } }),
+      get(`/auth?code=${await mint()}`),
       app.inject({ method: 'PUT', url: '/api/config', headers: { host: HOST, ...auth }, payload: { nope: true } }),
     ])
     for (const res of answers) {
