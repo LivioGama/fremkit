@@ -516,6 +516,7 @@ export const fr: Record<string, string> = {
   'dashboard.companion.refuse': 'Refuser',
   'dashboard.companion.failed': 'Réponse impossible, réessayez',
   'dashboard.companion.changed': 'La demande a changé : vérifiez le code',
+  'dashboard.companion.turnedAway': 'D’autres navigateurs ont demandé pendant que celle-ci attendait ({n}) : si vous ne l’avez pas faite, refusez-la',
 
   // Brightness (admin → Screen)
   'brightness.admin.title': 'Luminosité',

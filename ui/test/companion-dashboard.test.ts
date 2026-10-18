@@ -108,6 +108,13 @@ describe('the pairing prompt', () => {
     expect(w.find('.error').text()).toBe('Réponse impossible, réessayez')
   })
 
+  it('says how many other browsers were turned away while the request waited', async () => {
+    const quiet = await mountPrompt(pairing({ turnedAway: 0 }))
+    expect(quiet.find('[data-test="turned-away"]').exists()).toBe(false)
+    const w = await mountPrompt(pairing({ turnedAway: 3 }))
+    expect(w.find('[data-test="turned-away"]').text()).toContain('(3)')
+  })
+
   it('says the request changed when the server answers 409', async () => {
     fake.approve.mockRejectedValueOnce(Object.assign(new Error('the request changed: check the code'), { status: 409 }))
     const w = await mountPrompt(pairing())

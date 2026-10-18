@@ -197,7 +197,7 @@ describe('companion provider', () => {
     const r = pairing.request({ origin: ORIGIN, name: 'Chrome', installId: INSTALL })
     if (typeof r === 'string') throw new Error(r)
     const snap = await provider.poll!()
-    expect(snap.pairing).toEqual({ requestId: r.requestId, code: r.code, name: 'Chrome', expiresAt: r.expiresAt })
+    expect(snap.pairing).toEqual({ requestId: r.requestId, code: r.code, name: 'Chrome', expiresAt: r.expiresAt, turnedAway: 0 })
     // Nothing the extension sent beyond its name: not its origin, not its install id.
     expect(JSON.stringify(snap)).not.toContain(ORIGIN)
     expect(JSON.stringify(snap)).not.toContain(INSTALL)

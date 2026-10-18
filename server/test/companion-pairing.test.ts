@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DeviceStore } from '../src/devices/store.js'
 import { CODE_ALPHABET } from '../src/devices/codes.js'
-import { CompanionPairing, REFUSED_COOLDOWN_MS, REQUEST_TTL_MS } from '../src/companion/pairing.js'
+import { CompanionPairing, MAX_TURNED_AWAY, REFUSED_COOLDOWN_MS, REQUEST_TTL_MS } from '../src/companion/pairing.js'
 
 const ORIGIN = `chrome-extension://${'a'.repeat(32)}`
 const OTHER = `chrome-extension://${'b'.repeat(32)}`
@@ -43,11 +43,31 @@ const approve = (r: { requestId: string; code: string }) => pairing.approve(r.re
 const refuse = (r: { requestId: string; code: string }) => pairing.refuse(r.requestId, r.code)
 
 describe('CompanionPairing', () => {
+  it('counts the distinct installs turned away while a request waits, for the Edge to show', () => {
+    const squatter = accepted(ask())
+    expect(pairing.pending()?.turnedAway).toBe(0)
+    let changes = 0
+    pairing.onChange(() => { changes++ })
+    expect(ask(ORIGIN, INSTALL_2)).toBe('busy')
+    expect(ask(ORIGIN, INSTALL_2)).toBe('busy')
+    expect(ask(OTHER, INSTALL_2)).toBe('busy')
+    expect(pairing.pending()).toMatchObject({ requestId: squatter.requestId, turnedAway: 2 })
+    // Only a new install is news.
+    expect(changes).toBe(2)
+    // Bounded, however many install ids a program makes up.
+    for (let i = 0; i < 300; i++) ask(ORIGIN, fresh())
+    expect(pairing.pending()?.turnedAway).toBe(MAX_TURNED_AWAY)
+    // The next request starts from zero: the count is about the request on show.
+    clock += REQUEST_TTL_MS
+    accepted(ask(ORIGIN, INSTALL_2))
+    expect(pairing.pending()?.turnedAway).toBe(0)
+  })
+
   it('a new request from the same install replaces its own waiting one', () => {
     const first = accepted(ask())
     const second = accepted(ask())
     expect(second.requestId).not.toBe(first.requestId)
-    expect(pairing.pending()).toEqual({ requestId: second.requestId, code: second.code, name: 'Chrome', expiresAt: second.expiresAt })
+    expect(pairing.pending()).toEqual({ requestId: second.requestId, code: second.code, name: 'Chrome', expiresAt: second.expiresAt, turnedAway: 0 })
     expect(pairing.collect(first.requestId, ORIGIN)).toEqual({ state: 'expired' })
     expect(pairing.collect(second.requestId, ORIGIN)).toEqual({ state: 'pending' })
   })

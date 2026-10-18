@@ -26,7 +26,7 @@ export const COMPANION_INTERVAL_MS = 30_000
 
 export type CompanionSnapshot = CompanionState & {
   /** The request waiting for the user's answer, for the Edge's approval overlay. Never the token. */
-  pairing: { requestId: string; code: string; name: string; expiresAt: number } | null
+  pairing: { requestId: string; code: string; name: string; expiresAt: number; turnedAway: number } | null
   /**
    * The page to show when a share starts. `seq` goes up once per accepted share whose widget sits
    * on a page of the Edge's screen; the dashboard turns to it when `seq` differs from the last it

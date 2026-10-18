@@ -13,6 +13,8 @@ export const MAX_REQUESTS_PER_INSTALL_PER_MINUTE = 3
 export const REFUSED_COOLDOWN_MS = 60_000
 
 const WINDOW_MS = 60_000
+/** Distinct installs counted as turned away while one request waits; past it the count stops. */
+export const MAX_TURNED_AWAY = 99
 
 type Answerable = { result: 'notFound' | 'changed' } | { req: PairRequest }
 
@@ -71,6 +73,11 @@ export class CompanionPairing {
   private readonly acceptedByInstall = new Map<string, number[]>()
   /** installId → when its request was refused. */
   private readonly refusedAt = new Map<string, number>()
+  /**
+   * The installs turned away as `busy` while the waiting request waits. Shown with it: a request
+   * that sits on the slot while other browsers ask is one the user may not have made.
+   */
+  private turnedAway = new Set<string>()
   private readonly listeners = new Set<() => void>()
   private timer: NodeJS.Timeout | null = null
 
@@ -85,7 +92,12 @@ export class CompanionPairing {
     const refused = this.refusedAt.get(input.installId)
     if (refused !== undefined && now - refused < REFUSED_COOLDOWN_MS) return 'cooldown'
     const waiting = this.waiting === null ? undefined : this.requests.get(this.waiting)
-    if (waiting && (waiting.installId !== input.installId || waiting.origin !== input.origin)) return 'busy'
+    if (waiting && (waiting.installId !== input.installId || waiting.origin !== input.origin)) {
+      const before = this.turnedAway.size
+      if (before < MAX_TURNED_AWAY) this.turnedAway.add(`${input.origin} ${input.installId}`)
+      if (this.turnedAway.size !== before) this.changed()
+      return 'busy'
+    }
     this.accepted = this.accepted.filter((t) => now - t < WINDOW_MS)
     if (this.accepted.length >= MAX_REQUESTS_PER_MINUTE) return 'limited'
     const mine = (this.acceptedByInstall.get(input.installId) ?? []).filter((t) => now - t < WINDOW_MS)
@@ -96,6 +108,7 @@ export class CompanionPairing {
 
     // Only ever the same install's own request: another install's was turned away above.
     if (waiting) this.requests.delete(waiting.requestId)
+    this.turnedAway = new Set()
     let code = ''
     for (let i = 0; i < MATCH_CODE_LENGTH; i++) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]
     const req: PairRequest = {
@@ -114,11 +127,14 @@ export class CompanionPairing {
     return { requestId: req.requestId, code: req.code, expiresAt: req.expiresAt }
   }
 
-  /** The request waiting for the user's answer, for the Edge and the admin to show. */
-  pending(): { requestId: string; code: string; name: string; expiresAt: number } | null {
+  /**
+   * The request waiting for the user's answer, for the Edge and the admin to show, with how many
+   * other installs asked meanwhile and were turned away (at most `MAX_TURNED_AWAY`).
+   */
+  pending(): { requestId: string; code: string; name: string; expiresAt: number; turnedAway: number } | null {
     this.sweep(this.now())
     const req = this.waiting === null ? undefined : this.requests.get(this.waiting)
-    return req ? { requestId: req.requestId, code: req.code, name: req.name, expiresAt: req.expiresAt } : null
+    return req ? { requestId: req.requestId, code: req.code, name: req.name, expiresAt: req.expiresAt, turnedAway: this.turnedAway.size } : null
   }
 
   /**

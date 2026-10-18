@@ -12,8 +12,12 @@ import { COMPANION_ALLOW_DELAY_MS, useSettled } from '../shared/useSettled'
  * Allow waits two seconds whenever the request on show changes, so a request swapped in under the
  * user's finger is not the one approved; the answer also carries the code on show, which the
  * server checks against the waiting request.
+ *
+ * While this request waits, any other browser that asks is turned away; how many did is shown, so
+ * a request sitting on the slot that the user did not make (a local program holding pairing up)
+ * gives itself away.
  */
-const props = defineProps<{ pairing: { requestId: string; code: string; name: string; expiresAt: number } }>()
+const props = defineProps<{ pairing: { requestId: string; code: string; name: string; expiresAt: number; turnedAway?: number } }>()
 const { t } = useI18n()
 const expired = ref(false)
 const failed = ref(false)
@@ -60,6 +64,7 @@ async function answer(call: (id: string, code: string) => Promise<unknown>) {
       <p class="ask">{{ t('dashboard.companion.request') }}</p>
       <p class="name">{{ pairing.name }}</p>
       <p class="code">{{ pairing.code }}</p>
+      <p v-if="(pairing.turnedAway ?? 0) > 0" class="turned" data-test="turned-away">{{ t('dashboard.companion.turnedAway', { n: pairing.turnedAway ?? 0 }) }}</p>
       <p v-if="failed" class="error" role="alert">{{ reason || t('dashboard.companion.failed') }}</p>
       <div class="actions">
         <button type="button" class="refuse" :disabled="busy" @click="answer(api.refuseCompanion)">{{ t('dashboard.companion.refuse') }}</button>
@@ -83,6 +88,7 @@ async function answer(call: (id: string, code: string) => Promise<unknown>) {
 .name { color: var(--accent); font-size: var(--fs-lg); font-weight: 600; }
 .code { font-family: var(--font-mono); font-size: 96px; line-height: 1; letter-spacing: 0.15em; font-weight: 700; }
 .error { color: var(--danger); font-size: var(--fs-sm); }
+.turned { color: var(--warn); font-size: var(--fs-sm); max-width: 32em; }
 .actions { display: flex; gap: var(--space-3); }
 button {
   min-width: 160px; min-height: 56px; padding: 0 var(--space-5); border-radius: 12px; font: inherit;
