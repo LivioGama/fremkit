@@ -1,5 +1,6 @@
 import { tr } from '../i18n.js'
 import type { Config, Page, Screen } from './schema.js'
+import type { CommandContext } from '../providers/types.js'
 
 /** One widget instance as a provider needs to see it: what it is, and what the user saved on it. */
 export interface InstanceView {
@@ -88,8 +89,12 @@ export function findInstances(config: Config, widgetId: string): InstanceView[] 
  *
  * A function rather than the store itself, so a provider can be built in a test with a literal
  * and never has to know that a config store exists.
+ *
+ * `ctx` is the command's caller. The lookup production wires (app.ts) answers a paired device
+ * only for an instance on that device's own screen (`devices/scope.ts`): a device names the
+ * instance, and one placed elsewhere is not its to press.
  */
-export type InstanceLookup = (instanceId: string) => InstanceView | null
+export type InstanceLookup = (instanceId: string, ctx?: CommandContext) => InstanceView | null
 
 /** The lookup a provider gets when nothing wired one up: every instance is unknown. */
 export const noInstances: InstanceLookup = () => null

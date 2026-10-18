@@ -60,7 +60,8 @@ import { createDiskMapProvider } from './providers/disk-map.js'
 import { BrightnessService } from './brightness/service.js'
 import { createBrightnessProvider, BRIGHTNESS_INTERVAL_MS } from './brightness/provider.js'
 import { brightnessRoutes } from './brightness/routes.js'
-import { findInstance, findInstances } from './config/instances.js'
+import { findInstance, findInstances, type InstanceLookup } from './config/instances.js'
+import { commandScope, instanceInScope, type ScreenOfDevice } from './devices/scope.js'
 import { migrateHomeySecret } from './config/migrate.js'
 import { BYTES_CSP, isByteRoute } from './http/headers.js'
 import { isAllowedHost, isReadMethod } from './http/guard.js'
@@ -193,6 +194,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const usage = new ClaudeUsage({ filePath: join(opts.dataDir, 'claude-usage.json'), transcriptsDir: opts.claudeTranscriptsDir ?? join(homedir(), '.claude', 'projects') })
   await usage.load()
 
+  /**
+   * The device screen a paired device is attached to, asked of the device service at call time:
+   * the one rule (devices/scope.ts) the proxy, the commands and the config projection share. The
+   * service is built further down, after the hub; nothing calls this before a request comes in.
+   */
+  const screenOfDevice: ScreenOfDevice = (deviceId) => deviceService.deviceScreenOf(deviceId)
+
   let hub!: Hub
   const registry = new ProviderRegistry(
     (channel, data) => hub.broadcast(channel, data),
@@ -222,7 +230,11 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // These two act on the user's behalf — opening an application, knocking on a host — so they
   // resolve what to act on from the saved dashboard rather than from the widget's message.
   // Registered here, not in providers/index.ts, because that is where the config store lives.
-  const instances = (instanceId: string) => findInstance(store.get(), instanceId)
+  // A paired device resolves only the instances of its own screen: see devices/scope.ts.
+  const instances: InstanceLookup = (instanceId, ctx) => {
+    const config = store.get()
+    return instanceInScope(config, commandScope(ctx, screenOfDevice), instanceId) ? findInstance(config, instanceId) : null
+  }
   registry.register(createShortcutsProvider(undefined, instances))
   registry.register(createServiceStatusProvider({}, instances))
   // Per-screen settings from the store, reports from the helper: see brightness/service.ts.
@@ -359,7 +371,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     dev: process.env.FREMKIT_DEV === '1',
   })
   await app.register(themeRoutes, { catalog: themes })
-  await app.register(proxyRoutes, { catalog, store, secrets, cache: connCache })
+  await app.register(proxyRoutes, { catalog, store, secrets, cache: connCache, screenOfDevice })
   const marketplaceRegistry = new Registry({
     ...(opts.registryUrl ? { url: opts.registryUrl } : {}),
     ...(opts.registryDev ? { dev: true } : {}),

@@ -41,7 +41,9 @@ it again by itself.
 ## What the iPad can do
 
 It shows the screen you gave it and does what the Edge does on that screen: every widget, its
-connections (the secrets stay on the Mac), Claude session focus, the clipboard. It cannot open
+connections (the secrets stay on the Mac), Claude session focus, the clipboard. Only that screen:
+a widget's connection, a shortcut button or a service probe placed on another screen is out of its
+reach, and an iPad with no screen yet can use none. It cannot open
 the admin or change anything in the configuration; those stay on the Mac. The status bar is
 hidden and the screen stays awake while the app is in front.
 

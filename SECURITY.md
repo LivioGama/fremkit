@@ -169,7 +169,10 @@ The remote listener is an **allow-list**, decided by the socket a request arrive
 by a header: the dashboard's page and its code, the routes a dashboard reads, `/ws`, the widget
 proxy, and the device's own `GET /api/devices/me` and `POST /api/devices/me/brightness`. Everything
 else, the admin and every route that writes the configuration or reads a secret, answers 404. A
-paired socket may subscribe to and command only what the widgets of its own screen declare. See
+paired socket may subscribe to and command only what the widgets of its own screen declare, and a
+device acts only on the instances of its own screen: the widget proxy (and so a widget's stored
+credential) and the commands that resolve an instance refuse any instance shown elsewhere, and a
+device with no screen acts on none. See
 [docs/devices.md](docs/devices.md).
 
 ## What Fremkit reads on your Mac
