@@ -50,6 +50,8 @@ tagged `vX.Y.Z`.
   or category as you type, accents or not ("meteo" finds Météo); Enter adds the first match. The
   pages and the search stay in place while the widget list scrolls under them. The Sietch's
   search ignores accents too now.
+- **Tidy the widget list.** Two buttons beside the Widgets title open or fold every shelf at once,
+  and a box hides the widgets the selected screen already shows, on a page or in its bar.
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer

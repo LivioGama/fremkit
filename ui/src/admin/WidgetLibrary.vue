@@ -38,12 +38,12 @@ import BaseButton from '../shared/ui/BaseButton.vue'
 import BaseCard from '../shared/ui/BaseCard.vue'
 import BaseIcon from '../shared/ui/BaseIcon.vue'
 import BaseInput from '../shared/ui/BaseInput.vue'
-import BaseSection from '../shared/ui/BaseSection.vue'
+import BaseSection, { setSectionsOpen } from '../shared/ui/BaseSection.vue'
 import WidgetPermissions from './WidgetPermissions.vue'
 import { pick, useI18n } from '../shared/i18n'
 import { DND_EXISTING_TYPE, DND_TYPE, useAdminStore } from './store'
 import { useMarketplaceStore } from './marketplace'
-import { groupByCategory, matchesQuery, otherScreenWidgets } from './library'
+import { groupByCategory, matchesQuery, otherScreenWidgets, widgetKindsOnScreen } from './library'
 
 const s = useAdminStore()
 const market = useMarketplaceStore()
@@ -63,6 +63,26 @@ const query = ref('')
 const searching = computed(() => query.value.trim() !== '')
 
 /**
+ * Hide the widgets this screen already shows. A habit of the person editing, so it is kept per
+ * browser like the folded shelves, never in the config.
+ */
+const HIDE_PLACED_KEY = 'fremkit.library.hidePlaced'
+function loadHidePlaced(): boolean {
+  try { return localStorage.getItem(HIDE_PLACED_KEY) === '1' } catch { return false }
+}
+const hidePlaced = ref(loadHidePlaced())
+function setHidePlaced(value: boolean): void {
+  hidePlaced.value = value
+  try { localStorage.setItem(HIDE_PLACED_KEY, value ? '1' : '0') } catch { /* private window: this visit only */ }
+}
+const placed = computed(() => {
+  const config = s.state.config
+  const screen = s.screen.value
+  return hidePlaced.value && config && screen ? widgetKindsOnScreen(config, screen.id) : new Set<string>()
+})
+const filtering = computed(() => searching.value || hidePlaced.value)
+
+/**
  * One group per category that has widgets the search matches, each sorted by name in the
  * language in force. The category's own name is searched too, so "dev" lists the whole shelf.
  */
@@ -71,7 +91,7 @@ const groups = computed(() => groupByCategory(
   (a, b) => pick(a.name).localeCompare(pick(b.name)),
 ).map((g) => {
   const title = t(`admin.library.category.${g.id}`)
-  const widgets = g.widgets.filter((m) => matchesQuery([m.id, pick(m.name), pick(m.description), title], query.value))
+  const widgets = g.widgets.filter((m) => !placed.value.has(m.id) && matchesQuery([m.id, pick(m.name), pick(m.description), title], query.value))
   return { ...g, title, widgets }
 }).filter((g) => g.widgets.length > 0))
 
@@ -87,7 +107,13 @@ const elsewhere = computed(() => {
   }).filter((w) => matchesQuery([w.title, w.name, w.widgetId], query.value))
 })
 
-const nothingFound = computed(() => searching.value && !groups.value.length && !elsewhere.value.length)
+const nothingFound = computed(() => filtering.value && !groups.value.length && !elsewhere.value.length)
+
+/** Every shelf this list can show, found or not, so "fold all" also folds the ones a search hid. */
+const sectionIds = computed(() => [
+  'library.elsewhere',
+  ...groupByCategory(Object.values(s.state.manifests), () => 0).map((g) => `library.${g.id}`),
+])
 
 /** Enter places the first card the search left, the same as clicking it. */
 function placeFirst(): void {
@@ -131,9 +157,19 @@ onBeforeUnmount(unbindDragFallback)
   <section>
     <h2>
       {{ t('admin.library.title') }}
-      <BaseButton variant="icon" :title="t('admin.library.rescan')" @click="s.rescan()">
-        <BaseIcon name="refresh-cw" :size="16" />
-      </BaseButton>
+      <span class="tools">
+        <BaseButton variant="icon" :title="t('admin.library.expandAll')" :disabled="searching"
+          @click="setSectionsOpen(sectionIds, true)">
+          <BaseIcon name="chevrons-up-down" :size="16" />
+        </BaseButton>
+        <BaseButton variant="icon" :title="t('admin.library.collapseAll')" :disabled="searching"
+          @click="setSectionsOpen(sectionIds, false)">
+          <BaseIcon name="chevrons-down-up" :size="16" />
+        </BaseButton>
+        <BaseButton variant="icon" :title="t('admin.library.rescan')" @click="s.rescan()">
+          <BaseIcon name="refresh-cw" :size="16" />
+        </BaseButton>
+      </span>
     </h2>
     <div class="search">
       <BaseInput v-model="query" :placeholder="t('admin.market.search')"
@@ -142,6 +178,10 @@ onBeforeUnmount(unbindDragFallback)
         <BaseIcon name="x" :size="14" />
       </BaseButton>
     </div>
+    <label class="hide-placed">
+      <input type="checkbox" :checked="hidePlaced" @change="setHidePlaced(($event.target as HTMLInputElement).checked)" />
+      {{ t('admin.library.hidePlaced') }}
+    </label>
 
     <div class="scroll">
     <p v-if="nothingFound" class="none">{{ t('admin.market.noMatch') }}</p>
@@ -194,10 +234,13 @@ onBeforeUnmount(unbindDragFallback)
 <style scoped>
 /* Title and search fixed at the top of what is left of the sidebar; the shelves scroll below. */
 section { margin-top: var(--space-4); flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.tools { display: inline-flex; gap: 2px; }
 .search { position: relative; margin-bottom: var(--space-2); }
 .search :deep(input) { padding-right: 32px; }
 .clear { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); }
 .scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: var(--space-3); }
+.hide-placed { display: flex; align-items: center; gap: var(--space-2); min-height: 32px;
+  font-size: var(--fs-xs); color: var(--text-muted); cursor: pointer; margin-bottom: var(--space-2); }
 .none { font-size: var(--fs-sm); color: var(--text-muted); margin: var(--space-2) 0; }
 h2 { display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-xs);
   text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin: 0 0 var(--space-2); }

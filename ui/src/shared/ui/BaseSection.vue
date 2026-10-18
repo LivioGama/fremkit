@@ -20,6 +20,12 @@ function remember(id: string, value: boolean): void {
   open[id] = value
   try { localStorage.setItem(KEY, JSON.stringify(open)) } catch { /* private window: this session only */ }
 }
+
+/** Opens or folds several sections at once — an "expand all" — and remembers it like a click. */
+export function setSectionsOpen(ids: readonly string[], value: boolean): void {
+  for (const id of ids) open[id] = value
+  try { localStorage.setItem(KEY, JSON.stringify(open)) } catch { /* private window: this session only */ }
+}
 </script>
 
 <script setup lang="ts">

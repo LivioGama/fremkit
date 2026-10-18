@@ -58,6 +58,14 @@ export function matchesQuery(parts: readonly string[], query: string): boolean {
   return words.every((word) => haystack.includes(word))
 }
 
+/** The kinds of widget (manifest ids) a screen already shows, on any of its pages or in its bar. */
+export function widgetKindsOnScreen(config: Config, screenId: string): Set<string> {
+  const screen = config.screens.find((s) => s.id === screenId)
+  if (!screen) return new Set()
+  const ids = [...screen.pages.flatMap((p) => p.items.map((i) => i.instanceId)), ...screen.nav.map((i) => i.instanceId)]
+  return new Set(ids.map((id) => config.widgets[id]?.widgetId).filter((w): w is string => !!w))
+}
+
 export function otherScreenWidgets(config: Config, screenId: string): string[] {
   const idsOf = (s: Config['screens'][number]): string[] =>
     [...s.pages.flatMap((p) => p.items.map((i) => i.instanceId)), ...s.nav.map((i) => i.instanceId)]

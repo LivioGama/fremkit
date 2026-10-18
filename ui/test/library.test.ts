@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { categoryOf, groupByCategory, otherScreenWidgets, fold, matchesQuery } from '../src/admin/library'
+import { categoryOf, groupByCategory, otherScreenWidgets, fold, matchesQuery, widgetKindsOnScreen } from '../src/admin/library'
 import type { Config, WidgetManifest } from '../src/shared/types'
 
 const widget = (id: string, category?: string): WidgetManifest => ({
@@ -61,6 +61,12 @@ describe('otherScreenWidgets', () => {
   it('excludes widgets already on this screen and lists each once', () => {
     expect(otherScreenWidgets(config, 'edge')).toEqual(['note-1', 'bar-2', 'mail-1'])
     expect(otherScreenWidgets(config, 'tablet')).toEqual(['bar-1', 'mail-1'])
+  })
+
+  it('names the kinds of widget a screen shows, its bar included', () => {
+    expect([...widgetKindsOnScreen(config, 'edge')].sort()).toEqual(['bar', 'clock', 'cpu'])
+    expect([...widgetKindsOnScreen(config, 'phone')].sort()).toEqual(['bar', 'mail', 'note'])
+    expect(widgetKindsOnScreen(config, 'nowhere').size).toBe(0)
   })
 
   it('is empty with a single screen or an unknown screen id', () => {
