@@ -210,6 +210,8 @@ export class DeviceService {
   /** Puts a device on a device screen, or on none. Refuses any other screen. */
   async attach(id: string, screenId: string | null): Promise<PublicDevice | null | 'screenNotDevice'> {
     if (screenId !== null && !isDeviceScreen(this.config.get(), screenId)) return 'screenNotDevice'
+    // Only an iPad shows a screen: an extension record is not attachable.
+    if (!this.me(id)) return null
     const device = await this.store.update(id, { screenId })
     if (device) this.hub.refreshDevice(id)
     return device
@@ -261,7 +263,7 @@ export class DeviceService {
 
   me(deviceId: string): DeviceInfo | null {
     const device = this.store.list().find((d) => d.id === deviceId)
-    return device ? { id: device.id, name: device.name, screenId: device.screenId } : null
+    return device?.kind === 'ipad' ? { id: device.id, name: device.name, screenId: device.screenId } : null
   }
 
   // --- internals -------------------------------------------------------------------------------
@@ -384,7 +386,7 @@ export class DeviceService {
   private onConfigChange(cfg: Config): void {
     this.manifests = null
     for (const device of this.store.list()) {
-      if (device.screenId === null || isDeviceScreen(cfg, device.screenId)) continue
+      if (device.kind !== 'ipad' || device.screenId === null || isDeviceScreen(cfg, device.screenId)) continue
       // Conditional, inside the store's queue: an attach to another screen queued before this
       // write runs must not be undone by it.
       void this.store.detach(device.id, device.screenId)

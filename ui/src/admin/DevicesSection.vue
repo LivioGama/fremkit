@@ -15,7 +15,7 @@ import BaseCheckbox from '../shared/ui/BaseCheckbox.vue'
 import BaseIcon from '../shared/ui/BaseIcon.vue'
 import { useI18n } from '../shared/i18n'
 import { useConfirm } from '../shared/useConfirm'
-import type { PublicDevice } from '../shared/api'
+import type { PublicIpadDevice } from '../shared/api'
 import type { Screen } from '../shared/types'
 import AddScreenDialog from './AddScreenDialog.vue'
 import { useDevices } from './devices'
@@ -61,7 +61,7 @@ const countdown = computed(() => {
 })
 
 const deviceScreens = computed<Screen[]>(() => (s.state.config?.screens ?? []).filter((x) => x.kind === 'device'))
-const list = computed<PublicDevice[]>(() => status.value?.devices ?? [])
+const list = computed<PublicIpadDevice[]>(() => (status.value?.devices ?? []).filter((d): d is PublicIpadDevice => d.kind === 'ipad'))
 
 function when(iso: string | null): string {
   if (!iso) return t('admin.devices.neverSeen')
@@ -74,13 +74,13 @@ function when(iso: string | null): string {
  * Waits for a pending config save first, as `onCreated` does: a device screen made or turned into
  * one a moment ago exists on the server only once that save lands.
  */
-async function pickScreen(device: PublicDevice, value: string): Promise<void> {
+async function pickScreen(device: PublicIpadDevice, value: string): Promise<void> {
   await s.flush()
   await devices.attach(device.id, value === '' ? null : value)
 }
 
 /** The device a screen is being made for, while its dialog is open. */
-const creatingFor = ref<PublicDevice | null>(null)
+const creatingFor = ref<PublicIpadDevice | null>(null)
 /**
  * The server attaches a device only to a device screen it has saved, and `addScreen` saves on a
  * debounce: wait for that save before attaching, or the server answers that no such screen exists.

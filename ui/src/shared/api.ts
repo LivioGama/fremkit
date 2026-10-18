@@ -27,17 +27,27 @@ export interface RestoreResult {
 }
 export type ConnectionTestResult = { ok: true; detail: string } | { ok: false; error: string }
 
-/** A paired device as `GET /api/devices` lists it: never its token, nor the token's hash. */
-export interface PublicDevice {
+/** What every paired device carries: never its token, nor the token's hash. */
+interface PublicDeviceBase {
   id: string
   name: string
   /** ISO date. */
   pairedAt: string
   /** ISO date, written at most once a minute; null until the device first connects. */
   lastSeen: string | null
+}
+export interface PublicIpadDevice extends PublicDeviceBase {
+  kind: 'ipad'
   viewport: { width: number; height: number }
   screenId: string | null
 }
+export interface PublicExtensionDevice extends PublicDeviceBase {
+  kind: 'extension'
+  origin: string
+  installId: string
+}
+/** A paired device as `GET /api/devices` lists it. */
+export type PublicDevice = PublicIpadDevice | PublicExtensionDevice
 /** What `GET /api/devices` answers: the remote listener's state and the paired devices. */
 export interface DeviceStatus {
   enabled: boolean
