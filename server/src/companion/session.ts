@@ -86,6 +86,11 @@ export class CompanionSession {
     this.changed()
   }
 
+  /** The ids of the extensions whose socket is open now. */
+  connectedIds(): ReadonlySet<string> {
+    return new Set(this.connected.keys())
+  }
+
   /**
    * A socket went away. The share stays: a server restart or a dropped socket comes back with a
    * `hello` that carries it, and a share nobody comes back for goes stale in `tick`.

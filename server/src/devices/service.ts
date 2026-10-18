@@ -20,10 +20,16 @@ import { screenChannels, type ChannelManifest, type ScreenChannels } from './cha
 import type { PairingCodes } from './codes.js'
 import { lanAddresses as readLanAddresses, localHostName, preferredAddress } from './host.js'
 import { REMOTE_PORT, RemoteListener } from './listener.js'
-import type { DeviceStore, PublicDevice, Viewport } from './store.js'
+import type { DeviceStore, PublicDevice, PublicExtensionDevice, PublicIpadDevice, Viewport } from './store.js'
 
 /** How often the LAN addresses are re-read while listening, to follow a DHCP change. */
 const ADDRESS_CHECK_MS = 30_000
+
+/** What the admin lists: an extension row also says whether its socket is open right now. */
+export type StatusDevice = PublicIpadDevice | (PublicExtensionDevice & { connected: boolean })
+
+/** A browser extension asking to pair, as the admin shows it: never a token. */
+export type CompanionRequest = { requestId: string; code: string; name: string; expiresAt: number }
 
 export type DeviceStatus = {
   enabled: boolean
@@ -36,7 +42,9 @@ export type DeviceStatus = {
   port: number
   /** Base64url SHA-256 of the key's SPKI: what a device pins. Never the key itself. */
   keyHash: string | null
-  devices: PublicDevice[]
+  devices: StatusDevice[]
+  /** The extension waiting for the user's answer, or null. */
+  companionRequest: CompanionRequest | null
 }
 
 export type PairingOffer = { code: string; expiresAt: number; url: string }
@@ -63,6 +71,12 @@ export interface DeviceServiceOptions {
   lanAddresses?: () => string[]
   /** Which of the addresses the QR code carries; the default asks the Mac's default route. */
   preferredAddress?: (addresses: string[]) => Promise<string | null>
+  /**
+   * The companion's waiting pairing request and its connected extensions, as closures: the
+   * companion is built after this service and this one must not know its code.
+   */
+  companionRequest?: () => CompanionRequest | null
+  companionConnected?: () => ReadonlySet<string>
 }
 
 /** Whether a device screen was made for this viewport, in either orientation. */
@@ -90,6 +104,8 @@ export class DeviceService {
   private readonly readAddresses: () => string[]
   private readonly pickAddress: (addresses: string[]) => Promise<string | null>
   private readonly listener: RemoteListener
+  private readonly companionRequest: () => CompanionRequest | null
+  private readonly companionConnected: () => ReadonlySet<string>
 
   /**
    * Every start, stop, certificate swap and address check goes through this one chain, so they
@@ -120,6 +136,8 @@ export class DeviceService {
     this.advertiser = opts.advertise ?? bonjourAdvertise
     this.readAddresses = opts.lanAddresses ?? readLanAddresses
     this.pickAddress = opts.preferredAddress ?? ((addresses) => preferredAddress(addresses, this.exec))
+    this.companionRequest = opts.companionRequest ?? (() => null)
+    this.companionConnected = opts.companionConnected ?? (() => new Set())
     this.listener = new RemoteListener(opts.app, opts.listenerPort ?? REMOTE_PORT)
   }
 
@@ -156,6 +174,8 @@ export class DeviceService {
   }
 
   status(): DeviceStatus {
+    const connected = this.companionConnected()
+    const request = this.companionRequest()
     return {
       enabled: this.store.enabled,
       listening: this.listener.running,
@@ -165,7 +185,9 @@ export class DeviceService {
       addresses: this.readAddresses(),
       port: this.listener.port,
       keyHash: this.keyHash,
-      devices: this.store.list(),
+      devices: this.store.list().map((d): StatusDevice => (d.kind === 'extension' ? { ...d, connected: connected.has(d.id) } : d)),
+      // Picked field by field, so nothing the pairing object grows later reaches the admin.
+      companionRequest: request ? { requestId: request.requestId, code: request.code, name: request.name, expiresAt: request.expiresAt } : null,
     }
   }
 

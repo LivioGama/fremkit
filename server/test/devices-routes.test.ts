@@ -12,6 +12,9 @@ import { noAdvertise } from '../src/devices/bonjour.js'
 import { RemoteListener } from '../src/devices/listener.js'
 import { execFileAsync, type Exec } from '../src/secrets/keychain.js'
 import { Hub } from '../src/ws/hub.js'
+import { DeviceStore } from '../src/devices/store.js'
+import { DeviceService } from '../src/devices/service.js'
+import { PairingCodes } from '../src/devices/codes.js'
 import { readZip } from '../src/backup/zip.js'
 import { readKey, spkiHash, TLS_KEY_SECRET } from '../src/devices/certificate.js'
 import { FileSecretStore } from '../src/secrets/file.js'
@@ -390,6 +393,107 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
     } finally {
       setCertificate.mockRestore()
       vi.useRealTimers()
+    }
+  })
+})
+
+describe('browser extensions in the device list', () => {
+  const ORIGIN = `chrome-extension://${'e'.repeat(32)}`
+  const INSTALL = '3a9c1d2e-5b6f-4a7b-8c9d-0e1f2a3b4c5d'
+  const HOST = '127.0.0.1:4242'
+  let edir: string
+  let eapp: FastifyInstance
+
+  async function pairExtension(): Promise<{ requestId: string; deviceId: string }> {
+    const asked = await eapp.inject({
+      method: 'POST', url: '/api/companion/pair',
+      headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' },
+      payload: JSON.stringify({ name: 'Chrome', installId: INSTALL }),
+    })
+    const { requestId } = asked.json()
+    const status = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
+    expect(status.companionRequest).toMatchObject({ requestId, name: 'Chrome' })
+    expect((await eapp.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/approve`, headers: { host: HOST } })).statusCode).toBe(200)
+    const collected = (await eapp.inject({ url: `/api/companion/pair/${requestId}`, headers: { host: HOST, origin: ORIGIN } })).json()
+    return { requestId, deviceId: collected.deviceId }
+  }
+
+  beforeAll(async () => {
+    edir = await mkdtemp(join(tmpdir(), 'fremkit-devices-ext-'))
+    await writeFile(join(edir, 'fremkit.json'), JSON.stringify(CONFIG))
+    eapp = await buildApp({
+      accessToken: null,
+      port: 4242,
+      dataDir: edir,
+      widgetsDir: join(process.cwd(), '..', 'widgets'),
+      providers: [],
+      devicesPort: 0,
+      devices: { exec, advertise: noAdvertise, lanAddresses: () => [ADDRESS] },
+    })
+  })
+  afterAll(async () => {
+    await eapp?.close()
+    await rm(edir, { recursive: true, force: true })
+  })
+
+  it('status lists extension devices and the pending request without tokens', async () => {
+    expect((await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json().companionRequest).toBeNull()
+    const asked = await eapp.inject({
+      method: 'POST', url: '/api/companion/pair',
+      headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' },
+      payload: JSON.stringify({ name: 'Chrome', installId: INSTALL }),
+    })
+    const { requestId, code } = asked.json()
+    const waiting = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
+    expect(waiting.companionRequest).toEqual({ requestId, code, name: 'Chrome', expiresAt: expect.any(Number) })
+
+    const { deviceId } = await pairExtension()
+    const done = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
+    expect(done.devices).toEqual([expect.objectContaining({ id: deviceId, kind: 'extension', name: 'Chrome', origin: ORIGIN, connected: false })])
+    expect(JSON.stringify(done)).not.toMatch(/token/i)
+  })
+
+  it('renames an extension, and refuses to put it on a screen', async () => {
+    const { deviceId } = await pairExtension()
+    const renamed = await eapp.inject({ method: 'PATCH', url: `/api/devices/${deviceId}`, headers: { host: HOST }, payload: { name: 'Work Chrome' } })
+    expect(renamed.statusCode).toBe(200)
+    expect(renamed.json()).toMatchObject({ id: deviceId, kind: 'extension', name: 'Work Chrome' })
+    const screen = await eapp.inject({ method: 'PATCH', url: `/api/devices/${deviceId}`, headers: { host: HOST }, payload: { screenId: 'ipad' } })
+    expect(screen.statusCode).toBe(400)
+    const status = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
+    expect(status.devices.find((d: { id: string }) => d.id === deviceId)).not.toHaveProperty('screenId')
+    expect((await eapp.inject({ method: 'PATCH', url: '/api/devices/nobody', headers: { host: HOST }, payload: { name: 'x' } })).statusCode).toBe(404)
+  })
+
+  it('removes an extension like any device', async () => {
+    const { deviceId } = await pairExtension()
+    expect((await eapp.inject({ method: 'DELETE', url: `/api/devices/${deviceId}`, headers: { host: HOST } })).statusCode).toBe(204)
+    const status = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
+    expect(status.devices.find((d: { id: string }) => d.id === deviceId)).toBeUndefined()
+  })
+})
+
+describe('the device status reads the companion through its closures', () => {
+  it('marks an extension connected when its socket is open, and carries the request', async () => {
+    const sdir = await mkdtemp(join(tmpdir(), 'fremkit-devices-status-'))
+    try {
+      const store = new DeviceStore(join(sdir, 'devices.json'))
+      await store.load()
+      const { device } = await store.createExtension({ name: 'Chrome', origin: `chrome-extension://${'f'.repeat(32)}`, installId: '3a9c1d2e-5b6f-4a7b-8c9d-0e1f2a3b4c5d' })
+      let open = new Set<string>()
+      const service = new DeviceService({
+        app: { log: { warn() {} } } as never,
+        store, codes: new PairingCodes(), secrets: {} as never, config: {} as never, hub: {} as never, catalog: {} as never,
+        lanAddresses: () => [],
+        companionRequest: () => ({ requestId: 'r1', code: 'AB2C', name: 'Chrome', expiresAt: 5, token: 'secret' } as never),
+        companionConnected: () => open,
+      })
+      expect(service.status().devices[0]).toMatchObject({ id: device.id, connected: false })
+      open = new Set([device.id])
+      expect(service.status().devices[0]).toMatchObject({ id: device.id, connected: true })
+      expect(service.status().companionRequest).toEqual({ requestId: 'r1', code: 'AB2C', name: 'Chrome', expiresAt: 5 })
+    } finally {
+      await rm(sdir, { recursive: true, force: true })
     }
   })
 })

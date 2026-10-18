@@ -78,7 +78,7 @@ import { DeviceService } from './devices/service.js'
 import { deviceRoutes } from './devices/routes.js'
 import { REMOTE_PORT } from './devices/listener.js'
 import type { Advertiser } from './devices/bonjour.js'
-import { createCompanion } from './companion/index.js'
+import { createCompanion, type Companion } from './companion/index.js'
 import type { Exec } from './secrets/keychain.js'
 
 export interface AppOptions {
@@ -387,6 +387,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await app.register(bambuRoutes, { cameras: bambuCameras })
   await app.register(wsRoutes, { hub })
 
+  // Built after the device service, which lists its extensions and waiting request: it reads them
+  // through these closures.
+  let companion: Companion | null = null
   // After the hub and the config store, which it feeds and listens to.
   const deviceService = new DeviceService({
     app,
@@ -397,6 +400,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     hub,
     catalog,
     listenerPort: opts.devicesPort ?? REMOTE_PORT,
+    companionRequest: () => companion?.pairing.pending() ?? null,
+    companionConnected: () => companion?.session.connectedIds() ?? new Set(),
     ...opts.devices,
   })
   await app.register(deviceRoutes, { service: deviceService, config: store })
@@ -404,7 +409,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
 
   // The browser extension: pairing by approval on the Edge, its socket, the share it carries and
   // the `companion` channel the dashboard watches. Closed with the app.
-  await createCompanion({ app, store: devices, config: store, registry })
+  companion = await createCompanion({ app, store: devices, config: store, registry })
 
   if (opts.uiDist && (await access(opts.uiDist).then(() => true, () => false))) {
     await app.register(fastifyStatic, { root: opts.uiDist, prefix: '/', serve: true, decorateReply: false })
