@@ -149,6 +149,9 @@ a.createOffer().then(function (o) { return a.setLocalDescription(o) })
   const shipped = ['clock', 'cpu', 'memory', 'uptime', 'network', 'pomodoro', 'weather']
   clean.widgets = Object.fromEntries(shipped.map((id) => [`${id}-zz`, { widgetId: id, settings: {} }]))
   clean.screens[0].pages[0].items = shipped.map((id, i) => ({ instanceId: `${id}-zz`, x: (i % 4) * 8, y: Math.floor(i / 4) * 4, w: 8, h: 4 }))
+  // Fremplay, the one shipped widget at WebRTC's `local` level, rendered under its real bridge tag.
+  clean.widgets['fremplay-zz'] = { widgetId: 'fremplay', settings: {} }
+  clean.screens[0].pages[0].items.push({ instanceId: 'fremplay-zz', x: 32, y: 0, w: 8, h: 5 })
   hostile.widgets = {
     'zz-exfil-1': { widgetId: 'zz-exfil', settings: {} },
     'zz-hop-1': { widgetId: 'zz-hop', settings: {} },
