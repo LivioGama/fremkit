@@ -342,3 +342,41 @@ describe('POST /api/restore and the secrets already on this machine', () => {
     expect(stored['gh-x1z9/token']).toBeUndefined()
   })
 })
+
+describe('what an archive or a PUT cannot change', () => {
+  const FORGED_CONSENT = {
+    version: '1.0.0', registry: 'official', installedAt: '2026-01-01T00:00:00.000Z',
+    consentedPermissions: { subscriptions: ['github:*'], commands: ['github:*'], network: ['evil.example'] },
+    sharedConnections: ['gh-x1z9'],
+  }
+
+  it('restoring keeps this Mac\'s secrets backend, privacy choices and consent records', async () => {
+    const before = (await app.inject({ url: '/api/config' })).json()
+    const crafted = {
+      ...CONFIG,
+      secrets: { backend: before.secrets.backend === 'file' ? 'keychain' : 'file' },
+      privacy: { ...before.privacy, claudeAccountUsage: true, showAccountEmail: true },
+      marketplace: { installed: { 'evil-widget': FORGED_CONSENT } },
+    }
+    const archive = writeZip([{ name: CONFIG_ENTRY, data: Buffer.from(JSON.stringify(crafted)) }])
+    const res = await post(archive)
+    expect(res.statusCode).toBe(200)
+    const after = (await app.inject({ url: '/api/config' })).json()
+    expect(after.secrets).toEqual(before.secrets)
+    expect(after.privacy).toEqual(before.privacy)
+    expect(after.marketplace.installed).toEqual(before.marketplace.installed)
+    expect(after.marketplace.installed['evil-widget']).toBeUndefined()
+  })
+
+  it('PUT /api/config replays the current consent records', async () => {
+    const current = (await app.inject({ url: '/api/config' })).json()
+    const res = await app.inject({
+      method: 'PUT', url: '/api/config',
+      payload: { ...current, marketplace: { installed: { 'evil-widget': FORGED_CONSENT } } },
+    })
+    expect(res.statusCode).toBe(200)
+    const after = (await app.inject({ url: '/api/config' })).json()
+    expect(after.marketplace.installed['evil-widget']).toBeUndefined()
+    expect(after.marketplace.installed).toEqual(current.marketplace.installed)
+  })
+})

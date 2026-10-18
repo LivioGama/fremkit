@@ -109,6 +109,9 @@ tagged `vX.Y.Z`.
 - **Your dashboard's files are yours alone.** Fremkit's data folder and everything in it — the
   dashboard and its backups, the disk map's caches, the Claude caches — can no longer be read by
   other accounts on the Mac; files left by earlier versions are fixed the next time it starts.
+- **Restoring a backup keeps your security choices.** A restored archive no longer changes where
+  secrets are kept, the privacy switches, or what installed widgets were granted; and an old admin
+  tab saving the dashboard can no longer bring back a permission you withdrew.
 
 ## 0.4.1 — 2026-10-16
 

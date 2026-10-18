@@ -379,7 +379,9 @@ a restore keeps those ids, restoring onto the **same Mac** finds them and everyt
 once; on another Mac the admin lists the connections whose secret has to be entered again.
 
 A restore replaces the dashboard — pages, widgets, connections and backgrounds — and refuses to
-write at all while the configuration on disk cannot be read. Details in
+write at all while the configuration on disk cannot be read. It keeps this Mac's own security
+choices whatever the archive says: where secrets are kept, the privacy switches, and what each
+installed widget was granted. Details in
 **[docs/contributing.md](docs/contributing.md)**.
 
 ## What Fremkit reads on your Mac

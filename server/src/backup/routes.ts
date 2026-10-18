@@ -224,6 +224,15 @@ export async function backupRoutes(
       return reply.code(500).send({ errors: [tr(store.get().locale, 'backup.writeFailed')] })
     }
 
+    // What an archive does not get to decide: where secrets are kept (`file` would move every new
+    // one to plaintext), what the user agreed to share (`privacy` turns on reading account
+    // tokens), and what each installed widget was granted (`marketplace.installed`, shares
+    // included). A backup is a file anyone can hand over; these stay as they are on this Mac.
+    const here = store.get()
+    read.config.secrets = here.secrets
+    read.config.privacy = here.privacy
+    read.config.marketplace = { ...read.config.marketplace, installed: here.marketplace.installed }
+
     // Before the save, and before anything can poll with the restored fields: a stored secret is
     // tied to the host it was issued for, and the archive chooses the hosts. See backup/secrets.ts.
     const plan = restoreSecretPlan(store.get().connections, read.config.connections, opts.types)
