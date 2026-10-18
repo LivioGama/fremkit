@@ -28,6 +28,7 @@ import { themeRoutes } from './themes/routes.js'
 import { createThemeProvider } from './themes/schedule.js'
 import { widgetRoutes } from './widgets/routes.js'
 import { ProviderRegistry } from './providers/registry.js'
+import { publishHealth } from './providers/health.js'
 import type { Provider } from './providers/types.js'
 import { Hub } from './ws/hub.js'
 import { wsRoutes } from './ws/routes.js'
@@ -295,6 +296,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   retainCameras(store.get())
 
   hub.broadcast('config', store.get())
+  // How each provider's last poll went, for the editor's widget health (providers/health.ts).
+  const stopHealth = publishHealth(registry, (channel, data) => hub.broadcast(channel, data))
   let showAccountEmail = store.get().privacy.showAccountEmail
   store.onChange((cfg) => {
     setServerLocale(cfg.locale)
@@ -448,7 +451,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     }
   }
 
-  app.addHook('onClose', async () => { registry.stop(); bambuCameras.stopAll(); await tracker.flush(); await usage.flush() })
+  app.addHook('onClose', async () => { stopHealth(); registry.stop(); bambuCameras.stopAll(); await tracker.flush(); await usage.flush() })
 
   // Writing a widget: a save reloads its frames, a manifest change rescans first so the frames
   // come back with the new one. The built-ins are watched too, for whoever works on those.
