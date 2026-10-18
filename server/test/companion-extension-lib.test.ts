@@ -6,10 +6,13 @@ import { browserName } from '../../companion/lib/browser.js'
 // @ts-expect-error plain JS module
 import { IDLE_SLACK_MS, idleDelay } from '../../companion/lib/presence.js'
 // @ts-expect-error plain JS module
+import { closeOutcome, POLICY_CLOSE_CODE, REVOKED_CLOSE_CODE } from '../../companion/lib/link.js'
+// @ts-expect-error plain JS module
 import { localCandidatesOnly } from '../../companion/lib/sdp.js'
 // @ts-expect-error plain JS module
 import * as ext from '../../companion/lib/protocol.js'
 import { isLocalSdp, parseExtensionMessage, PROTOCOL } from '../src/companion/protocol.js'
+import { DEVICE_CLOSE_CODE } from '../src/ws/hub.js'
 
 const ID = '3f2b8c1e-5a4d-4e6f-9a7b-1c2d3e4f5a6b'
 const RID = '9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d'
@@ -269,5 +272,29 @@ describe('idleDelay', () => {
   it('checks right away once the window is over', () => {
     expect(idleDelay(1_000, 1_000)).toBe(IDLE_SLACK_MS)
     expect(idleDelay(1_000, 9_000)).toBe(IDLE_SLACK_MS)
+  })
+})
+
+describe('closeOutcome', () => {
+  it('uses the codes the server closes with', () => {
+    expect(REVOKED_CLOSE_CODE).toBe(DEVICE_CLOSE_CODE)
+    expect(POLICY_CLOSE_CODE).toBe(1008)
+  })
+
+  it('forgets the token only on 4401, before or after ready', () => {
+    expect(closeOutcome(4401, false)).toBe('revoked')
+    expect(closeOutcome(4401, true)).toBe('revoked')
+  })
+
+  it('keeps the token when hello is refused with 1008, and says an update is due', () => {
+    expect(closeOutcome(1008, false)).toBe('refused')
+  })
+
+  it('reconnects after a 1008 once greeted, or any other close', () => {
+    expect(closeOutcome(1008, true)).toBe('retry')
+    for (const code of [1000, 1001, 1006, 1009, 1011]) {
+      expect(closeOutcome(code, false)).toBe('retry')
+      expect(closeOutcome(code, true)).toBe('retry')
+    }
   })
 })

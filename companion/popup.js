@@ -34,6 +34,7 @@ const LINKS = {
   connecting: ['wait', () => t('linkConnecting')],
   unreachable: ['ko', () => t('linkUnreachable')],
   revoked: ['ko', () => t('linkRevoked')],
+  refused: ['ko', () => t('linkRefused')],
   unpaired: ['', () => t('linkUnpaired')],
 }
 

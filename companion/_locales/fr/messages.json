@@ -23,6 +23,9 @@
   "linkRevoked": {
     "message": "Retirée"
   },
+  "linkRefused": {
+    "message": "Mise à jour requise"
+  },
   "linkUnpaired": {
     "message": "Non relié"
   },

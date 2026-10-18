@@ -23,6 +23,9 @@
   "linkRevoked": {
     "message": "Removed"
   },
+  "linkRefused": {
+    "message": "Update needed"
+  },
   "linkUnpaired": {
     "message": "Not linked"
   },

@@ -7,6 +7,7 @@
 // pairing waiting for its answer in `local`; the share and the link state in `session`.
 
 import { browserName } from './lib/browser.js'
+import { closeOutcome } from './lib/link.js'
 import { idleDelay } from './lib/presence.js'
 import * as protocol from './lib/protocol.js'
 import { control, embeddedPlayer, pickVideo, survey } from './lib/video.js'
@@ -16,8 +17,6 @@ const PORT = 4242
 const HTTP = `http://127.0.0.1:${PORT}`
 const WS_URL = `ws://127.0.0.1:${PORT}/companion/ws`
 
-const REVOKED_CLOSE_CODE = 4401
-const POLICY_CLOSE_CODE = 1008
 const RETRY_FIRST_MS = 1_000
 const RETRY_MAX_MS = 30_000
 /** After a minute of failures the socket waits for the next click. */
@@ -73,7 +72,7 @@ let flashText = null
 
 function paintBadge() {
   // While a share waits for the server to come back (a restart), the badge keeps showing it.
-  const bang = session.link === 'revoked' || (session.link === 'unreachable' && !session.share)
+  const bang = session.link === 'revoked' || session.link === 'refused' || (session.link === 'unreachable' && !session.share)
   const text = flashText ?? (bang ? '!' : session.share ? '▶' : '')
   const alarm = text === '!'
   chrome.action.setBadgeBackgroundColor({ color: alarm ? DANGER : GOLD })
@@ -234,9 +233,15 @@ function connect() {
     const wasGreeted = greeted
     ws = null
     greeted = false
-    // Refused at hello: the record this token named is gone.
-    if (event.code === REVOKED_CLOSE_CODE || (!wasGreeted && event.code === POLICY_CLOSE_CODE)) {
+    const outcome = closeOutcome(event.code, wasGreeted)
+    // The record this token named is gone.
+    if (outcome === 'revoked') {
       unpair({ revoked: true })
+      return
+    }
+    // Hello was not understood: retrying would only be refused again. Wait for the next click.
+    if (outcome === 'refused') {
+      refused()
       return
     }
     if (wasGreeted) {
@@ -261,6 +266,17 @@ function retry() {
     connect()
   }, retryDelay)
   retryDelay = Math.min(RETRY_MAX_MS, retryDelay * 2)
+}
+
+/** The server would not read this extension's hello: an update is due on one side or the other. */
+async function refused() {
+  failingSince = 0
+  retryDelay = RETRY_FIRST_MS
+  presenceUntil = 0
+  for (const waiter of readyWaiters) waiter(false)
+  readyWaiters.clear()
+  await setLink('refused')
+  if (session.share) await endShare({ notify: false, error: 'protocol' })
 }
 
 /** No server for a minute: stop trying until the next click, and end a share nobody can see. */
