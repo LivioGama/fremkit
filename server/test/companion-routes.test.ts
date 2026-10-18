@@ -190,7 +190,7 @@ describe('companion routes', () => {
     for (const body of [undefined, {}, { code: other }, { code: 7 }]) {
       const res = await answer(requestId, 'approve', body)
       expect(res.statusCode).toBe(409)
-      expect(res.json()).toEqual({ error: 'The request changed; check the code.' })
+      expect(res.json()).toEqual({ error: 'the request changed: check the code' })
       expect((await answer(requestId, 'refuse', body)).statusCode).toBe(409)
     }
     expect((await collect(requestId)).json()).toEqual({ state: 'pending' })
@@ -211,7 +211,7 @@ describe('companion routes', () => {
     const waiting = (await pair(ORIGIN)).json()
     const res = await pair(OTHER)
     expect(res.statusCode).toBe(409)
-    expect(res.json()).toEqual({ error: 'Another pairing request is already waiting on the Edge.', reason: 'busy' })
+    expect(res.json()).toEqual({ error: 'another connection request is already waiting on the Edge', reason: 'busy' })
     expect((await answer(waiting.requestId, 'refuse', { code: waiting.code })).statusCode).toBe(200)
   })
 
@@ -221,7 +221,7 @@ describe('companion routes', () => {
     expect((await answer(r.requestId, 'refuse', { code: r.code })).statusCode).toBe(200)
     const res = await pair(ORIGIN, { name: 'Edge', installId })
     expect(res.statusCode).toBe(429)
-    expect(res.json()).toEqual({ error: 'Request refused; try again in a minute.', reason: 'cooldown' })
+    expect(res.json()).toEqual({ error: 'request refused: try again in a minute', reason: 'cooldown' })
   })
 
   it('a sixth request within a minute is 429', async () => {
