@@ -46,7 +46,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vérifiez que le Mac affiche les mêmes mots"
+            "value" : "Vérifiez que le Mac affiche les mêmes mots."
           }
         }
       }
@@ -116,7 +116,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aucun Mac trouvé pour l’instant. Dans Fremkit sur le Mac, activez « Autoriser un iPad sur le réseau local » (onglet Écran)."
+            "value" : "Aucun Mac trouvé pour l’instant. Dans Fremkit sur le Mac, activez « Autoriser un iPad sur le réseau local » (onglet Écran)."
           }
         }
       }
@@ -196,7 +196,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remplacer l’appairage avec %@ ?"
+            "value" : "Remplacer l’appairage avec %@ ?"
           }
         }
       }

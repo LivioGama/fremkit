@@ -1,34 +1,13 @@
-// The app side of pairing: what the flow in FremkitKit needs from UIKit (this iPad's name, the size
-// to report), the screen of a link being paired, and the wording of what can go wrong.
+// The app side of pairing: what the flow in FremkitKit needs from UIKit (this iPad's name), the screen of a link being paired, and the wording of what can go wrong.
 import FremkitKit
 import SwiftUI
 import UIKit
 
-/// The size of the region `RootView` lays every screen out in, the dashboard's web view included,
-/// as last measured. Pairing reports it, so the Mac's screen matches what the page will get.
-@MainActor
-final class ScreenMeter {
-    var size: CGSize?
-
-    /// What pairing reports: the measured region, or, before the first layout, the key window's
-    /// safe area (the same region, computed instead of measured).
-    var viewport: Viewport {
-        Viewport(points: size ?? Self.windowSafeArea())
-    }
-
-    private static func windowSafeArea() -> CGSize {
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.windows.first }
-            .first
-        guard let window else { return .zero }
-        return window.bounds.inset(by: window.safeAreaInsets).size
-    }
-}
-
 extension PairingFlow {
-    /// The flow as the app runs it: the iPad's own name, the measured size, the real requests.
-    static func live(model: AppModel, meter: ScreenMeter) -> PairingFlow {
-        PairingFlow(model: model, deviceName: { UIDevice.current.name }, viewport: { meter.viewport })
+    /// The flow as the app runs it: the iPad's own name, the size `RootView` measures (waited
+    /// for, never guessed), the real requests.
+    static func live(model: AppModel, meter: ViewportMeter) -> PairingFlow {
+        PairingFlow(model: model, deviceName: { UIDevice.current.name }, viewport: { await meter.viewport() })
     }
 }
 

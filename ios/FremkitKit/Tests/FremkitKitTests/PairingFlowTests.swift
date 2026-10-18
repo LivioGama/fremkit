@@ -234,4 +234,87 @@ final class PairingFlowTests: XCTestCase {
         XCTAssertFalse(dumped.contains("ABCDEFGH"))
         XCTAssertFalse(dumped.contains(otherKey))
     }
+
+    func testAScanThatMustBeConfirmedStopsTheCamera() async {
+        let pairer = ScriptedPairer(.success(paired))
+        let (flow, model) = makeFlow(store: MemoryCredentialStore(sampleMac),
+                                     prober: ScriptedProber(["studio.local": .ok(sampleInfo)]), pairer: pairer)
+        await model.reconnect().value
+        flow.scan()
+        XCTAssertTrue(flow.scanned(linkURL.absoluteString))
+        XCTAssertNotNil(flow.pendingLink)
+        XCTAssertEqual(flow.step, .idle, "the camera is off while the question is up")
+        flow.declineReplace()
+        XCTAssertFalse(flow.scanned(linkURL.absoluteString), "the same code in view does not ask again")
+        XCTAssertNil(flow.pendingLink)
+        XCTAssertTrue(pairer.attempts.isEmpty)
+    }
+
+    func testCancellingWhileTheKeyIsReadDropsTheLateAnswer() async {
+        let model = AppModel(store: MemoryCredentialStore(), connector: Connector(prober: ScriptedProber([:])))
+        model.start()
+        let flow = PairingFlow(model: model, deviceName: { "iPad" }, viewport: { Viewport(width: 1, height: 1) },
+                               pair: { _ in paired },
+                               readKey: { _, _ in
+                                   try? await Task.sleep(for: .milliseconds(50))
+                                   return otherKey
+                               })
+        flow.enterCode()
+        let reading = flow.choose(service)
+        flow.cancel()
+        await reading.value
+        XCTAssertEqual(flow.step, .idle)
+        XCTAssertFalse(flow.isWorking)
+
+        flow.enterCode()
+        let again = flow.choose(service)
+        flow.enterCode()
+        await again.value
+        XCTAssertEqual(flow.step, .manualList, "back to the list: the key read for the left step is dropped")
+    }
+
+    func testPairingWaitsForTheViewport() async throws {
+        let pairer = ScriptedPairer(.success(paired))
+        let model = AppModel(store: MemoryCredentialStore(), connector: Connector(prober: ScriptedProber([:])))
+        model.start()
+        let meter = ViewportMeter(settle: .zero, cap: .zero)
+        let flow = PairingFlow(model: model, deviceName: { "iPad" }, viewport: { await meter.viewport() },
+                               pair: { try pairer.pair($0) }, readKey: { _, _ in nil })
+        flow.handle(url: linkURL)
+        let task = flow.inFlight
+        for _ in 0..<5 { await Task.yield() }
+        XCTAssertTrue(pairer.attempts.isEmpty, "nothing is sent before the screen is measured")
+        meter.measured(CGSize(width: 1408, height: 950))
+        await task?.value
+        XCTAssertEqual(pairer.attempts.first?.viewport, Viewport(width: 1408, height: 950))
+    }
+}
+
+@MainActor
+final class ViewportMeterTests: XCTestCase {
+    func testWaitsForTheFirstMeasure() async {
+        let meter = ViewportMeter(settle: .zero, cap: .zero)
+        let waiting = Task { await meter.viewport() }
+        for _ in 0..<5 { await Task.yield() }
+        meter.measured(CGSize(width: 1408, height: 950))
+        let reported = await waiting.value
+        XCTAssertEqual(reported, Viewport(width: 1408, height: 950))
+    }
+
+    func testReportsTheMeasureOnceItHoldsStill() async {
+        let meter = ViewportMeter(settle: .milliseconds(100), cap: .seconds(5))
+        meter.measured(CGSize(width: 950, height: 1408))
+        let waiting = Task { await meter.viewport() }
+        try? await Task.sleep(for: .milliseconds(30))
+        meter.measured(CGSize(width: 1408, height: 950))
+        let reported = await waiting.value
+        XCTAssertEqual(reported, Viewport(width: 1408, height: 950), "the size after the rotation, not before")
+    }
+
+    func testGivesUpWaitingAfterTheCapWithTheLatestMeasure() async {
+        let meter = ViewportMeter(settle: .seconds(60), cap: .milliseconds(50))
+        meter.measured(CGSize(width: 1408, height: 950))
+        let reported = await meter.viewport()
+        XCTAssertEqual(reported, Viewport(width: 1408, height: 950))
+    }
 }

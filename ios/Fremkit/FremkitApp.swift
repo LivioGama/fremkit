@@ -7,11 +7,11 @@ struct FremkitApp: App {
     @State private var model: AppModel
     @State private var flow: PairingFlow
     @State private var launched = false
-    private let meter: ScreenMeter
+    private let meter: ViewportMeter
 
     init() {
         let network = LocalNetwork()
-        let meter = ScreenMeter()
+        let meter = ViewportMeter()
         let model = AppModel(store: KeychainCredentialStore(), discovered: {
             network.refresh()
             return network.addresses

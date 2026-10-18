@@ -116,6 +116,7 @@ private final class ScannerController: UIViewController, AVCaptureMetadataOutput
     private let capture = Capture()
     private var preview: AVCaptureVideoPreviewLayer?
     private var rotation: AVCaptureDevice.RotationCoordinator?
+    private var rotationObservation: NSKeyValueObservation?
     private var configured = false
 
     init(onCode: @escaping @MainActor (String) -> Void, onUnavailable: @escaping @MainActor () -> Void) {
@@ -150,11 +151,12 @@ private final class ScannerController: UIViewController, AVCaptureMetadataOutput
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         preview?.frame = view.bounds
-        // The interface rotates with the iPad: keep the picture upright.
-        if let rotation, let connection = preview?.connection {
-            let angle = rotation.videoRotationAngleForHorizonLevelPreview
-            if connection.isVideoRotationAngleSupported(angle) { connection.videoRotationAngle = angle }
-        }
+    }
+
+    /// Keeps the picture upright as the iPad and the interface rotate.
+    private func apply(angle: CGFloat) {
+        guard let connection = preview?.connection, connection.isVideoRotationAngleSupported(angle) else { return }
+        connection.videoRotationAngle = angle
     }
 
     /// The back camera (the front one when there is none) feeding a QR-only metadata output.
@@ -180,7 +182,13 @@ private final class ScannerController: UIViewController, AVCaptureMetadataOutput
         preview.videoGravity = .resizeAspectFill
         view.layer.addSublayer(preview)
         self.preview = preview
-        rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: preview)
+        let rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: preview)
+        self.rotation = rotation
+        rotationObservation = rotation.observe(\.videoRotationAngleForHorizonLevelPreview, options: [.initial, .new]) {
+            [weak self] coordinator, _ in
+            let angle = coordinator.videoRotationAngleForHorizonLevelPreview
+            Task { @MainActor in self?.apply(angle: angle) }
+        }
         return true
     }
 

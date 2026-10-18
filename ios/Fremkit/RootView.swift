@@ -7,12 +7,12 @@ import SwiftUI
 ///
 /// Every screen is laid out in the same region: the safe area with the status bar and the home
 /// indicator hidden, the dashboard's web view included. That region is what pairing reports as
-/// the viewport (`ScreenMeter`), so it is measured here, on the container itself.
+/// the viewport (`ViewportMeter`), so it is measured here, on the container itself.
 struct RootView: View {
     let model: AppModel
     let flow: PairingFlow
     let network: LocalNetwork
-    let meter: ScreenMeter
+    let meter: ViewportMeter
     @Environment(\.scenePhase) private var scenePhase
     @State private var wasInBackground = false
 
@@ -26,7 +26,7 @@ struct RootView: View {
                     // has it up when it loads, so it is left out of the measure.
                     Color.clear
                         .ignoresSafeArea(.keyboard)
-                        .onGeometryChange(for: CGSize.self) { $0.size } action: { meter.size = $0 }
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { meter.measured($0) }
                 }
         }
         .statusBarHidden(true)

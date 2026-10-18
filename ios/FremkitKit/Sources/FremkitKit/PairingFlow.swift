@@ -16,6 +16,47 @@ extension Viewport {
     }
 }
 
+/// The region the dashboard is laid out in, as the app measures it on its root container, and
+/// the wait for a measure worth reporting. Pairing never reports a computed guess: it waits for
+/// the first measure, then for it to hold still for `settle` (a cold launch from a link may lay
+/// out once before the window takes its final orientation), and after at most `cap` reports the
+/// latest measure as it is.
+@MainActor
+public final class ViewportMeter {
+    public private(set) var size: CGSize?
+    private var changedAt = ContinuousClock.now
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private let settle: Duration
+    private let cap: Duration
+
+    public init(settle: Duration = .milliseconds(300), cap: Duration = .seconds(1)) {
+        self.settle = settle
+        self.cap = cap
+    }
+
+    /// A new size of the container.
+    public func measured(_ size: CGSize) {
+        guard size != self.size else { return }
+        self.size = size
+        changedAt = .now
+        let waiting = waiters
+        waiters = []
+        waiting.forEach { $0.resume() }
+    }
+
+    /// The size to report: waits for the first measure, then for it to settle (see above).
+    public func viewport() async -> Viewport {
+        if size == nil {
+            await withCheckedContinuation { waiters.append($0) }
+        }
+        let start = ContinuousClock.now
+        while ContinuousClock.now - changedAt < settle, ContinuousClock.now - start < cap {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return Viewport(points: size ?? .zero)
+    }
+}
+
 /// Where pairing is, from the welcome screen's two buttons (or a `fremkit://pair` link) to a
 /// stored pairing.
 public enum PairingStep: Equatable, Sendable {
@@ -117,7 +158,7 @@ public final class PairingFlow {
 
     @ObservationIgnored private let model: AppModel
     @ObservationIgnored private let deviceName: @MainActor () -> String
-    @ObservationIgnored private let viewport: @MainActor () -> Viewport
+    @ObservationIgnored private let viewport: @MainActor () async -> Viewport
     @ObservationIgnored private let pair: Pair
     @ObservationIgnored private let readKey: ReadKey
     @ObservationIgnored private var running: Task<Void, Never>?
@@ -126,9 +167,10 @@ public final class PairingFlow {
 
     /// - Parameters:
     ///   - deviceName: this iPad's name, shown on the Mac.
-    ///   - viewport: the size to report, read when the request is sent (see `Viewport(points:)`).
+    ///   - viewport: the size to report, awaited just before the request is sent: the app waits
+    ///     there for its first real measure (see `ViewportMeter`).
     public init(model: AppModel, deviceName: @escaping @MainActor () -> String,
-                viewport: @escaping @MainActor () -> Viewport,
+                viewport: @escaping @MainActor () async -> Viewport,
                 pair: @escaping Pair = { attempt in
                     try await PairClient().pair(hosts: attempt.hosts, port: attempt.port, keyHash: attempt.keyHash,
                                                 code: attempt.code, name: attempt.name, viewport: attempt.viewport,
@@ -173,6 +215,9 @@ public final class PairingFlow {
     public func handle(url: URL) -> Bool {
         guard let link = PairingLink(url: url) else { return false }
         if needsConfirmation {
+            // The camera stops while the question is up, so a code still in view cannot ask again
+            // once the user has said no.
+            if step == .scanning { move(to: .idle) }
             pendingLink = link
         } else {
             start(link)
@@ -204,8 +249,8 @@ public final class PairingFlow {
     @discardableResult
     public func retry() -> Task<Void, Never>? {
         guard case let .link(link) = step, !isWorking else { return nil }
-        return send(PairAttempt(hosts: [link.host, link.address], port: link.port, keyHash: link.keyHash,
-                                code: link.code, name: deviceName(), viewport: viewport(), macName: link.macName))
+        return send(hosts: [link.host, link.address], port: link.port, keyHash: link.keyHash, code: link.code,
+                    macName: link.macName)
     }
 
     /// The manual path: the user picked a Mac in the list. Reads its key, to show its words.
@@ -227,8 +272,7 @@ public final class PairingFlow {
     @discardableResult
     public func submit(code text: String) -> Task<Void, Never>? {
         guard case let .manualCode(service, keyHash) = step, !isWorking, let code = normaliseCode(text) else { return nil }
-        return send(PairAttempt(hosts: [service.address], port: service.port, keyHash: keyHash, code: code,
-                                name: deviceName(), viewport: viewport(), macName: service.name))
+        return send(hosts: [service.address], port: service.port, keyHash: keyHash, code: code, macName: service.name)
     }
 
     /// Whether a link must be confirmed first: this iPad has a pairing that still works. One the
@@ -251,12 +295,17 @@ public final class PairingFlow {
         self.step = step
     }
 
-    private func send(_ attempt: PairAttempt) -> Task<Void, Never> {
+    private func send(hosts: [String], port: Int, keyHash: String, code: String, macName: String) -> Task<Void, Never> {
         generation += 1
         let generation = generation
         isWorking = true
         problem = nil
+        let name = deviceName()
         let task = Task { [pair] in
+            let viewport = await self.viewport()
+            guard generation == self.generation else { return }
+            let attempt = PairAttempt(hosts: hosts, port: port, keyHash: keyHash, code: code, name: name,
+                                      viewport: viewport, macName: macName)
             let result: Result<PairedMac, PairError>
             do {
                 result = .success(try await pair(attempt))
