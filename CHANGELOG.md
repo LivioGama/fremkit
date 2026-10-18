@@ -94,8 +94,10 @@ tagged `vX.Y.Z`.
   same private addresses as a home network cannot be told apart from it and still reaches the Mac,
   though not without a pairing code or a paired iPad's key. Pairing answers
   only while the admin shows a code; the iPad says so when the code has run out, so make a new one.
-  Wrong codes are counted per address (per network prefix over IPv6), so one machine guessing no
-  longer locks your own iPad out of pairing, and a new code always starts a fresh allowance.
+  Wrong codes are counted per address (per network prefix for most IPv6 addresses), and when the
+  Mac answers "too many tries" on one of its addresses the iPad tries the others, so a single machine
+  guessing no longer keeps your iPad from pairing. A machine guessing from many addresses at once can
+  still hold pairing until it stops.
 
 ## 0.4.1 — 2026-10-16
 

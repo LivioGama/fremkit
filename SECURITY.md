@@ -170,10 +170,14 @@ fd7a:115c:a1e0::/48 are refused by name). A VPN that uses the same private range
 (WireGuard or OpenVPN on 10/8 or 172.16/12, ZeroTier) cannot be told apart from it and is let in;
 it still needs a live code or a device token. Pairing needs a single-use code, valid five minutes;
 `/api/pair` answers 404 unless a code is live, and wrong guesses are limited per peer (5 a minute;
-a peer is an IPv4 address or an IPv6 /64, since one host controls every address of its /64) under
-a total ceiling of 60 a minute per code. One guesser cannot lock another iPad out over IPv4, but
-does share its allowance with the other IPv6 peers of its /64; several addresses together can spend
-the total, and a new code resets it.
+a peer is an IPv4 address, a link-local IPv6 address, or the /64 of any other IPv6 address, since
+one host controls every address of its /64) under a total ceiling of 60 a minute per code. A
+guesser shares its allowance with the other IPv6 peers of its /64, so it can hold pairing at 429
+over such an address; the iPad then tries the Mac's other addresses, the QR code's IPv4 one
+included, and pairs there. A guesser using several addresses together (IPv4 aliases, link-local
+addresses, ULA prefixes) can spend the total and hold pairing for everyone for as long as it keeps
+guessing; a new code resets the total, but a guesser watching for it spends the new one as fast.
+The code itself stays out of reach either way: at most 300 guesses against 32^8 values.
 
 The remote listener is an **allow-list**, decided by the socket a request arrived on rather than
 by a header: the dashboard's page and its code, the routes a dashboard reads, `/ws`, the widget

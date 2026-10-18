@@ -135,6 +135,41 @@ final class PairClientTests: XCTestCase {
         }
     }
 
+    func testA429OnOneAddressTriesTheNext() async throws {
+        StubProtocol.answer("192.0.2.45", with: .status(429, #"{"error":"Too many tries"}"#))
+        StubProtocol.answer("192.0.2.46", with: .status(200, #"{"token":"t","deviceId":"d"}"#))
+        let mac = try await pair(PairClient(configuration: StubProtocol.configuration), hosts: ["192.0.2.45", "192.0.2.46"])
+        XCTAssertEqual(mac.token, "t")
+        XCTAssertEqual(StubProtocol.requests(to: "192.0.2.46").count, 1)
+    }
+
+    func testLimitedOnlyWhenNoAddressPairs() async {
+        StubProtocol.answer("192.0.2.47", with: .status(429, #"{"error":"Too many tries"}"#))
+        StubProtocol.answer("192.0.2.48", with: .status(429, #"{"error":"Trop d’essais"}"#))
+        StubProtocol.answer("192.0.2.49", with: .failure(.timedOut))
+        for hosts in [["192.0.2.47", "192.0.2.48"], ["192.0.2.47", "192.0.2.49"], ["192.0.2.49", "192.0.2.47"]] {
+            do {
+                _ = try await pair(PairClient(configuration: StubProtocol.configuration), hosts: hosts)
+                XCTFail("paired")
+            } catch {
+                XCTAssertEqual(error as? PairError, .limited("Too many tries"), "\(hosts)")
+            }
+        }
+    }
+
+    func testARefusedCodeStillStopsAtOnce() async {
+        StubProtocol.answer("192.0.2.50", with: .status(429, #"{"error":"Too many tries"}"#))
+        StubProtocol.answer("192.0.2.51", with: .status(403, #"{"error":"Wrong code"}"#))
+        StubProtocol.answer("192.0.2.52", with: .status(200, #"{"token":"t","deviceId":"d"}"#))
+        do {
+            _ = try await pair(PairClient(configuration: StubProtocol.configuration), hosts: ["192.0.2.50", "192.0.2.51", "192.0.2.52"])
+            XCTFail("paired")
+        } catch {
+            XCTAssertEqual(error as? PairError, .rejected("Wrong code"))
+        }
+        XCTAssertEqual(StubProtocol.requests(to: "192.0.2.52").count, 0)
+    }
+
     func testNoCodeWhenTheMacAnswers404() async {
         StubProtocol.answer("192.0.2.44", with: .status(404, #"{"statusCode":404,"error":"Not Found"}"#))
         do {

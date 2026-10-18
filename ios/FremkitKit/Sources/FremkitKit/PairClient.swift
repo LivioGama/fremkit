@@ -17,7 +17,8 @@ public struct Viewport: Codable, Equatable, Sendable {
 public enum PairError: Error, Equatable, Sendable {
     /// 403: the code is wrong or expired; the server's message says which.
     case rejected(String)
-    /// 429: too many tries.
+    /// 429 from every Mac address that answered: too many tries. One address refusing is not
+    /// enough, since the Mac counts tries per address (and per link-local address).
     case limited(String)
     /// 404 from the Mac itself (it passed the pin): no pairing code is showing on it right now —
     /// none was made, it was used, or its five minutes are over. The Mac answers nothing else then.
@@ -68,6 +69,11 @@ public struct PairClient: Sendable {
         let policy = PinPolicy(keyHash: keyHash, hosts: Set(hosts))
         let body = try JSONEncoder().encode(Body(code: code, name: name, viewport: viewport))
         var sawWrongMac = false
+        // The Mac counts wrong codes per address, so one candidate answering 429 says nothing about
+        // the next: someone guessing over link-local IPv6 must not keep the iPad from pairing over
+        // the QR's IPv4 address. A right code is never counted as a wrong one, so trying it again
+        // elsewhere costs nothing.
+        var limited: String?
         for host in hosts {
             guard var request = Endpoint.request(host: host, port: port, path: "/api/pair", token: nil) else { continue }
             request.httpMethod = "POST"
@@ -80,7 +86,9 @@ public struct PairClient: Sendable {
                                  address: isIPLiteral(host) ? host : hosts.first(where: isIPLiteral) ?? host,
                                  port: port, keyHash: keyHash, token: paired.token, deviceId: paired.deviceId, name: macName)
             case let .response(403, data): throw PairError.rejected(Self.message(data))
-            case let .response(429, data): throw PairError.limited(Self.message(data))
+            case let .response(429, data):
+                limited = limited ?? Self.message(data)
+                continue
             case .response(404, _): throw PairError.noCode
             case .response(400, _): throw PairError.invalidRequest
             case .response: continue
@@ -88,6 +96,8 @@ public struct PairClient: Sendable {
             case .failed: continue
             }
         }
+        // Every candidate failed: the Mac's own answer first, then an impostor, then silence.
+        if let limited { throw PairError.limited(limited) }
         throw sawWrongMac ? PairError.wrongMac : PairError.unreachable
     }
 

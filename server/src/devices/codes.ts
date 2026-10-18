@@ -16,22 +16,31 @@ export const MAX_WRONG_PER_MINUTE = 5
  *
  * The numbers: a code is 8 characters from 32, so 32^8 ≈ 1.1 × 10^12 values, and lives 5 minutes.
  * At 60 wrong guesses a minute at most 300 are ever tried against one code, a chance of about
- * 3 × 10^-10 of hitting it. The ceiling is what a guesser with many IPv4 addresses (aliases on one
- * machine, or several machines) can still spend, holding pairing at 429 for everyone; issuing a new
- * code resets it (`issue`), since a new code is a new secret and the bound above is per code, so
- * the user always has a way out, and the guesser has to start over against the new one.
+ * 3 × 10^-10 of hitting it. The ceiling is what a guesser with many addresses (IPv4 aliases,
+ * several link-local addresses or ULA prefixes, several machines) can still spend, holding pairing
+ * at 429 for everyone while it keeps guessing. Issuing a new code resets it (`issue`), since a new
+ * code is a new secret and the bound above is per code — but a guesser watching for the new code
+ * spends the fresh total as fast, so that is no way out against one; it only ends a lock-out the
+ * guesser has given up.
  */
 export const MAX_WRONG_PER_MINUTE_TOTAL = 60
 
 /**
- * Who a wrong guess is counted against: an IPv4 address (a mapped one read as the IPv4 it is), or
- * an IPv6 address's /64.
+ * Who a wrong guess is counted against: an IPv4 address (a mapped one read as the IPv4 it is), a
+ * link-local IPv6 address as itself, or any other IPv6 address's /64.
  *
- * Why the /64: inside its own /64 one IPv6 host picks any address it likes — SLAAC privacy
- * addresses, any `fe80::x` on the link — so counting per IPv6 address would give one machine as
- * many allowances as it cares to make. The /64 is the smallest prefix a host does not control. The
- * cost: IPv6 peers on the same network segment share one allowance, so a guesser there holds
- * pairing over IPv6 at 429 for that segment's IPv6 peers too; over IPv4 each address keeps its own.
+ * Why the /64: inside its own /64 one IPv6 host picks any address it likes (SLAAC privacy
+ * addresses, as many as it cares to make), so counting per address would give one machine as
+ * many allowances as it wants. The /64 is the smallest prefix a host does not control; the cost
+ * is that the IPv6 peers of one segment share an allowance.
+ *
+ * Why not for link-local (fe80::/10): every link-local address on every link is in the same
+ * fe80::/64, so keying it by /64 made one key for the whole network — a single guesser on the
+ * link held pairing at 429 for an iPad coming in over link-local IPv6, which is what a `.local`
+ * name usually resolves to. Keyed by address, one host can still make several link-local
+ * addresses, and what bounds those is the total ceiling, as for IPv4 aliases. (The iPad also tries
+ * the Mac's other addresses when one answers 429; see `PairClient`.)
+ *
  * Something unreadable is counted under itself.
  */
 export function peerKey(address: string): string {
@@ -42,6 +51,7 @@ export function peerKey(address: string): string {
   if (groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff) {
     return [groups[6] >>> 8, groups[6] & 0xff, groups[7] >>> 8, groups[7] & 0xff].join('.')
   }
+  if ((groups[0] & 0xffc0) === 0xfe80) return groups.map((g) => g.toString(16)).join(':')
   return `${groups.slice(0, 4).map((g) => g.toString(16)).join(':')}::/64`
 }
 

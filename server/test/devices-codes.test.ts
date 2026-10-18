@@ -125,7 +125,9 @@ describe('PairingCodes', () => {
     expect(peerKey('::ffff:192.168.1.20')).toBe('192.168.1.20')
     expect(peerKey('::ffff:c0a8:114')).toBe('192.168.1.20')
     expect(peerKey('fd12:3456:789a:1:aaaa::1')).toBe(peerKey('fd12:3456:789a:1:bbbb:cccc:dddd:eeee'))
-    expect(peerKey('fe80::1%en0')).toBe(peerKey('fe80::abcd:1234'))
+    // Link-local: one /64 for the whole link, so each address is its own peer.
+    expect(peerKey('fe80::1%en0')).not.toBe(peerKey('fe80::abcd:1234'))
+    expect(peerKey('fe80::1%en0')).toBe(peerKey('[FE80:0::1]'))
     expect(peerKey('fd12:3456:789a:1::1')).not.toBe(peerKey('fd12:3456:789a:2::1'))
   })
 
@@ -140,6 +142,14 @@ describe('PairingCodes', () => {
     // Another network prefix, and IPv4, are other peers.
     expect(codes.consume(other(code), 'fd12:3456:789a:2::1')).toBe('wrong')
     expect(codes.consume(code, '192.168.1.20')).toBe('ok')
+  })
+
+  it('does not let one link-local guesser lock out another link-local peer', () => {
+    const codes = new PairingCodes(clock().now)
+    const { code } = codes.issue()
+    for (let i = 0; i < MAX_WRONG_PER_MINUTE; i++) expect(codes.consume(other(code), 'fe80::bad%en0')).toBe('wrong')
+    expect(codes.consume(other(code), 'fe80::bad%en0')).toBe('limited')
+    expect(codes.consume(code, 'fe80::1c2d:3e4f:5a6b:7c8d%en0')).toBe('ok')
   })
 
   it('resets the total with a new code, but not a guesser\'s own window', () => {
