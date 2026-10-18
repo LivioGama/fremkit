@@ -10,6 +10,30 @@ The helper's menu tells you which: it shows state lines such as "Server: running
 and "Notifications: active" above the toggles, and *Log…* opens the supervised server's output at
 `~/Library/Logs/Fremkit/server.log`.
 
+## Reporting a bug
+
+Use **Copy diagnostics**, then paste the result into the
+[bug form](https://github.com/fdussert/fremkit/issues/new?template=bug.yml). It is in two places:
+
+- the editor, **Screen → About → Diagnostics**: *Prepare diagnostics* shows the whole report
+  before *Copy diagnostics* puts it on the clipboard;
+- the helper's menu bar **F**: *Copy diagnostics* copies the same report with the helper's own
+  part added (touch driver, Input Monitoring and Accessibility, the kiosk display, DDC). When the
+  server does not answer, it copies the helper's part alone and says so.
+
+The report holds the Fremkit, Node and macOS versions, the install kind, how many screens, pages
+and widgets the dashboard has, each widget in use with its version and whether it is built in or
+from the Sietch, the connection *types* and their state, each provider's last error code, the
+theme, the number of paired devices and the last 200 lines of the server log.
+
+It never holds a widget's settings or a connection's name, address or credentials. Before it
+leaves the server, every line goes through one redaction pass: connection secrets and the access
+secret (wherever they appear), bearer tokens and `key=value` credentials, long random strings,
+e-mail addresses, IP addresses other than loopback, `.local`/`.lan`/`.home` host names and every
+host a connection is configured with, the names you gave connections and devices, the Mac's
+names, your account name, and your home folder (shown as `~`). Read it anyway before you post:
+the issue is public.
+
 ## Quick table
 
 | Symptom | Cause | Fix |
