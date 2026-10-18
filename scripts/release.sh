@@ -84,6 +84,10 @@ if [ -z "$({ grep -v '^#' packaging/sparkle/public-key.txt || true; } | tr -d '[
 fi
 
 # --- Build, sign, notarize ----------------------------------------------------------------------
+# From a clean work folder: build-app.sh reuses an already-extracted Node and Sparkle there to
+# keep everyday builds fast, without checking them again. A release ships those bytes, so they
+# are extracted afresh from the hash-checked archives in the cache.
+rm -rf native/.build/app
 bash scripts/build-app.sh
 APP="$DIST/Fremkit.app"
 built="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
