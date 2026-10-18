@@ -65,7 +65,13 @@ case "$cmd" in
         app="$DERIVED/Build/Products/Debug-iphoneos/Fremkit.app"
         bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")"
         xcrun devicectl device install app --device "$device" "$app"
-        xcrun devicectl device process launch --device "$device" --terminate-existing "$bundle_id" "$@"
+        # `--` ends devicectl's own options: without it, an argument for the app such as
+        # -FremkitSeedLink is read as an unknown devicectl option and the launch fails.
+        if [[ $# -gt 0 ]]; then
+            xcrun devicectl device process launch --device "$device" --terminate-existing "$bundle_id" -- "$@"
+        else
+            xcrun devicectl device process launch --device "$device" --terminate-existing "$bundle_id"
+        fi
         ;;
     *)
         die "usage: scripts/build-ios.sh build | test | install [launch arguments…]"
