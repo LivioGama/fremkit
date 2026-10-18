@@ -158,6 +158,8 @@ export function redact(text: string, ctx: RedactionContext = {}): string {
     const home = ctx.home.replace(/\/+$/, '')
     out = out.replace(new RegExp(`${escape(home)}(?=/|\\b|$)`, 'g'), '~')
   }
+  // Any other account's home: a log line from a run under another user, a path in a stack trace.
+  out = out.replace(/\/Users\/(?!Shared\b)[^/\s"'`]+/g, `/Users/${MARK.user}`)
 
   out = out.replace(URL_CREDENTIALS, `$1${MARK.secret}@`)
   out = out.replace(AUTH_SCHEME, (_m, scheme: string) => `${scheme} ${MARK.token}`)

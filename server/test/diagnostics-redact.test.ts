@@ -72,6 +72,7 @@ describe('redact', () => {
     expect(redact('"hostname":"Example-MacBook"', ctx)).toBe(`"hostname":"${MARK.mac}"`)
     expect(redact('on Example MacBook today', ctx)).toBe(`on ${MARK.mac} today`)
     expect(redact('owner example here', ctx)).toBe(`owner ${MARK.user} here`)
+    expect(redact('at /Users/someone/x and /Users/Shared/y', {})).toBe(`at /Users/${MARK.user}/x and /Users/Shared/y`)
   })
 
   it('removes the names the user gave things, as whole words', () => {
