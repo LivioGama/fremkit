@@ -146,6 +146,17 @@ describe('readPackage', () => {
     expect(() => readPackage(twice, expected(twice))).toThrow(expect.objectContaining({ key: 'marketplace.badPackage' }))
   })
 
+  it('refuses one name spelled twice in two Unicode normalisations, which APFS takes as one file', () => {
+    const nfc = 'caf\u00e9.css'
+    const nfd = 'cafe\u0301.css'
+    expect(nfc).not.toBe(nfd)
+    const both = packageOf({}, [{ name: nfc, data: Buffer.from('a{}') }, { name: nfd, data: Buffer.from('b{}') }])
+    expect(() => readPackage(both, expected(both))).toThrow(expect.objectContaining({ key: 'marketplace.badPackage' }))
+    // One of them alone is fine.
+    const one = packageOf({}, [{ name: nfd, data: Buffer.from('b{}') }])
+    expect(() => readPackage(one, expected(one))).not.toThrow()
+  })
+
   it('refuses a package with no manifest or no index.html', () => {
     const noManifest = zipOf([{ name: 'index.html', data: Buffer.from('x') }])
     expect(() => readPackage(noManifest, expected(noManifest))).toThrow(expect.objectContaining({ key: 'marketplace.badPackage' }))
