@@ -45,7 +45,8 @@ The name is the Fremen survival kit from *Dune*.
 - **Backup and restore** of the whole dashboard, as a zip that never carries a secret.
 - **Themes** — the palette, the fonts and the text size, as a folder with one JSON file: two ship
   with it, four more are on the registry, and yours sits beside them. The dashboard, the editor
-  and the widgets all wear the one you pick.
+  and the widgets all wear the one you pick — or a second one at night, switching at sunset or
+  at the time you choose.
 - **Two languages** — the whole interface is French or English, switched in the admin.
 - **A widget SDK** that is a folder, a JSON file and an HTML page.
 - **Optional local operations** show Docker containers and Ollama/MLX models through registry widgets. See [docs/local-operations.md](docs/local-operations.md).

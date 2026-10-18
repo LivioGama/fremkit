@@ -13,6 +13,11 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **A theme for the night.** Under the theme list, pick another theme for the night and when it
+  takes over: at sunrise and sunset where you are, or at fixed times — the same choice as the
+  screen brightness's day and night, and its place is offered when it has one. The dashboard,
+  the editor, a paired iPad and every widget switch together, with a crossfade, and a screen
+  turned on at night starts with the night theme.
 - **Right-click menus in the editor.** A right click on a widget opens a real menu, like a Mac
   app's: settings, show title, appearance (opacity presets, colours, background image, reset),
   copy and paste a widget's style, duplicate, copy and paste, move it to another page or screen,

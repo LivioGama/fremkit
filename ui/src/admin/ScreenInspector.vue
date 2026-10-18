@@ -18,6 +18,7 @@ import DevicesSection from './DevicesSection.vue'
 import DiagnosticsSection from './DiagnosticsSection.vue'
 import { useDevices } from './devices'
 import ScreenBrightness from './ScreenBrightness.vue'
+import ThemeSchedule from './ThemeSchedule.vue'
 import { surfaceOpacity } from '../shared/background'
 import { pick, useI18n, type Locale } from '../shared/i18n'
 import { useConfirm } from '../shared/useConfirm'
@@ -269,6 +270,7 @@ function setBackground(patch: Partial<Background>): void {
   </BaseField>
   <p v-if="themeNote" class="ro note">{{ themeNote }}</p>
   <p v-for="e in themeErrors" :key="e.id" class="err">{{ e.id }} — {{ e.error }}</p>
+  <ThemeSchedule />
 
   <BaseSection id="screen.layout" :title="t('admin.inspector.screen.layout')">
   <BaseField :label="t('admin.inspector.screen.grid')"

@@ -146,6 +146,8 @@ export interface Config {
   version: 4
   /** Id of a theme in `themes/`, the same on every screen; an unknown id paints the built-in one. */
   theme?: string
+  /** A night theme and when it takes over; absent means one theme, day and night. */
+  themeSchedule?: ThemeSchedule
   connections: Connection[]
   secrets: { backend: SecretsBackend }
   locale?: Locale
@@ -632,7 +634,29 @@ export interface ThemeInfo {
   tokens: Record<string, string | number>
   variables: Record<string, string>
 }
-export interface ThemesResponse { themes: Record<string, ThemeInfo>; errors: { id: string; error: string }[] }
+/** Mirrors `ThemeScheduleSchema`: `theme` is the day's, `night` the night's. */
+export interface ThemeSchedule {
+  night: string
+  schedule: 'sun' | 'fixed'
+  latitude?: number
+  longitude?: number
+  dayAt: string
+  nightAt: string
+}
+/** Mirrors `ThemeInForce` in `server/src/themes/schedule.ts`: what the `theme` channel publishes. */
+export interface ThemeInForce {
+  id: string
+  phase: 'day' | 'night'
+  scheduled: boolean
+  next?: { at: string; to: 'day' | 'night' }
+  problem?: 'no-location'
+}
+export interface ThemesResponse {
+  themes: Record<string, ThemeInfo>
+  errors: { id: string; error: string }[]
+  /** The theme in force when the catalog was read, for a first paint that is already right. */
+  inForce?: ThemeInForce
+}
 export interface WidgetSize { w: number; h: number; px: { width: number; height: number } }
 
 export function mergeSettings(manifest: WidgetManifest | undefined, settings: Record<string, unknown>): Record<string, unknown> {
