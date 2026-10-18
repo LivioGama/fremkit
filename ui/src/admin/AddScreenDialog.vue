@@ -1,8 +1,11 @@
 <script setup lang="ts">
 /**
- * Adds a screen: its name, its kind and, for a device, its size; optionally pre-filled from an
- * existing screen. A pre-fill goes through a preview — page count, the widgets left out by name,
- * a small drawing of each page — and nothing is saved before Accept.
+ * Adds a screen; optionally pre-filled from an existing one. A pre-fill goes through a preview —
+ * page count, the widgets left out by name, a small drawing of each page — and nothing is saved
+ * before Accept.
+ *
+ * Without `device` it adds an Edge screen. A device screen is born from a paired device: its size
+ * is the one the device reported, shown and not edited, so the screen fits the device exactly.
  */
 import { computed, ref } from 'vue'
 import BaseModal from '../shared/ui/BaseModal.vue'
@@ -17,47 +20,28 @@ import { DEFAULT_NAV_HEIGHT, ROWS_BY_NAV_HEIGHT, type Display, type Screen } fro
 import { arrangeInto, type Arrangement } from './arrange'
 import { useAdminStore } from './store'
 
-const emit = defineEmits<{ close: [] }>()
+const props = defineProps<{
+  /** The paired device the screen is made for; absent, the screen is an Edge screen. */
+  device?: { id: string; name: string; viewport: { width: number; height: number } }
+}>()
+const emit = defineEmits<{ close: []; created: [screenId: string] }>()
 const s = useAdminStore()
 const { t } = useI18n()
 
-/**
- * Device sizes offered, in CSS px (points) in the orientation they name, as each iPad reports them
- * in its standard display mode. "More Space" reports more: its one preset is the size measured in a
- * full-screen app on an iPad Pro 11" (M5). A paired device reports its own size.
- */
-const PRESETS = [
-  { id: 'ipadPro13Landscape', width: 1376, height: 1032 },
-  { id: 'ipadPro13Portrait', width: 1032, height: 1376 },
-  { id: 'ipadPro11Landscape', width: 1210, height: 834 },
-  { id: 'ipadPro11Portrait', width: 834, height: 1210 },
-  { id: 'ipadPro11MoreSpaceLandscape', width: 1408, height: 950 },
-  { id: 'ipadAir13Landscape', width: 1366, height: 1024 },
-  { id: 'ipadAir13Portrait', width: 1024, height: 1366 },
-  { id: 'ipadAir11Landscape', width: 1180, height: 820 },
-  { id: 'ipadAir11Portrait', width: 820, height: 1180 },
-] as const
-const CUSTOM = 'custom'
 /** The Edge's grid, as `addScreen` builds it. */
 const EDGE_GRID = { cols: 64, rows: ROWS_BY_NAV_HEIGHT[DEFAULT_NAV_HEIGHT] }
 /** Width of one page drawing in the preview, in CSS px. */
 const THUMB_WIDTH = 240
 
-const name = ref('')
-const kind = ref<'edge' | 'device'>('device')
-const preset = ref<string>(PRESETS[0].id)
-const width = ref<number>(PRESETS[0].width)
-const height = ref<number>(PRESETS[0].height)
+const kind = computed<'edge' | 'device'>(() => (props.device ? 'device' : 'edge'))
+const name = ref(props.device?.name ?? '')
 const from = ref('')
 const step = ref<'form' | 'preview'>('form')
 
 const screens = computed<Screen[]>(() => s.state.config?.screens ?? [])
 const source = computed(() => screens.value.find((x) => x.id === from.value) ?? null)
 
-const viewport = computed(() => {
-  const p = PRESETS.find((x) => x.id === preset.value)
-  return p ? { width: p.width, height: p.height } : { width: width.value, height: height.value }
-})
+const viewport = computed(() => props.device?.viewport ?? { width: 0, height: 0 })
 const grid = computed(() => {
   if (kind.value === 'edge') return EDGE_GRID
   const { width: w, height: h } = viewport.value
@@ -66,9 +50,7 @@ const grid = computed(() => {
   return deviceGrid(w, h, DEVICE_NAV_HEIGHT)
 })
 const sizeOk = computed(() => grid.value.cols >= 1 && grid.value.rows >= 1)
-const defaultName = computed(() => (kind.value === 'edge'
-  ? t('admin.screens.kind.edge')
-  : preset.value === CUSTOM ? t('admin.screens.kind.device') : t(`admin.screens.preset.${preset.value}`)))
+const defaultName = computed(() => props.device?.name ?? t('admin.screens.kind.edge'))
 
 const arrangement = computed<Arrangement | null>(() => {
   const cfg = s.state.config
@@ -113,7 +95,9 @@ function create(): void {
     ...(kind.value === 'device' ? { viewport: { ...viewport.value }, orientation: orientation() } : {}),
     prefill: source.value && a ? { from: source.value.id, pages: a.pages, nav: a.nav } : null,
   })
-  if (id) emit('close')
+  if (!id) return
+  emit('created', id)
+  emit('close')
 }
 </script>
 
@@ -125,33 +109,13 @@ function create(): void {
         <BaseInput v-model="name" :placeholder="defaultName" />
       </BaseField>
 
-      <BaseField :label="t('admin.screens.dialog.kind')">
-        <div class="choice" role="radiogroup">
-          <button v-for="k in (['device', 'edge'] as const)" :key="k" type="button" role="radio"
-            :aria-checked="kind === k" :class="{ on: kind === k }" @click="kind = k">
-            <BaseIcon :name="k === 'edge' ? 'monitor' : 'tablet'" :size="16" />{{ t(`admin.screens.kind.${k}`) }}
-          </button>
-        </div>
-      </BaseField>
       <p v-if="kind === 'edge'" class="note"><BaseIcon name="alert-triangle" :size="16" />{{ t('admin.screens.edgeNote') }}</p>
 
-      <template v-if="kind === 'device'">
+      <template v-else>
         <BaseField :label="t('admin.screens.dialog.size')">
-          <select v-model="preset" class="select">
-            <option v-for="p in PRESETS" :key="p.id" :value="p.id">{{ t(`admin.screens.preset.${p.id}`) }} — {{ p.width }} × {{ p.height }}</option>
-            <option :value="CUSTOM">{{ t('admin.screens.dialog.custom') }}</option>
-          </select>
+          <p class="ro" data-test="device-size">{{ t('admin.inspector.screen.viewport.value', viewport) }}</p>
         </BaseField>
-        <p class="hint">{{ t('admin.screens.dialog.sizeHint') }}</p>
-        <div v-if="preset === CUSTOM" class="row">
-          <BaseField :label="t('admin.screens.dialog.width')">
-            <BaseInput :model-value="width" type="number" :min="40" :invalid="!sizeOk" @update:model-value="width = Number($event)" />
-          </BaseField>
-          <BaseField :label="t('admin.screens.dialog.height')">
-            <BaseInput :model-value="height" type="number" :min="120" :invalid="!sizeOk" @update:model-value="height = Number($event)" />
-          </BaseField>
-        </div>
-        <p v-if="sizeOk" class="hint">{{ t('admin.screens.dialog.grid', { ...grid, bar: DEVICE_NAV_HEIGHT }) }} {{ t('admin.screens.dialog.deviceHint') }}</p>
+        <p v-if="sizeOk" class="hint">{{ t('admin.screens.dialog.grid', { ...grid, bar: DEVICE_NAV_HEIGHT }) }}</p>
         <p v-else class="hint bad" role="alert">{{ t('admin.screens.dialog.badSize') }}</p>
       </template>
 
@@ -202,15 +166,9 @@ function create(): void {
 
 <style scoped>
 .form, .preview { display: flex; flex-direction: column; }
-.choice { display: flex; gap: var(--space-2); }
-.choice button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
-  min-height: 44px; font: inherit; font-size: var(--fs-sm); cursor: pointer; color: var(--text-muted);
-  background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
-.choice button.on { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
 .select { width: 100%; min-height: 44px; box-sizing: border-box; font: inherit; font-size: var(--fs-sm); color: var(--text);
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 6px 8px; }
-.row { display: flex; gap: var(--space-3); }
-.row > * { flex: 1; }
+.ro { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); }
 .note { display: flex; gap: var(--space-2); align-items: flex-start; margin: 0 0 var(--space-3);
   font-size: var(--fs-sm); color: var(--text-muted); }
 .hint { margin: 0 0 var(--space-3); font-size: var(--fs-xs); color: var(--text-dim); }

@@ -14,6 +14,8 @@ import BaseSection from '../shared/ui/BaseSection.vue'
 import BaseSegmented from '../shared/ui/BaseSegmented.vue'
 import BackgroundPicker from './BackgroundPicker.vue'
 import NavWidgetsEditor from './NavWidgetsEditor.vue'
+import DevicesSection from './DevicesSection.vue'
+import { useDevices } from './devices'
 import { surfaceOpacity } from '../shared/background'
 import { pick, useI18n, type Locale } from '../shared/i18n'
 import { useConfirm } from '../shared/useConfirm'
@@ -139,8 +141,13 @@ const onlyHere = computed(() => {
 })
 const lastScreen = computed(() => s.state.config!.screens.length <= 1)
 const removeKey = computed(() => `screen:${scr.value.id}`)
+/** The paired devices this screen is on: removing it leaves them with nothing to show. */
+const devices = useDevices()
+const showingHere = computed(() => devices.showing(scr.value.id).map((d) => d.name).join(', '))
 function confirmRemoveScreen(): void {
   const id = scr.value.id
+  // Arming re-reads the list, so the warning names the devices as they are now.
+  if (!confirm.armed(removeKey.value) && scr.value.kind === 'device') void devices.refresh()
   confirm.ask(removeKey.value, () => s.removeScreen(id))
 }
 
@@ -240,6 +247,7 @@ function setBackground(patch: Partial<Background>): void {
     </BaseButton>
   </div>
   <p v-if="confirm.armed(removeKey)" class="ro warn">{{ t('admin.inspector.screen.remove.confirm', { name: scr.name, count: onlyHere }) }}</p>
+  <p v-if="confirm.armed(removeKey) && showingHere" class="ro warn" data-test="remove-devices">{{ t('admin.inspector.screen.remove.devices', { names: showingHere }) }}</p>
   <p v-else-if="lastScreen" class="ro">{{ t('admin.inspector.screen.remove.last') }}</p>
 
   <BaseField :label="t('admin.inspector.screen.language')">
@@ -329,6 +337,10 @@ function setBackground(patch: Partial<Background>): void {
   </BaseField>
   <p v-if="unshownEdge" class="ro">{{ t('admin.screens.edgeNote') }}</p>
 
+  </BaseSection>
+
+  <BaseSection id="screen.devices" :title="t('admin.inspector.screen.devices')">
+    <DevicesSection />
   </BaseSection>
 
   <BaseSection id="screen.backup" :title="t('admin.inspector.screen.backup')">

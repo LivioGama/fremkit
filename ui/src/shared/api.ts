@@ -27,6 +27,33 @@ export interface RestoreResult {
 }
 export type ConnectionTestResult = { ok: true; detail: string } | { ok: false; error: string }
 
+/** A paired device as `GET /api/devices` lists it: never its token, nor the token's hash. */
+export interface PublicDevice {
+  id: string
+  name: string
+  /** ISO date. */
+  pairedAt: string
+  /** ISO date, written at most once a minute; null until the device first connects. */
+  lastSeen: string | null
+  viewport: { width: number; height: number }
+  screenId: string | null
+}
+/** What `GET /api/devices` answers: the remote listener's state and the paired devices. */
+export interface DeviceStatus {
+  enabled: boolean
+  listening: boolean
+  error: 'portInUse' | null
+  /** Someone is trying codes: the code is refused until the minute ends. */
+  guessing: boolean
+  host: string | null
+  addresses: string[]
+  port: number
+  keyHash: string | null
+  devices: PublicDevice[]
+}
+/** A pairing code, its expiry (epoch ms) and the QR payload carrying it. */
+export interface PairingOffer { code: string; expiresAt: number; url: string }
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let msg = `HTTP ${res.status}`
@@ -156,4 +183,19 @@ export const api = {
       .then((r) => json<PickOption[]>(r)),
   testConnection: (id: string, body: Partial<ConnectionInput>) =>
     fetch(`/api/connections/${encodeURIComponent(id)}/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => json<ConnectionTestResult>(r)),
+
+  getDevices: () => fetch('/api/devices').then((r) => json<DeviceStatus>(r)),
+  /** Answers the status after the switch; on `portInUse` the switch stays off and `message` says why. */
+  setDevicesEnabled: (enabled: boolean) =>
+    fetch('/api/devices/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled }) })
+      .then((r) => json<DeviceStatus & { message?: string }>(r)),
+  /** A fresh single-use code; the previous one stops working. Refused (409) while pairing is off. */
+  newPairingCode: () => fetch('/api/devices/code', { method: 'POST' }).then((r) => json<PairingOffer>(r)),
+  patchDevice: (id: string, patch: { name?: string; screenId?: string | null }) =>
+    fetch(`/api/devices/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) })
+      .then((r) => json<PublicDevice>(r)),
+  deleteDevice: (id: string) => fetch(`/api/devices/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(empty),
+  deleteAllDevices: () => fetch('/api/devices', { method: 'DELETE' }).then(empty),
+  /** A new TLS key: every paired device is removed with it, since each pinned the old one. */
+  resetDeviceCertificate: () => fetch('/api/devices/reset-certificate', { method: 'POST' }).then((r) => json<DeviceStatus>(r)),
 }

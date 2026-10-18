@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * Adding a screen, rendered: the selector lists the screens and opens the dialog; a pre-fill
- * goes through a preview that names what is left out, and nothing is saved before Accept.
+ * Adding a screen, rendered: the selector lists the screens and opens the dialog, which adds an
+ * Edge screen, or a device screen at a paired device's size; a pre-fill goes through a preview
+ * that names what is left out, and nothing is saved before Accept.
  *
  * The store is a module singleton built against the real `api`, so its state is seeded directly
  * and the save it schedules is answered by a stubbed fetch. Page drawings are stubbed: they would
@@ -66,25 +67,53 @@ afterEach(async () => {
 const button = (wrapper: ReturnType<typeof mount>, text: string) =>
   wrapper.findAll('button').find((b) => b.text() === text)!
 
+/** A paired iPad Pro 13" in landscape, as it reports itself. */
+const ipad = { id: 'dev-1', name: 'Kitchen iPad', viewport: { width: 1376, height: 1032 } }
+
 describe('the add-screen dialog', () => {
-  it('previews a pre-fill, names what is left out, and saves only on Accept', async () => {
+  it('adds an Edge screen when no device is given: no kind, no size to choose', async () => {
     const s = useAdminStore()
     const wrapper = mount(AddScreenDialog, { attachTo: document.body, global: { stubs } })
-    await wrapper.find('input').setValue('Kitchen')
-    const selects = wrapper.findAll('select')
-    expect(selects[0].findAll('option').map((o) => o.text())).toEqual([
-      'iPad Pro 13" landscape — 1376 × 1032', 'iPad Pro 13" portrait — 1032 × 1376',
-      'iPad Pro 11" landscape — 1210 × 834', 'iPad Pro 11" portrait — 834 × 1210',
-      'iPad Pro 11" landscape, “More Space” — 1408 × 950',
-      'iPad Air 13" landscape — 1366 × 1024', 'iPad Air 13" portrait — 1024 × 1366',
-      'iPad Air 11" landscape — 1180 × 820', 'iPad Air 11" portrait — 820 × 1180',
-      'Custom',
-    ])
-    expect(wrapper.text()).toContain('“More Space” is larger')
-    // The grid hint names the bar the device screen will get.
-    expect(wrapper.find('.hint:not(.bad)').exists()).toBe(true)
+    // The one select left is the pre-fill: no kind choice, no preset, no width or height.
+    expect(wrapper.findAll('select')).toHaveLength(1)
+    expect(wrapper.find('[role="radiogroup"]').exists()).toBe(false)
+    expect(wrapper.findAll('input[type="number"]')).toHaveLength(0)
+    const add = vi.spyOn(s, 'addScreen')
+    await wrapper.find('input').setValue('Second Edge')
+    await button(wrapper, 'Add').trigger('click')
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ name: 'Second Edge', kind: 'edge' }))
+    expect(s.state.config!.screens[1]).toMatchObject({ name: 'Second Edge', kind: 'edge' })
+    expect(wrapper.emitted('created')).toEqual([['second-edge']])
+    add.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('adds a device screen at the device’s size, named after it, and says which one it made', async () => {
+    const s = useAdminStore()
+    const wrapper = mount(AddScreenDialog, { props: { device: ipad }, attachTo: document.body, global: { stubs } })
+    expect((wrapper.find('input').element as HTMLInputElement).value).toBe('Kitchen iPad')
+    // Shown, not edited.
+    expect(wrapper.find('[data-test="device-size"]').text()).toBe('1376 × 1032 px')
+    expect(wrapper.findAll('input[type="number"]')).toHaveLength(0)
     expect(wrapper.text()).toContain('Grid: 34 × 24 cells under a 40 px bar.')
-    await selects[1].setValue('edge')
+    const add = vi.spyOn(s, 'addScreen')
+    await button(wrapper, 'Add').trigger('click')
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'device', viewport: { width: 1376, height: 1032 }, orientation: 'landscape',
+    }))
+    const added = s.state.config!.screens[1]
+    expect(added).toMatchObject({ name: 'Kitchen iPad', kind: 'device', display: { viewport: { width: 1376, height: 1032 } } })
+    expect(wrapper.emitted('created')).toEqual([[added.id]])
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    add.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('previews a pre-fill, names what is left out, and saves only on Accept', async () => {
+    const s = useAdminStore()
+    const wrapper = mount(AddScreenDialog, { props: { device: ipad }, attachTo: document.body, global: { stubs } })
+    await wrapper.find('input').setValue('Kitchen')
+    await wrapper.find('select').setValue('edge')
     await button(wrapper, 'Preview…').trigger('click')
 
     expect(s.state.config!.screens).toHaveLength(1)
@@ -99,24 +128,20 @@ describe('the add-screen dialog', () => {
     expect(added).toMatchObject({ id: 'kitchen', name: 'Kitchen', kind: 'device', display: { cols: 34, rows: 24, navHeight: 40, orientation: 'landscape' } })
     expect(added.pages[0].items).toEqual([{ instanceId: 'clock-1', x: 0, y: 0, w: 8, h: 4 }])
     expect(s.state.screenId).toBe('kitchen')
+    expect(wrapper.emitted('created')).toEqual([['kitchen']])
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
   })
 
-  it('refuses a custom size too small for one cell', async () => {
+  it('pre-fills an Edge screen too', async () => {
     const s = useAdminStore()
     const wrapper = mount(AddScreenDialog, { attachTo: document.body, global: { stubs } })
-    await wrapper.findAll('select')[0].setValue('custom')
-    const [w, h] = wrapper.findAll('input[type="number"]')
-    await w.setValue('30')
-    await h.setValue('800')
-    expect(wrapper.find('.hint.bad').exists()).toBe(true)
-    expect(button(wrapper, 'Add').attributes('disabled')).toBeDefined()
-    await h.setValue('800')
-    await w.setValue('800')
-    expect(button(wrapper, 'Add').attributes('disabled')).toBeUndefined()
-    await button(wrapper, 'Add').trigger('click')
-    expect(s.state.config!.screens[1].display).toMatchObject({ cols: 20, rows: 19, navHeight: 40, viewport: { width: 800, height: 800 } })
+    await wrapper.find('select').setValue('edge')
+    await button(wrapper, 'Preview…').trigger('click')
+    expect(wrapper.find('[data-test="left-out"]').exists()).toBe(false)
+    await button(wrapper, 'Accept').trigger('click')
+    expect(s.state.config!.screens[1].kind).toBe('edge')
+    expect(s.state.config!.screens[1].pages[0].items).toHaveLength(2)
     wrapper.unmount()
   })
 })
