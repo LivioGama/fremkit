@@ -13,6 +13,7 @@ import ScreenInspector from './ScreenInspector.vue'
 import ConnectionsInspector from './ConnectionsInspector.vue'
 import MarketplacePanel from './MarketplacePanel.vue'
 import WidgetAbout from './WidgetAbout.vue'
+import KeyboardShortcuts from './KeyboardShortcuts.vue'
 import ShareExportDialog from './ShareExportDialog.vue'
 import ShareImportDialog from './ShareImportDialog.vue'
 import { carriesFiles, openImportFile, share } from './share'
@@ -58,6 +59,10 @@ function onKeyDown(e: KeyboardEvent): void {
     case 'undo': e.preventDefault(); s.undo(); return
     case 'redo': e.preventDefault(); s.redo(); return
     case 'palette': e.preventDefault(); paletteOpen.value = !paletteOpen.value; return
+    case 'shortcuts':
+      // A second "?" closes the sheet; over another dialog it does nothing rather than replace it.
+      if (s.state.modal === 'shortcuts') { e.preventDefault(); s.closeModal() } else if (!s.state.modal) { e.preventDefault(); s.openModal('shortcuts') }
+      return
   }
   const inst = s.selected.value
   const editing = s.state.mode === 'edit'
@@ -84,7 +89,8 @@ function onKeyDown(e: KeyboardEvent): void {
       if (s.cycleSelection(shortcut.id === 'nextWidget' ? 1 : -1)) e.preventDefault()
       return
   }
-  if (!inst || !editing) return
+  // A dialog (this sheet, the Screen panel) is over the canvas: the keys are not the tile's.
+  if (!inst || !editing || s.state.modal) return
   switch (shortcut.id) {
     case 'deselect': s.select(null); return
     case 'remove': {
@@ -192,6 +198,10 @@ onUnmounted(() => {
     <BaseModal v-else-if="s.state.modal === 'about'" :title="t('admin.about.title')"
       :width="480" :close-label="t('common.close')" @close="s.closeModal()">
       <WidgetAbout :instance-id="s.state.aboutId" />
+    </BaseModal>
+    <BaseModal v-else-if="s.state.modal === 'shortcuts'" :title="t('admin.shortcuts.title')"
+      :width="480" :close-label="t('common.close')" @close="s.closeModal()">
+      <KeyboardShortcuts />
     </BaseModal>
     <BaseModal v-else-if="s.state.modal === 'export' && share.exporting" :title="t('admin.share.export.title')"
       :width="560" :close-label="t('common.close')" @close="closeShare()">

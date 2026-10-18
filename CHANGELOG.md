@@ -21,6 +21,8 @@ tagged `vX.Y.Z`.
   page's and the screen's, undo, redo, Edit/Test, the theme, the history, export and import,
   diagnostics. Accents and case do not matter; ↑ ↓ choose, Enter runs, → opens a submenu, Escape
   closes. With nothing typed it starts with the last commands you ran.
+- **Keyboard shortcuts sheet.** Press `?` in the editor, or pick **Keyboard shortcuts** in the
+  command palette, to see every shortcut of the editor in one place.
 - **Tab through the page's widgets.** In the editor, Tab and Shift+Tab select the next and the
   previous widget of the page, top to bottom; the arrows then move it a cell at a time and
   Shift+arrows resize it. Holding an arrow down is one step to undo, not one per cell.

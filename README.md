@@ -224,7 +224,8 @@ two screens is the same widget, with the same settings.
   corner — never through another widget, never a locked one — Delete or Backspace removes it,
   Cmd+D duplicates it, Cmd+C and Cmd+V copy it and paste a new one with the same settings on the
   page you are on (any page, any screen), Escape deselects. Cmd+Z and Cmd+Shift+Z undo and redo
-  anywhere, up to 50 steps.
+  anywhere, up to 50 steps. `?` shows every shortcut; the sheet, the key handler and the menus'
+  hints all read the one table in `ui/src/admin/shortcuts.ts`.
 - **Left column** — the pages (drag to reorder, double-click to rename, the rest in their menu or
   behind the "…" on hover) and the widget library, with a
   rescan button that re-reads the `widgets/` folder without restarting the server. Each card says
