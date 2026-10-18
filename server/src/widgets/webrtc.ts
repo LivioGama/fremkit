@@ -22,8 +22,12 @@
  * `local` is for built-in widgets only, by id, from the list below — reviewed with the server and
  * shipped with it. A widget installed from the registry never gets it: not from its manifest, not
  * through the consent dialog, not by taking a built-in's id (an installed folder is never the
- * `builtin` source). The list is empty today; a built-in that needs a local peer adds its id here,
- * in the commit that adds the widget, and says why.
+ * `builtin` source). A built-in that needs a local peer adds its id here, in the commit that adds
+ * the widget, and says why:
+ *
+ * - `fremplay` receives a browser tab's video from the Fremkit Companion extension, in the same
+ *   browser profile on this Mac. It answers the extension's offer, which the server relays on the
+ *   `companion` channel; the media goes peer to peer, and neither side names an ICE server.
  */
 
 import { isIP } from 'node:net'
@@ -32,8 +36,8 @@ import type { WidgetSource } from './catalog.js'
 
 export type WebRtcLevel = 'none' | 'local'
 
-/** Built-in widgets allowed the `local` level. Empty on purpose: see above. */
-export const WEBRTC_LOCAL_BUILTINS: ReadonlySet<string> = new Set<string>([])
+/** Built-in widgets allowed the `local` level, each for the reason given above. */
+export const WEBRTC_LOCAL_BUILTINS: ReadonlySet<string> = new Set<string>(['fremplay'])
 
 /** The level a widget's frame runs at. Anything but a listed built-in is `none`. */
 export function webrtcLevel(

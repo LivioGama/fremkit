@@ -118,7 +118,7 @@ What a widget **cannot** do:
   `RTCPeerConnection`, `webkitRTCPeerConnection`, `RTCDataChannel`, `RTCSessionDescription` and
   `RTCIceCandidate` undefined, non-writable and non-configurable before any widget code runs; a
   child frame that could hold a fresh copy is refused by `frame-src 'none'`. The one exception
-  is a **built-in** widget on a list in the server (`server/src/widgets/webrtc.ts`, empty today):
+  is a **built-in** widget on a list in the server (`server/src/widgets/webrtc.ts`, Fremplay alone today):
   it gets a wrapped `RTCPeerConnection` with no ICE server, ever, that drops every candidate not
   on loopback or on one of this Mac's own addresses. A widget from the registry never gets
   WebRTC — not from its manifest, not through the consent dialog.

@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { hostAddresses, webrtcLevel, WEBRTC_LOCAL_BUILTINS } from '../src/widgets/webrtc.js'
 
 describe('webrtcLevel', () => {
-  it('ships with no widget allowed a peer connection', () => {
-    expect([...WEBRTC_LOCAL_BUILTINS]).toEqual([])
+  it('ships with Fremplay alone allowed a local peer connection', () => {
+    expect([...WEBRTC_LOCAL_BUILTINS]).toEqual(['fremplay'])
   })
   it('is local only for a built-in on the list', () => {
     const list = new Set(['fremplay'])
@@ -11,7 +11,9 @@ describe('webrtcLevel', () => {
     expect(webrtcLevel('fremplay', 'installed', list)).toBe('none')
     expect(webrtcLevel('fremplay', undefined, list)).toBe('none')
     expect(webrtcLevel('clock', 'builtin', list)).toBe('none')
-    expect(webrtcLevel('fremplay', 'builtin')).toBe('none')
+    expect(webrtcLevel('fremplay', 'builtin')).toBe('local')
+    expect(webrtcLevel('fremplay', 'installed')).toBe('none')
+    expect(webrtcLevel('clock', 'builtin')).toBe('none')
   })
 })
 

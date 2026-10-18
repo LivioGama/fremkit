@@ -316,7 +316,7 @@ describe('widget routes', () => {
       // On the list by id, but installed: the source decides, not the name.
       const installed = (await listed.inject({ url: '/widgets/synology/index.html' })).body
       expect(installed).toBe('<!doctype html><script src="/fremkit.js"></script><body>nas</body>')
-      // And with the shipped list, which is empty, nobody has it.
+      // And with the shipped list, which names only fremplay, the clock does not have it.
       expect((await app.inject({ url: '/widgets/clock/index.html' })).body).not.toContain('data-webrtc')
     } finally {
       await listed.close()

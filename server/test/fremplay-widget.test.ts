@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildApp } from '../src/app.js'
 import { FREMPLAY_WIDGET_ID } from '../src/companion/placement.js'
 import { WidgetCatalog } from '../src/widgets/catalog.js'
 
@@ -77,6 +80,26 @@ describe('the fremplay manifest', () => {
     expect(html).toMatch(/<video[^>]*\bmuted\b[^>]*>/)
     expect(html).toMatch(/<video[^>]*\bplaysinline\b[^>]*>/)
     expect(html).toMatch(/<video[^>]*\bautoplay\b[^>]*>/)
+  })
+})
+
+describe('the fremplay page as served', () => {
+  it('gets the bridge first, at WebRTC\'s local level, with this Mac\'s addresses', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'fremkit-fremplay-'))
+    const app = await buildApp({ accessToken: null, dataDir: join(dir, 'data'), widgetsDir: SHIPPED })
+    try {
+      const res = await app.inject({ url: '/widgets/fremplay/index.html' })
+      expect(res.statusCode).toBe(200)
+      expect(res.body).toMatch(/^<!doctype html><script src="\/fremkit\.js" data-webrtc="local" data-webrtc-hosts="[0-9a-f.: ]*"><\/script>/)
+      expect(res.body).toContain('127.0.0.1')
+      // Its own markup never loads the bridge a second time.
+      expect(res.body.split('/fremkit.js').length).toBe(2)
+      // Every other built-in stays at `none`.
+      expect((await app.inject({ url: '/widgets/clock/index.html' })).body).not.toContain('data-webrtc')
+    } finally {
+      await app.close()
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
 
