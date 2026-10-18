@@ -91,6 +91,8 @@ tagged `vX.Y.Z`.
   navigation that is not a widget page, whatever the page's own policy says.
 - **What the dashboard tells a widget stays with that widget's page.** If a widget's frame ever
   holds a different page, that page hears nothing the first one was told.
+- **A widget's icon is fetched only from an address you typed.** A default address written in
+  the widget's own manifest no longer counts as yours.
 
 ## 0.4.1 — 2026-10-16
 

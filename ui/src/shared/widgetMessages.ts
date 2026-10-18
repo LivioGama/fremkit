@@ -39,7 +39,8 @@ export function faviconTarget(message: { url?: unknown }): string | null {
  *
  * Unlike a favicon, the whole address leaves the machine, path included — so the host fetches
  * only an address the user typed into this widget's own settings. A widget cannot use it to send
- * whatever it likes to whichever host it likes, one image request at a time.
+ * whatever it likes to whichever host it likes, one image request at a time. `settings` is the
+ * instance's saved settings alone: a manifest default is the widget's own words, not the user's.
  */
 export function imageTarget(message: { url?: unknown }, settings: unknown): string | null {
   const url = nonEmptyString(message.url)?.trim()

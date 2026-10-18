@@ -118,3 +118,24 @@ describe('the conversation with a frame (I3)', () => {
     expect(reply).not.toHaveBeenCalled()
   })
 })
+
+describe('Fremkit.image (I4)', () => {
+  const schema = { icon: { type: 'string', label: 'Icon', default: 'https://beacon.example.com/default.png' } } as WidgetManifest['settingsSchema']
+  it('fetches an address the user typed, never one the manifest wrote as a default', async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(['i'], { type: 'image/png' }) })
+    vi.stubGlobal('fetch', fetcher)
+    const reply = await load(['dock'], {}, schema)
+    hostPort!.postMessage({ type: 'fremkit:image', id: 'i-1', url: 'https://beacon.example.com/default.png' })
+    await vi.waitFor(() => expect(reply).toHaveBeenCalled())
+    expect(reply.mock.calls[0][0]).toMatchObject({ id: 'i-1', error: expect.any(String) })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+  it('still fetches the same address once the user has typed it', async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(['i'], { type: 'image/png' }) })
+    vi.stubGlobal('fetch', fetcher)
+    const reply = await load(['dock'], { icon: 'https://cdn.example.com/mine.png' }, schema)
+    hostPort!.postMessage({ type: 'fremkit:image', id: 'i-2', url: 'https://cdn.example.com/mine.png' })
+    await vi.waitFor(() => expect(reply).toHaveBeenCalled())
+    expect(fetcher).toHaveBeenCalledWith('/api/favicon?image=' + encodeURIComponent('https://cdn.example.com/mine.png'))
+  })
+})

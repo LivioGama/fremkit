@@ -252,7 +252,9 @@ export function useWidgetBridge(
         // only an address found in this widget's own settings: the whole URL leaves the machine.
         const id = str(m.id)
         if (!id) break
-        const url = imageTarget(m, mergeSettings(manifest(), instance().settings))
+        // The instance's own settings, not merged with the manifest's defaults: a default is the
+        // widget author's text, and would let a widget fetch an address of its choosing.
+        const url = imageTarget(m, instance().settings)
         if (!url) { reply(id, undefined, t('bridge.badRequest')); break }
         fetch(`/api/favicon?image=${encodeURIComponent(url)}`)
           .then(async (r) => {
