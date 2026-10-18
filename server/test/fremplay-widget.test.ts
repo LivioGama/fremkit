@@ -11,8 +11,11 @@ import { WidgetCatalog } from '../src/widgets/catalog.js'
  */
 const SHIPPED = fileURLToPath(new URL('../../widgets', import.meta.url))
 
-interface Local { receiverId: string; sessionId: string | null; viewed: boolean; live: boolean; lastOffer: string | null; hidden: boolean }
-interface Plan { reset: boolean; view: boolean; answer: string | null }
+interface Local {
+  receiverId: string; sessionId: string | null; viewed: boolean; pending: boolean; live: boolean; connected: boolean
+  lastOffer: string | null; hidden: boolean
+}
+interface Plan { hold: boolean; reset: boolean; view: boolean; answer: string | null }
 interface Logic {
   stateOf(snapshot: unknown): string | null
   plan(snapshot: unknown, local: Local): Plan
@@ -40,10 +43,10 @@ function snap(over: { protocol?: number; paired?: number; connected?: number; ta
     reveal: null,
   }
 }
-const sharing = (sessionId: string, offers: Record<string, string> = {}) =>
-  snap({ tab: { state: 'sharing', sessionId, offers, meta: { title: 'A film', host: 'video.example.com', currentTime: 0, duration: 60, paused: false, muted: true, volume: 1 } } })
+const sharing = (sessionId: string, offers: Record<string, string> = {}, receivers?: string[]) =>
+  snap({ tab: { state: 'sharing', sessionId, offers, ...(receivers ? { receivers } : {}), meta: { title: 'A film', host: 'video.example.com', currentTime: 0, duration: 60, paused: false, muted: true, volume: 1 } } })
 const fresh = (over: Partial<Local> = {}): Local =>
-  ({ receiverId: RECEIVER, sessionId: null, viewed: false, live: false, lastOffer: null, hidden: false, ...over })
+  ({ receiverId: RECEIVER, sessionId: null, viewed: false, pending: false, live: false, connected: false, lastOffer: null, hidden: false, ...over })
 
 describe('the fremplay manifest', () => {
   it('the fremplay manifest subscribes to and commands companion, and its fit setting is contain or cover', async () => {
@@ -107,8 +110,8 @@ describe('fremplay/logic.js stateOf', () => {
 describe('fremplay/logic.js plan', () => {
   it('asks to view once a share appears', async () => {
     const { plan } = await loadLogic()
-    expect(plan(sharing('s1'), fresh())).toEqual({ reset: true, view: true, answer: null })
-    expect(plan(sharing('s1'), fresh({ sessionId: 's1', viewed: true }))).toEqual({ reset: false, view: false, answer: null })
+    expect(plan(sharing('s1'), fresh())).toEqual({ hold: false, reset: true, view: true, answer: null })
+    expect(plan(sharing('s1'), fresh({ sessionId: 's1', viewed: true }))).toEqual({ hold: false, reset: false, view: false, answer: null })
   })
 
   it('answers its own offer once, never another receiver’s', async () => {
@@ -117,7 +120,7 @@ describe('fremplay/logic.js plan', () => {
     expect(plan(sharing('s1', { [OTHER]: 'v=0 theirs' }), local).answer).toBeNull()
     expect(plan(sharing('s1', { [RECEIVER]: 'v=0 mine' }), local).answer).toBe('v=0 mine')
     expect(plan(sharing('s1', { [RECEIVER]: 'v=0 mine' }), { ...local, lastOffer: 'v=0 mine', live: true }))
-      .toEqual({ reset: false, view: false, answer: null })
+      .toEqual({ hold: false, reset: false, view: false, answer: null })
   })
 
   it('answers a new offer for the same receiver, which is the extension starting over', async () => {
@@ -129,22 +132,42 @@ describe('fremplay/logic.js plan', () => {
   it('views again after its peer died, without answering the dead offer twice', async () => {
     const { plan } = await loadLogic()
     const local = fresh({ sessionId: 's1', viewed: false, live: false, lastOffer: 'v=0 dead' })
-    expect(plan(sharing('s1', { [RECEIVER]: 'v=0 dead' }), local)).toEqual({ reset: false, view: true, answer: null })
+    expect(plan(sharing('s1', { [RECEIVER]: 'v=0 dead' }), local)).toEqual({ hold: false, reset: false, view: true, answer: null })
   })
 
   it('starts over when the share changes, forgetting the last offer', async () => {
     const { plan } = await loadLogic()
     const local = fresh({ sessionId: 's1', viewed: true, live: true, lastOffer: 'v=0 old' })
-    expect(plan(sharing('s2'), local)).toEqual({ reset: true, view: true, answer: null })
+    // The session re-asks every receiver it knows on a direct switch: no view from here…
+    expect(plan(sharing('s2', {}, [RECEIVER]), local)).toEqual({ hold: false, reset: true, view: false, answer: null })
+    // …unless it does not know this one.
+    expect(plan(sharing('s2', {}, [OTHER]), local)).toEqual({ hold: false, reset: true, view: true, answer: null })
+    // A frame that was in no share views as usual.
+    expect(plan(sharing('s2', {}, []), fresh())).toEqual({ hold: false, reset: true, view: true, answer: null })
     // The old offer text cannot be told from a new one by the server, so it is answered.
-    expect(plan(sharing('s2', { [RECEIVER]: 'v=0 old' }), local)).toEqual({ reset: true, view: false, answer: 'v=0 old' })
+    expect(plan(sharing('s2', { [RECEIVER]: 'v=0 old' }), local)).toEqual({ hold: false, reset: true, view: false, answer: 'v=0 old' })
+  })
+
+  it('holds a connected peer through a snapshot without the share, and only that', async () => {
+    const { plan } = await loadLogic()
+    const local = fresh({ sessionId: 's1', viewed: true, live: true, connected: true })
+    expect(plan(snap({ connected: 0 }), local)).toEqual({ hold: true, reset: false, view: false, answer: null })
+    expect(plan(snap({ connected: 0 }), { ...local, connected: false })).toEqual({ hold: false, reset: true, view: false, answer: null })
+  })
+
+  it('views again with the same id when the server does not list it, once', async () => {
+    const { plan } = await loadLogic()
+    const local = fresh({ sessionId: 's1', viewed: true, live: true, connected: true, lastOffer: 'v=0 x' })
+    expect(plan(sharing('s1', {}, []), local)).toEqual({ hold: false, reset: false, view: true, answer: null })
+    expect(plan(sharing('s1', {}, []), { ...local, pending: true }).view).toBe(false)
+    expect(plan(sharing('s1', {}, [RECEIVER]), local).view).toBe(false)
   })
 
   it('does nothing while hidden but notice the share ended', async () => {
     const { plan } = await loadLogic()
-    expect(plan(sharing('s1', { [RECEIVER]: 'v=0 x' }), fresh({ hidden: true }))).toEqual({ reset: true, view: false, answer: null })
-    expect(plan(snap(), fresh({ sessionId: 's1', viewed: true, live: true }))).toEqual({ reset: true, view: false, answer: null })
-    expect(plan(snap(), fresh())).toEqual({ reset: false, view: false, answer: null })
+    expect(plan(sharing('s1', { [RECEIVER]: 'v=0 x' }), fresh({ hidden: true }))).toEqual({ hold: false, reset: true, view: false, answer: null })
+    expect(plan(snap(), fresh({ sessionId: 's1', viewed: true, live: true }))).toEqual({ hold: false, reset: true, view: false, answer: null })
+    expect(plan(snap(), fresh())).toEqual({ hold: false, reset: false, view: false, answer: null })
   })
 
   it('never views under a protocol it does not speak', async () => {
@@ -189,7 +212,7 @@ interface Page {
   buttons: Record<string, StubNode>
   stage: StubNode
   commands: [string, Record<string, unknown>][]
-  peers: { closed: boolean; remote: unknown }[]
+  peers: { closed: boolean; remote: unknown; connectionState: string; onconnectionstatechange: unknown }[]
   publish(data: unknown): void
   /** Lets the page's promise chains run. */
   settle(): Promise<void>
@@ -479,5 +502,84 @@ describe('the fremplay page', () => {
     page.tap()
     expect(page.stage.classes.has('show')).toBe(false)
     expect(page.stage.classes.has('cover')).toBe(true)
+  })
+
+  /** A share watched to the point of a connected peer and a playing picture. */
+  async function watching(page: Page) {
+    page.publish(sharing('s1', {}, []))
+    const receiverId = page.commands[0][1].receiverId as string
+    page.publish(sharing('s1', { [receiverId]: 'v=0 offer' }, [receiverId]))
+    await page.settle()
+    connect(page.peers[0], 'connected')
+    page.fire('video', 'playing')
+    page.commands.length = 0
+    return receiverId
+  }
+  function connect(peer: Page['peers'][number], state: string) {
+    peer.connectionState = state
+    ;(peer.onconnectionstatechange as () => void)()
+  }
+
+  it('server restart, empty snapshot first: keeps the picture, then views again with the same id', async () => {
+    const page = await loadPage()
+    const receiverId = await watching(page)
+    // The new server knows no share yet, nor the extension.
+    page.publish(snap({ connected: 0 }))
+    expect(page.peers[0].closed).toBe(false)
+    expect(page.stage.classes.has('playing')).toBe(true)
+    expect(page.buttons.toggle.disabled).toBe(true)
+    expect(page.commands).toEqual([])
+    // The extension is back with its share; this frame is not among the receivers.
+    page.publish(sharing('s1', {}, []))
+    expect(page.commands).toEqual([['view', { receiverId }]])
+    expect(page.peers[0].closed).toBe(false)
+    expect(page.buttons.toggle.disabled).toBe(false)
+    // Once, not on every snapshot until it shows up.
+    page.publish(sharing('s1', {}, []))
+    page.publish(sharing('s1', {}, [receiverId]))
+    expect(names(page)).toEqual(['view'])
+  })
+
+  it('server restart, hello first: views again because the server does not list it', async () => {
+    const page = await loadPage()
+    const receiverId = await watching(page)
+    page.publish(sharing('s1', {}, []))
+    expect(page.commands).toEqual([['view', { receiverId }]])
+    expect(page.peers[0].closed).toBe(false)
+  })
+
+  it('a share that really ended is let go when the peer drops', async () => {
+    const page = await loadPage()
+    await watching(page)
+    page.publish(snap({ connected: 0 }))
+    connect(page.peers[0], 'disconnected')
+    expect(page.peers[0].closed).toBe(true)
+    expect(page.nodes.get('line')!.textContent).toBe('Navigateur fermé ou extension inactive')
+  })
+
+  it('a share that really ended is let go when the extension is there and shares nothing', async () => {
+    vi.useFakeTimers()
+    try {
+      const page = await loadPage()
+      await watching(page)
+      page.publish(snap({ connected: 1 }))
+      expect(page.peers[0].closed).toBe(false)
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(page.peers[0].closed).toBe(true)
+      expect(page.stage.classes.has('playing')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a direct switch to another share sends no view: the session asked already', async () => {
+    const page = await loadPage()
+    const receiverId = await watching(page)
+    page.publish(sharing('s2', {}, [receiverId]))
+    expect(page.peers[0].closed).toBe(true)
+    expect(page.commands).toEqual([])
+    page.publish(sharing('s2', { [receiverId]: 'v=0 second' }, [receiverId]))
+    await page.settle()
+    expect(page.commands).toEqual([['answer', { receiverId, sdp: 'v=0 answer' }]])
   })
 })

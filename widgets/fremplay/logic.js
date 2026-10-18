@@ -30,29 +30,50 @@
 
   /**
    * What the receiver does on a snapshot, given what it holds:
-   * `{ receiverId, sessionId, viewed, live, lastOffer, hidden }`.
+   * `{ receiverId, sessionId, viewed, pending, live, connected, lastOffer, hidden }` — `pending`
+   * is a view sent and not yet seen in the snapshot's `receivers`, `connected` a peer whose
+   * connection is up.
    *
+   * - `hold`: the snapshot shows no share while this frame's peer is still connected. A server
+   *   that restarted says so before the extension comes back with its share, and the picture,
+   *   which goes peer to peer, never stopped: keep it, and wait for the peer to die or the share
+   *   to come back.
    * - `reset`: the share this frame was on is over or replaced; drop the peer and start over.
    * - `answer`: the offer to answer — this receiver's, and not the one it answered last.
-   * - `view`: ask the extension for an offer — sharing, visible, nothing pending and no live peer.
+   * - `view`: ask the extension for an offer — on a new share, when the receiver has neither a
+   *   pending view nor a peer, or when the server does not list it (it restarted). Not on a
+   *   direct switch from one share to another: the session asks every receiver it knows itself.
    *
    * An offer stays in the snapshot after it was answered, so `lastOffer` is kept across a dead
    * peer and only forgotten with the share: a peer that died is replaced by viewing again, never
    * by answering its stale offer a second time.
    */
   function plan(snap, local) {
-    var out = { reset: false, view: false, answer: null }
+    var out = { hold: false, reset: false, view: false, answer: null }
     var sharing = stateOf(snap) === 'sharing'
-    var sessionId = sharing ? snap.tab.sessionId : null
-    var reset = sessionId !== local.sessionId
+    if (!sharing) {
+      if (local.sessionId !== null && local.connected && !local.hidden) out.hold = true
+      else out.reset = local.sessionId !== null
+      return out
+    }
+    var reset = snap.tab.sessionId !== local.sessionId
     out.reset = reset
-    if (!sharing || local.hidden) return out
+    if (local.hidden) return out
     var offers = snap.tab.offers || {}
     var offer = Object.prototype.hasOwnProperty.call(offers, local.receiverId) ? offers[local.receiverId] : null
+    var receivers = Array.isArray(snap.tab.receivers) ? snap.tab.receivers : null
+    var known = receivers === null || receivers.indexOf(local.receiverId) >= 0
     var lastOffer = reset ? null : local.lastOffer
     if (typeof offer === 'string' && offer !== lastOffer) out.answer = offer
-    else if (reset || (!local.viewed && !local.live)) out.view = true
+    else if (reset) out.view = !switched(local) || !known
+    else if (!local.viewed && !local.live) out.view = true
+    else if (!known && !local.pending) out.view = true
     return out
+  }
+
+  /** The frame was on another share and in it: the session re-asks it for the new one itself. */
+  function switched(local) {
+    return local.sessionId !== null && (local.viewed || local.live)
   }
 
   /** A position in seconds as m:ss, or h:mm:ss from an hour on. */
@@ -72,5 +93,5 @@
     return Math.min(1, Math.max(0, Math.round((v + step) * 10) / 10))
   }
 
-  root.FremkitFremplay = { PROTOCOL: PROTOCOL, stateOf: stateOf, plan: plan, clock: clock, stepVolume: stepVolume }
+  root.FremkitFremplay = { PROTOCOL: PROTOCOL, stateOf: stateOf, plan: plan, switched: switched, clock: clock, stepVolume: stepVolume }
 })(typeof globalThis !== 'undefined' ? globalThis : this)
