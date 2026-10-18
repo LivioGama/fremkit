@@ -39,6 +39,13 @@ final class LocalNetwork {
         self.monitor = monitor
     }
 
+    /// Resolves every known service again, so a Mac whose address changed under the same name
+    /// is found without waiting for a network change. Called at the start of each connection
+    /// attempt; a changed address fires `onChange`.
+    func refresh() {
+        for (name, endpoint) in results { resolve(name, endpoint) }
+    }
+
     private func update(_ found: Set<NWBrowser.Result>) {
         var current: [String: NWEndpoint] = [:]
         for result in found {
@@ -90,7 +97,12 @@ final class LocalNetwork {
         connection.cancel()
         guard resolving[name] === connection else { return }
         resolving[name] = nil
-        guard let address, results[name] != nil, services[name] != address else { return }
+        guard let address else {
+            // Not answering at the moment: its last address is no longer worth trying.
+            services[name] = nil
+            return
+        }
+        guard results[name] != nil, services[name] != address else { return }
         services[name] = address
         onChange?()
     }

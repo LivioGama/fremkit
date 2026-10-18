@@ -8,7 +8,7 @@ final class ScriptedProber: Prober, @unchecked Sendable {
     private var outcomes: [String: ProbeOutcome]
     private var asked: [String] = []
     private var held: String?
-    private var waiting: CheckedContinuation<Void, Never>?
+    private var waiting: [CheckedContinuation<Void, Never>] = []
 
     init(_ outcomes: [String: ProbeOutcome]) { self.outcomes = outcomes }
 
@@ -16,16 +16,19 @@ final class ScriptedProber: Prober, @unchecked Sendable {
 
     func set(_ host: String, _ outcome: ProbeOutcome) { lock.withLock { outcomes[host] = outcome } }
 
-    /// The next probe of `host` waits for `release()`.
+    /// Every probe of `host` waits for `release()`.
     func hold(_ host: String) { lock.withLock { held = host } }
 
+    /// The number of probes waiting.
+    var holding: Int { lock.withLock { waiting.count } }
+
     func release() {
-        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+        let continuations = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
             held = nil
-            defer { waiting = nil }
+            defer { waiting = [] }
             return waiting
         }
-        continuation?.resume()
+        continuations.forEach { $0.resume() }
     }
 
     func probe(host: String, port: Int, mac: PairedMac) async -> ProbeOutcome {
@@ -35,7 +38,7 @@ final class ScriptedProber: Prober, @unchecked Sendable {
         }
         if mustWait {
             await withCheckedContinuation { continuation in
-                lock.withLock { waiting = continuation }
+                lock.withLock { waiting.append(continuation) }
             }
         }
         return lock.withLock { outcomes[host] ?? .unreachable }
@@ -165,6 +168,22 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.state, .unreachable(name: "studio"))
     }
 
+    func testAWebViewFailureDuringACheckRebuildsTheDashboard() async {
+        let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo)])
+        let model = AppModel(store: MemoryCredentialStore(sampleMac), connector: Connector(prober: prober))
+        await model.start()?.value
+        prober.hold("192.0.2.10")
+        let check = model.resume()
+        model.dashboardFailed()
+        XCTAssertEqual(model.state, .connecting, "the dead web view goes away instead of joining the check")
+        let attempt = model.reconnect()
+        while prober.holding < 2 { await Task.yield() }
+        prober.release()
+        await check?.value
+        await attempt.value
+        XCTAssertEqual(model.state, .dashboard(host: "192.0.2.10", info: sampleInfo))
+    }
+
     func testResumeOnTheDashboardChecksTheHostInUse() async {
         let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo)])
         let model = AppModel(store: MemoryCredentialStore(sampleMac), connector: Connector(prober: prober))
@@ -264,5 +283,12 @@ final class PageMessageTests: XCTestCase {
         XCTAssertEqual(Dashboard.cookieName, "fremkit_device")
         let link = PairingLink(host: "studio.local", address: "192.0.2.10", port: 4243, code: "ABCDEFGH", keyHash: SPKIFixture.keyHash)
         XCTAssertEqual(link.macName, "studio")
+    }
+
+    func testThePinCoversTheHostInUseTheNameAndTheAddressOnly() {
+        let mac = PairedMac(host: "Studio.local.", address: "192.0.2.10", port: 4243, keyHash: SPKIFixture.keyHash,
+                            token: "t", deviceId: "d1", name: "studio")
+        XCTAssertEqual(Dashboard.pinnedHosts(mac: mac, host: "[FE80::1%25en0]"), ["fe80::1%en0", "studio.local", "192.0.2.10"])
+        XCTAssertEqual(Dashboard.pinnedHosts(mac: mac, host: "192.0.2.10"), ["studio.local", "192.0.2.10"])
     }
 }

@@ -119,9 +119,13 @@ public final class AppModel {
         state = .unauthorized
     }
 
-    /// The web view could not load the page, or its content process died.
+    /// The web view could not load the page, or its content process died. Always goes through
+    /// `.connecting`, so the dashboard comes back in a new web view: a check that was running
+    /// (`resume()`) is dropped rather than joined, since its `.ok` would keep the dead view.
     public func dashboardFailed() {
         guard case .dashboard = state else { return }
+        cancelRunning()
+        state = .connecting
         reconnect()
     }
 

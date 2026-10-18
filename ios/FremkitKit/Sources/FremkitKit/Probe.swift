@@ -142,7 +142,7 @@ public struct HTTPProber: Prober {
         guard let request = Endpoint.request(host: host, port: port, path: "/api/devices/me", token: mac.token) else {
             return .unreachable
         }
-        let policy = PinPolicy(keyHash: mac.keyHash, hosts: [host, mac.host, mac.address])
+        let policy = PinPolicy(keyHash: mac.keyHash, hosts: Dashboard.pinnedHosts(mac: mac, host: host))
         switch await transport(request, policy) {
         case let .response(200, body):
             guard let info = try? JSONDecoder().decode(DeviceInfo.self, from: body) else { return .unreachable }

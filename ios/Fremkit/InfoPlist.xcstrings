@@ -11,7 +11,7 @@
         },
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "Fremkit uses the camera to scan the pairing code your Mac shows."
           }
         }
@@ -28,7 +28,7 @@
         },
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "Fremkit finds your Mac and shows its dashboard over the local network."
           }
         }

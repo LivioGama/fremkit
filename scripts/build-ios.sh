@@ -16,11 +16,6 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# xcodebuild needs Xcode, not the Command Line Tools.
-if [[ -z "${DEVELOPER_DIR:-}" && "$(xcode-select -p 2>/dev/null)" == *CommandLineTools* ]]; then
-    export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-fi
-
 PROJECT=ios/Fremkit.xcodeproj
 SCHEME=Fremkit
 DERIVED=ios/build
@@ -28,12 +23,24 @@ LOG="$DERIVED/xcodebuild.log"
 
 die() { echo "build-ios: $*" >&2; exit 1; }
 
+# xcodebuild needs Xcode (the iOS SDK), not the Command Line Tools. FREMKIT_XCODE points at
+# another Xcode.app; an explicit DEVELOPER_DIR is left alone.
+if [[ -z "${DEVELOPER_DIR:-}" && "$(xcode-select -p 2>/dev/null)" == *CommandLineTools* ]]; then
+    xcode="${FREMKIT_XCODE:-/Applications/Xcode.app}"
+    [[ -d "$xcode/Contents/Developer" ]] ||
+        die "the active developer directory is the Command Line Tools and $xcode was not found: install Xcode (with the iOS platform) or set FREMKIT_XCODE=/path/to/Xcode.app"
+    export DEVELOPER_DIR="$xcode/Contents/Developer"
+fi
+
+# Xcode's own line for an app without App Intents: not a diagnostic about this project.
+NOISE='warning: Metadata extraction skipped, no AppIntents.framework dependency found'
+
 # Runs xcodebuild quietly: the full log goes to $LOG, warnings and errors to the terminal.
 xcb() {
     mkdir -p "$DERIVED"
     local status=0
     xcodebuild -project "$PROJECT" -scheme "$SCHEME" -derivedDataPath "$DERIVED" "$@" >"$LOG" 2>&1 || status=$?
-    grep -E '(warning|error):' "$LOG" | grep -v -e '^note:' -e 'appintentsmetadataprocessor' | sort -u || true
+    grep -E '(warning|error):' "$LOG" | grep -v -F "$NOISE" | uniq || true
     if [[ $status -ne 0 ]]; then
         tail -20 "$LOG" >&2
         die "xcodebuild failed ($status); full log: $LOG"

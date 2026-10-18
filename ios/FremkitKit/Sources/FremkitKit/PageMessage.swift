@@ -40,6 +40,13 @@ public enum Dashboard {
     public static func url(host: String, port: Int) -> URL? {
         Endpoint.url(host: host, port: port, path: "/")
     }
+
+    /// The hosts the pin covers while `host` is in use: that host, the Mac's `.local` name and its
+    /// last address, normalised as `PinnedSession` compares them. Every other host is left to the
+    /// system's trust.
+    public static func pinnedHosts(mac: PairedMac, host: String) -> Set<String> {
+        Set([host, mac.host, mac.address].filter { !$0.isEmpty }.map(PinnedSession.normalise))
+    }
 }
 
 extension PairingLink {

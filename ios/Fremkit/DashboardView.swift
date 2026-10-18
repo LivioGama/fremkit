@@ -64,6 +64,9 @@ struct DashboardView: UIViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var parent: DashboardView
+        /// Set when the challenge handler refused the Mac's key: the load then ends as "cancelled",
+        /// which must still count as a failure.
+        private var rejectedPin = false
 
         init(_ parent: DashboardView) {
             self.parent = parent
@@ -104,11 +107,12 @@ struct DashboardView: UIViewRepresentable {
             guard space.authenticationMethod == NSURLAuthenticationMethodServerTrust, let trust = space.serverTrust else {
                 return (.performDefaultHandling, nil)
             }
-            let mac = parent.mac
-            let hosts: Set<String> = [parent.host, mac.host, mac.address]
-            switch PinnedSession.decide(host: space.host, presented: Pin.keyHash(of: trust), expected: mac.keyHash, hosts: hosts) {
+            let hosts = Dashboard.pinnedHosts(mac: parent.mac, host: parent.host)
+            switch PinnedSession.decide(host: space.host, presented: Pin.keyHash(of: trust), expected: parent.mac.keyHash, hosts: hosts) {
             case .trust: return (.useCredential, URLCredential(trust: trust))
-            case .reject: return (.cancelAuthenticationChallenge, nil)
+            case .reject:
+                rejectedPin = true
+                return (.cancelAuthenticationChallenge, nil)
             case .defaultHandling: return (.performDefaultHandling, nil)
             }
         }
@@ -125,10 +129,12 @@ struct DashboardView: UIViewRepresentable {
             parent.onFailure()
         }
 
-        /// A navigation replaced by another one is not a failure.
+        /// A navigation replaced by another one is not a failure; one cancelled because the pin
+        /// refused the key is.
         private func failed(_ error: any Error) {
             let error = error as NSError
-            if error.domain == NSURLErrorDomain, error.code == NSURLErrorCancelled { return }
+            if error.domain == NSURLErrorDomain, error.code == NSURLErrorCancelled, !rejectedPin { return }
+            rejectedPin = false
             parent.onFailure()
         }
     }

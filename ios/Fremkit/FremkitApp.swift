@@ -10,7 +10,10 @@ struct FremkitApp: App {
     init() {
         let network = LocalNetwork()
         _network = State(initialValue: network)
-        _model = State(initialValue: AppModel(store: KeychainCredentialStore(), discovered: { network.addresses }))
+        _model = State(initialValue: AppModel(store: KeychainCredentialStore(), discovered: {
+            network.refresh()
+            return network.addresses
+        }))
     }
 
     var body: some Scene {
