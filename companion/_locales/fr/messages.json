@@ -1,0 +1,188 @@
+{
+  "extName": {
+    "message": "Fremkit Companion"
+  },
+  "extDescription": {
+    "message": "Envoie la vidéo d'un onglet sur votre tableau de bord Fremkit, sur ce Mac."
+  },
+  "actionTitle": {
+    "message": "Fremkit"
+  },
+  "commandToggle": {
+    "message": "Fremplay : envoyer la vidéo de cet onglet sur l'Edge, ou arrêter"
+  },
+  "linkOk": {
+    "message": "Relié"
+  },
+  "linkConnecting": {
+    "message": "Connexion…"
+  },
+  "linkUnreachable": {
+    "message": "Fremkit injoignable"
+  },
+  "linkRevoked": {
+    "message": "Retirée"
+  },
+  "linkUnpaired": {
+    "message": "Non relié"
+  },
+  "fremplayDesc": {
+    "message": "Afficher la vidéo de cet onglet sur l'Edge"
+  },
+  "send": {
+    "message": "Envoyer sur l'Edge"
+  },
+  "sendInstead": {
+    "message": "Afficher celui-ci à la place"
+  },
+  "stop": {
+    "message": "Arrêter"
+  },
+  "liveHere": {
+    "message": "Cette vidéo est sur l'Edge"
+  },
+  "liveElsewhere": {
+    "message": "Sur l'Edge : $value$",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "noVideo": {
+    "message": "Aucune vidéo dans cet onglet"
+  },
+  "askPlayer": {
+    "message": "Fremplay vous demandera l'accès à $value$ pour trouver la vidéo du lecteur",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "shortcut": {
+    "message": "Raccourci"
+  },
+  "shortcutNone": {
+    "message": "Pas de raccourci : choisissez-en un dans les réglages"
+  },
+  "errNoWidget": {
+    "message": "Ajoutez le widget Fremplay à l'Edge depuis l'admin"
+  },
+  "errProtocol": {
+    "message": "Mettez à jour Fremkit ou l'extension"
+  },
+  "errUnreachable": {
+    "message": "Fremkit ne répond pas sur ce Mac"
+  },
+  "errCapture": {
+    "message": "Le navigateur ne permet pas d'envoyer cette page"
+  },
+  "errUnpaired": {
+    "message": "Reliez d'abord ce navigateur à Fremkit"
+  },
+  "errNoVideoLeft": {
+    "message": "Partage arrêté : plus de vidéo dans l'onglet"
+  },
+  "errNeedsPermission": {
+    "message": "Ouvrez Fremkit dans la barre d'outils pour autoriser le lecteur de cette page"
+  },
+  "errFailed": {
+    "message": "L'envoi a échoué"
+  },
+  "soon": {
+    "message": "Bientôt"
+  },
+  "localhostName": {
+    "message": "Localhost"
+  },
+  "localhostDesc": {
+    "message": "Erreurs et requêtes de vos onglets de dev"
+  },
+  "settings": {
+    "message": "Réglages"
+  },
+  "footerLinked": {
+    "message": "$value$ · relié",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "footerUnpaired": {
+    "message": "$value$ · pas encore relié",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "pairLead": {
+    "message": "Reliez ce navigateur à Fremkit sur ce Mac."
+  },
+  "pairConnect": {
+    "message": "Connecter à Fremkit"
+  },
+  "pairTouch": {
+    "message": "Touchez Autoriser sur l'Edge si ce code s'y affiche :"
+  },
+  "pairValid": {
+    "message": "Valable encore $value$",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "pairRefused": {
+    "message": "Refusé sur l'Edge."
+  },
+  "pairExpired": {
+    "message": "Le code a expiré sans réponse."
+  },
+  "pairLimited": {
+    "message": "Trop de demandes : réessayez dans une minute."
+  },
+  "pairUnreachable": {
+    "message": "Fremkit ne répond pas sur ce Mac. Est-il lancé ?"
+  },
+  "pairFailed": {
+    "message": "La demande a échoué."
+  },
+  "pairRevoked": {
+    "message": "Cette extension n'est plus autorisée. Reliez-la à nouveau pour l'utiliser."
+  },
+  "optionsTitle": {
+    "message": "Fremkit Companion — Réglages"
+  },
+  "optLink": {
+    "message": "Liaison"
+  },
+  "optPairedAs": {
+    "message": "Ce navigateur est relié à Fremkit sous le nom « $value$ ».",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "optRename": {
+    "message": "Le nom se change dans l'admin : Écran → Appareils."
+  },
+  "optNotPaired": {
+    "message": "Ce navigateur n'est pas relié à Fremkit. Ouvrez Fremkit dans la barre d'outils pour le relier."
+  },
+  "optUnpair": {
+    "message": "Délier ce navigateur"
+  },
+  "optUnpairHint": {
+    "message": "Efface la clé de ce navigateur. L'appareil reste listé dans Écran → Appareils jusqu'à ce que vous l'y retiriez."
+  },
+  "optShortcut": {
+    "message": "Raccourci Fremplay"
+  },
+  "optShortcutChange": {
+    "message": "Changer le raccourci"
+  }
+}

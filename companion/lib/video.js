@@ -28,7 +28,10 @@ export function survey() {
     title: document.title,
     video: v ? box(v) : null,
     iframes: isTop
-      ? [...document.querySelectorAll('iframe')].map((f) => ({ src: f.src, ...box(f) })).filter((f) => f.w > 0 && f.h > 0)
+      ? [...document.querySelectorAll('iframe')]
+          // `fs`: the frame may go full screen, which a video player asks for and an ad rarely does.
+          .map((f) => ({ src: f.src, fs: Boolean(f.allowFullscreen || /fullscreen/.test(f.allow || '')), ...box(f) }))
+          .filter((f) => f.w > 0 && f.h > 0)
       : [],
   }
 }
@@ -148,4 +151,31 @@ export function cropRect(rect, videoWidth, videoHeight, max = { w: 1920, h: 1080
   const h = Math.round(sh * scale) & ~1
   if (w < 2 || h < 2) return null
   return { sx, sy, sw, sh, w, h }
+}
+
+/**
+ * The origin of an embedded player the extension cannot see into yet: the largest cross-origin
+ * iframe of the top frame that may go full screen, covers at least a quarter of the viewport each
+ * way, and is bigger than the video already found (`picked`, fractions of the viewport, or null).
+ * Null when there is none, or when a frame of that origin already answered the survey (its
+ * permission is there). `frames` are the survey results, as for `pickVideo`.
+ */
+export function embeddedPlayer(frames, picked) {
+  const topResult = frames.find((f) => f.result?.top)?.result
+  if (!topResult) return null
+  const topOrigin = originOf(topResult.href)
+  const seen = new Set(frames.map((f) => originOf(f.result?.href)).filter(Boolean))
+  const vw = topResult.vw || 1
+  const vh = topResult.vh || 1
+  const pickedArea = picked ? picked.rect.w * picked.rect.h : 0
+  let best = null
+  for (const f of topResult.iframes ?? []) {
+    const origin = originOf(f.src)
+    if (!origin || !/^https?:/.test(origin) || origin === topOrigin || seen.has(origin) || !f.fs) continue
+    const w = f.w / vw
+    const h = f.h / vh
+    if (w < 0.25 || h < 0.25 || w * h <= pickedArea) continue
+    if (!best || w * h > best.area) best = { origin, area: w * h }
+  }
+  return best?.origin ?? null
 }

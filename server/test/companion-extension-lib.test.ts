@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error plain JS modules outside server/, no declarations
-import { control, cropRect, pickVideo, placeFrame, survey } from '../../companion/lib/video.js'
+import { control, cropRect, embeddedPlayer, pickVideo, placeFrame, survey } from '../../companion/lib/video.js'
+// @ts-expect-error plain JS module
+import { browserName } from '../../companion/lib/browser.js'
 // @ts-expect-error plain JS module
 import { localCandidatesOnly } from '../../companion/lib/sdp.js'
 // @ts-expect-error plain JS module
@@ -168,10 +170,16 @@ function install(videos: any[], iframes: any[] = [], movie: any = null, isTop = 
 describe('survey (in-page)', () => {
   it('reports the largest visible video and the iframes of the top frame', () => {
     install([fakeVideo(100, 50), fakeVideo(400, 200), fakeVideo(0, 0, { getBoundingClientRect: () => box(0, 0, 0, 0) })],
-      [{ src: 'https://p.example.org/e', getBoundingClientRect: () => box(5, 6, 300, 200) }])
+      [{ src: 'https://p.example.org/e', getBoundingClientRect: () => box(5, 6, 300, 200) },
+        { src: 'https://q.example.org/e', allow: 'autoplay; fullscreen', getBoundingClientRect: () => box(0, 0, 50, 50) },
+        { src: 'https://r.example.org/e', allowFullscreen: true, getBoundingClientRect: () => box(0, 0, 60, 60) }])
     const r = survey()
     expect(r).toMatchObject({ href: 'https://example.com/watch', top: true, vw: 1000, vh: 500, title: 'Page', video: { x: 10, y: 20, w: 400, h: 200 } })
-    expect(r.iframes).toEqual([{ src: 'https://p.example.org/e', x: 5, y: 6, w: 300, h: 200 }])
+    expect(r.iframes).toEqual([
+      { src: 'https://p.example.org/e', fs: false, x: 5, y: 6, w: 300, h: 200 },
+      { src: 'https://q.example.org/e', fs: true, x: 0, y: 0, w: 50, h: 50 },
+      { src: 'https://r.example.org/e', fs: true, x: 0, y: 0, w: 60, h: 60 },
+    ])
   })
   it('gives no iframes from a child frame and null without a video', () => {
     install([], [{ src: 'https://p.example.org/e', getBoundingClientRect: () => box(5, 6, 300, 200) }], null, false)
@@ -211,5 +219,42 @@ describe('control (in-page)', () => {
     expect(control('toggle')).toBeNull()
     install([fakeVideo(10, 10, { duration: Infinity })])
     expect(control(null)!.duration).toBe(0)
+  })
+})
+
+describe('embeddedPlayer', () => {
+  const player = (src: string, x: number, w: number, h: number, fs = true) => ({ src, fs, x, y: 0, w, h })
+  const page = (iframes: unknown[]) => frame(0, top(null, iframes))
+
+  it('names the largest cross-origin player iframe the survey could not see into', () => {
+    const frames = [page([
+      player('https://player.example.org/embed/1', 0, 500, 250),
+      player('https://big.example.net/embed/2', 0, 800, 400),
+      player('https://example.com/same-origin', 0, 900, 450),
+    ])]
+    expect(embeddedPlayer(frames, null)).toBe('https://big.example.net')
+  })
+
+  it('leaves out ads, small frames, frames it already sees and frames smaller than the video found', () => {
+    expect(embeddedPlayer([page([player('https://ads.example.net/a', 0, 970, 250, false)])], null)).toBeNull()
+    expect(embeddedPlayer([page([player('https://p.example.org/e', 0, 200, 400)])], null)).toBeNull()
+    const seen = [page([player('https://p.example.org/e', 0, 800, 400)]),
+      frame(4, { href: 'https://p.example.org/e', top: false, vw: 800, vh: 400, title: '', video: null, iframes: [] })]
+    expect(embeddedPlayer(seen, null)).toBeNull()
+    const picked = { frameId: 0, rect: { x: 0, y: 0, w: 0.9, h: 0.9 } }
+    expect(embeddedPlayer([page([player('https://p.example.org/e', 0, 800, 400)])], picked)).toBeNull()
+    expect(embeddedPlayer([page([player('about:blank', 0, 800, 400)])], null)).toBeNull()
+    expect(embeddedPlayer([], null)).toBeNull()
+  })
+})
+
+describe('browserName', () => {
+  it('names the browser from its brands', () => {
+    const brands = (...names: string[]) => names.map((brand) => ({ brand, version: '130' }))
+    expect(browserName(brands('Not)A;Brand', 'Chromium', 'Google Chrome'))).toBe('Chrome')
+    expect(browserName(brands('Chromium', 'Microsoft Edge', 'Not_A Brand'))).toBe('Edge')
+    expect(browserName(brands('Brave', 'Chromium', 'Not.A/Brand'))).toBe('Brave')
+    expect(browserName(brands('Chromium', 'Not.A/Brand'))).toBe('Chromium')
+    expect(browserName(undefined)).toBe('Chromium')
   })
 })

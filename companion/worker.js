@@ -1,0 +1,626 @@
+// The extension's service worker: pairing, the socket to Fremkit, Fremplay's share (which tab, which
+// frame, its meta), the page controls, the shortcut and the badge. The offscreen document holds the
+// capture and the peers; it ticks this worker every second, which keeps it alive while sharing and
+// wakes it again if Chrome stopped it.
+//
+// What must survive the worker being stopped is in chrome.storage: the install id, the token and a
+// pairing waiting for its answer in `local`; the share and the link state in `session`.
+
+import { browserName } from './lib/browser.js'
+import * as protocol from './lib/protocol.js'
+import { control, embeddedPlayer, pickVideo, survey } from './lib/video.js'
+
+/** Fremkit's local server. The extension never talks to anything else. */
+const PORT = 4242
+const HTTP = `http://127.0.0.1:${PORT}`
+const WS_URL = `ws://127.0.0.1:${PORT}/companion/ws`
+
+const REVOKED_CLOSE_CODE = 4401
+const POLICY_CLOSE_CODE = 1008
+const RETRY_FIRST_MS = 1_000
+const RETRY_MAX_MS = 30_000
+/** After a minute of failures the socket waits for the next click. */
+const GIVE_UP_MS = 60_000
+/** How long the socket stays open for a popup when nothing is shared. */
+const PRESENCE_MS = 30_000
+/** A share whose tab has shown no video for this long ends. */
+const NO_VIDEO_MS = 10_000
+/** How long a start waits for the server's answer. */
+const START_TIMEOUT_MS = 8_000
+const PAIR_POLL_MS = 1_500
+const FLASH_MS = 1_500
+
+const GOLD = '#d9b36a'
+const INK = '#0b0d10'
+const DANGER = '#d9463f'
+
+/** Mirrors of chrome.storage, loaded once per worker life. */
+const local = { installId: null, token: null, deviceId: null, name: null, pairing: null, pairError: null, revoked: false }
+const session = { link: 'unpaired', share: null, lastError: null }
+
+const ready = (async () => {
+  Object.assign(local, await chrome.storage.local.get(Object.keys(local)))
+  Object.assign(session, await chrome.storage.session.get(Object.keys(session)))
+  if (!local.installId) await saveLocal({ installId: crypto.randomUUID() })
+  // A share without its offscreen document did not survive whatever stopped the worker.
+  if (session.share && !(await hasOffscreen())) await saveSession({ share: null })
+  if (!local.token) await saveSession({ link: local.revoked ? 'revoked' : 'unpaired' })
+  paintBadge()
+  if (session.share) connect()
+  if (local.pairing) pollPairing()
+})()
+
+async function saveLocal(patch) {
+  Object.assign(local, patch)
+  await chrome.storage.local.set(patch)
+}
+
+async function saveSession(patch) {
+  Object.assign(session, patch)
+  await chrome.storage.session.set(patch)
+}
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+/** Chrome throws synchronously on a negative or non-integer tab id, before any promise. */
+const validId = (id) => Number.isInteger(id) && id >= 0
+
+// --- badge ------------------------------------------------------------------------------------
+
+let flashText = null
+
+function paintBadge() {
+  // While a share waits for the server to come back (a restart), the badge keeps showing it.
+  const bang = session.link === 'revoked' || (session.link === 'unreachable' && !session.share)
+  const text = flashText ?? (bang ? '!' : session.share ? '▶' : '')
+  const alarm = text === '!'
+  chrome.action.setBadgeBackgroundColor({ color: alarm ? DANGER : GOLD })
+  chrome.action.setBadgeTextColor?.({ color: alarm ? '#ffffff' : INK })
+  chrome.action.setBadgeText({ text })
+}
+
+function flash(text) {
+  flashText = text
+  paintBadge()
+  setTimeout(() => {
+    flashText = null
+    paintBadge()
+  }, FLASH_MS)
+}
+
+async function setLink(link) {
+  if (session.link === link) return
+  await saveSession({ link })
+  paintBadge()
+}
+
+// --- pairing ----------------------------------------------------------------------------------
+
+async function pair() {
+  await saveLocal({ pairError: null })
+  const name = browserName(navigator.userAgentData?.brands)
+  let res
+  try {
+    res = await fetch(`${HTTP}/api/companion/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, installId: local.installId }),
+      cache: 'no-store',
+    })
+  } catch {
+    return saveLocal({ pairError: 'unreachable' })
+  }
+  if (res.status === 429) return saveLocal({ pairError: 'limited' })
+  const body = res.ok ? await res.json().catch(() => null) : null
+  if (!body?.requestId || !body.code) return saveLocal({ pairError: 'failed' })
+  await saveLocal({ pairing: { requestId: body.requestId, code: body.code, expiresAt: body.expiresAt }, name })
+  pollPairing()
+}
+
+let polling = false
+
+/** Asks for the answer until there is one or the code expires. Resumed when the worker restarts. */
+async function pollPairing() {
+  if (polling) return
+  polling = true
+  try {
+    while (local.pairing) {
+      const pending = local.pairing
+      if (Date.now() > pending.expiresAt) return await endPairing('expired')
+      let answer = null
+      try {
+        // A POST: Chrome sends no Origin on this extension's GETs to 127.0.0.1, and the server needs it.
+        const res = await fetch(`${HTTP}/api/companion/pair/${encodeURIComponent(pending.requestId)}`, { method: 'POST', cache: 'no-store' })
+        if (res.ok) answer = await res.json()
+      } catch { /* not running yet: keep asking until the code expires */ }
+      if (local.pairing?.requestId !== pending.requestId) continue
+      if (answer?.state === 'approved' && answer.token) {
+        await saveLocal({ token: answer.token, deviceId: answer.deviceId, pairing: null, pairError: null, revoked: false })
+        await setLink('connecting')
+        stayFor(PRESENCE_MS)
+        connect()
+        return
+      }
+      if (answer?.state === 'refused' || answer?.state === 'expired') return await endPairing(answer.state)
+      await delay(PAIR_POLL_MS)
+    }
+  } finally {
+    polling = false
+  }
+}
+
+async function endPairing(why) {
+  await saveLocal({ pairing: null, pairError: why })
+}
+
+/** Forgets the token. The device record stays in Fremkit until it is removed in the admin. */
+async function unpair({ revoked = false } = {}) {
+  await endShare({ notify: !revoked })
+  closeSocket()
+  await saveLocal({ token: null, deviceId: null, pairing: null, pairError: null, revoked })
+  await saveSession({ link: revoked ? 'revoked' : 'unpaired' })
+  paintBadge()
+}
+
+// --- socket -----------------------------------------------------------------------------------
+
+let ws = null
+/** True once the server answered hello with `ready`. */
+let greeted = false
+let retryDelay = RETRY_FIRST_MS
+let failingSince = 0
+let retryTimer = null
+let presenceUntil = 0
+let idleTimer = null
+const readyWaiters = new Set()
+
+/** The socket is wanted while sharing, and for a while after the popup opened. */
+const wanted = () => Boolean(local.token) && (Boolean(session.share) || Date.now() < presenceUntil)
+
+function stayFor(ms) {
+  presenceUntil = Math.max(presenceUntil, Date.now() + ms)
+  clearTimeout(idleTimer)
+  idleTimer = setTimeout(() => {
+    if (!wanted()) closeSocket()
+  }, ms + 100)
+}
+
+function send(msg) {
+  if (!ws || !greeted) return false
+  try {
+    ws.send(JSON.stringify(msg))
+    return true
+  } catch {
+    return false
+  }
+}
+
+function connect() {
+  if (ws || retryTimer || !local.token) return
+  if (session.link !== 'ok') setLink('connecting')
+  const socket = new WebSocket(WS_URL)
+  ws = socket
+  greeted = false
+  socket.onopen = () => {
+    const share = session.share
+    socket.send(JSON.stringify(protocol.hello(local.token, local.installId, share?.accepted ? share : undefined)))
+  }
+  socket.onmessage = (event) => {
+    if (ws !== socket) return
+    let msg
+    try {
+      msg = JSON.parse(event.data)
+    } catch {
+      return
+    }
+    onServerMessage(msg).catch(() => undefined)
+  }
+  socket.onclose = (event) => {
+    if (ws !== socket) return
+    const wasGreeted = greeted
+    ws = null
+    greeted = false
+    // Refused at hello: the record this token named is gone.
+    if (event.code === REVOKED_CLOSE_CODE || (!wasGreeted && event.code === POLICY_CLOSE_CODE)) {
+      unpair({ revoked: true })
+      return
+    }
+    if (wasGreeted) {
+      retryDelay = RETRY_FIRST_MS
+      failingSince = 0
+    } else setLink('unreachable')
+    retry()
+  }
+}
+
+function retry() {
+  if (!wanted()) {
+    failingSince = 0
+    retryDelay = RETRY_FIRST_MS
+    return
+  }
+  const now = Date.now()
+  if (!failingSince) failingSince = now
+  if (now - failingSince >= GIVE_UP_MS) return giveUp()
+  retryTimer = setTimeout(() => {
+    retryTimer = null
+    connect()
+  }, retryDelay)
+  retryDelay = Math.min(RETRY_MAX_MS, retryDelay * 2)
+}
+
+/** No server for a minute: stop trying until the next click, and end a share nobody can see. */
+async function giveUp() {
+  failingSince = 0
+  retryDelay = RETRY_FIRST_MS
+  presenceUntil = 0
+  for (const waiter of readyWaiters) waiter(false)
+  readyWaiters.clear()
+  await setLink('unreachable')
+  if (session.share) await endShare({ notify: false, error: 'unreachable' })
+}
+
+function closeSocket() {
+  clearTimeout(retryTimer)
+  retryTimer = null
+  failingSince = 0
+  retryDelay = RETRY_FIRST_MS
+  const socket = ws
+  ws = null
+  greeted = false
+  try {
+    socket?.close(1000)
+  } catch { /* already closed */ }
+}
+
+/** Opens the socket now, even after a give-up: a click is a reason to try again. */
+function reconnectNow(ms = PRESENCE_MS) {
+  if (!local.token) return
+  stayFor(ms)
+  if (retryTimer) {
+    clearTimeout(retryTimer)
+    retryTimer = null
+  }
+  connect()
+}
+
+/** Resolves true once the socket is greeted, false when the server stays unreachable. */
+function whenGreeted(timeoutMs) {
+  if (greeted) return Promise.resolve(true)
+  return new Promise((resolve) => {
+    const done = (ok) => {
+      clearTimeout(timer)
+      readyWaiters.delete(done)
+      resolve(ok)
+    }
+    const timer = setTimeout(() => done(false), timeoutMs)
+    readyWaiters.add(done)
+  })
+}
+
+// --- Fremplay ---------------------------------------------------------------------------------
+
+/** sessionId → resolver of the start waiting for the server's answer. */
+const decisions = new Map()
+let lastVideoAt = 0
+
+async function onServerMessage(msg) {
+  const share = session.share
+  switch (msg.type) {
+    case 'ready':
+      greeted = true
+      failingSince = 0
+      retryDelay = RETRY_FIRST_MS
+      await setLink('ok')
+      for (const waiter of readyWaiters) waiter(true)
+      readyWaiters.clear()
+      // A start that was waiting on the socket (or lost it before the answer) announces itself now.
+      if (share && !share.accepted) send(protocol.started(share.sessionId, share.meta))
+      return
+    case 'tab.accepted':
+      if (share?.sessionId !== msg.sessionId) return
+      share.accepted = true
+      await saveSession({ share, lastError: null })
+      decide(msg.sessionId, { ok: true })
+      return
+    case 'tab.refused':
+      if (share?.sessionId !== msg.sessionId) return
+      return endShare({ notify: false, error: msg.reason === 'noWidget' ? 'noWidget' : 'protocol' })
+    case 'tab.stop':
+      return endShare({ notify: false })
+    case 'revoked':
+      return unpair({ revoked: true })
+    case 'tab.view':
+      if (!share?.accepted || typeof msg.receiverId !== 'string') return
+      // A known receiver asking again means its peer is gone: the offscreen document replaces it.
+      {
+        const res = await toOffscreen('view', { receiverId: msg.receiverId })
+        if (res?.sdp && session.share?.sessionId === share.sessionId) {
+          send(protocol.offer(share.sessionId, msg.receiverId, res.sdp))
+        }
+      }
+      return
+    case 'tab.answer':
+      if (share?.accepted) await toOffscreen('answer', { receiverId: msg.receiverId, sdp: msg.sdp })
+      return
+    case 'tab.detach':
+      if (share) await toOffscreen('detach', { receiverId: msg.receiverId })
+      return
+    case 'tab.control':
+      return onControl(msg)
+  }
+}
+
+function decide(sessionId, result) {
+  const resolve = decisions.get(sessionId)
+  decisions.delete(sessionId)
+  resolve?.(result)
+}
+
+async function hasOffscreen() {
+  const contexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] })
+  return contexts.length > 0
+}
+
+async function ensureOffscreen() {
+  if (await hasOffscreen()) return
+  try {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['USER_MEDIA', 'WEB_RTC'],
+      justification: "Crops the shared tab to its video and sends it to Fremkit's dashboard on this Mac.",
+    })
+  } catch (e) {
+    // Two starts at once: the other one created it.
+    if (!(await hasOffscreen())) throw e
+  }
+}
+
+function toOffscreen(type, extra = {}) {
+  return chrome.runtime.sendMessage({ target: 'offscreen', type, ...extra }).catch(() => null)
+}
+
+/** Survey every frame of a tab. Null when the browser does not let the extension in. */
+async function surveyTab(tabId) {
+  try {
+    return await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: survey })
+  } catch {
+    return null
+  }
+}
+
+/** Runs a control (or just reads the state, for `null`) on the shared video, in its frame. */
+async function runControl(share, action, args = null) {
+  try {
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId: share.tabId, frameIds: [share.frameId] },
+      world: 'MAIN',
+      func: control,
+      args: [action, args],
+    })
+    return res?.result ?? null
+  } catch {
+    return null
+  }
+}
+
+/** The tab's URL and title, as Chrome reports them while the extension holds the tab's grant. */
+async function tabInfo(tabId) {
+  try {
+    return await chrome.tabs.get(tabId)
+  } catch {
+    return null
+  }
+}
+
+/** The meta the server is sent: the page's state, the tab's title, the host from the tab's URL. */
+function metaOf(previous, state, tab, frames) {
+  const topTitle = frames?.find((f) => f.result?.top)?.result?.title
+  return {
+    ...(previous ?? { paused: true, currentTime: 0, duration: 0, volume: 1, muted: false }),
+    ...(state ?? {}),
+    title: tab?.title || topTitle || previous?.title || '',
+    host: tab?.url ? protocol.hostOf(tab.url) : (previous?.host ?? 'unknown'),
+  }
+}
+
+/**
+ * Starts sharing a tab's main video, replacing any running share. From the popup or the shortcut,
+ * both of which gave the extension this tab's grant. Resolves `{ ok }` or `{ ok: false, error }`.
+ */
+async function start(tabId, { fromShortcut = false } = {}) {
+  await ready
+  if (!local.token) return { ok: false, error: 'unpaired' }
+  if (!validId(tabId)) return { ok: false, error: 'failed' }
+  const frames = await surveyTab(tabId)
+  if (!frames) return { ok: false, error: 'capture' }
+  const picked = pickVideo(frames)
+  // A player in another site's iframe needs that site's permission, which only the popup can ask for.
+  if (fromShortcut && embeddedPlayer(frames, picked)) return { ok: false, error: 'needsPermission' }
+  if (!picked) return { ok: false, error: 'noVideo' }
+  const tab = await tabInfo(tabId)
+  if (!tab) return { ok: false, error: 'failed' }
+
+  reconnectNow()
+  let streamId
+  try {
+    streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId })
+  } catch {
+    return { ok: false, error: 'capture' }
+  }
+  try {
+    await ensureOffscreen()
+  } catch {
+    return { ok: false, error: 'capture' }
+  }
+  const previous = session.share
+  // The offscreen document drops the previous capture and its peers. The server swaps the share
+  // when the new one starts, and asks again for every receiver, so nothing is sent for the old one.
+  const res = await toOffscreen('start', { streamId, rect: picked.rect })
+  if (!res?.ok) {
+    if (session.share) await endShare({ notify: true })
+    return { ok: false, error: 'capture' }
+  }
+  const share = {
+    tabId,
+    windowId: tab.windowId,
+    frameId: picked.frameId,
+    sessionId: crypto.randomUUID(),
+    rect: picked.rect,
+    accepted: false,
+    meta: null,
+  }
+  share.meta = metaOf(null, await runControl(share, null), tab, frames)
+  lastVideoAt = Date.now()
+  const decision = new Promise((resolve) => decisions.set(share.sessionId, resolve))
+  await saveSession({ share, lastError: null })
+  paintBadge()
+  if (greeted) send(protocol.started(share.sessionId, share.meta))
+  // Otherwise `ready` announces it.
+
+  const result = await Promise.race([
+    decision,
+    whenGreeted(START_TIMEOUT_MS).then((ok) => (ok ? new Promise(() => {}) : { ok: false, error: 'unreachable' })),
+    delay(START_TIMEOUT_MS).then(() => ({ ok: false, error: greeted ? 'failed' : 'unreachable' })),
+  ])
+  decisions.delete(share.sessionId)
+  if (!result.ok && session.share?.sessionId === share.sessionId) {
+    await endShare({ notify: greeted, error: result.error })
+  }
+  // The share this one was to replace is gone with the capture: the server hears it from here.
+  if (!result.ok && previous?.accepted) send(protocol.stopped(previous.sessionId))
+  if (!result.ok && result.error === 'unreachable') await setLink('unreachable')
+  return result.ok ? { ok: true } : { ok: false, error: result.error }
+}
+
+/** Ends the share: the capture, the peers and the badge. `notify` tells the server. */
+async function endShare({ notify, error = null }) {
+  const share = session.share
+  if (!share) return
+  if (notify) send(protocol.stopped(share.sessionId))
+  await saveSession({ share: null, ...(error ? { lastError: error } : {}) })
+  decide(share.sessionId, { ok: false, error: error ?? 'failed' })
+  paintBadge()
+  await toOffscreen('stop')
+  await chrome.offscreen.closeDocument().catch(() => undefined)
+  stayFor(0)
+}
+
+/** Every second, from the offscreen document: where the video is now, and the meta for the server. */
+async function tick() {
+  await ready
+  const share = session.share
+  if (!share) return { stop: true }
+  if (!ws && !retryTimer) connect()
+  const frames = await surveyTab(share.tabId)
+  const picked = frames ? pickVideo(frames) : null
+  const now = Date.now()
+  if (picked) {
+    lastVideoAt = now
+    share.frameId = picked.frameId
+    share.rect = picked.rect
+    share.meta = metaOf(share.meta, await runControl(share, null), await tabInfo(share.tabId), frames)
+  } else {
+    // Video only: no rectangle holds the last frame, and a tab without a video for long ends the share.
+    share.rect = null
+    if (now - (lastVideoAt || now) >= NO_VIDEO_MS) {
+      await endShare({ notify: true, error: 'noVideoLeft' })
+      return { stop: true }
+    }
+    if (!lastVideoAt) lastVideoAt = now
+  }
+  if (session.share?.sessionId !== share.sessionId) return { stop: true }
+  await saveSession({ share })
+  if (share.accepted) send(protocol.meta(share.sessionId, share.meta))
+  return { rect: share.rect }
+}
+
+async function onControl(c) {
+  const share = session.share
+  if (!share?.accepted) return
+  if (c.action === 'stop') return endShare({ notify: true })
+  if (c.action === 'show') {
+    if (!validId(share.tabId)) return
+    const tab = await tabInfo(share.tabId)
+    if (!tab) return
+    await chrome.tabs.update(tab.id, { active: true }).catch(() => undefined)
+    if (validId(tab.windowId)) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined)
+    return
+  }
+  const args = c.action === 'seek' ? { delta: c.delta } : c.action === 'volume' ? { value: c.value } : null
+  const state = await runControl(share, c.action, args)
+  if (!state || session.share?.sessionId !== share.sessionId) return
+  share.meta = metaOf(share.meta, state, null, null)
+  await saveSession({ share })
+  send(protocol.meta(share.sessionId, share.meta))
+}
+
+// --- events -----------------------------------------------------------------------------------
+
+const FLASHES = { noVideo: '∅' }
+
+chrome.commands.onCommand.addListener(async (command, tab) => {
+  if (command !== 'fremplay-toggle') return
+  await ready
+  if (!tab || !validId(tab.id)) return
+  if (session.share?.tabId === tab.id) return endShare({ notify: true })
+  const res = await start(tab.id, { fromShortcut: true })
+  if (res.ok) return
+  if (res.error !== 'noVideo') await saveSession({ lastError: res.error })
+  flash(FLASHES[res.error] ?? '!')
+})
+
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  await ready
+  if (session.share?.tabId === tabId) await endShare({ notify: true })
+})
+
+// A player origin granted from the popup. The popup may have closed when the browser asked, so the
+// worker starts the share it was asked for.
+let awaitingGrant = null
+
+chrome.permissions.onAdded.addListener(async (permissions) => {
+  const pending = awaitingGrant
+  if (!pending || Date.now() > pending.until) return
+  if (!(permissions.origins ?? []).includes(`${pending.origin}/*`)) return
+  awaitingGrant = null
+  await start(pending.tabId).then(async (res) => {
+    if (!res.ok) await saveSession({ lastError: res.error })
+  })
+})
+
+chrome.runtime.onMessage.addListener((msg, sender, respond) => {
+  if (sender.id !== chrome.runtime.id || msg?.target !== 'worker') return
+  const reply = (promise) => {
+    promise.then(respond, (e) => respond({ ok: false, error: 'failed', detail: String(e?.message ?? e) }))
+    return true
+  }
+  switch (msg.type) {
+    // The popup opened: be connected while it shows, to tell the link state.
+    case 'open':
+      return reply(ready.then(() => {
+        reconnectNow()
+        return { ok: true }
+      }))
+    case 'pair':
+      return reply(ready.then(pair).then(() => ({ ok: true })))
+    case 'unpair':
+      return reply(ready.then(() => unpair()).then(() => ({ ok: true })))
+    case 'start':
+      return reply(start(msg.tabId))
+    case 'stop':
+      return reply(ready.then(() => endShare({ notify: true })).then(() => ({ ok: true })))
+    case 'expectGrant':
+      if (validId(msg.tabId) && typeof msg.origin === 'string') {
+        awaitingGrant = { tabId: msg.tabId, origin: msg.origin, until: Date.now() + 60_000 }
+      }
+      return
+    // The popup showed the last error.
+    case 'seen':
+      return reply(ready.then(() => saveSession({ lastError: null })).then(() => ({ ok: true })))
+    case 'tick':
+      return reply(tick())
+    // The capture ended on Chrome's side: the tab closed, or Chrome stopped it.
+    case 'ended':
+      return reply(ready.then(() => endShare({ notify: true })).then(() => ({ ok: true })))
+  }
+})
