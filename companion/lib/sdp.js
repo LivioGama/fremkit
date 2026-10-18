@@ -109,9 +109,10 @@ function isLoopbackConnection(line) {
 
 /**
  * The receiver's answer as the offscreen document applies it: every candidate that is not a
- * `host` one on loopback (127.0.0.0/8, ::1) or a `.local` name dropped, so a server posing as
- * Fremkit cannot point the peer at another machine. Null when a `c=` line names an address
- * other than loopback or the unspecified one: such an answer is refused whole.
+ * `host` one on loopback (127.0.0.0/8, ::1) or a `.local` name dropped. Null when a `c=` line
+ * names an address other than loopback or the unspecified one: such an answer is refused whole.
+ * Defence in depth, not a boundary: ICE learns peer-reflexive addresses from incoming checks, and
+ * the socket's challenge proof is what keeps an impostor from ever answering an offer.
  */
 export function loopbackAnswer(sdp) {
   if (typeof sdp !== 'string') return null

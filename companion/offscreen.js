@@ -124,10 +124,18 @@ async function view(receiverId) {
 async function answer(receiverId, sdp) {
   const pc = peers.get(receiverId)
   if (pc?.signalingState !== 'have-local-offer' || typeof sdp !== 'string') return
-  // Only this Mac's loopback: the answer comes through the worker's socket, not from the widget itself.
-  const local = loopbackAnswer(sdp)
-  if (local === null) return
-  await pc.setRemoteDescription({ type: 'answer', sdp: local })
+  // Defence in depth only: ICE learns the receiver's address from its incoming checks whatever
+  // the answer lists, and a `.local` name resolves to whoever announces it. What keeps the video
+  // from a server posing as Fremkit is the socket's challenge proof (lib/handshake.js): an impostor
+  // never gets an offer to answer. This drops the answer's candidates that are not loopback or
+  // `.local`, and an answer whose `c=` line names another host.
+  const filtered = loopbackAnswer(sdp)
+  if (filtered === null) {
+    // Refused whole: drop the peer so the widget's retry asks for a new one now.
+    drop(receiverId)
+    return
+  }
+  await pc.setRemoteDescription({ type: 'answer', sdp: filtered })
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {

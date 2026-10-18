@@ -253,9 +253,12 @@ site's frames only when you allow that site.
 else; it is out of scope, as under *Known limits*. One running as another account, or anything that
 reaches the port without reading your files, cannot pair without you being at the Edge to allow it.
 Nor can it learn a linked extension's token by holding port 4242 in Fremkit's place: it cannot
-answer the challenge, so the token is never sent, and the extension refuses an answer that points
-the video anywhere but this Mac's loopback or a `.local` name. Pairing with such a program gives
-it a token it made up itself, never the real one.
+answer the challenge, so the token is never sent, and without the token it never sees an offer to
+answer, which is what keeps the video from it. The extension also drops the answer's candidates
+that are not loopback or a `.local` name, as defence in depth only: WebRTC learns the receiver's
+address from its incoming checks whatever the answer lists. Such a program can make the extension
+show itself removed (an unproven refusal), but the token stays until you pair again. Pairing with
+it gives it a token it made up itself, never the real one.
 
 ## What Fremkit reads on your Mac
 
