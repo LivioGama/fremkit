@@ -41,7 +41,9 @@ export const HELLO_TIMEOUT_MS = 5_000
  * together and from any one of them. Before hello a socket has proven nothing; an honest extension
  * opens one at a time and finishes in milliseconds, so it never meets either cap. Only a socket
  * with an extension `Origin` gets this far (anything else is 403 before the upgrade), so a page
- * cannot take a slot; a local process can forge that header, and is bounded, not stopped.
+ * cannot take a slot. A local process can forge that header, and any number of origins with it:
+ * the per-origin cap does not limit it (eight made-up origins fill all 32 slots), only the overall
+ * one bounds what it holds, and it can keep every slot taken (SECURITY.md says so).
  */
 export const MAX_PENDING_SOCKETS = 32
 export const MAX_PENDING_PER_ORIGIN = 4
