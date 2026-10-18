@@ -83,6 +83,18 @@ describe('WidgetCatalog with an installed folder', () => {
     expect(cat.errors.find((e) => e.id === 'paste')!.error).toContain('clipboard')
   })
 
+  it('a registry manifest subscribing to companion is refused', async () => {
+    await widget('fremplay', { ...valid('fremplay'), subscriptions: ['companion'], commands: ['companion'] })
+    await into(installed, 'watch', { ...valid('watch'), subscriptions: ['companion'] })
+    await into(installed, 'steer', { ...valid('steer'), commands: ['companion'] })
+    const cat = new WidgetCatalog(dir, installed)
+    await cat.scan()
+    expect(cat.entry('fremplay')!.manifest.subscriptions).toEqual(['companion'])
+    expect(cat.get('watch')).toBeUndefined()
+    expect(cat.get('steer')).toBeUndefined()
+    expect(cat.errors.find((e) => e.id === 'watch')!.error).toContain('companion')
+  })
+
   it('tolerates an installed folder that does not exist yet', async () => {
     await widget('clock', valid('clock'))
     const cat = new WidgetCatalog(dir, join(installed, 'nope'))
