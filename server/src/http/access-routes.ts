@@ -8,7 +8,7 @@
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { CODE_TTL_MS, isPublicRoute, safeNext, type AccessGate } from './access.js'
+import { CODE_TTL_MS, isPublicRoute, isWellFormedNonce, safeNext, type AccessGate } from './access.js'
 import { tr, serverLocale } from '../i18n.js'
 
 /** What a refused request is told about how to authenticate. The helper's probe looks for it. */
@@ -71,6 +71,23 @@ export function installAccessGate(app: FastifyInstance, { gate, appliesTo = () =
     // cookie) must not be able to open sessions of its own and outlive its expiry.
     if (!gate.hasBearer(req.headers)) return refuse(req, reply)
     return { code: gate.mintCode(), expiresInSeconds: Math.floor(CODE_TTL_MS / 1000) }
+  })
+
+  /**
+   * The server proves it holds the secret, before anyone shows it theirs.
+   *
+   * The helper and anything else that holds the secret ask this first, with a random nonce and
+   * no credential, and send the bearer only to a listener whose answer checks out. Something
+   * else on the port — another account's program that bound it while ours was down — cannot
+   * answer, so it is never handed the secret and never shown as Fremkit. The answer is a MAC
+   * under a label of its own (see `accessProof`): it reveals nothing about the secret and is
+   * good for nothing but this question. Public, and only on the loopback listener.
+   */
+  app.get<{ Querystring: { nonce?: string } }>('/auth/proof', async (req, reply) => {
+    reply.header('cache-control', 'no-store')
+    const nonce = req.query.nonce
+    if (!isWellFormedNonce(nonce)) return reply.code(400).send({ error: tr(serverLocale(), 'proxy.badRequest') })
+    return { proof: gate.prove(nonce) }
   })
 
   /** Ends the caller's own session (signing out) and clears its cookie. */

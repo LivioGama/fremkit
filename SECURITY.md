@@ -11,12 +11,24 @@ written around them; the secret is described first because every one of them mee
 
 ### The local access secret
 
-Every launch of the helper makes a new secret — 32 random bytes — and hands it to the server it
-starts, in an environment variable the server removes as soon as it has read it. A server started
-by hand (`pnpm start`, `pnpm dev`) makes its own. The server writes it to
+The helper makes a new secret — 32 random bytes — for every server it starts, and hands it over
+in an environment variable the server removes as soon as it has read it. A server started by hand
+(`pnpm start`, `pnpm dev`) makes its own. Once it listens, the server writes it to
 `~/Library/Application Support/Fremkit/access-<port>.token` (under `FREMKIT_SUPPORT_DIR` when that
-is set), readable by your account only (mode `0600`), replacing the file in one rename at every
-start. It is never logged, never returned by the API and never quoted in an error.
+is set), readable by your account only (mode `0600`), replacing the file in one rename, and
+removes the file when it exits. It is never logged, never returned by the API and never quoted in
+an error.
+
+**The server proves itself first.** Whatever answers on the port is not necessarily Fremkit:
+another account on the Mac could bind 4242 while the server is down — at login, or while the
+helper waits to restart it — and wait for the secret. So before the helper sends the secret or
+shows a page from the port, it asks `/auth/proof` with a random nonce and no credential, and only
+a listener that answers with the right HMAC of that nonce under the secret is treated as the
+server. Anything else is shown in the **F** menu as *port 4242 is held by another program*; the
+Edge and the admin window load nothing from it, and the helper starts its own server once the
+port is free. Because the secret changes with every server and its file goes with the server,
+scripts that read the file find nothing to send while no server runs, and a secret picked up
+from a server that has since died opens nothing.
 
 Every request must carry it, in one of two ways:
 

@@ -8,11 +8,16 @@
  * helper may find a `pnpm dev` server from another checkout on its port, and the app keeps its
  * data somewhere a checkout does not. Whoever listens on the port owns the file.
  *
+ * Written once the server listens and removed when it exits, so the file names a live server or
+ * none: a reader that finds it while something else holds the port (another account's program
+ * that bound it while ours was down) holds a secret nobody will take any more.
+ *
  * Mode `0600`, replaced atomically: written to a temporary file in the same folder and renamed
  * over the old one, so a reader sees the previous secret or the new one, never half of either.
  */
 
 import { randomBytes } from 'node:crypto'
+import { readFileSync, unlinkSync } from 'node:fs'
 import { chmod, mkdir, open, rename, unlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
@@ -36,9 +41,8 @@ export function accessTokenPath(port: number, env: NodeJS.ProcessEnv = process.e
 /**
  * The secret this server runs with: the one its launcher handed it, else a new one.
  *
- * The helper passes one so that the secret outlives a restart of the server it supervises —
- * the kiosk's cookie stays good when the server is respawned — and so that it knows the secret
- * without reading it back. The variable is deleted from the environment once read: the server
+ * The helper passes a fresh one to every server it spawns, so it knows the secret without
+ * reading it back and a respawned server never honours its predecessor's. The variable is deleted from the environment once read: the server
  * runs other programs (`ffmpeg`, `open`, the disk scanner), and none of them has any business
  * inheriting it. A value that is not a well-formed secret is ignored, without being quoted.
  */
@@ -68,5 +72,18 @@ export async function writeAccessToken(path: string, token: string): Promise<voi
   } catch (err) {
     await unlink(tmp).catch(() => {})
     throw err
+  }
+}
+
+/**
+ * Removes the token file if it still holds `token`, synchronously, for an exit handler. A file
+ * another server has written since (a second server on the port, started by hand) is left alone.
+ * Quiet: an exit is no time to fail.
+ */
+export function removeAccessToken(path: string, token: string): void {
+  try {
+    if (readFileSync(path, 'utf8').trim() === token) unlinkSync(path)
+  } catch {
+    // Gone already, or unreadable: nothing to do.
   }
 }

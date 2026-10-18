@@ -1,43 +1,5 @@
 import Foundation
 
-/// Telling this project's server from anything else that answers on the port.
-public enum ServerProbe {
-    /// Largest `/api/config` body worth parsing to answer the question.
-    public static let maxProbeBytes = 8 * 1024 * 1024
-
-    /**
-     Whether an `/api/config` body is one of ours.
-
-     The helper stands down and stops supervising when it finds a server already on its port —
-     that is what lets `pnpm dev` take over — and it used to decide that on the status code
-     alone, so any program answering anything between 200 and 499 made it give up, with no way
-     back but a relaunch.
-
-     Only the shape is checked: a JSON object with a `version` and either `pages` (config v3 and
-     before) or `screens` (v4 on), so a server of either generation is recognised. Enough to tell
-     our server from something else, and nothing a future config version breaks.
-     */
-    public static func looksLikeFremkitConfig(_ data: Data?) -> Bool {
-        guard let data, !data.isEmpty, data.count < maxProbeBytes,
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return false }
-        return object["version"] != nil && (object["pages"] is [Any] || object["screens"] is [Any])
-    }
-
-    /**
-     Whether a probe's answer comes from our server.
-
-     A 200 carrying a Fremkit config, as before; or a 401 carrying our challenge, which is what a
-     server holding a different access secret than the helper's answers (a `pnpm dev` started
-     by hand, before the helper has read its token file). It is still ours, and the helper must
-     still stand aside rather than spawn a second server onto a port that is taken.
-     */
-    public static func isFremkitAnswer(status: Int?, body: Data?, challenge: String?) -> Bool {
-        if status == 200 { return looksLikeFremkitConfig(body) }
-        return status == 401 && challenge == AccessToken.challenge
-    }
-}
-
 /// Ordering the version directories a Node version manager keeps.
 public enum NodeVersionOrder {
     /**

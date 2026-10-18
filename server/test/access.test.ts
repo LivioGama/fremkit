@@ -5,10 +5,10 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import {
-  AccessGate, CODE_TTL_MS, MAX_PENDING_CODES, MAX_SESSIONS, SESSION_IDLE_MS, SESSION_MAX_MS, cookieName, generateToken, isPublicRoute, isWellFormedToken,
+  AccessGate, accessProof, CODE_TTL_MS, MAX_PENDING_CODES, MAX_SESSIONS, SESSION_IDLE_MS, SESSION_MAX_MS, cookieName, generateToken, isPublicRoute, isWellFormedToken,
   readBearer, readCookie, safeEqual, safeNext,
 } from '../src/http/access.js'
-import { ACCESS_TOKEN_ENV, accessTokenPath, resolveAccessToken, supportDirectory, writeAccessToken } from '../src/http/access-file.js'
+import { ACCESS_TOKEN_ENV, accessTokenPath, removeAccessToken, resolveAccessToken, supportDirectory, writeAccessToken } from '../src/http/access-file.js'
 import { ACCESS_CHALLENGE } from '../src/http/access-routes.js'
 import { serializeRequest } from '../src/http/logging.js'
 
@@ -194,6 +194,29 @@ describe('the session cookie', () => {
   })
 })
 
+describe('the proof', () => {
+  const nonce = 'n0nce-for-the-test_0123456789'
+  it('answers without a credential, with a MAC only the secret could make', async () => {
+    const res = await get(`/auth/proof?nonce=${nonce}`)
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['cache-control']).toBe('no-store')
+    expect(res.json().proof).toBe(accessProof(TOKEN, nonce))
+    expect(res.json().proof).not.toBe(accessProof(generateToken(), nonce))
+    expect(res.body).not.toContain(TOKEN)
+  })
+  it('matches a fixed vector, which the helper checks too (AccessProofTests.swift)', () => {
+    expect(accessProof('A'.repeat(43), 'abcdefghijklmnop')).toBe('XAkZGHu68HFGxebuJzgT09AtTRQ3rswof7b2of6to_o')
+  })
+  it('refuses a nonce that is not one', async () => {
+    for (const bad of ['', 'short', 'x'.repeat(129), 'has space here!!!!']) {
+      expect((await get(`/auth/proof?nonce=${encodeURIComponent(bad)}`)).statusCode, bad).toBe(400)
+    }
+  })
+  it('is a read only', async () => {
+    expect((await app.inject({ method: 'POST', url: `/auth/proof?nonce=${nonce}`, headers: { host: HOST } })).statusCode).not.toBe(200)
+  })
+})
+
 describe('AccessGate sessions', () => {
   const cookieFor = (gate: AccessGate, id: string) => ({ cookie: `${gate.cookie}=${id}` })
   it('expire after a day unused', () => {
@@ -320,6 +343,16 @@ describe('the token file', () => {
     expect((await stat(path)).mode & 0o777).toBe(0o600)
     // No temporary file left behind.
     expect(await readdir(join(dir, 'support'))).toEqual([`access-${PORT}.token`])
+  })
+  it('is removed on exit only while it still holds this server\'s secret', async () => {
+    const path = join(dir, 'support', `access-${PORT}.token`)
+    await writeAccessToken(path, TOKEN)
+    removeAccessToken(path, generateToken())
+    expect((await readFile(path, 'utf8')).trim()).toBe(TOKEN)
+    removeAccessToken(path, TOKEN)
+    await expect(stat(path)).rejects.toThrow()
+    // Already gone: quiet.
+    expect(() => removeAccessToken(path, TOKEN)).not.toThrow()
   })
   it('lives in the helper\'s support folder, keyed by port', () => {
     expect(accessTokenPath(4242, {}, '/Users/u')).toBe('/Users/u/Library/Application Support/Fremkit/access-4242.token')

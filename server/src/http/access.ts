@@ -23,7 +23,7 @@
  * A few routes are exempt, by route rather than by path text — see `isPublicRoute`.
  */
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { readCookie } from './cookies.js'
 
 /** Bytes of randomness in a secret and in a one-time code. */
@@ -101,7 +101,24 @@ export function readBearer(header: string | string[] | undefined): string | unde
  * Decided on the route Fastify matched, not on the request's path text: a path that merely
  * *starts* with `/widgets/` but is routed somewhere else (dot segments, encodings) is not exempt.
  */
-export const PUBLIC_ROUTES: ReadonlySet<string> = new Set(['/auth', '/fremkit.js', '/widgets/:id/*'])
+export const PUBLIC_ROUTES: ReadonlySet<string> = new Set(['/auth', '/auth/proof', '/fremkit.js', '/widgets/:id/*'])
+
+/** What a proof nonce may look like: base64url, 16 to 128 characters. */
+const NONCE_RE = /^[A-Za-z0-9_-]{16,128}$/
+
+/** True for a string the proof route accepts as a nonce. */
+export function isWellFormedNonce(value: unknown): value is string {
+  return typeof value === 'string' && NONCE_RE.test(value)
+}
+
+/**
+ * The server's proof that it holds `secret`, for a caller's `nonce`: HMAC-SHA256 over a fixed
+ * label and the nonce, base64url. The label keeps the MAC from meaning anything anywhere else.
+ * `native/Sources/FremkitCore/AccessProof.swift` computes the same and must stay in step.
+ */
+export function accessProof(secret: string, nonce: string): string {
+  return createHmac('sha256', secret).update(`fremkit-access-proof-v1:${nonce}`).digest('base64url')
+}
 
 export function isPublicRoute(method: string, routeUrl: string | undefined): boolean {
   const m = method.toUpperCase()
@@ -217,6 +234,11 @@ export class AccessGate {
   get sessionCount(): number {
     this.sweepSessions()
     return this.sessions.size
+  }
+
+  /** This server's answer to a proof challenge (see `accessProof`). */
+  prove(nonce: string): string {
+    return accessProof(this.token, nonce)
   }
 
   /** A new one-time code, valid for `CODE_TTL_MS`. */

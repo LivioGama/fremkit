@@ -7,6 +7,10 @@
 # command line — any user on the Mac can read another process's arguments with `ps` — so curl is
 # handed the header through a file descriptor: `curl -H @<(fremkit_auth_header) …`.
 #
+# The file is read on every call: each server has its own secret, written once it listens and
+# removed when it exits, so a script follows a restart without noticing and sends nothing while no
+# server runs.
+#
 # Source it; every function is quiet and best-effort, printing nothing when there is no secret.
 
 # The port in an http://host:port/… URL, or 4242.

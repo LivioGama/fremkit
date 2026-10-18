@@ -3,7 +3,7 @@ import { buildApp } from './app.js'
 import { providers } from './providers/index.js'
 import { shippedPaths } from './paths.js'
 import { DEFAULT_BACKGROUND } from './backgrounds/seed.js'
-import { accessTokenPath, resolveAccessToken, writeAccessToken } from './http/access-file.js'
+import { accessTokenPath, removeAccessToken, resolveAccessToken, writeAccessToken } from './http/access-file.js'
 
 // A checkout's own folders, or the app bundle's when the helper sets `FREMKIT_ROOT`: see paths.ts.
 let shipped: ReturnType<typeof shippedPaths>
@@ -73,8 +73,6 @@ if (access.rejected) console.error('fremkit: FREMKIT_ACCESS_TOKEN is not a valid
 const tokenFile = accessTokenPath(port)
 
 async function main(): Promise<void> {
-  // Written before the server listens, so whoever sees the port answer can already read it.
-  await writeAccessToken(tokenFile, access.token)
   const app = await buildApp({
     accessToken: access.token,
     dataDir,
@@ -90,6 +88,11 @@ async function main(): Promise<void> {
   })
   installShutdown(app)
   await app.listen({ port, host: '127.0.0.1' })
+  // Written once the port is ours, and removed on the way out: the file names a server that is
+  // listening, never one that failed to bind or has gone. The helper knows the secret of a
+  // server it spawned without reading this; scripts and a helper facing a `pnpm dev` read it.
+  await writeAccessToken(tokenFile, access.token)
+  process.on('exit', () => removeAccessToken(tokenFile, access.token))
   app.log.info({ tokenFile, source: access.source }, 'local access secret written')
 }
 

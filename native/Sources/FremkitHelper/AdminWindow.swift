@@ -118,12 +118,20 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
         if webView.url == nil { signInAndLoad() } else { webView.reload() }
     }
 
-    /// Loads the admin through a fresh one-time sign-in link, or the page itself when the server
-    /// would not mint one (it then answers 401, or fails to load).
+    /// Loads the admin through a fresh one-time sign-in link. Without one — nothing proved it is
+    /// our server on the port — nothing is loaded, so whatever holds the port is never shown as
+    /// the admin; it is tried again in a few seconds while the window is open.
     private func signInAndLoad() {
         access.signInURL(for: url) { [weak self] signIn in
             guard let self, let webView = self.webView else { return }
-            webView.load(URLRequest(url: signIn ?? self.url))
+            guard let signIn else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                    guard let self, self.window?.isVisible == true, self.webView?.url == nil else { return }
+                    self.signInAndLoad()
+                }
+                return
+            }
+            webView.load(URLRequest(url: signIn))
         }
     }
 

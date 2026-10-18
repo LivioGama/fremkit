@@ -3,15 +3,13 @@ import Foundation
 /// The server's local access secret, as the helper makes, finds and presents it.
 ///
 /// The server answers only callers that carry it (see `SECURITY.md` and `server/src/http/access.ts`).
-/// The helper makes one per launch and hands it to every server it spawns, so the kiosk's cookie
-/// stays good across a respawn. A server the helper did not start — `pnpm dev` holding the port —
-/// has its own, which it wrote to the same per-port file; that file is what the helper reads, so
-/// both cases are one code path. The two sides must agree on the file's place and the cookie's name.
+/// The helper makes a fresh one for every server it spawns. A server the helper did not start —
+/// `pnpm dev` holding the port — has its own, which it wrote to the same per-port file once it
+/// listened. Either way, the listener has to prove it holds the secret (`AccessProof`) before the
+/// helper presents it. The two sides must agree on the file's place.
 public enum AccessToken {
     /// The variable the helper passes the secret in. The server deletes it once read.
     public static let environmentKey = "FREMKIT_ACCESS_TOKEN"
-    /// What a refusal from our server says in `WWW-Authenticate`; the probe recognises it.
-    public static let challenge = "Bearer realm=\"fremkit\""
 
     /// 32 random bytes, base64url without padding: 43 characters.
     ///

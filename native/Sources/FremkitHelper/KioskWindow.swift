@@ -128,12 +128,14 @@ final class KioskWindow: NSObject, WKNavigationDelegate {
 
     /// Loads the dashboard through a fresh one-time sign-in link, so the web view holds a session
     /// of the server that answers now: a server restarted since (sessions die with it) is caught
-    /// up with on the next load. Without a link — the server is not up yet — the page itself is
-    /// loaded, and its failure or its 401 schedules the retry.
+    /// up with on the next load. Without a link — nothing proved it is our server on the port,
+    /// or it is not up yet — nothing is loaded: whatever holds the port is not shown on the Edge.
+    /// The current page stays, and the load is tried again shortly.
     private func load() {
         access.signInURL(for: url) { [weak self] signIn in
             guard let self else { return }
-            self.webView.load(URLRequest(url: signIn ?? self.url))
+            guard let signIn else { self.scheduleRetry(); return }
+            self.webView.load(URLRequest(url: signIn))
         }
     }
 

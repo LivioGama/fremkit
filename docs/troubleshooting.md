@@ -323,6 +323,15 @@ for a new one the same way.
 A script getting **401** is missing the `Authorization: Bearer` header, or read the token file of
 another port: see [contributing](contributing.md#signing-in-the-access-secret).
 
+## The menu says "port 4242 is held by another program"
+
+Something answers on the port and could not prove it holds Fremkit's access secret, so the helper
+sends it nothing and shows nothing from it: neither the Edge nor the admin window load. It is
+another program that took the port — possibly while Fremkit was restarting — or a Fremkit server
+from an older checkout. Find it with `lsof -nP -iTCP:4242 -sTCP:LISTEN` and stop it; the helper
+starts its own server within seconds of the port coming free. If the program belongs to another
+account on this Mac and you did not start it, treat that as hostile.
+
 ## The menu says "Server: external"
 
 Something already answers port 4242, so the helper steps aside rather than starting a second one.

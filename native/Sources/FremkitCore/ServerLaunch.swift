@@ -68,8 +68,8 @@ public enum ServerLaunch: Equatable {
      both setups. The server runs it by this absolute path, and falls back to `du` without it;
      nothing goes on `PATH`.
 
-     `accessToken` is the helper's local access secret (`AccessToken`), the same for every child
-     of one helper launch. One inherited from the helper's own environment is never passed on:
+     `accessToken` is the local access secret (`AccessToken`) the helper made for this child; every
+     spawn gets a new one. One inherited from the helper's own environment is never passed on:
      the server would take it, and it is not the one the helper presents.
      */
     public func environment(inheriting base: [String: String],

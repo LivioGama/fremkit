@@ -83,6 +83,11 @@ tagged `vX.Y.Z`.
   own that ends after a day unused, after a week at most, or when Fremkit restarts, instead of
   the key itself. Another program listening on your Mac can no longer pick the key up from the
   browser's cookies.
+- **Fremkit checks it is talking to itself.** Before the menu-bar helper hands over its key or
+  shows a page, the server on port 4242 has to prove it holds the key. Another program that took
+  the port while Fremkit was restarting is no longer shown on the Edge or as the admin; the **F**
+  menu says the port is held by another program, and Fremkit takes it back once it is free. The
+  key also changes every time the server starts, and is removed when it stops.
 
 ## 0.4.1 — 2026-10-16
 

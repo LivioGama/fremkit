@@ -96,12 +96,12 @@ let suites: [(String, () -> XCTestCase, [TestMethod])] = [
         ("testReadsTheCodeOutOfTheServersAnswer", { ($0 as! AccessTokenTests).testReadsTheCodeOutOfTheServersAnswer() }),
         ("testSignInURLStaysOnTheTargetsOrigin", { ($0 as! AccessTokenTests).testSignInURLStaysOnTheTargetsOrigin() }),
     ]),
-    ("ServerProbeTests", { ServerProbeTests() }, [
-        ("testA401WithOurChallengeIsOurs", { ($0 as! ServerProbeTests).testA401WithOurChallengeIsOurs() }),
-        ("testRecognisesAFremkitConfig", { ($0 as! ServerProbeTests).testRecognisesAFremkitConfig() }),
-        ("testRecognisesAV4Config", { ($0 as! ServerProbeTests).testRecognisesAV4Config() }),
-        ("testRefusesAnythingElseAnsweringOnThePort", { ($0 as! ServerProbeTests).testRefusesAnythingElseAnsweringOnThePort() }),
-        ("testRefusesNothingAtAll", { ($0 as! ServerProbeTests).testRefusesNothingAtAll() }),
+    ("AccessProofTests", { AccessProofTests() }, [
+        ("testMatchesTheServersVector", { ($0 as! AccessProofTests).testMatchesTheServersVector() }),
+        ("testNoncesAreFreshAndWellFormed", { ($0 as! AccessProofTests).testNoncesAreFreshAndWellFormed() }),
+        ("testOnlyTheRightProofIsOurs", { ($0 as! AccessProofTests).testOnlyTheRightProofIsOurs() }),
+        ("testAnythingElseThatAnswersIsForeign", { ($0 as! AccessProofTests).testAnythingElseThatAnswersIsForeign() }),
+        ("testNothingAnsweringIsAbsent", { ($0 as! AccessProofTests).testNothingAnsweringIsAbsent() }),
     ]),
     ("KioskOriginTests", { KioskOriginTests() }, [
         ("testAllowsTheDashboardsOwnOrigin", { ($0 as! KioskOriginTests).testAllowsTheDashboardsOwnOrigin() }),
