@@ -46,8 +46,9 @@ export const DEVICE_TERMINATE_MS = 2000
 export type DevicePolicy = (deviceId: string) => ScreenChannels | null
 
 /**
- * What a paired device is sent on a host channel instead of what everyone else hears: the config,
- * narrowed to its own screen (`devices/scope.ts`). Null sends nothing.
+ * What a paired device is sent on a viewed channel instead of what everyone else hears: the host
+ * channels (the config, narrowed to its own screen, `devices/scope.ts`) and any channel named when
+ * the view is set (`brightness`, narrowed to its screen's entry). Null sends nothing.
  */
 export type HostView = (deviceId: string, channel: string, data: unknown) => unknown
 
@@ -75,6 +76,8 @@ export class Hub {
    * Mac's, and a view that does not exist yet must not fall back to it.
    */
   private hostView: HostView = () => null
+  /** The channels a paired socket hears through `hostView`: the host ones, and those named with it. */
+  private viewChannels = new Set<string>(HOST_CHANNELS)
   /** The last host-channel message each paired socket was sent, so a refresh repeats nothing. */
   private hostSent = new Map<SocketLike, Map<string, string>>()
 
@@ -124,8 +127,10 @@ export class Hub {
     this.devicePayload = fn
   }
 
-  setHostView(fn: HostView): void {
+  /** `channels`: widget channels besides the host ones whose payload a device gets its own view of. */
+  setHostView(fn: HostView, channels: readonly string[] = []): void {
     this.hostView = fn
+    this.viewChannels = new Set([...HOST_CHANNELS, ...channels])
   }
 
   /**
@@ -153,7 +158,7 @@ export class Hub {
     for (const socket of sockets) {
       const channels = this.clients.get(socket)
       if (!channels) continue
-      for (const ch of HOST_CHANNELS) {
+      for (const ch of this.viewChannels) {
         if (!channels.has(ch) || !this.lastValues.has(ch)) continue
         const view = this.messageFor(socket, ch, this.lastValues.get(ch), '')
         if (view !== null) this.safeSend(socket, view)
@@ -210,7 +215,7 @@ export class Hub {
    */
   private messageFor(socket: SocketLike, channel: string, data: unknown, shared: string): string | null {
     const ctx = this.contextOf(socket)
-    if (!ctx.paired || !HOST_CHANNELS.includes(channel)) return shared
+    if (!ctx.paired || !this.viewChannels.has(channel)) return shared
     if (ctx.deviceId === undefined) return null
     let msg: string
     try {

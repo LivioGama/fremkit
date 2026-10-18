@@ -443,6 +443,21 @@ describe('a paired socket', () => {
     registry.stop()
   })
 
+  it('hears its own view of a widget channel named with the view, and the full one locally', () => {
+    const { hub, paired, registry, setPolicy } = pairedSetup()
+    setPolicy({ 'dev-a': { subscriptions: ['brightness'], commands: [] } })
+    hub.setHostView((_id, channel, data) => (channel === 'brightness' ? { only: (data as { a: number }).a } : null), ['brightness'])
+    const socket = paired('dev-a')
+    const local = new FakeSocket()
+    hub.attach(local, { loopback: true, paired: false })
+    socket.receive({ type: 'subscribe', channel: 'brightness' })
+    local.receive({ type: 'subscribe', channel: 'brightness' })
+    hub.broadcast('brightness', { a: 1, b: 2 })
+    expect(socket.sent).toEqual([{ type: 'data', channel: 'brightness', data: { only: 1 } }])
+    expect(local.sent).toEqual([{ type: 'data', channel: 'brightness', data: { a: 1, b: 2 } }])
+    registry.stop()
+  })
+
   it('with no screen, is held to the host channels', () => {
     const { paired, registry } = pairedSetup()
     const socket = paired('dev-unknown')

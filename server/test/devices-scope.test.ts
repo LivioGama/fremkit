@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { RemoteListener } from '../src/devices/listener.js'
+import { deviceBrightnessView } from '../src/devices/service.js'
 import { commandScope, deviceConfigView, iconInScope, instanceInScope, widgetInScope, type ScreenScope } from '../src/devices/scope.js'
 import { ConfigSchema, type Config } from '../src/config/schema.js'
 import { hasOpenssl, remote, tlsMaterial, TinyWs, upgrade } from './helpers/remote.js'
@@ -94,6 +95,16 @@ describe('screen scope', () => {
     expect(commandScope({ loopback: false, paired: false }, screenOf)).toEqual({ kind: 'none' })
     expect(commandScope(undefined, screenOf)).toEqual({ kind: 'none' })
     expect(commandScope({ loopback: false, paired: true, deviceId: 'dev-a' }, () => { throw new Error('x') })).toEqual({ kind: 'none' })
+  })
+})
+
+describe('deviceBrightnessView', () => {
+  const snapshot = { kiosk: 'edge', screens: { edge: { value: 40 }, 'tab-a': { value: 70 }, 'tab-b': { value: 10 } } }
+  it('keeps the device\'s own screen and hides every other, the Edge included', () => {
+    expect(deviceBrightnessView(snapshot, 'tab-a')).toEqual({ kiosk: null, screens: { 'tab-a': { value: 70 } } })
+    expect(deviceBrightnessView(snapshot, 'gone')).toEqual({ kiosk: null, screens: {} })
+    expect(deviceBrightnessView(snapshot, null)).toBeNull()
+    expect(deviceBrightnessView(snapshot, 'constructor')).toEqual({ kiosk: null, screens: {} })
   })
 })
 

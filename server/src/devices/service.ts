@@ -79,6 +79,17 @@ export interface DeviceServiceOptions {
   preferredAddress?: (addresses: string[]) => Promise<string | null>
 }
 
+/**
+ * The `brightness` snapshot as a device hears it: its own screen's entry and no other screen's id,
+ * level or mode, the Edge's (`kiosk`) included. Shaped like the snapshot, so the brightness widget,
+ * which reads `screens[Fremkit.screen]`, works unchanged.
+ */
+export function deviceBrightnessView(data: unknown, screenId: string | null): unknown {
+  if (screenId === null || !data || typeof data !== 'object') return null
+  const screens = (data as { screens?: Record<string, unknown> }).screens ?? {}
+  return { kiosk: null, screens: Object.hasOwn(screens, screenId) ? { [screenId]: screens[screenId] } : {} }
+}
+
 /** Whether a device screen was made for this viewport, in either orientation. */
 function fits(screen: Config['screens'][number], viewport: Viewport): boolean {
   const v = screen.display.viewport
@@ -149,8 +160,13 @@ export class DeviceService {
     this.hub.setPolicy((deviceId) => this.policyFor(deviceId))
     this.hub.setDevicePayload((deviceId) => this.me(deviceId))
     // The config a device hears is its own screen's (devices/scope.ts), never the Mac's whole one.
-    this.hub.setHostView((deviceId, channel, data) =>
-      channel === 'config' ? deviceConfigView(data as Config, this.deviceScreenOf(deviceId)) : null)
+    // So is the brightness it hears: its own screen's entry, not every screen's id and level.
+    this.hub.setHostView((deviceId, channel, data) => {
+      const screenId = this.deviceScreenOf(deviceId)
+      if (channel === 'config') return deviceConfigView(data as Config, screenId)
+      if (channel === 'brightness') return deviceBrightnessView(data, screenId)
+      return null
+    }, ['brightness'])
     this.config.onChange((cfg) => this.onConfigChange(cfg))
     this.catalog.onScan(() => {
       this.manifests = null
