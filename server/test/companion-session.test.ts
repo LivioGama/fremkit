@@ -73,12 +73,52 @@ describe('CompanionSession', () => {
     t.clear()
     t.start('b', S2)
     expect(t.to('a')).toEqual([{ type: 'tab.stop' }])
-    expect(t.to('b')).toEqual([{ type: 'tab.accepted', sessionId: S2 }])
+    // The receiver stays, its old offer goes, and the new sharer is asked for one.
+    expect(t.to('b')).toEqual([{ type: 'tab.accepted', sessionId: S2 }, { type: 'tab.view', receiverId: R(1) }])
     expect(t.session.snapshot().tab).toMatchObject({ state: 'sharing', sessionId: S2, device: 'Browser b', offers: {} })
     // The first extension's messages about its old share are no longer heard.
     t.session.onMessage('a', { type: 'tab.meta', sessionId: S1, meta: { ...META, title: 'Old' } })
     t.session.onMessage('a', { type: 'tab.stopped', sessionId: S1 })
     expect(t.session.snapshot().tab).toMatchObject({ sessionId: S2, meta: META })
+  })
+
+  it('receivers registered while idle survive a tab.started and are asked for', () => {
+    const t = setup()
+    expect(t.session.view(R(1), 'w1')).toBe(true)
+    expect(t.session.view(R(2), 'w2')).toBe(true)
+    t.hello('a')
+    t.clear()
+    t.start('a')
+    expect(t.to('a')).toEqual([
+      { type: 'tab.accepted', sessionId: S1 },
+      { type: 'tab.view', receiverId: R(1) },
+      { type: 'tab.view', receiverId: R(2) },
+    ])
+    t.session.onMessage('a', { type: 'tab.offer', sessionId: S1, receiverId: R(2), sdp: SDP })
+    expect(t.session.snapshot().tab.offers).toEqual({ [R(2)]: SDP })
+  })
+
+  it('a switch from A to B re-views every receiver to B, offers reset', () => {
+    const t = setup()
+    t.hello('a')
+    t.hello('b')
+    t.start('a', S1)
+    t.session.view(R(1), 'w1')
+    t.session.view(R(2), 'w2')
+    t.session.onMessage('a', { type: 'tab.offer', sessionId: S1, receiverId: R(1), sdp: SDP })
+    t.clear()
+    t.start('b', S2)
+    expect(t.to('b')).toEqual([
+      { type: 'tab.accepted', sessionId: S2 },
+      { type: 'tab.view', receiverId: R(1) },
+      { type: 'tab.view', receiverId: R(2) },
+    ])
+    expect(t.session.snapshot().tab.offers).toEqual({})
+    // The receivers are still bound to their instances.
+    expect(t.session.view(R(1), 'w2')).toBe(false)
+    expect(t.session.answer(R(1), 'w1', SDP)).toBe(false)
+    t.session.onMessage('b', { type: 'tab.offer', sessionId: S2, receiverId: R(1), sdp: SDP })
+    expect(t.session.answer(R(1), 'w1', SDP)).toBe(true)
   })
 
   it('tab.started is refused with noWidget when canShare is false', () => {

@@ -244,9 +244,13 @@ export class CompanionSession {
       current.lastSeen = this.now()
     } else {
       if (current && current.deviceId !== deviceId) this.send(current.deviceId, { type: 'tab.stop' })
-      // Receivers were negotiating with the previous tab; they register again for this one.
-      this.receivers.clear()
+      // The widget frames keep their receiver ids: an offer from the previous tab is worthless,
+      // so each one is asked again of the new sharer, after it heard it was accepted.
+      for (const r of this.receivers.values()) r.offer = null
       this.share = { deviceId, sessionId, meta, lastSeen: this.now() }
+      this.send(deviceId, { type: 'tab.accepted', sessionId })
+      for (const receiverId of this.receivers.keys()) this.send(deviceId, { type: 'tab.view', receiverId })
+      return this.changed()
     }
     this.send(deviceId, { type: 'tab.accepted', sessionId })
     this.changed()
