@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { api } from '../shared/api'
 import { setLocale, useI18n } from '../shared/i18n'
 import { useSocket } from '../shared/socket'
@@ -14,6 +14,7 @@ import NavPopover from './NavPopover.vue'
 import { useSwipe } from './useSwipe'
 import { useNavPopover } from './useNavPopover'
 import { isRemotePage, useDeviceScreen, type DeviceInfo } from './remote'
+import { SCREEN_ID } from '../shared/useWidgetBridge'
 
 const socket = useSocket()
 const { t } = useI18n()
@@ -41,6 +42,8 @@ const screen = computed(() => {
   const id = device.value?.screenId ?? null
   return id && config.value.screens.some((s) => s.id === id) ? pickScreen(config.value, id) : null
 })
+// Every frame below is told which screen it is on (`Fremkit.screen`).
+provide(SCREEN_ID, () => screen.value?.id)
 const display = computed(() => screen.value?.display ?? null)
 const pageIndex = ref(0)
 const page = computed(() => screen.value?.pages[pageIndex.value] ?? null)

@@ -28,6 +28,8 @@ tagged `vX.Y.Z`.
   network, shows a pairing QR code, lists the paired devices with the screen each shows, and
   unpairs one after you confirm. An iPad screen is created from the paired iPad, at its exact size. The
   iPad app comes next.
+- **Widgets know their screen.** `Fremkit.screen` names the screen a widget is drawn on, for
+  widgets whose data differs from one screen to the next (widget SDK generation 3).
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer

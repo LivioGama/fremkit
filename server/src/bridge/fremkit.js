@@ -129,8 +129,13 @@
      * lowest generation it needs, and the server refuses to install one asking for more than it
      * has. Kept in step with `SDK_VERSION` in ./sdk.ts by bridge.test.ts.
      */
-    sdk: 2,
+    sdk: 3,
     instanceId: null,
+    /**
+     * The id of the screen this frame is drawn on (the Edge, a paired device), or null when the
+     * host did not say — a preview in the admin's library, say. Generation 3.
+     */
+    screen: null,
     settings: {},
     /**
      * The language the dashboard is showing, 'fr' or 'en'. English until the host says otherwise,
@@ -307,6 +312,7 @@
     if (!m || typeof m.type !== 'string') return
     if (m.type === 'fremkit:init') {
       F.instanceId = m.instanceId
+      F.screen = typeof m.screen === 'string' ? m.screen : null
       F.settings = m.settings || {}
       F.size = m.size
       F.showTitle = m.showTitle !== false

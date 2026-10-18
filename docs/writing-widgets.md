@@ -212,6 +212,7 @@ installing it and leaving the call to fail.
 |---|---|---|
 | `1` | 0.2.0 | Everything not listed below |
 | `2` | 0.3.0 | `favicon(url)`, `image(url)`, `installedApps()`, `appIcon(bundleId)` |
+| `3` | next release | `screen` |
 
 A widget calling `installedApps()` with `"sdk": 1` would install on 0.2.0 and find the method
 missing. Data channels are not generations: a channel the running Fremkit has no provider for
@@ -224,6 +225,7 @@ than wait.
 |---|---|
 | `Fremkit.sdk` | The bridge generation this Fremkit speaks, as a number |
 | `Fremkit.instanceId` | This instance's id |
+| `Fremkit.screen` | The id of the screen the widget is drawn on (the Edge, a paired device), or `null` when the host does not say. For data that is per screen, like brightness. Generation 3 |
 | `Fremkit.settings` | The settings object, manifest defaults merged in |
 | `Fremkit.locale` | `'fr'` or `'en'` |
 | `Fremkit.showTitle` | Whether the frame drew the title — a widget must never draw its own |

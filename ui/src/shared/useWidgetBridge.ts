@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
+import { inject, onMounted, onUnmounted, ref, watch, type InjectionKey, type Ref } from 'vue'
 import { useSocket } from './socket'
 import { t, useI18n } from './i18n'
 import { isHexColor, tileText } from './color'
@@ -7,6 +7,13 @@ import { channelAllowed, mergeSettings, type AccentMode, type NavSlot, type Widg
 import { FrameTrust, appIconTarget, connRequest, faviconTarget, fetchTarget, imageTarget, mayListApps, nonEmptyString, stampInstance } from './widgetMessages'
 
 export type BridgeState = 'loading' | 'ready' | 'error'
+
+/**
+ * The id of the screen the frames below are drawn on, provided by the dashboard (the screen it
+ * shows) and the admin (the screen being edited). Handed to each widget as `Fremkit.screen`, for
+ * the few whose data is per screen — brightness. Absent, a widget is told `null`.
+ */
+export const SCREEN_ID: InjectionKey<() => string | undefined> = Symbol('fremkit-screen-id')
 
 /** A blob as a `data:` URL, the one form of an image a sandboxed frame can show without fetching. */
 function dataUrl(blob: Blob): Promise<string> {
@@ -50,6 +57,7 @@ export function useWidgetBridge(
   options: BridgeOptions = {},
 ): { state: Ref<BridgeState> } {
   const socket = useSocket()
+  const screenId = inject(SCREEN_ID, () => undefined)
   // The tokens the host is painting, handed on so a widget wears the same theme as its frame.
   const theme = useAppliedTheme()
   const themeColors = useThemeColors()
@@ -116,6 +124,7 @@ export function useWidgetBridge(
         post({
           type: 'fremkit:init',
           instanceId: instance().instanceId,
+          screen: screenId() ?? null,
           settings: mergeSettings(manifest(), instance().settings),
           size: size(),
           ...chrome(),

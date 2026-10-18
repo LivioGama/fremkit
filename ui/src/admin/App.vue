@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, provide } from 'vue'
 import { useI18n } from '../shared/i18n'
 import { useAdminStore } from './store'
 import { widgetDelete, widgetDeleteKey } from './widgetDelete'
@@ -14,9 +14,12 @@ import ConnectionsInspector from './ConnectionsInspector.vue'
 import MarketplacePanel from './MarketplacePanel.vue'
 import { fits, moveRect, resizeRect } from './layout'
 import { useConfigTheme } from '../shared/theme'
+import { SCREEN_ID } from '../shared/useWidgetBridge'
 
 const s = useAdminStore()
 const { t } = useI18n()
+// Previews are told the screen being edited, as the dashboard tells its tiles (`Fremkit.screen`).
+provide(SCREEN_ID, () => s.screen.value?.id)
 // The editor wears the theme it edits, so a tile looks here like it does on the screen.
 useConfigTheme(computed(() => s.state.config))
 

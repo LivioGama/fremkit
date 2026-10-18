@@ -10,7 +10,7 @@
  * The bridge repeats the number as a literal (`Fremkit.sdk`), because it is a plain browser
  * script with no imports; `bridge.test.ts` holds the two together.
  */
-export const SDK_VERSION = 2
+export const SDK_VERSION = 3
 
 /**
  * What each generation put on the `Fremkit` global, by name.
@@ -30,4 +30,6 @@ export const SDK_GENERATIONS: Readonly<Record<number, readonly string[]>> = {
   ],
   // Fremkit 0.3.0: images a sandboxed frame cannot load itself, fetched by the host.
   2: ['favicon', 'image', 'installedApps', 'appIcon'],
+  // The screen a frame is drawn on, for a widget whose data is per screen (brightness).
+  3: ['screen'],
 }

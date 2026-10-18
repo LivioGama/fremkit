@@ -11,6 +11,7 @@ import { SDK_GENERATIONS, SDK_VERSION } from '../src/bridge/sdk.js'
 interface Bridge {
   appIcon(bundleId: string): Promise<string>
   sdk: number
+  screen: string | null
   esc(value: unknown): string
   el(tag: string, className?: string, text?: unknown): { tagName: string; className: string; textContent: string }
   color(value: unknown, fallback?: string): string | null
@@ -108,9 +109,15 @@ describe('Fremkit.sdk', () => {
   it('exposes what each generation after the first added', () => {
     // The first generation includes `tokens`, set only once a theme arrives; the later ones are
     // methods, there from the start, and a widget asking for their generation calls them blind.
+    // The exceptions are properties the host fills at init, there from the start as `null`.
+    const properties = new Set(['screen'])
     for (const [generation, names] of Object.entries(SDK_GENERATIONS)) {
       if (Number(generation) === 1) continue
-      for (const name of names) expect(typeof (F as unknown as Record<string, unknown>)[name], name).toBe('function')
+      for (const name of names) {
+        const value = (F as unknown as Record<string, unknown>)[name]
+        if (properties.has(name)) expect(value, name).toBeNull()
+        else expect(typeof value, name).toBe('function')
+      }
     }
   })
 })
@@ -262,5 +269,17 @@ describe('Fremkit.appIcon', () => {
     expect(message).toMatchObject({ type: 'fremkit:app-icon', bundleId: 'com.apple.mail' })
     loaded.send({ type: 'fremkit:result', id: message.id, result: 'data:image/png;base64,aWNvbg==' })
     await expect(promise).resolves.toBe('data:image/png;base64,aWNvbg==')
+  })
+})
+
+describe('Fremkit.screen', () => {
+  it('is the screen the host names in init, and null when it names none', async () => {
+    const named = await loadBridge()
+    expect(named.bridge.screen).toBeNull()
+    named.send({ type: 'fremkit:init', instanceId: 'w-1', settings: {}, screen: 'ipad' })
+    expect(named.bridge.screen).toBe('ipad')
+    const unnamed = await loadBridge()
+    unnamed.send({ type: 'fremkit:init', instanceId: 'w-1', settings: {}, screen: 42 })
+    expect(unnamed.bridge.screen).toBeNull()
   })
 })
