@@ -101,6 +101,16 @@
         }
       }
     },
+    "If you reset its certificate in Fremkit, pair this iPad again. Otherwise, check you are on the right network." : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si vous avez réinitialisé son certificat dans Fremkit, appairez à nouveau cet iPad. Sinon, vérifiez que vous êtes sur le bon réseau."
+          }
+        }
+      }
+    },
     "It was removed on the Mac. Pair it again to show the dashboard." : {
       "localizations" : {
         "fr" : {
@@ -277,6 +287,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "L’appairage enregistré n’a pas pu être lu. Appairer à nouveau le remplace."
+          }
+        }
+      }
+    },
+    "This Mac’s key has changed" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clé de ce Mac a changé"
           }
         }
       }

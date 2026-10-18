@@ -57,7 +57,10 @@ struct FremkitApp: App {
         // A newly resolved Bonjour address or the network coming back is a reason to try again
         // right away rather than at the next 5 s tick.
         network.onChange = {
-            if case .unreachable = model.state { model.reconnect() }
+            switch model.state {
+            case .unreachable, .keyChanged: model.reconnect()
+            default: break
+            }
         }
         // Browsing is also what asks for Local Network access, the first time.
         network.start()

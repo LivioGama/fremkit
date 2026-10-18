@@ -54,9 +54,12 @@ screen right now" and keep the setting until the app is back.
 ## Revoke and reset
 
 **Remove** in the Devices section revokes one iPad: its connection is closed at once, and the app
-notices within 30 seconds (it checks that the Mac still knows it) and goes back to the welcome
-screen to pair again. **Remove every device** does it for all of them. **Reset the certificate**
-makes a new key, which removes every device too: each one pairs again. Turning the switch off
+notices within 30 seconds (it checks that the Mac still knows it) and shows "This iPad is no
+longer allowed"; **Pair again** leads to the welcome screen. **Remove every device** does it for
+all of them. **Reset the certificate** makes a new key, which removes every device too: each iPad
+shows "This Mac's key has changed" and must be paired again with **Pair again**. The app never
+forgets a pairing by itself, and keeps retrying meanwhile, so an iPad that only met another
+machine on the Mac's old address recovers on its own. Turning the switch off
 closes the listener and the iPads show that the Mac is unreachable until it is back on.
 
 ## Prompts on the iPad and the Mac
@@ -74,8 +77,11 @@ closes the listener and the iPads show that the Mac is unreachable until it is b
   Wi-Fi.
 - **The app says it cannot reach the Mac.** The Mac is asleep, pairing is switched off, or the
   Local Network permission was refused (above). The app retries by itself.
-- **The app is back on the welcome screen.** The device was removed, or the certificate was reset:
-  pair again.
+- **The app says "This Mac's key has changed".** The certificate was reset in Fremkit (or another
+  machine answers at the Mac's address). Tap **Pair again** and pair as the first time; if you
+  did not reset it, check that the iPad is on the right network.
+- **The app says "This iPad is no longer allowed".** The device was removed in the admin: tap
+  **Pair again**.
 - **The four words differ.** Do not pair. Check that you picked your own Mac in the list; if the
   words still differ, use the QR code.
 - **Brightness says "The iPad is not showing this screen right now".** Open the app and show that

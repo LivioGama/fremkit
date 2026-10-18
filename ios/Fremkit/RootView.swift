@@ -2,7 +2,7 @@ import FremkitKit
 import SwiftUI
 
 /// One screen per `AppState`, or the pairing screen while pairing runs, and the app-wide
-/// reactions: back from the background, the unreachable screen's retries, a link that would
+/// reactions: back from the background, the unreachable and key-changed screens' retries, a link that would
 /// replace the pairing.
 ///
 /// Every screen is laid out in the same region: the safe area with the status bar and the home
@@ -93,6 +93,18 @@ struct RootView: View {
             UnreachableView(name: name, isRetrying: model.isConnecting) { model.reconnect() }
                 .task {
                     // Every 5 s while the screen is up; the task ends with the screen.
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(5))
+                        if Task.isCancelled { break }
+                        model.reconnect()
+                    }
+                }
+        case let .keyChanged(name):
+            KeyChangedView(name: name, isRetrying: model.isConnecting,
+                           pairAgain: { model.forget() }, retry: { model.reconnect() })
+                .task {
+                    // Same retries as the unreachable screen: a mismatch that was only another
+                    // machine on the old address goes away by itself.
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .seconds(5))
                         if Task.isCancelled { break }

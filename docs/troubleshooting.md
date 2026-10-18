@@ -372,9 +372,11 @@ network reason:
 - Pairing is switched off (admin, *Screen → Devices*), or port 4243 is held by another
   application: the admin says so.
 
-An iPad that was paired and now shows the welcome screen was removed in the admin, or the
-certificate was reset: pair again. One that cannot reach its Mac finds it again by itself when the
-Mac wakes or changes address.
+An iPad that shows "This iPad is no longer allowed" was removed in the admin: **Pair again** leads
+to the welcome screen. One that shows "This Mac's key has changed" met a different key than the
+one it pinned, which is what **Reset the certificate** does: **Pair again** as well (if you did
+not reset it, check the network, another machine may hold the Mac's old address). One that cannot
+reach its Mac finds it again by itself when the Mac wakes or changes address.
 
 ## Brightness says not adjustable
 

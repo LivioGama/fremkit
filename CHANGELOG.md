@@ -22,7 +22,8 @@ tagged `vX.Y.Z`.
   `fremkit://` link from the Camera app; without the camera, pick the Mac in the list, check that it
   shows the same four words as the iPad, and type the code. Opening a link while the iPad is paired
   asks before replacing the pairing. The iPad reports the size its dashboard really gets, so it lands
-  on the matching screen.
+  on the matching screen. After **Reset the certificate**, the iPad says the Mac's key has changed
+  and offers **Pair again**.
 - **The iPad sets its own brightness.** A paired iPad now reports its screen's brightness and applies
   the level chosen for it, including the day/night schedule, from the admin or the Brightness
   widget. When the app is not open on that screen, the controls say so.
@@ -44,7 +45,7 @@ tagged `vX.Y.Z`.
 - **Pair an iPad** (Mac side). **Screen → Devices** turns on an encrypted listener on the local
   network, shows a pairing QR code, lists the paired devices with the screen each shows, and
   unpairs one after you confirm. An iPad screen is created from the paired iPad, at its exact size. The
-  iPad app is below; [docs/devices.md](docs/devices.md) walks through it.
+  iPad app is described above; [docs/devices.md](docs/devices.md) walks through it.
 - **Screen brightness.** A new built-in *Brightness* widget sets the brightness of the screen
   the dashboard is on, from a tile or from the bar (− / +, and a slider in its popover); the
   helper's menu has the same slider. It works over DDC/CI on Apple silicon Macs; a display that
