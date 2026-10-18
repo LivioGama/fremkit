@@ -103,6 +103,27 @@ describe('DeviceStore', () => {
     expect(writes).toBe(2)
   })
 
+  it('writes lastSeen again when the clock stepped back behind it', async () => {
+    const file = await tempFile()
+    let t = Date.parse('2026-10-18T10:00:00.000Z')
+    const store = new DeviceStore(file, () => new Date(t))
+    await store.load()
+    const { device } = await store.create('iPad', viewport, null)
+    await store.touch(device.id)
+    let writes = 0
+    store.onChange(() => writes++)
+
+    // An hour back: the stored lastSeen is now in the future.
+    t -= 3_600_000
+    await store.touch(device.id)
+    expect(writes).toBe(1)
+    expect(store.list()[0].lastSeen).toBe('2026-10-18T09:00:00.000Z')
+    // And from there on, the minute counts again from the corrected time.
+    t += 30_000
+    await store.touch(device.id)
+    expect(writes).toBe(1)
+  })
+
   it('moves a corrupt file aside and starts empty', async () => {
     const file = await tempFile()
     await writeFile(file, '{ not json')

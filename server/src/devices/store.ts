@@ -202,14 +202,19 @@ export class DeviceStore {
     })
   }
 
-  /** Records that a device was seen, writing only when the stored `lastSeen` is a minute old. */
+  /**
+   * Records that a device was seen, writing only when the stored `lastSeen` is a minute old. A
+   * `lastSeen` in the future (the clock stepped back) or unreadable counts as stale: otherwise
+   * the device would look unseen until the clock caught up with it again.
+   */
   async touch(id: string): Promise<void> {
     return this.enqueue(async () => {
       const index = this.state.devices.findIndex((d) => d.id === id)
       if (index < 0) return
       const now = this.now()
       const last = this.state.devices[index].lastSeen
-      if (last !== null && now.getTime() - Date.parse(last) < TOUCH_INTERVAL_MS) return
+      const age = last === null ? Number.NaN : now.getTime() - Date.parse(last)
+      if (age >= 0 && age < TOUCH_INTERVAL_MS) return
       const devices = [...this.state.devices]
       devices[index] = { ...devices[index], lastSeen: now.toISOString() }
       await this.commit({ ...this.state, devices })
