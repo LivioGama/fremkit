@@ -104,6 +104,17 @@ export const IndexWidgetSchema = z.object({
   /** What this version changed; the one thing the person pressing Update is asking about. */
   changes: ChangesSchema.optional(),
   previous: z.array(DownloadSchema).default([]),
+  /**
+   * The widget's preview image (the manifest's `preview`), published beside the package so a
+   * card can show it before anything is installed. Optional: an index published before previews
+   * has none, and neither does a widget that never made one.
+   *
+   * Like the package URL it must be on the registry's own host — `Registry` drops one that is
+   * not rather than refusing the index, since a picture is not worth losing the shop over — and
+   * the admin never loads it itself: the server fetches it (`GET /api/marketplace/preview/:id`),
+   * caps it at `PREVIEW_MAX_BYTES` and checks it is the PNG or WebP it should be.
+   */
+  preview: PackageUrl.optional(),
 })
 export type IndexWidget = z.infer<typeof IndexWidgetSchema>
 

@@ -13,6 +13,26 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **See a widget before placing it.** Hovering a card of the editor's widget library (or reaching
+  it with Tab) shows its preview with its name, what it does, its default size and what it may
+  read, control and reach.
+- **Every built-in widget has a preview**, taken with `pnpm widget:preview` against the demo
+  server, so none of it shows anybody's real data.
+- **Pictures in the Sietch.** A registry widget that publishes a preview shows it as a thumbnail on
+  its row of the Sietch, before you install it.
+- **`pnpm widget:preview`.** Takes a widget's preview image for you: it renders the widget alone at
+  its default size against a demo server, waits for it to show data, and writes `preview.webp`
+  into its folder. Works on the built-ins (`--all`) and on your own widget (`--dir`). See
+  [docs/writing-widgets.md](docs/writing-widgets.md#a-preview-image).
+- **Widget previews in the manifest.** A widget may name a `preview` image (`preview.webp` or
+  `.png`, at most 200 KB, twice its default size in pixels). The installer refuses a package whose
+  preview is missing or is not the image it claims to be, and `pnpm widget:check` checks its
+  dimensions and warns when a widget has none.
+- **Demo mode.** `pnpm demo` (or `FREMKIT_DEMO=1`) starts a server that shows a full, moving
+  dashboard of invented data — calendar, CPU, music, weather, Claude sessions, GitHub and Azure
+  DevOps runs, Dock badges — without reading anything off the Mac or any account, in a data folder
+  of its own. For screenshots, App Store review of the iPad app, and trying Fremkit out. See
+  [docs/demo-mode.md](docs/demo-mode.md).
 - **Command palette.** ⌘K (or Ctrl+K, or **Commands** in the top bar) opens a search field over
   the editor that reaches everything it can do: add a widget to the page, go to a page or a
   screen, select a widget by its name, open a connection, jump to a widget's setting by its label,

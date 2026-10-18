@@ -322,6 +322,8 @@ export interface WidgetManifest {
   subscriptions: string[]; commands: string[]
   settingsSchema: Record<string, SettingField>
   permissions: { network: string[] }
+  /** A picture of the widget, a path inside its folder (`/widgets/<id>/<preview>`). */
+  preview?: string
 }
 
 /**
@@ -557,6 +559,11 @@ export interface MarketplaceWidget {
   newPermissions: WidgetPermissionSet
   /** A built-in already owns this id, so it can never be installed. */
   shadowsBuiltin: boolean
+  /**
+   * The registry's URL of the widget's preview image, when it publishes one. Never loaded as is:
+   * the admin shows `/api/marketplace/preview/<id>`, which the server fetches and checks.
+   */
+  preview?: string
   /**
    * What this version changed, as plain text from the package's changelog.
    *

@@ -326,6 +326,35 @@ export async function marketplaceRoutes(app: FastifyInstance, opts: MarketplaceO
     return view()
   })
 
+  /**
+   * Preview images already fetched, by URL. A URL names one version's picture, so an entry never
+   * goes stale; the map is capped so a long-running server holding a large registry does not
+   * keep every picture it was ever asked for.
+   */
+  const previews = new Map<string, { type: string; bytes: Buffer }>()
+  const MAX_PREVIEWS = 64
+
+  /**
+   * `GET /api/marketplace/preview/:id` — a registry widget's preview, through the server.
+   *
+   * The admin's CSP loads images from its own origin only, and should: this route is how a card
+   * shows a picture published on the registry. Only the URL the index gives that id is fetched,
+   * so the caller chooses a widget, never an address.
+   */
+  app.get<{ Params: { id: string } }>('/api/marketplace/preview/:id', async (req, reply) => {
+    if (isCrossSiteFetch(req.headers)) return reply.code(403).send()
+    const index = registry.last ?? await registry.index().catch(() => null)
+    const entry = index?.widgets.find((w) => w.id === req.params.id)
+    if (!entry?.preview) return reply.code(404).send(fail('marketplace.unknownWidget'))
+    let image = previews.get(entry.preview)
+    if (!image) {
+      try { image = await registry.preview(entry.preview) } catch { return reply.code(502).send(fail('marketplace.unreachable')) }
+      if (previews.size >= MAX_PREVIEWS) previews.delete(previews.keys().next().value as string)
+      previews.set(entry.preview, image)
+    }
+    return reply.type(image.type).header('cache-control', 'private, max-age=3600').send(image.bytes)
+  })
+
   app.post('/api/marketplace/refresh', async (_req, reply) => {
     const answer = await view(true)
     if (answer.offline) return reply.code(503).send(fail('marketplace.unreachable'))

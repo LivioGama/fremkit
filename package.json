@@ -11,6 +11,7 @@
   "scripts": {
     "setup": "bash scripts/setup.sh",
     "dev": "bash scripts/dev.sh",
+    "demo": "bash scripts/demo.sh",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "e2e": "pnpm --filter e2e e2e",
@@ -22,7 +23,8 @@
     "helper:install": "bash scripts/install-helper.sh",
     "helper:test": "bash scripts/test-helper.sh",
     "widget:new": "server/node_modules/.bin/tsx server/src/cli/widget.ts new",
-    "widget:check": "server/node_modules/.bin/tsx server/src/cli/widget.ts check"
+    "widget:check": "server/node_modules/.bin/tsx server/src/cli/widget.ts check",
+    "widget:preview": "server/node_modules/.bin/tsx server/src/cli/widget.ts preview"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

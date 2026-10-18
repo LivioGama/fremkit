@@ -14,7 +14,7 @@
 
 import { lstat, readdir, readFile } from 'node:fs/promises'
 import { basename, join, relative, sep } from 'node:path'
-import { builtinOnlyChannels, ManifestSchema, type WidgetManifest } from './manifest.js'
+import { builtinOnlyChannels, ManifestSchema, previewProblems, type WidgetManifest } from './manifest.js'
 import { isPrivateLiteral } from '../net/private.js'
 import { writeZip } from '../backup/zip.js'
 import { LIMITS, safeEntryName } from '../marketplace/install.js'
@@ -191,6 +191,13 @@ export async function checkWidgetFolder(folder: string, opts: CheckOptions = {})
     warnings.push('description is still the placeholder pnpm widget:new wrote')
   }
   if (!manifest.license) warnings.push('no license: the card shows none (MIT, Apache-2.0, …)')
+  // The size and the format refuse a package everywhere; the dimensions are the registry's rule.
+  if (manifest.preview === undefined) {
+    warnings.push('no preview: the library and the Sietch show no picture of the widget (pnpm widget:preview makes one)')
+  } else {
+    const file = packed.find((f) => f.name === manifest.preview)
+    errors.push(...previewProblems(manifest, file?.data ?? null, { checkSize: true }))
+  }
 
   return { id, errors, warnings, manifest, files: packed.length, zipBytes }
 }
