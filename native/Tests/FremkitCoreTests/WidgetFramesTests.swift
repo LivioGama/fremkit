@@ -25,6 +25,8 @@ final class WidgetFramesTests: XCTestCase {
                           "http://127.0.0.1:4242/widgets/../admin",
                           "http://127.0.0.1:4242/widgets/%2e%2e/admin",
                           "http://127.0.0.1:4242/widgets/./clock",
+                          "http://u:p@127.0.0.1:4242/widgets/clock/index.html",
+                          "http://u@127.0.0.1:4242/widgets/clock/index.html",
                           "about:blank", "about:srcdoc",
                           "data:text/html,<script>1</script>",
                           "blob:http://127.0.0.1:4242/0f2c",

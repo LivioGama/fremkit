@@ -17,6 +17,8 @@ public enum WidgetFrames {
      */
     public static func allows(_ candidate: URL?, on origin: URL) -> Bool {
         guard let candidate, KioskOrigin.sameOrigin(candidate, as: origin) else { return false }
+        // Credentials in the URL are never a widget's: refused like the iPad app does.
+        guard candidate.user == nil, candidate.password == nil else { return false }
         // Dot segments are refused rather than resolved: `/widgets/../admin` is not a widget.
         let path = candidate.path
         guard candidate.absoluteString.range(of: "%2e", options: .caseInsensitive) == nil,
