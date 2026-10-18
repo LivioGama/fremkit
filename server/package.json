@@ -23,9 +23,11 @@
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
+    "@types/ws": "8.18.1",
     "esbuild": "0.28.2",
     "postject": "1.0.0-alpha.6",
     "typescript": "~5.9.0",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.1",
+    "ws": "8.21.3"
   }
 }

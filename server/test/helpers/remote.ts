@@ -58,19 +58,20 @@ export function remote(port: number, req: RemoteRequest): Promise<RemoteResponse
 }
 
 /**
- * A WebSocket handshake on `/ws`. Resolves with the upgraded socket on 101, or with the status
+ * A WebSocket handshake on `path` (`/ws` by default). Resolves with the upgraded socket on 101, or with the status
  * and body of the answer that refused it.
  */
 export function upgrade(
   port: number,
   headers: Record<string, string>,
   host = `127.0.0.1:${port}`,
+  path = '/ws',
 ): Promise<{ status: 101; socket: Socket; head: Buffer } | { status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const r = httpsRequest({
       host: '127.0.0.1',
       port,
-      path: '/ws',
+      path,
       headers: {
         host,
         connection: 'Upgrade',

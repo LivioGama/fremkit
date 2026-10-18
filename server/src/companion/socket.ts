@@ -1,0 +1,169 @@
+/**
+ * `/companion/ws`: the paired browser extension's socket.
+ *
+ * The route answers without the access secret (see `isCompanionRoute`), so it checks its own
+ * credential, and nothing is heard before it has: an extension origin on the upgrade, then a
+ * `hello` within `HELLO_TIMEOUT_MS` whose token belongs to an extension record of that same
+ * origin and install. Anything else, then or later — a message that does not parse, an unknown
+ * type, a second hello — closes the socket with 1008. A frame over the 64 KiB cap is refused by
+ * `ws` itself, with 1009, before any of it is buffered.
+ *
+ * Each record holds one socket: a second one for it replaces the first. What the extension says
+ * goes to the `CompanionSession`; what the session says comes back through `CompanionSockets`.
+ */
+
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import type { DeviceStore } from '../devices/store.js'
+import { isRemoteRequest } from '../net/remote.js'
+import { DEVICE_CLOSE_CODE, DEVICE_TERMINATE_MS } from '../ws/hub.js'
+import { EXTENSION_ORIGIN_RE, parseExtensionMessage, type ServerMessage } from './protocol.js'
+import type { CompanionSession } from './session.js'
+
+/** How long a new socket has to say hello. */
+export const HELLO_TIMEOUT_MS = 5_000
+
+/** How often the session is asked to clear a share that went quiet. */
+export const TICK_MS = 1_000
+
+/** Policy violation: what every refusal on this socket closes with. */
+const POLICY_CLOSE_CODE = 1008
+
+interface CompanionSocketLike {
+  send(data: string): void
+  close(code?: number, reason?: string): void
+  terminate(): void
+}
+
+/** Closes, then drops the connection if the peer has not finished the handshake in time. */
+function closeSocket(socket: CompanionSocketLike, code: number, reason?: string): void {
+  try { socket.close(code, reason) } catch { /* already closed */ }
+  const timer = setTimeout(() => { try { socket.terminate() } catch { /* gone */ } }, DEVICE_TERMINATE_MS)
+  timer.unref?.()
+}
+
+/** The authenticated socket of each connected extension, by device id. */
+export class CompanionSockets {
+  private readonly sockets = new Map<string, CompanionSocketLike>()
+
+  send(deviceId: string, msg: ServerMessage): void {
+    const socket = this.sockets.get(deviceId)
+    if (!socket) return
+    try { socket.send(JSON.stringify(msg)) } catch { /* socket closed */ }
+  }
+
+  /** Makes `socket` the device's one socket, closing the one it replaces. */
+  attach(deviceId: string, socket: CompanionSocketLike): void {
+    const previous = this.sockets.get(deviceId)
+    this.sockets.set(deviceId, socket)
+    if (previous && previous !== socket) closeSocket(previous, 1000, 'replaced')
+  }
+
+  isCurrent(deviceId: string, socket: CompanionSocketLike): boolean {
+    return this.sockets.get(deviceId) === socket
+  }
+
+  /** Forgets the socket if it is still the device's. True when it was. */
+  release(deviceId: string, socket: CompanionSocketLike): boolean {
+    if (this.sockets.get(deviceId) !== socket) return false
+    this.sockets.delete(deviceId)
+    return true
+  }
+
+  ids(): string[] {
+    return [...this.sockets.keys()]
+  }
+
+  /** For an unpaired device: tells it so, then closes with the revocation code. */
+  revoke(deviceId: string): void {
+    const socket = this.sockets.get(deviceId)
+    if (!socket) return
+    this.sockets.delete(deviceId)
+    try { socket.send(JSON.stringify({ type: 'revoked' } satisfies ServerMessage)) } catch { /* closed */ }
+    closeSocket(socket, DEVICE_CLOSE_CODE, 'revoked')
+  }
+}
+
+export interface CompanionSocketOptions {
+  store: DeviceStore
+  session: CompanionSession
+  sockets: CompanionSockets
+  /** Test seam; `HELLO_TIMEOUT_MS` otherwise. */
+  helloTimeoutMs?: number
+}
+
+export async function companionSocket(app: FastifyInstance, opts: CompanionSocketOptions): Promise<void> {
+  const { store, session, sockets } = opts
+  const helloTimeoutMs = opts.helloTimeoutMs ?? HELLO_TIMEOUT_MS
+
+  // A device removed in Appareils loses its socket and whatever it was sharing.
+  const unsubscribe = store.onChange((devices) => {
+    const ids = new Set(devices.map((d) => d.id))
+    for (const id of sockets.ids()) if (!ids.has(id)) sockets.revoke(id)
+    session.prune((id) => ids.has(id))
+  })
+  const tick = setInterval(() => session.tick(), TICK_MS)
+  tick.unref()
+  app.addHook('onClose', async () => {
+    clearInterval(tick)
+    unsubscribe()
+  })
+
+  /** This Mac's only: the remote allow-list leaves it out too, this is in case it ever grows. */
+  const localOnly = async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    if (isRemoteRequest(req)) return reply.callNotFound()
+  }
+
+  app.get('/companion/ws', { websocket: true, onRequest: localOnly }, (socket, req) => {
+    const origin = req.headers.origin
+    let deviceId: string | null = null
+    let closed = false
+
+    const refuse = (): void => {
+      if (closed) return
+      closed = true
+      clearTimeout(timer)
+      if (deviceId !== null && sockets.release(deviceId, socket)) session.disconnect(deviceId)
+      closeSocket(socket, POLICY_CLOSE_CODE)
+    }
+
+    const timer = setTimeout(refuse, helloTimeoutMs)
+    timer.unref()
+
+    socket.on('close', () => {
+      closed = true
+      clearTimeout(timer)
+      if (deviceId !== null && sockets.release(deviceId, socket)) session.disconnect(deviceId)
+    })
+
+    // A web page cannot send a `chrome-extension://` origin; anything else is not the extension.
+    if (typeof origin !== 'string' || !EXTENSION_ORIGIN_RE.test(origin)) return refuse()
+
+    socket.on('message', (raw: Buffer, isBinary: boolean) => {
+      if (closed) return
+      if (isBinary) return refuse()
+      const msg = parseExtensionMessage(raw.toString('utf8'))
+      if (msg === null) return refuse()
+
+      if (deviceId === null) {
+        if (msg.type !== 'hello') return refuse()
+        // Never logged: the token, nor whose it might have been.
+        const record = store.findByToken(msg.token, 'extension')
+        if (record === null || record.kind !== 'extension' || record.origin !== origin || record.installId !== msg.installId) {
+          return refuse()
+        }
+        clearTimeout(timer)
+        deviceId = record.id
+        sockets.attach(deviceId, socket)
+        store.touch(deviceId).catch(() => undefined)
+        session.connect(deviceId, record.name)
+        session.onMessage(deviceId, msg)
+        return
+      }
+
+      if (msg.type === 'hello') return refuse()
+      // A socket replaced by a newer one is no longer heard while it closes.
+      if (!sockets.isCurrent(deviceId, socket)) return
+      session.onMessage(deviceId, msg)
+    })
+  })
+}
