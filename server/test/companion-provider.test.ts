@@ -156,6 +156,24 @@ describe('companion provider', () => {
     expect((await provider.poll!()).reveal?.seq).toBe(3)
   })
 
+  it('a share taken back through hello after a restart does not bump reveal.seq', async () => {
+    const { provider, start, session } = setup('page')
+    const resume = (sessionId: string) => session.onMessage('ext', {
+      type: 'hello', token: 'unused-by-the-session', installId: INSTALL, protocol: 1, session: { sessionId, meta: META },
+    })
+    resume(S1)
+    const snap = await provider.poll!()
+    expect(snap.tab).toMatchObject({ state: 'sharing', sessionId: S1 })
+    expect(snap.reveal).toBeNull()
+    // The same share re-announced by a second hello is still the one already on screen.
+    resume(S1)
+    expect((await provider.poll!()).reveal).toBeNull()
+    // A share the user starts afterwards is revealed as usual.
+    session.onMessage('ext', { type: 'tab.stopped', sessionId: S1 })
+    start('ext', S2)
+    expect((await provider.poll!()).reveal).toEqual({ seq: 1, screenId: 'edge', pageIndex: 1 })
+  })
+
   it('a share whose widget sits in the bar reveals no page', async () => {
     const { provider, start } = setup('bar')
     start('ext')

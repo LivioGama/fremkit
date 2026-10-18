@@ -36,7 +36,11 @@ export type CompanionSnapshot = CompanionState & {
 }
 
 export interface CompanionProvider extends Provider<CompanionSnapshot> {
-  /** The session changed: notices a share that has just been accepted. */
+  /**
+   * The session changed: notices a share that has just been accepted. A share taken back through
+   * `hello` after a server restart is noted but not revealed: it was on screen already, and the
+   * page the user turned to since is theirs.
+   */
   noteChange(): void
 }
 
@@ -93,7 +97,7 @@ export function createCompanionProvider(opts: CompanionProviderOptions): Compani
       const sessionId = session.snapshot().tab.sessionId
       if (sessionId === lastSessionId) return
       lastSessionId = sessionId
-      if (sessionId === null) return
+      if (sessionId === null || session.shareResumed()) return
       // Read when the share starts: the widget may have moved since the last one.
       const place = placeFremplay(opts.config())
       if (place?.pageIndex == null) return

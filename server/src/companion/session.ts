@@ -48,6 +48,8 @@ interface Share {
   sessionId: string
   meta: TabMeta
   lastSeen: number
+  /** Taken back through a `hello` (the server restarted under it), not started by a `tab.started`. */
+  resumed: boolean
 }
 
 interface Receiver {
@@ -206,6 +208,11 @@ export class CompanionSession {
     }
   }
 
+  /** True when the current share came back through a `hello` rather than a `tab.started`. */
+  shareResumed(): boolean {
+    return this.share?.resumed === true
+  }
+
   /** Clears a share that went quiet. Driven by an interval in the socket module. */
   tick(): void {
     if (this.share && this.now() - this.share.lastSeen >= STALE_MS) {
@@ -234,7 +241,7 @@ export class CompanionSession {
       this.send(deviceId, { type: 'tab.refused', sessionId: session.sessionId, reason: 'noWidget' })
       return
     }
-    this.share = { deviceId, sessionId: session.sessionId, meta: session.meta, lastSeen: this.now() }
+    this.share = { deviceId, sessionId: session.sessionId, meta: session.meta, lastSeen: this.now(), resumed: current?.resumed ?? true }
     this.send(deviceId, { type: 'tab.accepted', sessionId: session.sessionId })
     // Receivers that re-announced themselves first, or are still waiting on an offer, ask now.
     for (const [receiverId, r] of this.receivers) {
@@ -260,7 +267,7 @@ export class CompanionSession {
       // The widget frames keep their receiver ids: an offer from the previous tab is worthless,
       // so each one is asked again of the new sharer, after it heard it was accepted.
       for (const r of this.receivers.values()) r.offer = null
-      this.share = { deviceId, sessionId, meta, lastSeen: this.now() }
+      this.share = { deviceId, sessionId, meta, lastSeen: this.now(), resumed: false }
       this.send(deviceId, { type: 'tab.accepted', sessionId })
       for (const receiverId of this.receivers.keys()) this.send(deviceId, { type: 'tab.view', receiverId })
       return this.changed()
