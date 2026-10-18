@@ -201,7 +201,7 @@ function moveToPage(): void {
       <CopySettingsFrom :widget-id="inst.widgetId" :instance-id="inst.instanceId"
         @copy="s.updateInstance(inst!.instanceId, { settings: $event })" />
       <SettingsForm :schema="manifest.settingsSchema" scope="tile" :values="inst.settings"
-        :widget-id="inst.widgetId" @change="onSetting" />
+        :widget-id="inst.widgetId" :commands="manifest.commands" @change="onSetting" />
     </BaseSection>
 
     <WidgetPermissions :manifest="manifest" :asks="asks" />

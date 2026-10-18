@@ -190,12 +190,23 @@ export const BUILTIN_ONLY_CHANNELS: ReadonlySet<string> = new Set(['disk-map', '
  */
 export const BUILTIN_ONLY_COMMANDS: ReadonlySet<string> = new Set(['brightness'])
 
+/**
+ * Whether a list of `commands` covers a channel: the literal name, or a `type:*` entry for one
+ * of its per-connection channels. The same rule as `channelAllowed` in `devices/channels.ts` and
+ * `ui/src/shared/types.ts`, repeated here so this file stays self-contained (the registry
+ * vendors it byte for byte).
+ */
+export function commandCovers(commands: readonly string[], channel: string): boolean {
+  return commands.some((entry) => entry === channel || (entry.endsWith(':*') && channel.startsWith(entry.slice(0, -1))))
+}
+
 /** The built-in-only channels a manifest asks for, by family, in the order it names them. */
 export function builtinOnlyChannels(manifest: WidgetManifest): string[] {
   const previews = Object.values(manifest.settingsSchema ?? {}).flatMap((f) => (f.preview ? [f.preview.channel] : []))
   const asked = [...manifest.subscriptions, ...manifest.commands, ...previews]
   const read = asked.map((c) => c.split(':')[0]).filter((family) => BUILTIN_ONLY_CHANNELS.has(family))
-  const commanded = manifest.commands.map((c) => c.split(':')[0]).filter((family) => BUILTIN_ONLY_COMMANDS.has(family))
+  // A preview is a command too, whatever `commands` says about it.
+  const commanded = [...manifest.commands, ...previews].map((c) => c.split(':')[0]).filter((family) => BUILTIN_ONLY_COMMANDS.has(family))
   return [...new Set([...read, ...commanded])]
 }
 
@@ -413,6 +424,15 @@ export const ManifestSchema = RawManifestSchema.transform((m, ctx) => {
   if (defaultSize[0] < minSize[0] || defaultSize[1] < minSize[1]) {
     ctx.addIssue({ code: 'custom', message: tr(undefined, 'manifest.defaultSizeTooSmall'), path: ['defaultSize'] })
     return z.NEVER
+  }
+  // A preview is a command the admin sends for the widget, with the admin's own authority. It
+  // has to be one the widget declares in `commands` — which the consent dialog lists, the grant
+  // narrows and the built-in-only rule reads — or a manifest could reach any channel through a ▶.
+  for (const [key, field] of Object.entries(m.settingsSchema)) {
+    if (field.preview && !commandCovers(m.commands, field.preview.channel)) {
+      ctx.addIssue({ code: 'custom', message: tr(undefined, 'manifest.previewNotACommand'), path: ['settingsSchema', key, 'preview', 'channel'] })
+      return z.NEVER
+    }
   }
   return { ...rest, minSize, defaultSize }
 })

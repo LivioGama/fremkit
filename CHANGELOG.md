@@ -93,6 +93,9 @@ tagged `vX.Y.Z`.
   holds a different page, that page hears nothing the first one was told.
 - **A widget's icon is fetched only from an address you typed.** A default address written in
   the widget's own manifest no longer counts as yours.
+- **A setting's ▶ preview stays within what you granted.** A widget can offer a preview only on
+  a channel it declares as a command, an installed widget only on one you agreed to, and a
+  paired device gains nothing through it.
 
 ## 0.4.1 — 2026-10-16
 

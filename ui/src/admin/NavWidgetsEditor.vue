@@ -126,7 +126,7 @@ function onSetting(instanceId: string, key: string, value: unknown): void {
           @copy="s.updateNavWidget(w.instanceId, { settings: $event })" />
         <!-- The bar draws the compact rendering, so a setting scoped to the tile is not shown here. -->
         <SettingsForm :schema="manifestOf(w.widgetId)!.settingsSchema" scope="compact" :values="w.settings"
-          :widget-id="w.widgetId"
+          :widget-id="w.widgetId" :commands="manifestOf(w.widgetId)!.commands"
           @change="(key, value) => onSetting(w.instanceId, key, value)" />
       </div>
     </li>

@@ -42,7 +42,9 @@ describe('screenChannels', () => {
   it('collects the channels of the widgets on the screen\'s pages and in its bar, and no other', () => {
     const channels = screenChannels(config(), 'tablet', manifests)
     expect(channels.subscriptions.sort()).toEqual(['calendar:*', 'system'])
-    expect(channels.commands.sort()).toEqual(['system-cmd', 'weather'])
+    // `clock` names `weather` in a preview but not in `commands`: a manifest the schema refuses
+    // today, and one that must not widen a device's policy even if it got through.
+    expect(channels.commands.sort()).toEqual(['system-cmd'])
     expect(channels.subscriptions).not.toContain('spotify')
     expect(channels.commands).not.toContain('spotify')
   })
