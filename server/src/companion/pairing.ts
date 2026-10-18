@@ -74,8 +74,10 @@ export class CompanionPairing {
   /** installId → when its request was refused. */
   private readonly refusedAt = new Map<string, number>()
   /**
-   * The installs turned away as `busy` while the waiting request waits. Shown with it: a request
-   * that sits on the slot while other browsers ask is one the user may not have made.
+   * The installs turned away as `busy` while a request waits. Shown with it: a request that sits
+   * on the slot while other browsers ask is one the user may not have made. Only the user's answer
+   * clears it: a request that replaces itself, or one that takes the slot after an expiry, keeps
+   * the count, so a squatter cannot wipe the signal by posting again.
    */
   private turnedAway = new Set<string>()
   private readonly listeners = new Set<() => void>()
@@ -108,7 +110,6 @@ export class CompanionPairing {
 
     // Only ever the same install's own request: another install's was turned away above.
     if (waiting) this.requests.delete(waiting.requestId)
-    this.turnedAway = new Set()
     let code = ''
     for (let i = 0; i < MATCH_CODE_LENGTH; i++) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]
     const req: PairRequest = {
@@ -129,7 +130,7 @@ export class CompanionPairing {
 
   /**
    * The request waiting for the user's answer, for the Edge and the admin to show, with how many
-   * other installs asked meanwhile and were turned away (at most `MAX_TURNED_AWAY`).
+   * other installs were turned away since the user last answered one (at most `MAX_TURNED_AWAY`).
    */
   pending(): { requestId: string; code: string; name: string; expiresAt: number; turnedAway: number } | null {
     this.sweep(this.now())
@@ -149,6 +150,7 @@ export class CompanionPairing {
     // Taken off the waiting slot first, so a second approve or a refuse cannot race this one.
     req.state = 'approving'
     this.waiting = null
+    this.turnedAway = new Set()
     try {
       const { device, token } = await this.store.createExtension({ name: req.name, origin: req.origin, installId: req.installId })
       req.token = token
@@ -169,6 +171,7 @@ export class CompanionPairing {
     if ('result' in found) return found.result
     found.req.state = 'refused'
     this.waiting = null
+    this.turnedAway = new Set()
     this.refusedAt.set(found.req.installId, this.now())
     this.changed()
     return 'ok'

@@ -57,9 +57,25 @@ describe('CompanionPairing', () => {
     // Bounded, however many install ids a program makes up.
     for (let i = 0; i < 300; i++) ask(ORIGIN, fresh())
     expect(pairing.pending()?.turnedAway).toBe(MAX_TURNED_AWAY)
-    // The next request starts from zero: the count is about the request on show.
+    // Neither the squatter replacing its own request nor a new one after an expiry clears it.
+    accepted(ask())
+    expect(pairing.pending()?.turnedAway).toBe(MAX_TURNED_AWAY)
     clock += REQUEST_TTL_MS
     accepted(ask(ORIGIN, INSTALL_2))
+    expect(pairing.pending()?.turnedAway).toBe(MAX_TURNED_AWAY)
+  })
+
+  it('clears the turned-away count only when the user answers', async () => {
+    const first = accepted(ask())
+    expect(ask(ORIGIN, INSTALL_2)).toBe('busy')
+    expect(refuse(first)).toBe('ok')
+    const second = accepted(ask(ORIGIN, INSTALL_2))
+    expect(pairing.pending()?.turnedAway).toBe(0)
+    expect(ask(ORIGIN, fresh())).toBe('busy')
+    expect(pairing.pending()?.turnedAway).toBe(1)
+    expect(await approve(second)).toBe('ok')
+    clock += REQUEST_TTL_MS
+    accepted(ask(ORIGIN, fresh()))
     expect(pairing.pending()?.turnedAway).toBe(0)
   })
 
