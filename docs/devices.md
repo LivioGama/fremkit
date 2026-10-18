@@ -43,7 +43,9 @@ QR code.
 
 The iPad keeps what it needs to reconnect in its keychain and pins the Mac's key: it talks to
 that Mac and no other, whatever the network calls it. If the Mac's address changes, the app finds
-it again by itself.
+it again by itself, with the dashboard up: as soon as it sees the Mac announce its new address on
+the network, or about a minute after the old one stops answering. A Mac that answers nowhere (asleep,
+say) leaves the dashboard where it is until it comes back.
 
 ## What the iPad can do
 

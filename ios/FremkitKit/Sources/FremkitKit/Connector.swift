@@ -21,9 +21,11 @@ public struct Connector: Sendable {
         self.prober = prober
     }
 
-    public func connect(mac: PairedMac, discovered: [String]) async -> ConnectResult {
+    /// - Parameter preferring: a host to try before all others (the one a dashboard is using, so a
+    ///   page that still works stays where it is).
+    public func connect(mac: PairedMac, discovered: [String], preferring: String? = nil) async -> ConnectResult {
         var sawWrongKey = false
-        for host in Self.candidates(mac: mac, discovered: discovered) {
+        for host in Self.candidates(mac: mac, discovered: discovered, preferring: preferring) {
             switch await prober.probe(host: host, port: mac.port, mac: mac) {
             case let .ok(info): return .connected(host: host, info: info)
             case .unauthorized: return .unauthorized
@@ -34,10 +36,10 @@ public struct Connector: Sendable {
         return sawWrongKey ? .keyChanged : .unreachable
     }
 
-    /// `mac.host`, `mac.address`, then `discovered`, each once (compared without case).
-    static func candidates(mac: PairedMac, discovered: [String]) -> [String] {
+    /// `preferring`, `mac.host`, `mac.address`, then `discovered`, each once (compared without case).
+    static func candidates(mac: PairedMac, discovered: [String], preferring: String? = nil) -> [String] {
         var seen = Set<String>()
-        return ([mac.host, mac.address] + discovered).filter { host in
+        return ([preferring ?? ""] + [mac.host, mac.address] + discovered).filter { host in
             !host.isEmpty && seen.insert(PinnedSession.normalise(host)).inserted
         }
     }

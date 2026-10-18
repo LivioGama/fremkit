@@ -55,10 +55,12 @@ struct FremkitApp: App {
         launched = true
         let model = model
         // A newly resolved Bonjour address or the network coming back is a reason to try again
-        // right away rather than at the next 5 s tick.
+        // right away rather than at the next 5 s tick. On the dashboard it is a reason to check the
+        // Mac is still where the page was loaded from, and to follow it if it moved.
         network.onChange = {
             switch model.state {
             case .unreachable, .keyChanged: model.reconnect()
+            case .dashboard: model.addressesChanged()
             default: break
             }
         }

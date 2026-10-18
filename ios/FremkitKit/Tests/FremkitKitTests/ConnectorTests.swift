@@ -63,6 +63,13 @@ final class ConnectorTests: XCTestCase {
                        ["studio.local", "192.0.2.10", "198.51.100.7"])
     }
 
+    func testAPreferredHostIsTriedFirst() {
+        XCTAssertEqual(Connector.candidates(mac: sampleMac, discovered: ["198.51.100.7"], preferring: "198.51.100.7"),
+                       ["198.51.100.7", "studio.local", "192.0.2.10"])
+        XCTAssertEqual(Connector.candidates(mac: sampleMac, discovered: [], preferring: "192.0.2.10"),
+                       ["192.0.2.10", "studio.local"])
+    }
+
     func testUpdatingKeepsTheRecordWhenTheHostIsAName() {
         XCTAssertEqual(sampleMac.updating(address: "studio.local"), sampleMac)
         XCTAssertEqual(sampleMac.updating(address: "2001:db8::2").address, "2001:db8::2")

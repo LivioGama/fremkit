@@ -38,11 +38,18 @@ public final class AppModel {
     @ObservationIgnored private let connector: Connector
     @ObservationIgnored private let discovered: @MainActor () -> [String]
     @ObservationIgnored private var running: Task<Void, Never>?
-    /// What `running` is. A periodic check gives way to anything else rather than being joined:
-    /// it ignores a Mac that does not answer, which a reconnect or a resume must not.
+    /// What `running` is. A periodic check or a relocation gives way to anything else rather than
+    /// being joined: both leave the dashboard up when the Mac does not answer, which a reconnect or
+    /// a resume must not.
     @ObservationIgnored private var runningWork: Work?
+    /// Periodic checks in a row that found nobody at the host in use. Reset by any answer.
+    @ObservationIgnored private var unansweredChecks = 0
 
-    private enum Work { case connect, check, periodicCheck }
+    private enum Work {
+        case connect, check, periodicCheck, relocate
+        /// Runs behind the dashboard: anything the user or the page asks for comes first.
+        var isBackground: Bool { self == .periodicCheck || self == .relocate }
+    }
     /// Bumped by `pair(with:)` and `forget()`, so the result of an attempt started for another
     /// pairing is dropped.
     @ObservationIgnored private var generation = 0
@@ -104,7 +111,7 @@ public final class AppModel {
     @discardableResult
     public func reconnect() -> Task<Void, Never> {
         if let running {
-            guard runningWork == .periodicCheck else { return running }
+            guard runningWork?.isBackground == true else { return running }
             cancelRunning()
         }
         guard let mac else {
@@ -150,7 +157,7 @@ public final class AppModel {
         }
         guard case let .dashboard(host, _) = state, let mac else { return reconnect() }
         if let running {
-            guard runningWork == .periodicCheck else { return running }
+            guard runningWork?.isBackground == true else { return running }
             cancelRunning()
         }
         return check(host: host, mac: mac, periodic: false)
@@ -163,12 +170,8 @@ public final class AppModel {
         isConnecting = false
         switch result {
         case let .connected(host, info):
-            let updated = mac.updating(address: host)
-            if updated != mac {
-                // Remembered for the next launch; if the keychain refuses, this session still has it.
-                try? store.save(updated)
-                self.mac = updated
-            }
+            remember(host, for: mac)
+            unansweredChecks = 0
             state = .dashboard(host: host, info: info)
         case .unauthorized:
             state = .unauthorized
@@ -179,13 +182,28 @@ public final class AppModel {
         }
     }
 
+    /// The address that answered, remembered for the next launch; if the keychain refuses, this
+    /// session still has it.
+    private func remember(_ host: String, for mac: PairedMac) {
+        let updated = mac.updating(address: host)
+        guard updated != mac else { return }
+        try? store.save(updated)
+        self.mac = updated
+    }
+
     /// How often the dashboard asks the Mac whether it still knows this iPad (`checkAuthorization()`).
     public static let authorizationCheckInterval: Duration = .seconds(30)
 
+    /// Periodic checks in a row that must find nobody at the host in use before the app looks for
+    /// the Mac elsewhere (`relocate`): about a minute, so one lost request moves nothing.
+    public static let unansweredChecksBeforeRelocating = 2
+
     /// The dashboard's safety net: asks the Mac whether it still knows this iPad, so a revocation
-    /// shows the app's screen even when the page does not say so. Only `unauthorized`,
-    /// or a wrong key (which reconnects), changes anything; a Mac that does not answer is the page's
-    /// to wait for, as it reconnects by itself.
+    /// shows the app's screen even when the page does not say so. `unauthorized`, or a wrong key
+    /// (which reconnects), changes the screen. A Mac that does not answer is first the page's to
+    /// wait for, as it reconnects by itself, but only to the address it was loaded from: after
+    /// `unansweredChecksBeforeRelocating` such checks in a row, the app looks for the Mac at its
+    /// other addresses behind the dashboard (`relocate`), in case it moved.
     /// Nil when not on the dashboard or while another attempt or check runs (never two at once).
     @discardableResult
     public func checkAuthorization() -> Task<Void, Never>? {
@@ -212,14 +230,70 @@ public final class AppModel {
         running = nil
         runningWork = nil
         isConnecting = false
-        guard case .dashboard(host, _) = state else { return }
+        guard case .dashboard(host, _) = state, let mac else { return }
+        if case .unreachable = outcome {} else { unansweredChecks = 0 }
         switch outcome {
         case let .ok(info): state = .dashboard(host: host, info: info)
         case .unauthorized: state = .unauthorized
         // A wrong key reconnects even from the periodic check: the Connector then decides between
         // the dashboard (another candidate answers) and the key-changed screen.
         case .pinMismatch: reconnect()
-        case .unreachable: if reconnectOnFailure { reconnect() }
+        case .unreachable:
+            if reconnectOnFailure {
+                reconnect()
+            } else {
+                unansweredChecks += 1
+                if unansweredChecks >= Self.unansweredChecksBeforeRelocating {
+                    relocate(from: host, mac: mac, preferringCurrent: false)
+                }
+            }
+        }
+    }
+
+    /// Bonjour or the network monitor learned a new address. On the dashboard, looks for the Mac
+    /// behind it, the host in use first: a page that still works stays where it is, and one whose
+    /// Mac moved follows it without waiting for the periodic checks. Elsewhere, the caller's
+    /// business (the unreachable and key-changed screens reconnect).
+    /// Nil when not on the dashboard or while another attempt or check runs.
+    @discardableResult
+    public func addressesChanged() -> Task<Void, Never>? {
+        guard case let .dashboard(host, _) = state, let mac, running == nil else { return nil }
+        return relocate(from: host, mac: mac, preferringCurrent: true)
+    }
+
+    /// Runs the `Connector` without leaving the dashboard, and moves it only when the Mac answers
+    /// at another host. A Mac that answers nowhere (asleep, say) leaves the page as it is, so it
+    /// does not flicker; a revocation or a wrong key shows their screens, as a check would.
+    @discardableResult
+    private func relocate(from host: String, mac: PairedMac, preferringCurrent: Bool) -> Task<Void, Never> {
+        let generation = generation
+        let candidates = discovered()
+        isConnecting = true
+        let task = Task { [connector] in
+            let result = await connector.connect(mac: mac, discovered: candidates,
+                                                 preferring: preferringCurrent ? host : nil)
+            self.finishRelocate(result, from: host, generation: generation)
+        }
+        running = task
+        runningWork = .relocate
+        return task
+    }
+
+    private func finishRelocate(_ result: ConnectResult, from host: String, generation: Int) {
+        guard generation == self.generation else { return }
+        running = nil
+        runningWork = nil
+        isConnecting = false
+        guard case .dashboard(host, _) = state, let mac else { return }
+        switch result {
+        case let .connected(found, info):
+            remember(found, for: mac)
+            unansweredChecks = 0
+            // A new host rebuilds the web view (`RootView` keys it by host); the same one keeps it.
+            state = .dashboard(host: found, info: info)
+        case .unauthorized: state = .unauthorized
+        case .keyChanged: state = .keyChanged(name: mac.name)
+        case .unreachable: break
         }
     }
 

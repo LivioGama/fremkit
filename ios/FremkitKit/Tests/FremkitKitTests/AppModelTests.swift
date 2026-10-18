@@ -66,6 +66,12 @@ final class UnreadableStore: CredentialStore, @unchecked Sendable {
     func clear() { lock.withLock { cleared = true } }
 }
 
+/// What Bonjour has resolved, changed by a test while the model reads it.
+@MainActor
+final class Resolved {
+    var addresses: [String] = []
+}
+
 @MainActor
 final class AppModelTests: XCTestCase {
     func testWelcomeWhenNothingIsStored() async {
@@ -289,6 +295,124 @@ final class AppModelTests: XCTestCase {
         await model.checkAuthorization()?.value
         XCTAssertEqual(model.state, .unauthorized)
         XCTAssertNil(model.checkAuthorization(), "only on the dashboard")
+    }
+
+    /// The dashboard on the Mac's last address (its `.local` name does not resolve here), and
+    /// what Bonjour resolves, which a test can change.
+    private func dashboardOnAnAddress(_ prober: ScriptedProber, discovered: @escaping @MainActor () -> [String])
+        async -> (AppModel, MemoryCredentialStore) {
+        let store = MemoryCredentialStore(sampleMac)
+        let model = AppModel(store: store, connector: Connector(prober: prober), discovered: discovered)
+        await model.start()?.value
+        XCTAssertEqual(model.state, .dashboard(host: "192.0.2.10", info: sampleInfo))
+        return (model, store)
+    }
+
+    private func settle(_ model: AppModel) async {
+        while model.isConnecting { await Task.yield() }
+    }
+
+    func testTwoUnansweredChecksFollowTheMacToItsNewAddressWithoutLeavingTheDashboard() async {
+        let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo)])
+        let bonjour = Resolved()
+        let (model, store) = await dashboardOnAnAddress(prober, discovered: { bonjour.addresses })
+        // The Mac moved: its old address is dead, Bonjour now resolves the new one.
+        prober.set("192.0.2.10", .unreachable)
+        prober.set("198.51.100.7", .ok(sampleInfo))
+        bonjour.addresses = ["198.51.100.7"]
+
+        await model.checkAuthorization()?.value
+        await settle(model)
+        XCTAssertEqual(model.state, .dashboard(host: "192.0.2.10", info: sampleInfo), "one unanswered check moves nothing")
+        XCTAssertFalse(prober.hosts.contains("198.51.100.7"))
+
+        await model.checkAuthorization()?.value
+        XCTAssertEqual(model.state, .dashboard(host: "192.0.2.10", info: sampleInfo), "the page stays up while the app looks")
+        await settle(model)
+        XCTAssertEqual(model.state, .dashboard(host: "198.51.100.7", info: sampleInfo))
+        XCTAssertEqual(model.mac?.address, "198.51.100.7")
+        XCTAssertEqual(try store.load()?.address, "198.51.100.7", "remembered for the next launch")
+    }
+
+    func testAMacThatAnswersNowhereLeavesTheDashboardAlone() async {
+        let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo)])
+        let (model, _) = await dashboardOnAnAddress(prober, discovered: { ["198.51.100.7"] })
+        // Asleep: nothing answers anywhere. The page waits; no flicker through `.connecting`.
+        prober.set("192.0.2.10", .unreachable)
+        for _ in 0..<3 {
+            await model.checkAuthorization()?.value
+            XCTAssertEqual(model.state, .dashboard(host: "192.0.2.10", info: sampleInfo))
+            await settle(model)
+            XCTAssertEqual(model.state, .dashboard(host: "192.0.2.10", info: sampleInfo))
+        }
+        XCTAssertTrue(prober.hosts.contains("198.51.100.7"), "it did look elsewhere")
+    }
+
+    func testAnAnswerBetweenUnansweredChecksStartsTheCountAgain() async {
+        let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo)])
+        let (model, _) = await dashboardOnAnAddress(prober, discovered: { ["198.51.100.7"] })
+        prober.set("192.0.2.10", .unreachable)
+        await model.checkAuthorization()?.value
+        prober.set("192.0.2.10", .ok(sampleInfo))
+        await model.checkAuthorization()?.value
+        prober.set("192.0.2.10", .unreachable)
+        await model.checkAuthorization()?.value
+        await settle(model)
+        XCTAssertFalse(prober.hosts.contains("198.51.100.7"), "two transient failures a minute apart are not a move")
+    }
+
+    func testARelocationThatMeetsARevocationShowsUnauthorized() async {
+        let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo)])
+        let (model, _) = await dashboardOnAnAddress(prober, discovered: { ["198.51.100.7"] })
+        prober.set("192.0.2.10", .unreachable)
+        prober.set("198.51.100.7", .unauthorized)
+        await model.checkAuthorization()?.value
+        await model.checkAuthorization()?.value
+        await settle(model)
+        XCTAssertEqual(model.state, .unauthorized)
+    }
+
+    func testANewAddressMovesTheDashboardOnlyWhenTheHostInUseIsGone() async {
+        let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo), "198.51.100.7": .ok(sampleInfo)])
+        let (model, _) = await dashboardOnAnAddress(prober, discovered: { ["198.51.100.7"] })
+        let before = prober.hosts.count
+
+        // The page's host still answers: it stays, and nothing else is asked.
+        await model.addressesChanged()?.value
+        XCTAssertEqual(model.state, .dashboard(host: "192.0.2.10", info: sampleInfo))
+        XCTAssertEqual(Array(prober.hosts.dropFirst(before)), ["192.0.2.10"])
+
+        // The Mac left that address: the new one takes over at once, no periodic check needed.
+        prober.set("192.0.2.10", .unreachable)
+        await model.addressesChanged()?.value
+        XCTAssertEqual(model.state, .dashboard(host: "198.51.100.7", info: sampleInfo))
+    }
+
+    func testANewAddressDoesNothingAwayFromTheDashboardOrDuringAnotherAttempt() async {
+        let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo)])
+        let (model, _) = await dashboardOnAnAddress(prober, discovered: { [] })
+        prober.hold("192.0.2.10")
+        let check = model.checkAuthorization()
+        XCTAssertNil(model.addressesChanged(), "never two at once")
+        while prober.holding == 0 { await Task.yield() }
+        prober.release()
+        await check?.value
+        model.pageSaidUnauthorized()
+        XCTAssertNil(model.addressesChanged())
+    }
+
+    func testAReconnectDoesNotJoinARelocation() async {
+        let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo)])
+        let (model, _) = await dashboardOnAnAddress(prober, discovered: { [] })
+        prober.hold("192.0.2.10")
+        let relocation = model.addressesChanged()
+        while prober.holding == 0 { await Task.yield() }
+        prober.set("192.0.2.10", .unreachable)
+        let attempt = model.reconnect()
+        prober.release()
+        await relocation?.value
+        await attempt.value
+        XCTAssertEqual(model.state, .unreachable(name: "studio"), "a joined relocation would have left the dashboard up")
     }
 
     func testAPeriodicCheckThatMeetsAWrongKeyReconnectsAndLandsInKeyChanged() async {
