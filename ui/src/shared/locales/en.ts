@@ -42,6 +42,8 @@ export const en: Record<string, string> = {
   'admin.library.clearSearch': 'Clear the search',
   'admin.library.expandAll': 'Expand all',
   'admin.library.collapseAll': 'Collapse all',
+  'admin.library.preview.none': 'No preview yet',
+  'admin.library.preview.size': 'Default size {w}×{h} cells',
   'admin.library.hidePlaced': 'Hide those already on this screen',
   'admin.library.elsewhere': 'Already on your other screens',
   'admin.overlay.sharedOn': 'Shown on {n} screens',

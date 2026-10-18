@@ -13,6 +13,9 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **See a widget before placing it.** Hovering a card of the editor's widget library (or reaching
+  it with Tab) shows its preview with its name, what it does, its default size and what it may
+  read, control and reach.
 - **Every built-in widget has a preview**, taken with `pnpm widget:preview` against the demo
   server, so none of it shows anybody's real data.
 - **Pictures in the Sietch.** A registry widget that publishes a preview shows it as a thumbnail on

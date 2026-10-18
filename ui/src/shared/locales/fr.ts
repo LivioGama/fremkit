@@ -42,6 +42,8 @@ export const fr: Record<string, string> = {
   'admin.library.clearSearch': 'Effacer la recherche',
   'admin.library.expandAll': 'Tout déplier',
   'admin.library.collapseAll': 'Tout replier',
+  'admin.library.preview.none': 'Pas encore d’aperçu',
+  'admin.library.preview.size': 'Taille par défaut {w}×{h} cases',
   'admin.library.hidePlaced': 'Masquer ceux déjà sur cet écran',
   'admin.library.elsewhere': 'Déjà sur vos autres écrans',
   'admin.overlay.sharedOn': 'Affiché sur {n} écrans',

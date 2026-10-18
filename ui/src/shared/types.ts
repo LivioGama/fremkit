@@ -322,6 +322,8 @@ export interface WidgetManifest {
   subscriptions: string[]; commands: string[]
   settingsSchema: Record<string, SettingField>
   permissions: { network: string[] }
+  /** A picture of the widget, a path inside its folder (`/widgets/<id>/<preview>`). */
+  preview?: string
 }
 
 /**
