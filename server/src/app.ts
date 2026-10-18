@@ -6,6 +6,8 @@ import { shippedPaths } from './paths.js'
 import { join } from 'node:path'
 import { access, mkdir, readFile } from 'node:fs/promises'
 import { ConfigStore } from './config/store.js'
+import { ConfigHistory } from './config/history.js'
+import { historyRoutes } from './config/history-routes.js'
 import { setServerLocale } from './i18n.js'
 import { ConnectionManager } from './connections/manager.js'
 import { ConnectionTypeRegistry } from './connections/registry.js'
@@ -178,7 +180,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
 
   // Private before anything is read from it or written to it: see data-permissions.ts.
   await tightenDataDir(opts.dataDir)
-  const store = new ConfigStore(join(opts.dataDir, 'fremkit.json'))
+  const store = new ConfigStore(join(opts.dataDir, 'fremkit.json'), { history: new ConfigHistory(join(opts.dataDir, 'history')) })
   await store.load()
   // Providers, the proxy and the connection types are far from any request, so they read the
   // language from this module-level copy rather than being handed a store they have no use for.
@@ -420,6 +422,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     secrets,
     // A restored config brings its own connections; the manager rebuilds their providers, which
     // then report `unauthorized` until the secrets are typed back in.
+    onRestored: async (config) => { await connections.sync(config.connections); retainCameras(config) },
+  })
+  await app.register(historyRoutes, {
+    store,
+    types: connectionTypes,
+    secrets,
+    // A version put back brings its connections back as they were, exactly like a backup.
     onRestored: async (config) => { await connections.sync(config.connections); retainCameras(config) },
   })
   await app.register(faviconRoutes, { dir: join(opts.dataDir, 'icons', 'favicons') })

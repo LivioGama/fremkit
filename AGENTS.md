@@ -212,6 +212,11 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   Mac's `secrets`, `privacy` and `marketplace.installed`; PUT replays `connections`, `secrets`
   and `marketplace.installed` (privacy stays editable there: it is the admin's switch). Consent
   records change only through the marketplace routes.
+- **Anything that replaces the whole config goes through `applyConfig`** (`server/src/backup/apply.ts`):
+  backup restore, history restore, and any import. It keeps the security settings above, drops a
+  secret whose connection comes back changed, and passes a `reason` to `store.save` so the history
+  (`config/history.ts`) keeps the version it replaced. `<dataDir>/history/` holds full configs: it
+  stays out of backups and diagnostics, and its routes stay off the 4243 allow-list.
 - **Deleting a connection deletes every secret stored under its id**, registered type or not
   (`SecretStore.keysOf`), and a new connection purges its id first: never adopt a stale secret.
 - **System tools by absolute path** (`/usr/bin/open`, `/usr/bin/osascript`, `/usr/sbin/scutil`…),

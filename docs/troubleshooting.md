@@ -368,8 +368,10 @@ server* off in the menu and run it yourself.
 
 `data/fremkit.json` is valid JSON that the server cannot interpret, so it runs on defaults and
 refuses to save over your file rather than overwriting it. Repair or remove the file — a good copy
-may be in `data/fremkit.json.bak`, the file as it was before the last save — then restart the
-server.
+may be in `data/fremkit.json.bak`, the file as it was before the last save, or among the saved
+versions in `data/history/` (one `<time>-<id>.json` per version, `index.json` says what changed in
+each) — then restart the server. Once it reads its file again, **Screen → History** restores any
+of those versions from the admin.
 
 `data/fremkit.v3.json` is something else: the dashboard as it was the first time a version with
 screens started and converted it, kept once and never overwritten. It is the file to use to go
