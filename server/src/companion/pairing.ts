@@ -77,9 +77,13 @@ export class CompanionPairing {
    * The installs turned away as `busy` while a request waits. Shown with it: a request that sits
    * on the slot while other browsers ask is one the user may not have made. Only the user's answer
    * clears it: a request that replaces itself, or one that takes the slot after an expiry, keeps
-   * the count, so a squatter cannot wipe the signal by posting again.
+   * the count, so a squatter cannot wipe the signal by posting again. Nor does it outlive the
+   * episode: once nothing has waited for `REQUEST_TTL_MS`, it goes, so a request the user makes
+   * days later is not shown with browsers turned away from an old one.
    */
   private turnedAway = new Set<string>()
+  /** Since when no request waits, after the waiting one expired; null while one waits or was answered. */
+  private idleSince: number | null = null
   private readonly listeners = new Set<() => void>()
   private timer: NodeJS.Timeout | null = null
 
@@ -123,6 +127,7 @@ export class CompanionPairing {
     }
     this.requests.set(req.requestId, req)
     this.waiting = req.requestId
+    this.idleSince = null
     this.armTimer()
     this.changed()
     return { requestId: req.requestId, code: req.code, expiresAt: req.expiresAt }
@@ -227,13 +232,21 @@ export class CompanionPairing {
       // An approval still writing its record is left alone: it is about to be collectable.
       if (req.state !== 'approving' && now >= req.expiresAt) {
         this.requests.delete(id)
-        if (this.waiting === id) this.waiting = null
+        if (this.waiting === id) {
+          this.waiting = null
+          this.idleSince = req.expiresAt
+        }
         // An approved answer nobody collected leaves a paired device whose token is lost for good.
         if (req.state === 'approved' && req.token !== undefined && req.deviceId !== undefined) {
           this.store.remove(req.deviceId).catch(() => { /* the list shows it; the user can remove it */ })
         }
         dropped = true
       }
+    }
+    // Nothing waited for a whole request's life: the browsers turned away belong to another time.
+    if (this.waiting === null && this.idleSince !== null && now - this.idleSince >= REQUEST_TTL_MS) {
+      this.turnedAway = new Set()
+      this.idleSince = null
     }
     for (const [installId, at] of this.refusedAt) if (now - at >= REFUSED_COOLDOWN_MS) this.refusedAt.delete(installId)
     for (const [installId, times] of this.acceptedByInstall) {

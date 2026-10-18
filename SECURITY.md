@@ -279,7 +279,8 @@ not a browser, and the per-install limits count an install id it picks. Fremkit 
 request from yours, which is why the code matters: the one in your popup must be the one on the
 Edge, and the server only approves the code that was on show. A program that keeps a request of its
 own waiting can hold pairing up (you then see a request you did not start, and the Edge counts the
-other browsers turned away since you last answered one, a count only your answer clears: refuse it),
+other browsers turned away since you last answered one, a count only your answer clears, or two
+minutes with no request waiting at all: refuse it),
 but it cannot swap its request in under your Allow. Nor can it learn a linked extension's token by
 holding port 4242 in Fremkit's place: it cannot answer the challenge, so the token is never sent,
 and without the token it never sees an offer to answer, which is what keeps the video from it. The

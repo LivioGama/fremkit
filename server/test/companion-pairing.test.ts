@@ -79,6 +79,24 @@ describe('CompanionPairing', () => {
     expect(pairing.pending()?.turnedAway).toBe(0)
   })
 
+  it('forgets the turned-away count once no request has waited for a request\'s life', () => {
+    const squatter = accepted(ask())
+    expect(ask(ORIGIN, INSTALL_2)).toBe('busy')
+    expect(pairing.pending()).toMatchObject({ requestId: squatter.requestId, turnedAway: 1 })
+    // The request expires unanswered; just short of a whole TTL later, a new one still carries it.
+    clock += REQUEST_TTL_MS
+    expect(pairing.pending()).toBeNull()
+    clock += REQUEST_TTL_MS - 1
+    const soon = accepted(ask(ORIGIN, fresh()))
+    expect(pairing.pending()).toMatchObject({ requestId: soon.requestId, turnedAway: 1 })
+    // That one expires too, and nothing asks for a whole TTL: the next request starts from zero.
+    clock += REQUEST_TTL_MS
+    expect(pairing.pending()).toBeNull()
+    clock += REQUEST_TTL_MS
+    const later = accepted(ask(ORIGIN, fresh()))
+    expect(pairing.pending()).toMatchObject({ requestId: later.requestId, turnedAway: 0 })
+  })
+
   it('a new request from the same install replaces its own waiting one', () => {
     const first = accepted(ask())
     const second = accepted(ask())
