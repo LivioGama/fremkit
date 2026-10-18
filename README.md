@@ -42,7 +42,8 @@ The name is the Fremen survival kit from *Dune*.
   supervises the server.
 - **A widget marketplace** — *Sietch* in the admin installs widgets from a curated registry,
   showing what each one will be allowed to do and asking again when an update wants more.
-- **Backup and restore** of the whole dashboard, as a zip that never carries a secret.
+- **Backup and restore** of the whole dashboard, as a zip that never carries a secret, and a
+  **history** of every saved version for the last month, each one a click away from coming back.
 - **Themes** — the palette, the fonts and the text size, as a folder with one JSON file: two ship
   with it, four more are on the registry, and yours sits beside them. The dashboard, the editor
   and the widgets all wear the one you pick — or a second one at night, switching at sunset or
@@ -225,8 +226,8 @@ two screens is the same widget, with the same settings.
   ones it can command, the hosts it may reach. With no widget selected, *Page*: its own background
   (a colour or an image shown instead of the screen's, or the screen's). *Screen*: language, grid
   (read-only), navigation bar height and opacity, which gesture opens the admin, auto-rotation
-  delay, the bar's compact widgets, the screen background, the kiosk URL, backup and restore, and
-  privacy.
+  delay, the bar's compact widgets, the screen background, the kiosk URL, the history of saved
+  versions, backup and restore, and privacy.
 - **Move to page** — a tile can be sent to another page from the *Widget* tab: it keeps everything
   it carries and lands in the largest free spot there, or the move is refused when nothing fits.
 - **Copy settings from…** — where the same widget already exists elsewhere, a drop-down above its
@@ -402,6 +403,22 @@ write at all while the configuration on disk cannot be read. It keeps this Mac's
 choices whatever the archive says: where secrets are kept, the privacy switches, and what each
 installed widget was granted. Details in
 **[docs/contributing.md](docs/contributing.md)**.
+
+### History
+
+**/admin → Screen → History** (or the clock-arrow button next to undo) lists every saved version
+of the dashboard for the last 30 days, up to 100, grouped by day, each with what changed: pages
+added, removed or renamed, widgets added, removed, moved or edited, screens, theme. Continuous
+editing is kept as one version per two minutes, the last state winning. Open a version to see its
+pages, and **Restore this version** to put it back. A restore is a save like any other, so the
+version it replaced is the next line down and restoring that one undoes it. The version before a
+backup restore, a setup import or a Fremkit update that converts the file is always kept.
+
+Like a backup restore, putting a version back keeps this Mac's secrets backend, privacy switches
+and widget permissions, and a connection keeps its stored secret only if it comes back unchanged.
+The versions live in `data/history/`, private to your account, hold no secret (the configuration
+never does), and are not part of a backup: a backup is meant to travel, the history keeps what you
+deleted on purpose.
 
 ## What Fremkit reads on your Mac
 

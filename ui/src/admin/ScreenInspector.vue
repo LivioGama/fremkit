@@ -16,6 +16,7 @@ import BackgroundPicker from './BackgroundPicker.vue'
 import NavWidgetsEditor from './NavWidgetsEditor.vue'
 import DevicesSection from './DevicesSection.vue'
 import DiagnosticsSection from './DiagnosticsSection.vue'
+import HistorySection from './HistorySection.vue'
 import { useDevices } from './devices'
 import ScreenBrightness from './ScreenBrightness.vue'
 import ThemeSchedule from './ThemeSchedule.vue'
@@ -350,6 +351,10 @@ function setBackground(patch: Partial<Background>): void {
 
   <BaseSection id="screen.devices" :title="t('admin.inspector.screen.devices')">
     <DevicesSection />
+  </BaseSection>
+
+  <BaseSection id="screen.history" :title="t('admin.inspector.screen.history')">
+    <HistorySection />
   </BaseSection>
 
   <BaseSection id="screen.backup" :title="t('admin.inspector.screen.backup')">

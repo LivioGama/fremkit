@@ -19,8 +19,9 @@
  *
  * Files are 0600 in a 0700 folder like the rest of the data folder. They hold what `fremkit.json`
  * holds, which is no secret: connection secrets live in the keychain (or `secrets.json`) and the
- * config only ever carries a connection's non-secret fields. They are not part of a backup — see
- * `docs/backup.md`.
+ * config only ever carries a connection's non-secret fields. They are not part of a backup: a
+ * backup is a file meant to travel, and the history keeps what the user removed on purpose (a
+ * deleted connection's host, a page they did not want) — that stays on this Mac. README, *Backup*.
  *
  * Every failure here is the caller's to log and ignore: the history must never stop a save.
  */

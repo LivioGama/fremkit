@@ -13,6 +13,12 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **Dashboard history.** Screen → History (or the button next to undo) lists every saved version
+  of the dashboard for the last month, by day, with what changed in each — pages, widgets,
+  screens, theme. Open one to see its pages and restore it in two taps; the version it replaces
+  stays in the list, so a restore is undone the same way. The version before a backup restore or
+  a Fremkit update is always kept. Your privacy settings, widget permissions and secrets stay as
+  they are.
 - **Widget health in the editor.** A widget that cannot work — not installed, its connection
   deleted, incomplete or refusing its credentials, its data source out of reach, no connection
   chosen yet, or an update waiting — wears a red or orange dot on its tile in the editor, with

@@ -8,6 +8,8 @@ import { useI18n } from '../shared/i18n'
 import { useAdminStore } from './store'
 import { useMarketplaceStore } from './marketplace'
 import HealthMenu from './HealthMenu.vue'
+import { setSectionsOpen } from '../shared/ui/BaseSection.vue'
+import { revealHistory } from './history'
 import type { Mode } from './store'
 
 const s = useAdminStore()
@@ -18,6 +20,12 @@ const MODES = computed(() => [
   { value: 'test', label: t('admin.topbar.mode.test'), icon: 'play' },
 ])
 const statusLabel = computed(() => t(`admin.topbar.status.${s.state.status}`))
+/** Undo reaches back one session; the history, under Screen, reaches back a month. */
+function openHistory(): void {
+  setSectionsOpen(['screen.history'], true)
+  revealHistory.value = true
+  s.openModal('screen')
+}
 const statusTone = computed(() => (s.state.status === 'error' ? 'danger' : s.state.status === 'saving' ? 'accent' : 'neutral'))
 </script>
 
@@ -34,6 +42,7 @@ const statusTone = computed(() => (s.state.status === 'error' ? 'danger' : s.sta
       @update:model-value="s.setMode($event as Mode)" />
     <BaseButton variant="icon" :title="t('admin.topbar.undo')" :disabled="!s.canUndo.value" @click="s.undo()"><BaseIcon name="undo-2" /></BaseButton>
     <BaseButton variant="icon" :title="t('admin.topbar.redo')" :disabled="!s.canRedo.value" @click="s.redo()"><BaseIcon name="redo-2" /></BaseButton>
+    <BaseButton variant="icon" :title="t('admin.topbar.history')" data-test="open-history" @click="openHistory()"><BaseIcon name="history" /></BaseButton>
     <span class="spacer" />
     <HealthMenu />
     <BaseChip :tone="statusTone">{{ statusLabel }}</BaseChip>
