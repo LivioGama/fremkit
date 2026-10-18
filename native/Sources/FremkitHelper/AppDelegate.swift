@@ -140,9 +140,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             server.start()
         } else {
             // Not managing, but the menu should still say whether something answers the port.
-            server.probe { [weak self] alive in
-                guard alive else { return }
-                self?.menu?.update { $0.server = .external }
+            let port = config.port
+            server.probe { [weak self] verdict in
+                guard verdict != .absent else { return }
+                self?.menu?.update { $0.server = verdict == .ours ? .external : .foreign(port) }
             }
         }
 
@@ -433,13 +434,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.onOpenAdmin = { [weak self] in self?.admin?.show() }
 
         // The browser has a cookie jar of its own: it is handed a one-time sign-in link instead.
-        // Without one (the server is down, or refuses) the plain address still opens, and the
-        // server's page there says how to get in.
+        // Without one — nothing on the port proved it is our server — nothing opens: the plain
+        // address would show whatever holds the port, and the server line says what is wrong.
         menu.onOpenAdminInBrowser = { [weak self] in
             guard let self, let access = self.access else { return }
             let admin = Self.parseURL(self.config.adminUrl, what: "adminUrl")
             access.signInURL(for: admin) { url in
-                NSWorkspace.shared.open(url ?? admin)
+                guard let url else { NSSound.beep(); return }
+                NSWorkspace.shared.open(url)
             }
         }
 

@@ -158,7 +158,14 @@ fremkit_stamp_version "$PLIST" "$VERSION"
     -c "Set :CFBundleDisplayName Fremkit" \
     -c "Add :SUFeedURL string ${FREMKIT_SPARKLE_FEED_URL:-$DEFAULT_FEED_URL}" \
     -c "Add :SUEnableAutomaticChecks bool true" \
+    -c "Add :SUVerifyUpdateBeforeExtraction bool true" \
+    -c "Add :SURequireSignedFeed bool true" \
     "$PLIST"
+# SUVerifyUpdateBeforeExtraction: the archive's EdDSA signature is checked before a single byte of
+# it is unpacked, not after. SURequireSignedFeed: the appcast itself must carry a signature from the
+# same key (release.sh signs it), so a feed served by anyone else is refused before it can offer an
+# update or show release notes. Every published feed must then be signed: release.sh refuses to
+# finish without it.
 # The public half of the owner's EdDSA key; the private half stays in their keychain and signs
 # each update (scripts/release.sh). Without it Sparkle refuses every update, so a build with none
 # is fine to run but must never be released — release.sh checks.

@@ -67,7 +67,7 @@ Touchscreen Gestures must not be running (the panel takes one owner).
 | Install the app | Build from source |
 |---|---|
 | For using Fremkit. One signed, notarized app that carries everything it needs, Node included, and updates itself. | For working on Fremkit. A checkout, the developer helper pointed at it, and your changes live on the Edge. |
-| [Download the DMG](https://github.com/fdussert/fremkit/releases/latest) and drag **Fremkit** to Applications — or `brew install --cask fdussert/fremkit/fremkit` | `git clone` + `pnpm setup`, below |
+| [Download the DMG](https://github.com/fdussert/fremkit/releases/latest) and drag **Fremkit** to Applications — or `brew install --cask fdussert/fremkit/fremkit` | `git clone` + `pnpm run setup`, below |
 | Data in `~/Library/Application Support/Fremkit` | Data in the checkout's `data/` |
 
 ### Install the app
@@ -113,12 +113,14 @@ Already running the developer helper from a checkout? Nothing changes until you 
    ```sh
    git clone https://github.com/fdussert/fremkit.git
    cd fremkit
-   pnpm setup
+   pnpm run setup
    ```
 
-   `pnpm setup` checks the prerequisites, installs dependencies, builds the UI and the server,
+   `pnpm run setup` checks the prerequisites, installs dependencies, builds the UI and the server,
    offers to create the code-signing identity, then builds and installs the helper into
-   `~/Applications` and points it at your checkout. `pnpm setup --check` runs the checks only.
+   `~/Applications` and points it at your checkout. `pnpm run setup --check` runs the checks only.
+   Type the `run`: `pnpm setup` on its own is pnpm's own command, which edits your shell's
+   profile and does not set Fremkit up.
 
 2. **Say yes to the signing identity** when it asks. The helper is signed ad hoc unless a stable
    code-signing identity exists, and macOS ties Input Monitoring and Accessibility grants to the
@@ -396,7 +398,9 @@ a restore keeps those ids, restoring onto the **same Mac** finds them and everyt
 once; on another Mac the admin lists the connections whose secret has to be entered again.
 
 A restore replaces the dashboard — pages, widgets, connections and backgrounds — and refuses to
-write at all while the configuration on disk cannot be read. Details in
+write at all while the configuration on disk cannot be read. It keeps this Mac's own security
+choices whatever the archive says: where secrets are kept, the privacy switches, and what each
+installed widget was granted. Details in
 **[docs/contributing.md](docs/contributing.md)**.
 
 ## What Fremkit reads on your Mac

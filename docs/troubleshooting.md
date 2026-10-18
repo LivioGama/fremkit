@@ -115,7 +115,7 @@ the same way.
 | Dashboard, connections, backgrounds, installed widgets and themes | `~/Library/Application Support/Fremkit` | the checkout's `data/` |
 | Helper settings (`helper.json`) | `~/Library/Application Support/Fremkit` | the same |
 | Server log | `~/Library/Logs/Fremkit/server.log` | the same |
-| Connection secrets | the login keychain, service `fremkit` | the same |
+| Connection secrets | the login keychain, service `fremkit:<hash of the data folder>` | the same |
 
 The app never writes inside itself: its bundle is replaced by every update and its signature
 has to stay intact. What decides which server runs is `repoPath` in `helper.json`: present, the
@@ -145,7 +145,7 @@ switch:
 6. In `~/.claude/settings.json`, point the Claude Code hook and status line at the app (see
    [claude-code.md](claude-code.md)).
 
-Going back is the same in reverse: quit Fremkit, run `pnpm setup` in the checkout (it writes
+Going back is the same in reverse: quit Fremkit, run `pnpm run setup` in the checkout (it writes
 `repoPath` again and installs the developer helper).
 
 ## Removing everything
@@ -162,7 +162,8 @@ tccutil reset All dev.fremkit.helper
 ```
 
 The connection secrets stay in the login keychain until you delete them: open Keychain Access
-and search for `fremkit`, or `security delete-generic-password -s fremkit` once per secret. If you
+and search for `fremkit`, or `security delete-generic-password -s 'fremkit:<…>'` once per secret
+(the full service name is in Keychain Access). If you
 added the Claude Code hook, remove its lines from `~/.claude/settings.json`.
 
 ## The helper's icon is missing from the menu bar
@@ -346,6 +347,15 @@ for a new one the same way.
 
 A script getting **401** is missing the `Authorization: Bearer` header, or read the token file of
 another port: see [contributing](contributing.md#signing-in-the-access-secret).
+
+## The menu says "port 4242 is held by another program"
+
+Something answers on the port and could not prove it holds Fremkit's access secret, so the helper
+sends it nothing and shows nothing from it: neither the Edge nor the admin window load. It is
+another program that took the port — possibly while Fremkit was restarting — or a Fremkit server
+from an older checkout. Find it with `lsof -nP -iTCP:4242 -sTCP:LISTEN` and stop it; the helper
+starts its own server within seconds of the port coming free. If the program belongs to another
+account on this Mac and you did not start it, treat that as hostile.
 
 ## The menu says "Server: external"
 

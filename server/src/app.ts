@@ -84,9 +84,15 @@ import type { Exec } from './secrets/keychain.js'
 import { diagnosticsRoutes } from './diagnostics/routes.js'
 import type { LogTail } from './diagnostics/log-tail.js'
 import { isDeclaredType } from './connections/declared.js'
+import { tightenDataDir } from './data-permissions.js'
 
 export interface AppOptions {
   dataDir: string
+  /**
+   * This instance may take over the keychain items an earlier version filed under the shared
+   * `fremkit` service. Only the live server (port 4242) passes it; see `secrets/keychain.ts`.
+   */
+  adoptLegacyKeychain?: boolean
   widgetsDir: string
   /** Development only: a registry served from somewhere else. See `server/src/index.ts`. */
   registryUrl?: string
@@ -164,6 +170,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   app.decorateRequest('deviceId', null)
   if (opts.onRoute) app.addHook('onRoute', opts.onRoute)
 
+  // Private before anything is read from it or written to it: see data-permissions.ts.
+  await tightenDataDir(opts.dataDir)
   const store = new ConfigStore(join(opts.dataDir, 'fremkit.json'))
   await store.load()
   // Providers, the proxy and the connection types are far from any request, so they read the
@@ -254,7 +262,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   registry.register(createBrightnessProvider(brightness, brightnessChanged, (id) => deviceService.me(id)?.screenId ?? null))
   // The theme in force, day or night: see themes/schedule.ts.
   registry.register(createThemeProvider(() => store.get()))
-  const secrets = createSecretStore(store.get().secrets.backend, opts.dataDir)
+  const secrets = createSecretStore(store.get().secrets.backend, opts.dataDir, { adoptLegacyKeychain: opts.adoptLegacyKeychain === true })
   // v2 → v3 moved the Homey connection to the type its widget declares, and the declaration
   // calls the key `token` where the coded type called it `apiKey`. The config half of that is in
   // `migrateConfig`; this is the half that needs the secret store. Idempotent, so it costs one

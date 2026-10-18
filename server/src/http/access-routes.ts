@@ -8,7 +8,7 @@
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { CODE_TTL_MS, isPublicRoute, safeNext, type AccessGate } from './access.js'
+import { CODE_TTL_MS, isPublicRoute, isWellFormedNonce, safeNext, type AccessGate } from './access.js'
 import { tr, serverLocale } from '../i18n.js'
 
 /** What a refused request is told about how to authenticate. The helper's probe looks for it. */
@@ -65,21 +65,48 @@ export function installAccessGate(app: FastifyInstance, { gate, appliesTo = () =
    * session without putting the secret itself in a URL — the helper's "open in the browser",
    * `pnpm open`, `scripts/kiosk.sh`. Behind the gate like everything else.
    */
-  app.post('/api/auth/code', async (_req, reply) => {
+  app.post('/api/auth/code', async (req, reply) => {
     reply.header('cache-control', 'no-store')
+    // The secret itself, not a session: a session that leaked (another loopback port sees the
+    // cookie) must not be able to open sessions of its own and outlive its expiry.
+    if (!gate.hasBearer(req.headers)) return refuse(req, reply)
     return { code: gate.mintCode(), expiresInSeconds: Math.floor(CODE_TTL_MS / 1000) }
   })
 
   /**
-   * Redeems a one-time code: sets the cookie and sends the browser on to `next`, a path on this
-   * server. The code is gone whether it worked or not. Nothing about it is logged: the request
+   * The server proves it holds the secret, before anyone shows it theirs.
+   *
+   * The helper and anything else that holds the secret ask this first, with a random nonce and
+   * no credential, and send the bearer only to a listener whose answer checks out. Something
+   * else on the port — another account's program that bound it while ours was down — cannot
+   * answer, so it is never handed the secret and never shown as Fremkit. The answer is a MAC
+   * under a label of its own (see `accessProof`): it reveals nothing about the secret and is
+   * good for nothing but this question. Public, and only on the loopback listener.
+   */
+  app.get<{ Querystring: { nonce?: string } }>('/auth/proof', async (req, reply) => {
+    reply.header('cache-control', 'no-store')
+    const nonce = req.query.nonce
+    if (!isWellFormedNonce(nonce)) return reply.code(400).send({ error: tr(serverLocale(), 'proxy.badRequest') })
+    return { proof: gate.prove(nonce) }
+  })
+
+  /** Ends the caller's own session (signing out) and clears its cookie. */
+  app.delete('/api/auth/session', async (req, reply) => {
+    const id = gate.sessionOf(req.headers)
+    if (id !== undefined) gate.revokeSession(id)
+    return reply.header('cache-control', 'no-store').header('set-cookie', gate.clearCookieHeader()).code(204).send()
+  })
+
+  /**
+   * Redeems a one-time code: opens a session, sets its cookie and sends the browser on to `next`,
+   * a path on this server. The code is gone whether it worked or not. Nothing about it is logged: the request
    * log drops the query string (see `logging.ts`).
    */
   app.get<{ Querystring: { code?: string; next?: string } }>('/auth', async (req, reply) => {
     reply.header('cache-control', 'no-store').header('referrer-policy', 'no-referrer')
     if (!gate.redeem(req.query.code)) return refuse(req, reply, true)
     return reply
-      .header('set-cookie', gate.setCookieHeader())
+      .header('set-cookie', gate.setCookieHeader(gate.openSession()))
       .redirect(safeNext(req.query.next), 303)
   })
 }

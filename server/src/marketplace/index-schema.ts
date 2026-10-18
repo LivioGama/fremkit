@@ -112,10 +112,14 @@ export type IndexWidget = z.infer<typeof IndexWidgetSchema>
  *
  * The same expression the registry's `tools/theme.ts` refuses a package with, deliberately: the
  * four swatch tokens end up in a `style` attribute on a card, and a value that reached one
- * unchecked could close the attribute. It is not a CSS parser — Fremkit's `TokensSchema` is the
+ * unchecked could close the attribute, or (as `url(…)`) make the admin fetch from anywhere. It is
+ * not a CSS parser — Fremkit's `TokensSchema` is the
  * authority on what a token may be, and this is what must not travel that far.
  */
 const ColorSchema = z.string().min(1).max(64).regex(/^[#a-zA-Z0-9(),.%\s/-]+$/)
+  // The characters above also spell `url(//host/x)`, which in a `style` attribute is a request
+  // to anywhere. No colour has a `url(` in it.
+  .refine((value) => !/url\s*\(/i.test(value), { message: 'not a colour' })
 
 /**
  * A theme, as the index lists it.

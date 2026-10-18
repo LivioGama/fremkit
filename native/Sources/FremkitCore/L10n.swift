@@ -15,6 +15,8 @@ public enum Language: String {
 public enum L10nKey: String, CaseIterable {
     // Server state line
     case serverExternal
+    /// One `%d`: the port.
+    case serverForeign
     case serverStarting
     case serverRunning
     case serverStopped
@@ -89,6 +91,7 @@ public enum L10nKey: String, CaseIterable {
 public enum L10n {
     private static let fr: [L10nKey: String] = [
         .serverExternal: "Serveur : externe",
+        .serverForeign: "Serveur : le port %d est pris par un autre programme",
         .serverStarting: "Serveur : démarrage…",
         .serverRunning: "Serveur : lancé",
         .serverStopped: "Serveur : arrêté",
@@ -151,6 +154,7 @@ public enum L10n {
 
     private static let en: [L10nKey: String] = [
         .serverExternal: "Server: external",
+        .serverForeign: "Server: port %d is held by another program",
         .serverStarting: "Server: starting…",
         .serverRunning: "Server: running",
         .serverStopped: "Server: stopped",

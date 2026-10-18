@@ -273,6 +273,7 @@ const fr = {
 
   // dock/routes.ts
   'dock.notLocal': 'hôte non local',
+  'dock.notInDock': 'cette app n’est pas dans le Dock',
   'dock.iconCacheFull': 'cache d’icônes plein',
   'dock.unknownIcon': 'icône inconnue',
 
@@ -527,6 +528,7 @@ const en: Record<MessageKey, string> = {
 
 
   'dock.notLocal': 'host is not local',
+  'dock.notInDock': 'this app is not in the Dock',
   'dock.iconCacheFull': 'icon cache full',
   'dock.unknownIcon': 'unknown icon',
 

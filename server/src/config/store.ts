@@ -187,7 +187,7 @@ export class ConfigStore {
     const exists = await access(this.filePath).then(() => true, () => false)
     if (exists) await copyFile(this.filePath, this.filePath + '.bak')
     const tmp = this.filePath + '.tmp'
-    await writeFile(tmp, JSON.stringify(this.config, null, 2) + '\n', 'utf8')
+    await writeFile(tmp, JSON.stringify(this.config, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
     await rename(tmp, this.filePath)
   }
 }

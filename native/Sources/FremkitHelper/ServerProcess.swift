@@ -6,6 +6,10 @@ import FremkitCore
 enum ServerState: Equatable {
     /// The port already answered at startup: someone else's `pnpm dev` owns the server.
     case external
+    /// Something that is not our server holds the port: it could not prove it holds the secret
+    /// (`AccessProof`). Nothing is sent to it and nothing it serves is shown; the helper keeps
+    /// watching and starts its own server once the port is free.
+    case foreign(Int)
     /// A child process has been spawned but has not answered `/api/config` yet.
     case starting
     /// The child process is up and serving.
@@ -19,6 +23,7 @@ enum ServerState: Equatable {
     var label: String {
         switch self {
         case .external: return L10n.string(.serverExternal)
+        case let .foreign(port): return L10n.string(.serverForeign, port)
         case .starting: return L10n.string(.serverStarting)
         case .running: return L10n.string(.serverRunning)
         case .stopped: return L10n.string(.serverStopped)
@@ -65,10 +70,12 @@ final class ServerProcess {
     private var backoffIndex = 0
     private var startedAt: Date?
     private var restartWork: DispatchWorkItem?
-    /// Set once the startup probe found someone else on the port. While it is set we keep probing:
-    /// if that server goes away (a `pnpm dev` stopped, or a previous helper's child that was still
-    /// dying when we probed), we take over and spawn our own.
+    /// Set once a probe found someone else on the port — a server of ours we did not start, or a
+    /// foreign listener. While it is set we keep probing: if it goes away (a `pnpm dev` stopped, a
+    /// previous helper's child that was still dying when we probed), we take over and spawn our own.
     private var isExternal = false
+    /// What stands on the port while `isExternal` is set: `.external` or `.foreign`.
+    private var asideState: ServerState = .external
     private var externalWatch: DispatchWorkItem?
     private var healthWatch: DispatchWorkItem?
     private var healthMisses = 0
@@ -135,12 +142,10 @@ final class ServerProcess {
         // and wrongly declare an external server, so settle first.
         waitForQuiet(deadline: Date().addingTimeInterval(Self.quietTimeout)) { [weak self] in
             guard let self, self.managed else { return }
-            self.probe { [weak self] alive in
+            self.probe { [weak self] verdict in
                 guard let self, self.managed else { return }
-                if alive {
-                    self.isExternal = true
-                    self.state = .external
-                    self.watchExternal()
+                if verdict != .absent {
+                    self.standAside(verdict)
                     return
                 }
                 self.isExternal = false
@@ -149,16 +154,35 @@ final class ServerProcess {
         }
     }
 
-    /// Keeps probing an external server; after two consecutive misses (~10 s) we spawn our own.
+    /// Something else holds the port: our server under someone else's hand, or a foreign listener.
+    private func standAside(_ verdict: AccessProof.Verdict) {
+        access.forgetSpawn()
+        isExternal = true
+        noteAside(verdict)
+        watchExternal()
+    }
+
+    private func noteAside(_ verdict: AccessProof.Verdict) {
+        if verdict == .foreign {
+            NSLog("fremkit: port %d is held by a listener that cannot prove it is our server", config.port)
+        }
+        asideState = verdict == .foreign ? .foreign(config.port) : .external
+        state = asideState
+    }
+
+    /// Keeps probing what holds the port; after two consecutive misses (~10 s) we spawn our own.
+    /// A listener that proves itself later (a `pnpm dev` that had not written its token file yet)
+    /// moves from foreign to external, and the other way round.
     private func watchExternal() {
         externalWatch?.cancel()
         externalMisses = 0
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.managed, self.isExternal else { return }
-            self.probe { [weak self] alive in
+            self.probe { [weak self] verdict in
                 guard let self, self.managed, self.isExternal else { return }
-                if alive {
+                if verdict != .absent {
                     self.externalMisses = 0
+                    self.noteAside(verdict)
                 } else {
                     self.externalMisses += 1
                     if self.externalMisses >= Self.externalMissesBeforeTakeover {
@@ -180,6 +204,7 @@ final class ServerProcess {
     func stop() {
         managed = false
         Self.removePidFile()
+        access.forgetSpawn()
         restartWork?.cancel()
         restartWork = nil
         externalWatch?.cancel()
@@ -191,7 +216,7 @@ final class ServerProcess {
         guard let child = process, child.isRunning else {
             process = nil
             closeLog()
-            state = isExternal ? .external : .stopped
+            state = isExternal ? asideState : .stopped
             return
         }
 
@@ -216,6 +241,7 @@ final class ServerProcess {
     func stopAndWait(timeout: TimeInterval) {
         managed = false
         Self.removePidFile()
+        access.forgetSpawn()
         restartWork?.cancel()
         restartWork = nil
         externalWatch?.cancel()
@@ -227,7 +253,7 @@ final class ServerProcess {
         guard let child = process, child.isRunning else {
             process = nil
             closeLog()
-            state = isExternal ? .external : .stopped
+            state = isExternal ? asideState : .stopped
             return
         }
 
@@ -262,8 +288,8 @@ final class ServerProcess {
     /// After a stop, checks the port really went quiet; a survivor means the tree kill missed one.
     private func verifyPortReleased() {
         let port = config.port
-        probe { alive in
-            guard alive else { return }
+        probe { verdict in
+            guard verdict != .absent else { return }
             NSLog("fremkit: something still answers port %d after stopping the server", port)
         }
     }
@@ -331,38 +357,11 @@ final class ServerProcess {
 
     // MARK: - Probe
 
-    /// GETs `/api/config` on the configured port; `alive` is called on the main thread.
-    func probe(_ alive: @escaping (Bool) -> Void) {
-        guard let url = URL(string: "http://127.0.0.1:\(config.port)/api/config") else {
-            DispatchQueue.main.async { alive(false) }
-            return
-        }
-
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = Self.probeTimeout
-        configuration.timeoutIntervalForResource = Self.probeTimeout
-        let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = 1
-        queue.underlyingQueue = probeQueue
-        let session = URLSession(configuration: configuration, delegate: nil, delegateQueue: queue)
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = Self.probeTimeout
-        access.authorize(&request)
-
-        session.dataTask(with: request) { data, response, _ in
-            // Any 2xx-4xx from anything at all used to count as "a server is here", so a
-            // completely unrelated program on 4242 made the helper stand down and stop
-            // supervising — with no way back but a relaunch. The answer has to look like ours:
-            // a 200 whose body is a Fremkit config, or our server refusing a secret it does not
-            // hold (see `ServerProbe.isFremkitAnswer`).
-            let http = response as? HTTPURLResponse
-            let ok = ServerProbe.isFremkitAnswer(status: http?.statusCode, body: data,
-                                                 challenge: http?.value(forHTTPHeaderField: "WWW-Authenticate"))
-            session.finishTasksAndInvalidate()
-            DispatchQueue.main.async { alive(ok) }
-        }.resume()
+    /// Asks the listener on the configured port to prove it is our server (see `AccessProof` and
+    /// `ServerAccess.probe`); `done` is called on the main thread. No credential is sent: a
+    /// listener that cannot answer is `.foreign`, and is never handed the secret.
+    func probe(_ done: @escaping (AccessProof.Verdict) -> Void) {
+        access.probe(timeout: Self.probeTimeout, queue: probeQueue, done)
     }
 
     // MARK: - Spawning
@@ -385,7 +384,7 @@ final class ServerProcess {
             dataDirectory: HelperPaths.supportDirectory().path,
             home: NSHomeDirectory(),
             scanner: Self.diskScanner(),
-            accessToken: access.launchToken)
+            accessToken: access.newSpawnToken())
 
         // The handle has to exist before run(), so a failed launch closes it again rather than
         // leaking a descriptor on every retry of the backoff loop.
@@ -403,6 +402,7 @@ final class ServerProcess {
             try process.run()
         } catch {
             try? handle?.close()
+            access.forgetSpawn()
             NSLog("fremkit: cannot start server: %@", String(describing: error))
             scheduleRestart()
             return
@@ -465,17 +465,17 @@ final class ServerProcess {
     private func pollReady() {
         guard managed, state == .starting, let child = process, child.isRunning else { return }
 
-        probe { [weak self] alive in
+        probe { [weak self] verdict in
             guard let self, self.managed, self.state == .starting,
                   let running = self.process, running === child, running.isRunning else { return }
-            if alive {
+            if verdict == .ours {
                 self.state = .running
                 self.watchHealth(child)
                 return
             }
             if let startedAt = self.startedAt,
                Date().timeIntervalSince(startedAt) >= Self.healthyAfter {
-                NSLog("fremkit: server child alive for %.0f s but /api/config never answered; reporting it as running",
+                NSLog("fremkit: server child alive for %.0f s but never proved itself on /auth/proof; reporting it as running",
                       Self.healthyAfter)
                 self.state = .running
                 self.watchHealth(child)
@@ -494,9 +494,9 @@ final class ServerProcess {
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.managed, self.state == .running,
                   let running = self.process, running === child, running.isRunning else { return }
-            self.probe { [weak self] alive in
+            self.probe { [weak self] verdict in
                 guard let self, self.managed, let running = self.process, running === child else { return }
-                self.healthMisses = alive ? 0 : self.healthMisses + 1
+                self.healthMisses = verdict == .ours ? 0 : self.healthMisses + 1
                 if self.healthMisses >= Self.healthMissesBeforeRestart {
                     NSLog("fremkit: server child no longer answers on port %d; restarting it", self.config.port)
                     self.healthMisses = 0
@@ -518,6 +518,8 @@ final class ServerProcess {
         }
         process = nil
         closeLog()
+        // Its secret dies with it: nothing is presented until the next listener proves itself.
+        access.forgetSpawn()
 
         guard managed else {
             state = .stopped
@@ -541,7 +543,12 @@ final class ServerProcess {
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.managed else { return }
             self.restartWork = nil
-            self.spawn()
+            // The port may have been taken while ours was down — by a `pnpm dev`, or by a
+            // listener that is not ours at all. Look before spawning onto it.
+            self.probe { [weak self] verdict in
+                guard let self, self.managed, self.restartWork == nil, self.process == nil else { return }
+                if verdict == .absent { self.spawn() } else { self.standAside(verdict) }
+            }
         }
         restartWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(delay), execute: work)

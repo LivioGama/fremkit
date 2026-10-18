@@ -172,3 +172,15 @@ describe('an IPv4 that is not one at all', () => {
     expect(isPrivateAddress('8.8.8.8')).toBe(false)
   })
 })
+
+describe('the IPv6 ranges a LAN can hide behind', () => {
+  it('refuses site-local fec0::/10 and local-use NAT64 64:ff9b:1::/48', () => {
+    for (const bad of ['fec0::1', 'feff::1', '[fec0::a:b]', '64:ff9b:1::1', '64:ff9b:1:ffff::a00:1']) {
+      expect(isPrivateAddress(bad), bad).toBe(true)
+    }
+    // The well-known NAT64 prefix is still judged by the IPv4 it carries.
+    expect(isPrivateAddress('64:ff9b::808:808')).toBe(false)
+    expect(isPrivateAddress('64:ff9b:2::1')).toBe(false)
+    expect(isPrivateAddress('2001:db8::1')).toBe(false)
+  })
+})

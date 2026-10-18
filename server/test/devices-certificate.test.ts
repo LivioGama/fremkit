@@ -207,7 +207,7 @@ describe('host identity', () => {
       return { stdout: 'example\n' }
     }
     expect(await localHostName(exec)).toBe('example')
-    expect(calls).toEqual([['scutil', ['--get', 'LocalHostName']]])
+    expect(calls).toEqual([['/usr/sbin/scutil', ['--get', 'LocalHostName']]])
   })
 
   it('returns null when scutil fails or prints something odd', async () => {

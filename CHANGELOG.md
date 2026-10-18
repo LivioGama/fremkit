@@ -112,6 +112,8 @@ tagged `vX.Y.Z`.
 - **Adding a screen** creates an Edge screen; an iPad screen is now created from a paired iPad.
 
 ### Fixed
+- **The install instructions say `pnpm run setup`.** They said `pnpm setup`, which runs pnpm's
+  own command instead: it edits your shell profile and never sets Fremkit up.
 - **A connection used only by the navigation bar is protected.** A widget shown only in the bar
   now keeps its connection from being deleted; before, the connection could be removed while the
   bar widget still used it.
@@ -125,6 +127,48 @@ tagged `vX.Y.Z`.
   page saying so.
   Scripts calling the server read the secret from
   `~/Library/Application Support/Fremkit/access-4242.token` (see the README).
+- **A browser holds a session, not the key.** Signing a browser in now gives it a session of its
+  own that ends after a day unused, after a week at most, or when Fremkit restarts, instead of
+  the key itself. Another program listening on your Mac can no longer pick the key up from the
+  browser's cookies.
+- **Fremkit checks it is talking to itself.** Before the menu-bar helper hands over its key or
+  shows a page, the server on port 4242 has to prove it holds the key. Another program that took
+  the port while Fremkit was restarting is no longer shown on the Edge or as the admin; the **F**
+  menu says the port is held by another program, and Fremkit takes it back once it is free. The
+  key also changes every time the server starts, and is removed when it stops.
+- **Saved passwords no longer pass through a command line.** Tokens and passwords you give a
+  connection are now handed to the keychain in a way other accounts on the Mac cannot glimpse.
+  Values with accents or line breaks also read back exactly as typed.
+- **Setting up the signing identity touches only its own key.** The setup step that lets the
+  helper be rebuilt without password prompts used to loosen access to every signing key in your
+  login keychain; it now changes the one key it created, and warns if it finds anything else.
+- **A widget cannot reach your network by switching addresses.** The widget proxy and the
+  site-icon fetches now check the address they actually connect to, so a site whose name points
+  somewhere public at first and at your Mac or your network a moment later is refused. Two more
+  private IPv6 ranges and one more way of spelling `..` in a connection's path are refused too.
+- **The Dock widget opens only what is in your Dock.** Asking it to bring forward an app that is
+  not in the Dock is now refused.
+- **A Bambu printer's access code stays off the command line.** When the printer was off, the
+  camera preview of an X1 or H2 could retry with the access code visible to other accounts on the
+  Mac; it no longer does, whatever the printer's state.
+- **Fremkit runs macOS's own tools.** The helper and the server now call system tools by their
+  full path and put the system folders first, so a program dropped into a Homebrew folder can no
+  longer stand in for one of them.
+- **Your dashboard's files are yours alone.** Fremkit's data folder and everything in it — the
+  dashboard and its backups, the disk map's caches, the Claude caches — can no longer be read by
+  other accounts on the Mac; files left by earlier versions are fixed the next time it starts.
+- **Restoring a backup keeps your security choices.** A restored archive no longer changes where
+  secrets are kept, the privacy switches, or what installed widgets were granted; and an old admin
+  tab saving the dashboard can no longer bring back a permission you withdrew.
+- **Deleting a connection deletes its secret, always.** A connection whose widget had been
+  uninstalled kept its password or token in the keychain after being deleted, and a new
+  connection given the same name could pick it up. Both are fixed.
+- **Updates are checked before they are unpacked, and the update feed must be signed.** The app
+  now verifies an update's signature before extracting it, and refuses an update feed that does
+  not carry Fremkit's signature.
+- **Another copy of Fremkit cannot touch your saved passwords.** Each Fremkit now keeps its
+  secrets in the keychain under a name of its own, so a test copy given a backup of your
+  dashboard can no longer read or delete the real one's. Existing secrets move over by themselves.
 
 ## 0.4.1 — 2026-10-16
 

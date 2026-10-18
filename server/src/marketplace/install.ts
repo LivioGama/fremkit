@@ -160,8 +160,10 @@ export function readPackage(
     if (!safeEntryName(entry.name, kind)) throw new InstallError('marketplace.badPackage', locale)
     if (entry.data.byteLength > limits.maxFileBytes) throw new InstallError('marketplace.badPackage', locale)
     // Two entries of the same name: which one ends up on disk would depend on the write order,
-    // which is exactly the kind of question an archive should not get to ask.
-    const key = entry.name.toLowerCase()
+    // which is exactly the kind of question an archive should not get to ask. "The same" as the
+    // disk sees it: APFS ignores case and Unicode normalisation, so `é` written precomposed (NFC)
+    // and decomposed (NFD) name one file, and the second would silently replace the first.
+    const key = entry.name.normalize('NFC').toLowerCase()
     if (seen.has(key)) throw new InstallError('marketplace.badPackage', locale)
     seen.add(key)
   }
