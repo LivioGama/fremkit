@@ -4,9 +4,12 @@
  * The route answers without the access secret (see `isCompanionRoute`), so it checks its own
  * credential, and nothing is heard before it has: an extension origin on the upgrade, then a
  * `hello` within `HELLO_TIMEOUT_MS` whose token belongs to an extension record of that same
- * origin and install. Anything else, then or later — a message that does not parse, an unknown
- * type, a second hello — closes the socket with 1008. A frame over the 64 KiB cap is refused by
- * `ws` itself, with 1009, before any of it is buffered.
+ * origin and install. A well-formed hello that matches no such record closes with
+ * `DEVICE_CLOSE_CODE` (4401), the code that tells the extension it was unpaired and should forget
+ * its token. Anything else, then or later — a message that does not parse, an unknown type, a
+ * second hello — closes the socket with 1008, which the extension does not take for an unpairing:
+ * a newer or older extension the server cannot read keeps its token. A frame over the 64 KiB cap
+ * is refused by `ws` itself, with 1009, before any of it is buffered.
  *
  * Each record holds one socket: a second one for it replaces the first. What the extension says
  * goes to the `CompanionSession`; what the session says comes back through `CompanionSockets`.
@@ -25,7 +28,7 @@ export const HELLO_TIMEOUT_MS = 5_000
 /** How often the session is asked to clear a share that went quiet. */
 export const TICK_MS = 1_000
 
-/** Policy violation: what every refusal on this socket closes with. */
+/** Policy violation: what a refusal closes with, unless the token names no record (4401). */
 const POLICY_CLOSE_CODE = 1008
 
 interface CompanionSocketLike {
@@ -118,15 +121,15 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
     let deviceId: string | null = null
     let closed = false
 
-    const refuse = (): void => {
+    const refuse = (code = POLICY_CLOSE_CODE): void => {
       if (closed) return
       closed = true
       clearTimeout(timer)
       if (deviceId !== null && sockets.release(deviceId, socket)) session.disconnect(deviceId)
-      closeSocket(socket, POLICY_CLOSE_CODE)
+      closeSocket(socket, code)
     }
 
-    const timer = setTimeout(refuse, helloTimeoutMs)
+    const timer = setTimeout(() => refuse(), helloTimeoutMs)
     timer.unref()
 
     socket.on('close', () => {
@@ -149,7 +152,8 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
         // Never logged: the token, nor whose it might have been.
         const record = store.findByToken(msg.token, 'extension')
         if (record === null || record.kind !== 'extension' || record.origin !== origin || record.installId !== msg.installId) {
-          return refuse()
+          // No record for this extension: it was removed in Appareils (or never paired here).
+          return refuse(DEVICE_CLOSE_CODE)
         }
         clearTimeout(timer)
         deviceId = record.id

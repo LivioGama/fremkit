@@ -115,31 +115,53 @@ describe('companion socket', () => {
     }
   })
 
-  it('a wrong token closes 1008', async () => {
+  it('a token that names no record closes 4401, a malformed one 1008', async () => {
     await paired()
     const unknown = await connect()
     unknown.send({ type: 'hello', token: randomBytes(32).toString('base64url'), installId: INSTALL, protocol: 1 })
-    expect(await unknown.closed).toEqual({ code: 1008 })
+    expect(await unknown.closed).toEqual({ code: 4401 })
     const malformed = await connect()
     malformed.send({ type: 'hello', token: 'short', installId: INSTALL, protocol: 1 })
     expect(await malformed.closed).toEqual({ code: 1008 })
   })
 
-  it('a token from another origin or installId closes 1008', async () => {
+  it('a token from another origin or installId closes 4401', async () => {
     const { token } = await paired()
     const elsewhere = await connect(OTHER)
     elsewhere.send({ type: 'hello', token, installId: INSTALL, protocol: 1 })
-    expect(await elsewhere.closed).toEqual({ code: 1008 })
+    expect(await elsewhere.closed).toEqual({ code: 4401 })
     const otherInstall = await connect()
     otherInstall.send({ type: 'hello', token, installId: INSTALL_2, protocol: 1 })
-    expect(await otherInstall.closed).toEqual({ code: 1008 })
+    expect(await otherInstall.closed).toEqual({ code: 4401 })
   })
 
-  it('an iPad token closes 1008', async () => {
+  it('a removed extension closes 4401, so it forgets its token', async () => {
+    const { token, device } = await paired()
+    await store.remove(device.id)
+    const client = await connect()
+    client.send({ type: 'hello', token, installId: INSTALL, protocol: 1 })
+    expect(await client.closed).toEqual({ code: 4401 })
+  })
+
+  it('a hello it cannot parse closes 1008, not 4401: the extension keeps its token', async () => {
+    const { token } = await paired()
+    const client = await connect()
+    client.send({ type: 'hello', token, installId: INSTALL, protocol: '2' })
+    expect(await client.closed).toEqual({ code: 1008 })
+  })
+
+  it('a hello with keys it does not know is still answered ready', async () => {
+    const { token } = await paired()
+    const client = await connect()
+    client.send({ type: 'hello', token, installId: INSTALL, protocol: 1, modules: ['fremplay'] })
+    expect(await client.next()).toEqual({ type: 'ready', protocol: 1 })
+  })
+
+  it('an iPad token closes 4401: it names no extension record', async () => {
     const { token } = await store.create('iPad', { width: 1180, height: 820 }, null)
     const client = await connect()
     client.send({ type: 'hello', token, installId: INSTALL, protocol: 1 })
-    expect(await client.closed).toEqual({ code: 1008 })
+    expect(await client.closed).toEqual({ code: 4401 })
   })
 
   it('a first message other than hello closes 1008', async () => {
