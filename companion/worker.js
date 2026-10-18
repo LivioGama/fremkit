@@ -11,7 +11,7 @@ import { handshake } from './lib/handshake.js'
 import { closeOutcome } from './lib/link.js'
 import { idleDelay } from './lib/presence.js'
 import * as protocol from './lib/protocol.js'
-import { control, embeddedPlayer, pickVideo, survey, videoFrameOf } from './lib/video.js'
+import { cleanFrames, cleanState, control, embeddedPlayer, pickVideo, survey, videoFrameOf, youtubeVolume } from './lib/video.js'
 
 /** Fremkit's local server. The extension never talks to anything else. */
 const PORT = 4242
@@ -473,28 +473,55 @@ function toOffscreen(type, extra = {}) {
   return chrome.runtime.sendMessage({ target: 'offscreen', type, ...extra }).catch(() => null)
 }
 
-/** Survey every frame of a tab. Null when the browser does not let the extension in. */
+/**
+ * Survey every frame of a tab, in the extension's isolated world, each report checked and bounded.
+ * Null when the browser does not let the extension in.
+ */
 async function surveyTab(tabId) {
   try {
-    return await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: survey })
+    return cleanFrames(await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: survey }))
   } catch {
     return null
   }
 }
 
-/** Runs a control (or just reads the state, for `null`) on the shared video, in its frame. */
+/**
+ * Runs a control (or just reads the state, for `null`) on the shared video, in its frame, in the
+ * isolated world. Volume and mute try YouTube's player first, the one call made in the page's own
+ * world (`youtubeVolume`), whose only answer heard is whether it took it.
+ */
 async function runControl(share, action, args = null) {
+  const target = { tabId: share.tabId, frameIds: [share.frameId] }
   try {
-    const [res] = await chrome.scripting.executeScript({
-      target: { tabId: share.tabId, frameIds: [share.frameId] },
-      world: 'MAIN',
-      func: control,
-      args: [action, args],
-    })
-    return res?.result ?? null
+    if (action === 'volume' || action === 'mute') {
+      const [yt] = await chrome.scripting.executeScript({
+        target, world: 'MAIN', func: youtubeVolume, args: [action, action === 'volume' ? args?.value : null],
+      })
+      if (yt?.result === true) {
+        if (action === 'volume') share.volumeHint = null
+        const state = await runControl(share, null)
+        // YouTube scales the element's volume by its loudness normalisation: show what was set.
+        if (state && action === 'volume') {
+          share.volumeHint = { element: state.volume, value: Math.min(1, Math.max(0, Number(args?.value) || 0)) }
+          state.volume = share.volumeHint.value
+        }
+        return state
+      }
+    }
+    const [res] = await chrome.scripting.executeScript({ target, func: control, args: [action, args] })
+    return withVolumeHint(share, cleanState(res?.result))
   } catch {
     return null
   }
+}
+
+/** The volume set through YouTube's player, as long as the element still has what it was given. */
+function withVolumeHint(share, state) {
+  const hint = share.volumeHint
+  if (!state || !hint) return state
+  if (Math.abs(state.volume - hint.element) < 1e-3) return { ...state, volume: hint.value }
+  share.volumeHint = null
+  return state
 }
 
 /** The tab's URL and title, as Chrome reports them while the extension holds the tab's grant. */

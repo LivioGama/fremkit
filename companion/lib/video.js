@@ -1,6 +1,8 @@
 // Frame survey, video placement and crop math for the companion extension. Plain ES module, no
-// build step. `survey` and `control` run inside web pages (chrome.scripting.executeScript), so
-// each is self-contained: no imports, no reference to anything in this module's scope.
+// build step. `survey`, `control` and `youtubeVolume` run inside web pages
+// (chrome.scripting.executeScript), so each is self-contained: no imports, no reference to
+// anything in this module's scope. What they return comes from the page: `cleanFrames` and
+// `cleanState` check it before anything else reads it.
 
 /**
  * Runs in every frame. Reports the frame's largest video that could play (it has a source) and
@@ -39,9 +41,11 @@ export function survey() {
 }
 
 /**
- * Runs in the chosen frame: applies an action to its main video and reports the state. Actions
- * are `toggle`, `seek` ({ delta: ±10 }), `volume` ({ value: 0..1 }) and `mute` (a toggle); `show`
- * and `stop` are the extension's business, not the page's. Null when the frame has no video.
+ * Runs in the chosen frame, in the extension's isolated world: applies an action to its main video
+ * and reports the state. Actions are `toggle`, `seek` ({ delta: ±10 }), `volume` ({ value: 0..1 })
+ * and `mute` (a toggle); `show` and `stop` are the extension's business, not the page's. Null when
+ * the frame has no video. The isolated world reads the element through the browser's own getters,
+ * which the page cannot redefine; the values are still the page's, and `cleanState` bounds them.
  * SELF-CONTAINED: it is serialised into the page.
  */
 export function control(action, args) {
@@ -49,38 +53,104 @@ export function control(action, args) {
     (a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight,
   )[0]
   if (!v) return null
-  // YouTube puts its own volume back over the element's: go through its player when there is one.
-  const yt = document.getElementById('movie_player')
-  const ytVolume = yt && typeof yt.setVolume === 'function'
   const duration = Number.isFinite(v.duration) ? v.duration : 0
   const opts = args || {}
   if (action === 'toggle') {
-    if (v.paused) v.play()
+    if (v.paused) v.play()?.catch?.(() => undefined)
     else v.pause()
   } else if (action === 'seek') {
     const delta = Number(opts.delta) || 0
     v.currentTime = Math.max(0, Math.min(duration || v.currentTime + delta, v.currentTime + delta))
   } else if (action === 'volume') {
     const value = Math.max(0, Math.min(1, Number(opts.value) || 0))
-    if (ytVolume) {
-      yt.setVolume(Math.round(value * 100))
-      if (value > 0) yt.unMute()
-    } else {
-      v.volume = value
-      if (value > 0) v.muted = false
-    }
+    v.volume = value
+    if (value > 0) v.muted = false
   } else if (action === 'mute') {
-    if (ytVolume) {
+    v.muted = !v.muted
+  }
+  return { paused: v.paused, currentTime: v.currentTime, duration, volume: v.volume, muted: v.muted }
+}
+
+/**
+ * Runs in the page's main world, the one place the extension does: YouTube puts its own volume
+ * back over the element's, so volume and mute go through its player's API, which only the page's
+ * world can see. `op` is `volume` (with `value`, 0..1) or `mute` (a toggle). True when YouTube's
+ * player took it, false when there is none; the state is then read back in the isolated world.
+ * SELF-CONTAINED: it is serialised into the page.
+ */
+export function youtubeVolume(op, value) {
+  try {
+    const yt = document.getElementById('movie_player')
+    if (!yt || typeof yt.setVolume !== 'function') return false
+    if (op === 'volume') {
+      const level = Math.max(0, Math.min(1, Number(value) || 0))
+      yt.setVolume(Math.round(level * 100))
+      if (level > 0) yt.unMute()
+    } else if (op === 'mute') {
       if (yt.isMuted()) yt.unMute()
       else yt.mute()
-    } else v.muted = !v.muted
+    } else return false
+    return true
+  } catch {
+    return false
   }
+}
+
+const MAX_URL = 2048
+const MAX_TITLE = 300
+const MAX_IFRAMES = 100
+/** Larger than any screen in CSS px; a bigger coordinate is a page making things up. */
+const MAX_PX = 1e6
+
+const finite = (n, max = MAX_PX) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max
+
+function cleanBox(b) {
+  if (!b || typeof b !== 'object') return null
+  const { x, y, w, h } = b
+  return finite(x) && finite(y) && finite(w) && finite(h) && w > 0 && h > 0 ? { x, y, w, h } : null
+}
+
+/**
+ * One frame's `survey` result, type-checked and bounded: what a page reports is untrusted, and the
+ * worker reads it every second. Null when it is not a usable report.
+ */
+export function cleanSurvey(r) {
+  if (!r || typeof r !== 'object' || !finite(r.vw) || !finite(r.vh) || r.vw <= 0 || r.vh <= 0) return null
+  const top = r.top === true
   return {
-    paused: v.paused,
-    currentTime: v.currentTime,
-    duration,
-    volume: ytVolume ? yt.getVolume() / 100 : v.volume,
-    muted: ytVolume ? yt.isMuted() : v.muted,
+    href: typeof r.href === 'string' && r.href.length <= MAX_URL ? r.href : '',
+    top,
+    vw: r.vw,
+    vh: r.vh,
+    title: typeof r.title === 'string' ? r.title.slice(0, MAX_TITLE) : '',
+    video: cleanBox(r.video),
+    iframes: top && Array.isArray(r.iframes)
+      ? r.iframes.slice(0, MAX_IFRAMES).flatMap((f) => {
+          const at = cleanBox(f)
+          return at && typeof f.src === 'string' && f.src.length <= MAX_URL ? [{ src: f.src, fs: f.fs === true, ...at }] : []
+        })
+      : [],
+  }
+}
+
+/** The `executeScript` results of `survey`, each cleaned; entries with no usable frame id are dropped. */
+export function cleanFrames(results) {
+  if (!Array.isArray(results)) return []
+  return results
+    .filter((f) => f && Number.isInteger(f.frameId) && f.frameId >= 0)
+    .map((f) => ({ frameId: f.frameId, result: cleanSurvey(f.result) }))
+}
+
+/** A `control` result, type-checked and bounded the way the server's meta schema bounds it. Null when unusable. */
+export function cleanState(s) {
+  if (!s || typeof s !== 'object') return null
+  const seconds = (n) => (finite(n, Infinity) ? Math.min(604_800, Math.max(0, n)) : 0)
+  return {
+    paused: s.paused !== false,
+    currentTime: seconds(s.currentTime),
+    duration: seconds(s.duration),
+    volume: finite(s.volume, Infinity) ? Math.min(1, Math.max(0, s.volume)) : 1,
+    muted: s.muted === true,
   }
 }
 

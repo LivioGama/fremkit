@@ -4,7 +4,7 @@
 
 import { localize, t } from './i18n.js'
 import { browserName } from './lib/browser.js'
-import { embeddedPlayer, pickVideo, survey } from './lib/video.js'
+import { cleanFrames, embeddedPlayer, pickVideo, survey } from './lib/video.js'
 
 localize()
 
@@ -70,7 +70,7 @@ async function inspectTab() {
   } else {
     try {
       // The popup's activeTab grant lets it look before offering the button.
-      const frames = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: survey })
+      const frames = cleanFrames(await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: survey }))
       video.picked = pickVideo(frames)
       const origin = embeddedPlayer(frames, video.picked)
       if (origin && !(await chrome.permissions.contains({ origins: [`${origin}/*`] }))) video.askOrigin = origin

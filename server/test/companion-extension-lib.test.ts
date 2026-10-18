@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 // @ts-expect-error plain JS modules outside server/, no declarations
-import { control, cropRect, embeddedPlayer, pickVideo, placeFrame, survey, videoFrameOf } from '../../companion/lib/video.js'
+import { cleanFrames, cleanState, cleanSurvey, control, cropRect, embeddedPlayer, pickVideo, placeFrame, survey, videoFrameOf, youtubeVolume } from '../../companion/lib/video.js'
 // @ts-expect-error plain JS module
 import { browserName } from '../../companion/lib/browser.js'
 // @ts-expect-error plain JS module
@@ -465,20 +465,88 @@ describe('control (in-page)', () => {
     expect(control('mute')).toMatchObject({ muted: false })
     expect(control(null)).toMatchObject({ paused: false, duration: 100 })
   })
-  it('goes through the YouTube player when it is there', () => {
-    let vol = 40, muted = false
-    const yt = { getVolume: () => vol, setVolume: (n: number) => { vol = n }, isMuted: () => muted, mute: () => { muted = true }, unMute: () => { muted = false } }
-    install([fakeVideo(400, 200)], [], yt)
+  it('acts on the element only, whatever YouTube player the page has', () => {
+    const yt = { setVolume: () => { throw new Error('not from the isolated world') } }
+    const v = fakeVideo(400, 200)
+    install([v], [], yt)
     expect(control('volume', { value: 0.8 })).toMatchObject({ volume: 0.8, muted: false })
-    expect(vol).toBe(80)
     expect(control('mute')).toMatchObject({ muted: true })
-    expect(control('mute')).toMatchObject({ muted: false })
   })
   it('returns null with no video and a finite duration for a live stream', () => {
     install([])
     expect(control('toggle')).toBeNull()
     install([fakeVideo(10, 10, { duration: Infinity })])
     expect(control(null)!.duration).toBe(0)
+  })
+})
+
+describe('youtubeVolume (the one main-world call)', () => {
+  it("goes through YouTube's player and says only whether it took it", () => {
+    let vol = 40, muted = true
+    const yt = { getVolume: () => vol, setVolume: (n: number) => { vol = n }, isMuted: () => muted, mute: () => { muted = true }, unMute: () => { muted = false } }
+    install([fakeVideo(400, 200)], [], yt)
+    expect(youtubeVolume('volume', 0.8)).toBe(true)
+    expect(vol).toBe(80)
+    expect(muted).toBe(false)
+    expect(youtubeVolume('volume', 7)).toBe(true)
+    expect(vol).toBe(100)
+    expect(youtubeVolume('mute')).toBe(true)
+    expect(muted).toBe(true)
+    expect(youtubeVolume('seek', 10)).toBe(false)
+  })
+  it('is false without a player, or with one that throws', () => {
+    install([fakeVideo(400, 200)])
+    expect(youtubeVolume('volume', 0.5)).toBe(false)
+    install([fakeVideo(400, 200)], [], { setVolume: () => { throw new Error('page') }, unMute: () => {} })
+    expect(youtubeVolume('volume', 0.5)).toBe(false)
+  })
+})
+
+describe('what the page reports is cleaned before use', () => {
+  it('drops a report that is not one, and bounds the rest', () => {
+    for (const bad of [null, 'x', 42, {}, { vw: NaN, vh: 500 }, { vw: 1000, vh: 0 }, { vw: Infinity, vh: 500 }]) {
+      expect(cleanSurvey(bad)).toBeNull()
+    }
+    const r = cleanSurvey({
+      href: 'h'.repeat(5000), top: 'yes', vw: 1000, vh: 500, title: 't'.repeat(1000), extra: 'dropped',
+      video: { x: NaN, y: 0, w: 10, h: 10 }, iframes: [{ src: 'https://p.example.org/e', fs: true, x: 0, y: 0, w: 10, h: 10 }],
+    })
+    expect(r).toEqual({ href: '', top: false, vw: 1000, vh: 500, title: 't'.repeat(300), video: null, iframes: [] })
+    const t = cleanSurvey({
+      href: 'https://example.com/', top: true, vw: 1000, vh: 500, title: 7, video: { x: 1, y: 2, w: 3, h: 4 },
+      iframes: [
+        { src: 'https://p.example.org/e', fs: 1, x: 0, y: 0, w: 10, h: 10 },
+        { src: 42, x: 0, y: 0, w: 10, h: 10 },
+        { src: 'https://q.example.org/e', x: 0, y: 0, w: -1, h: 10 },
+        { src: 'https://r.example.org/e', x: 1e12, y: 0, w: 10, h: 10 },
+        null,
+        ...Array.from({ length: 200 }, () => ({ src: 'https://s.example.org/e', x: 0, y: 0, w: 1, h: 1 })),
+      ],
+    })!
+    expect(t.title).toBe('')
+    expect(t.video).toEqual({ x: 1, y: 2, w: 3, h: 4 })
+    expect(t.iframes[0]).toEqual({ src: 'https://p.example.org/e', fs: false, x: 0, y: 0, w: 10, h: 10 })
+    expect(t.iframes.length).toBeLessThanOrEqual(100)
+    expect(t.iframes.every((f: { src: string }) => typeof f.src === 'string')).toBe(true)
+  })
+  it('keeps only frames with a usable id', () => {
+    const ok = { href: 'https://example.com/', top: true, vw: 1000, vh: 500, title: '', video: null, iframes: [] }
+    expect(cleanFrames(null)).toEqual([])
+    expect(cleanFrames([{ frameId: 0, result: ok }, { frameId: -1, result: ok }, { frameId: '2', result: ok }, null, { frameId: 3, result: 'junk' }]))
+      .toEqual([{ frameId: 0, result: ok }, { frameId: 3, result: null }])
+  })
+  it('gives the picker nothing to choke on', () => {
+    const frames = cleanFrames([{ frameId: 0, result: { href: 'https://example.com/', top: true, vw: 1000, vh: 500, video: { x: 0, y: 0, w: Infinity, h: 1 } } }])
+    expect(pickVideo(frames)).toBeNull()
+    expect(embeddedPlayer(frames, null)).toBeNull()
+  })
+  it('bounds a control state as the server schema does', () => {
+    expect(cleanState(null)).toBeNull()
+    expect(cleanState('x')).toBeNull()
+    expect(cleanState({ paused: 'no', currentTime: -5, duration: Infinity, volume: 3, muted: 1, title: 'dropped' }))
+      .toEqual({ paused: true, currentTime: 0, duration: 0, volume: 1, muted: false })
+    expect(cleanState({ paused: false, currentTime: 1e9, duration: 60, volume: 0.25, muted: true }))
+      .toEqual({ paused: false, currentTime: 604800, duration: 60, volume: 0.25, muted: true })
   })
 })
 
