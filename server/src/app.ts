@@ -70,6 +70,12 @@ import { tr } from './i18n.js'
 import { isRemoteRequest } from './net/remote.js'
 import { DeviceStore } from './devices/store.js'
 import { registerRemoteGate } from './devices/gate.js'
+import { PairingCodes } from './devices/codes.js'
+import { DeviceService } from './devices/service.js'
+import { deviceRoutes } from './devices/routes.js'
+import { REMOTE_PORT } from './devices/listener.js'
+import type { Advertiser } from './devices/bonjour.js'
+import type { Exec } from './secrets/keychain.js'
 
 export interface AppOptions {
   dataDir: string
@@ -110,6 +116,13 @@ export interface AppOptions {
    * test can walk the whole route table (the remote allow-list test does).
    */
   onRoute?: (route: RouteOptions) => void
+  /** The port paired devices reach the remote listener on. 4243; the tests pass 0. */
+  devicesPort?: number
+  /**
+   * Test seam for the device service: a fixed host name and addresses, and an advertiser that
+   * does not run `dns-sd`.
+   */
+  devices?: { exec?: Exec; advertise?: Advertiser; lanAddresses?: () => string[] }
 }
 
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
@@ -354,6 +367,21 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await app.register(bambuRoutes, { cameras: bambuCameras })
   await app.register(wsRoutes, { hub })
 
+  // After the hub and the config store, which it feeds and listens to.
+  const deviceService = new DeviceService({
+    app,
+    store: devices,
+    codes: new PairingCodes(),
+    secrets,
+    config: store,
+    hub,
+    catalog,
+    listenerPort: opts.devicesPort ?? REMOTE_PORT,
+    ...opts.devices,
+  })
+  await app.register(deviceRoutes, { service: deviceService, config: store })
+  app.addHook('onClose', async () => { await deviceService.close() })
+
   if (opts.uiDist && (await access(opts.uiDist).then(() => true, () => false))) {
     await app.register(fastifyStatic, { root: opts.uiDist, prefix: '/', serve: true, decorateReply: false })
     for (const route of ['/admin', '/admin/']) {
@@ -362,5 +390,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   }
 
   app.addHook('onClose', async () => { registry.stop(); bambuCameras.stopAll(); await tracker.flush(); await usage.flush() })
+  // Last: it may start the remote listener, which readies the app and so closes its route table.
+  await deviceService.init()
   return app
 }

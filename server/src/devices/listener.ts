@@ -82,6 +82,14 @@ export class RemoteListener {
     this.server = server
   }
 
+  /**
+   * Swaps the certificate new connections are offered, without dropping the open ones: used when
+   * the Mac's addresses change and the certificate is re-issued from the same key.
+   */
+  setCertificate(keyPem: string, certPem: string): void {
+    this.server?.setSecureContext({ key: keyPem, cert: certPem, minVersion: 'TLSv1.2' })
+  }
+
   /** Closes the listener and destroys every socket it still holds, WebSockets included. */
   async stop(): Promise<void> {
     const server = this.server
