@@ -7,7 +7,10 @@ import { execFileAsync, type Exec } from '../secrets/keychain.js'
 import type { SecretStore } from '../secrets/types.js'
 import { tr } from '../i18n.js'
 
-/** Where the pairing listener's private key lives in the secrets store (PEM). */
+/**
+ * Where the pairing listener's private key lives in the secrets store: base64 of its PKCS8 DER, on
+ * one line (see `toStored`). Older PEM values are still read and rewritten in that form.
+ */
 export const TLS_KEY_SECRET = 'devices/tls-key'
 
 /** Ten years: the certificate is pinned by its key, so its expiry only has to never bite. */
