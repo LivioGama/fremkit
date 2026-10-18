@@ -198,6 +198,24 @@ describe('companion socket', () => {
     for (const c of waiting.slice(1)) c.ws.close()
   })
 
+  it('frees the slot of a socket refused before or at its challenge', async () => {
+    await restart(60_000)
+    const { token } = await paired()
+    const waiting = await Promise.all(Array.from({ length: MAX_PENDING_PER_ORIGIN }, () => connect()))
+    expect(await probe()).toBe(1013)
+    // A version 1 extension says hello before any challenge: 1008, and its slot is free.
+    waiting[0].send({ type: 'hello', token, installId: INSTALL, protocol: 1 })
+    expect(await waiting[0].closed).toEqual({ code: 1008 })
+    expect(await probe()).toBe('open')
+    // A challenge for a record this server does not hold: 4401, and its slot is free too.
+    const again = await connect()
+    expect(await probe()).toBe(1013)
+    again.send({ type: 'challenge', deviceId: '44444444-4444-4444-8444-444444444444', nonce: nonce() })
+    expect(await again.closed).toEqual({ code: 4401 })
+    expect(await probe()).toBe('open')
+    for (const c of waiting.slice(1)) c.ws.close()
+  })
+
   it('frees the slots of sockets closed by the hello timeout (200 ms here)', async () => {
     const waiting = await Promise.all(Array.from({ length: MAX_PENDING_PER_ORIGIN }, () => connect()))
     for (const c of waiting) expect(await c.closed).toEqual({ code: 1008 })
