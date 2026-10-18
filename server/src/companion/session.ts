@@ -25,6 +25,11 @@ export interface CompanionState {
     meta: TabMeta | null
     /** receiverId → the extension's offer for it. */
     offers: Record<string, string>
+    /**
+     * Every receiver this server knows, offer or not. A widget frame whose id is missing — the
+     * server restarted under a live peer — announces itself again with the same id.
+     */
+    receivers: string[]
   }
 }
 
@@ -152,6 +157,8 @@ export class CompanionSession {
     }
     this.receivers.set(receiverId, { instanceId, offer: null })
     if (this.share) this.send(this.share.deviceId, { type: 'tab.view', receiverId })
+    // The frame reads its id in `receivers` to know it is known, so a new one is news.
+    this.changed()
     return true
   }
 
@@ -189,6 +196,7 @@ export class CompanionSession {
         device: share ? (this.names.get(share.deviceId) ?? null) : null,
         meta: share?.meta ?? null,
         offers,
+        receivers: [...this.receivers.keys()],
       },
     }
   }
@@ -267,7 +275,7 @@ export class CompanionSession {
     if (!receiver) return
     this.receivers.delete(receiverId)
     if (this.share) this.send(this.share.deviceId, { type: 'tab.detach', receiverId })
-    if (receiver.offer !== null) this.changed()
+    this.changed()
   }
 
   private endShare(): void {

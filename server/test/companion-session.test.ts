@@ -46,7 +46,7 @@ describe('CompanionSession', () => {
     expect(t.session.snapshot()).toEqual({
       protocol: 1,
       extensions: { connected: 1, paired: 3 },
-      tab: { state: 'idle', sessionId: null, device: null, meta: null, offers: {} },
+      tab: { state: 'idle', sessionId: null, device: null, meta: null, offers: {}, receivers: [] },
     })
     t.session.disconnect('a')
     expect(t.session.snapshot().extensions.connected).toBe(0)
@@ -60,7 +60,7 @@ describe('CompanionSession', () => {
     t.start('a')
     expect(t.to('a')).toEqual([{ type: 'tab.accepted', sessionId: S1 }])
     expect(t.changes()).toBeGreaterThan(before)
-    expect(t.session.snapshot().tab).toEqual({ state: 'sharing', sessionId: S1, device: 'Browser a', meta: META, offers: {} })
+    expect(t.session.snapshot().tab).toEqual({ state: 'sharing', sessionId: S1, device: 'Browser a', meta: META, offers: {}, receivers: [] })
   })
 
   it('a share from a second extension replaces the first and stops it', () => {
@@ -188,6 +188,25 @@ describe('CompanionSession', () => {
     expect(t.session.view(R(1), 'w2')).toBe(false)
   })
 
+  it('lists every receiver it knows, offer or not, and says so when one comes or goes', () => {
+    const t = setup()
+    t.hello('a')
+    t.start('a')
+    let before = t.changes()
+    t.session.view(R(1), 'i1')
+    expect(t.changes()).toBeGreaterThan(before)
+    t.session.view(R(2), 'i1')
+    expect(t.session.snapshot().tab.receivers).toEqual([R(1), R(2)])
+    // A known receiver coming back is not news.
+    before = t.changes()
+    t.session.view(R(1), 'i1')
+    expect(t.changes()).toBe(before)
+    // A receiver with no offer leaving still changes what the snapshot lists.
+    t.session.leave(R(1), 'i1')
+    expect(t.changes()).toBeGreaterThan(before)
+    expect(t.session.snapshot().tab.receivers).toEqual([R(2)])
+  })
+
   it('answer from another instance than the receiver\'s is refused', () => {
     const t = setup()
     t.hello('a')
@@ -244,7 +263,7 @@ describe('CompanionSession', () => {
     t.start('a')
     t.session.view(R(1), 'w1')
     t.session.onMessage('a', { type: 'tab.stopped', sessionId: S1 })
-    expect(t.session.snapshot().tab).toEqual({ state: 'idle', sessionId: null, device: null, meta: null, offers: {} })
+    expect(t.session.snapshot().tab).toEqual({ state: 'idle', sessionId: null, device: null, meta: null, offers: {}, receivers: [] })
   })
 
   it('no meta for 10 s clears the share', () => {
