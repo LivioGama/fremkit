@@ -43,6 +43,8 @@ The name is the Fremen survival kit from *Dune*.
 - **A widget marketplace** — *Sietch* in the admin installs widgets from a curated registry,
   showing what each one will be allowed to do and asking again when an update wants more.
 - **Backup and restore** of the whole dashboard, as a zip that never carries a secret.
+- **Shareable layouts** — a page, a screen or the whole setup as one file to post and load in a
+  click, without your accounts in it.
 - **Themes** — the palette, the fonts and the text size, as a folder with one JSON file: two ship
   with it, four more are on the registry, and yours sits beside them. The dashboard, the editor
   and the widgets all wear the one you pick — or a second one at night, switching at sunset or
@@ -384,6 +386,25 @@ How to obtain each credential, what is stored where, and what is never logged:
 **[docs/connections.md](docs/connections.md)**.
 
 The optional [Codex provider](docs/codex.md) reads selected local account and chat data after an explicit opt-in. Its dashboard widgets are distributed separately.
+
+## Share your setup
+
+A setup worth a photo is worth a file. **Export page…** (a page's right-click menu),
+**Export screen…** (a screen's), or **Screen → Share your setup → Export the whole setup…** write a
+`.fremkit-layout.json`: the pages, the bar, each tile's place, look and settings, the theme, and
+the background images. The dialog shows what is in the file before you download it (or copy it,
+where a download is not possible) and what was left out.
+
+Never in it: connections and their secrets, host names, e-mail addresses, device names, privacy
+choices, install consents, brightness schedules. A setting that points at a connection is
+blanked; one typed as free text — a label, a link, a note — goes in only if you tick it. Post the
+file with a photo in the repository's **Discussions → Show and tell**.
+
+To load one, drop it onto the editor, or use **Import a layout…**. The dialog lists the widgets it
+uses, offers to install from the Sietch the ones you do not have (with the usual consent dialog),
+asks which of your connections a widget should use, and adds the pages or screens beside yours —
+replacing only if you choose to. One ⌘Z undoes the whole import. Details, and the file format, in
+**[docs/sharing.md](docs/sharing.md)**.
 
 ## Backup
 
