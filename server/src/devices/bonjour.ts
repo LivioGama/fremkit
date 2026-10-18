@@ -64,18 +64,19 @@ const realDeps: Required<AdvertiserDeps> = {
 /**
  * Kills the `dns-sd` an earlier run of the server left advertising this port: a server killed
  * before it could stop its child orphans it, and it keeps announcing a Mac nobody answers for.
- * Only a process whose command line is exactly ours, for this very port, is touched — and the
- * port is bound by this server by now, so no live Fremkit can own that advertisement.
+ * Any `/usr/bin/dns-sd -R <any name> _fremkit._tcp local <this port>` is reaped whatever its name:
+ * an orphan from an older version ("Fremkit") or from before the Mac was renamed is just as stale.
+ * The port is bound by this server by now, so no live Fremkit can own that advertisement.
  */
-function killStale(port: number, name: string, deps: Required<AdvertiserDeps>): void {
-  const wanted = [DNS_SD, ...dnsSdArgs(port, name)].join(' ')
-  // A regular expression to pgrep; the exact comparison below is what decides.
+function killStale(port: number, deps: Required<AdvertiserDeps>): void {
+  // A regular expression to pgrep; the exact parse below is what decides.
   const output = deps.listProcesses('dns-sd -R .* _fremkit._tcp local')
+  const own = new RegExp(`^${DNS_SD.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} -R .+ _fremkit\\._tcp local ${port}$`)
   for (const line of output.split('\n')) {
     const m = /^\s*(\d+) (.*)$/.exec(line)
     if (!m) continue
     const pid = Number(m[1])
-    if (m[2].trim() !== wanted || pid === process.pid) continue
+    if (!own.test(m[2].trim()) || pid === process.pid) continue
     deps.kill(pid)
   }
 }
@@ -93,7 +94,7 @@ export function createAdvertiser(deps: AdvertiserDeps = {}): Advertiser {
   const d: Required<AdvertiserDeps> = { ...realDeps, ...deps }
   return (port, name = 'Fremkit') => {
     if (d.platform !== 'darwin') return { stop: () => undefined }
-    killStale(port, name, d)
+    killStale(port, d)
     const child = d.spawn(DNS_SD, dnsSdArgs(port, name))
     // A missing or failing dns-sd only costs discovery; the QR code still carries the address.
     child.on('error', () => undefined)

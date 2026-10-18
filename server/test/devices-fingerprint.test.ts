@@ -26,6 +26,13 @@ describe('fingerprintWords', () => {
   })
 })
 
+describe('fingerprintWords on a short hash', () => {
+  it('throws rather than mapping missing bytes to aardvark', () => {
+    expect(() => fingerprintWords(Buffer.from([1, 2, 3]).toString('base64url'))).toThrow()
+    expect(() => fingerprintWords('')).toThrow()
+  })
+})
+
 describe('computerName', () => {
   const ok = (stdout: string) => async () => ({ stdout, stderr: '' })
   it('reads and trims the name', async () => {
@@ -40,10 +47,13 @@ describe('computerName', () => {
     expect(Buffer.byteLength(name)).toBe(62)
     expect(name).toBe('é'.repeat(31))
   })
+  it('does not leave a trailing space after the cut', async () => {
+    expect(await computerName(ok(`${'a'.repeat(62)} b`))).toBe('a'.repeat(62))
+  })
 })
 
 describe('the advertiser with a name', () => {
-  it('registers under the computer name and matches stale ones by it', () => {
+  it('registers under the computer name and reaps any stale one for its port, whatever its name', () => {
     const child = { exitCode: null, signalCode: null, kill: () => true, on: () => undefined } as AdvertiserChild
     const calls: string[][] = []
     const killed: number[] = []
@@ -53,12 +63,15 @@ describe('the advertiser with a name', () => {
       kill: (pid) => { killed.push(pid) },
       onExit: () => () => undefined,
       listProcesses: () => [
-        '7 /usr/bin/dns-sd -R Example Mac _fremkit._tcp local 4243',
+        '7 /usr/bin/dns-sd -R Old Name _fremkit._tcp local 4243',
         '8 /usr/bin/dns-sd -R Fremkit _fremkit._tcp local 4243',
+        '9 /usr/bin/dns-sd -R Fremkit _fremkit._tcp local 4300',
+        '10 /usr/bin/dns-sd -R Fremkit _fremkit._tcp local 4243 extra',
+        '11 /bin/sh -c /usr/bin/dns-sd -R Fremkit _fremkit._tcp local 4243',
       ].join('\n'),
     })
     ad(4243, 'Example Mac')
     expect(calls).toEqual([['-R', 'Example Mac', '_fremkit._tcp', 'local', '4243']])
-    expect(killed).toEqual([7])
+    expect(killed).toEqual([7, 8])
   })
 })

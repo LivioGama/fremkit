@@ -51,7 +51,7 @@ describe('the Bonjour advertiser', () => {
     expect(child.kill).toHaveBeenCalledTimes(1)
   })
 
-  it('kills a stale dns-sd for the same port, and only an exact match', () => {
+  it('kills a stale dns-sd for the same port whatever its name, and nothing else', () => {
     const { kill, spawn, listProcesses, advertise } = setup([
       '101 /usr/bin/dns-sd -R Fremkit _fremkit._tcp local 4243',
       '102 /usr/bin/dns-sd -R Fremkit _fremkit._tcp local 4300',
@@ -62,7 +62,7 @@ describe('the Bonjour advertiser', () => {
     ].join('\n'))
     advertise(4243)
     expect(listProcesses).toHaveBeenCalled()
-    expect(kill.mock.calls).toEqual([[101]])
+    expect(kill.mock.calls).toEqual([[101], [105]])
     // Cleaned before the new one is started.
     expect(kill.mock.invocationCallOrder[0]).toBeLessThan(spawn.mock.invocationCallOrder[0])
   })

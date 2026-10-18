@@ -5,8 +5,9 @@
  *
  * A code is asked for whenever pairing is on and none is on show — on turning it on, on opening
  * the admin while it is on, when the shown one runs out — so the code on screen is always one the
- * server will take. `keyHash` is never shown: a partial hash is no help to compare. The
- * fingerprint (four words from it) is, under the code, for comparing with the device's screen.
+ * server will take. `keyHash` itself is never shown: a partial hash is no help to
+ * compare. What is shown, under the code, is the fingerprint: four words derived from it, to
+ * compare with the device's screen.
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { renderSVG } from 'uqr'

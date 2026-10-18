@@ -277,5 +277,6 @@ export const FINGERPRINT_LIST_SHA256 = '247bec0519f05acf5f8716f8515af0532676cce1
  */
 export function fingerprintWords(keyHash: string): string[] {
   const bytes = Buffer.from(keyHash, 'base64url')
-  return [0, 1, 2, 3].map((i) => WORDS[bytes[i] ?? 0])
+  if (bytes.length < 4) throw new Error('a key hash is at least four bytes')
+  return [0, 1, 2, 3].map((i) => WORDS[bytes[i]])
 }
