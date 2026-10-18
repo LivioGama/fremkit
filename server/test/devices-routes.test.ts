@@ -17,6 +17,7 @@ import { Hub } from '../src/ws/hub.js'
 import { readZip } from '../src/backup/zip.js'
 import { readKey, spkiHash, TLS_KEY_SECRET } from '../src/devices/certificate.js'
 import { FileSecretStore } from '../src/secrets/file.js'
+import { MAX_WRONG_PER_MINUTE, PairingCodes } from '../src/devices/codes.js'
 import { hasOpenssl, remote } from './helpers/remote.js'
 
 const ADDRESS = '192.0.2.10'
@@ -379,6 +380,122 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     expect((await pair({ secret, name: 'iPad', viewport })).status).toBe(404)
   })
 
+  /** Blocks the next read of the TLS key until `release()`: `pairingCode` waits there before issuing. */
+  function holdKeyRead(): { reached: Promise<void>; release: () => void; restore: () => void } {
+    let reach!: () => void
+    let release!: () => void
+    const reached = new Promise<void>((r) => { reach = r })
+    const gate = new Promise<void>((r) => { release = r })
+    const original = FileSecretStore.prototype.get
+    let armed = true
+    const spy = vi.spyOn(FileSecretStore.prototype, 'get').mockImplementation(async function (this: FileSecretStore, name: string) {
+      if (armed && name === TLS_KEY_SECRET) {
+        armed = false
+        reach()
+        await gate
+      }
+      return original.call(this, name)
+    })
+    return { reached, release, restore: () => spy.mockRestore() }
+  }
+
+  async function settle(): Promise<void> {
+    await new Promise((r) => setTimeout(r, 50))
+  }
+
+  /** Records `issue` and `clear` on the codes, in order: no `issue` may come after the last `clear`. */
+  function recordCodes(): { calls: string[]; restore: () => void } {
+    const calls: string[] = []
+    const { issue: realIssue, clear: realClear } = PairingCodes.prototype
+    const issue = vi.spyOn(PairingCodes.prototype, 'issue').mockImplementation(function (this: PairingCodes) {
+      calls.push('issue')
+      return realIssue.call(this)
+    })
+    const clear = vi.spyOn(PairingCodes.prototype, 'clear').mockImplementation(function (this: PairingCodes) {
+      calls.push('clear')
+      realClear.call(this)
+    })
+    return { calls, restore: () => { issue.mockRestore(); clear.mockRestore() } }
+  }
+
+  it('never leaves a code live from a request that raced the switch going off', async () => {
+    const hold = holdKeyRead()
+    const codes = recordCodes()
+    try {
+      const code = app.inject({ method: 'POST', url: '/api/devices/code' })
+      await hold.reached
+      const off = app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: false } })
+      // Unserialized, the switch would go off here, and the code be issued after it.
+      await settle()
+      hold.release()
+      expect([200, 409]).toContain((await code).statusCode)
+      expect((await off).statusCode).toBe(200)
+      // Issued before the switch-off dropped it, or not at all: never after.
+      expect(codes.calls.lastIndexOf('issue')).toBeLessThan(codes.calls.lastIndexOf('clear'))
+    } finally {
+      hold.restore()
+      codes.restore()
+    }
+    const on = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
+    expect(on.statusCode).toBe(200)
+    port = on.json().port
+    // No code is live: the route is not there.
+    expect((await pair({ code: 'AAAAAAAA', name: 'x', viewport: { width: 640, height: 480 } })).status).toBe(404)
+  })
+
+  it('never issues a code carrying the old pin from a request that raced a certificate reset', async () => {
+    const hold = holdKeyRead()
+    const codes = recordCodes()
+    let offer: { statusCode: number; json: () => { url: string } }
+    try {
+      const code = app.inject({ method: 'POST', url: '/api/devices/code' })
+      await hold.reached
+      const reset = app.inject({ method: 'POST', url: '/api/devices/reset-certificate' })
+      await settle()
+      hold.release()
+      offer = await code
+      expect((await reset).statusCode).toBe(200)
+      expect(codes.calls.lastIndexOf('issue')).toBeLessThan(codes.calls.lastIndexOf('clear'))
+    } finally {
+      hold.restore()
+      codes.restore()
+    }
+    expect(offer.statusCode).toBe(200)
+    // Issued before the reset, so dropped by it: nothing is live, its secret pairs nothing.
+    const secret = new URL(offer.json().url).searchParams.get('s')
+    expect((await pair({ secret, name: 'x', viewport: { width: 640, height: 480 } })).status).toBe(404)
+  })
+
+  it('kills a live code and its secret when pairing is switched off', async () => {
+    const { secret } = await issueOffer()
+    const clear = vi.spyOn(PairingCodes.prototype, 'clear')
+    try {
+      const off = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: false } })
+      expect(off.statusCode).toBe(200)
+      expect(clear).toHaveBeenCalled()
+      clear.mockClear()
+      const on = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
+      expect(on.statusCode).toBe(200)
+      port = on.json().port
+    } finally {
+      clear.mockRestore()
+    }
+    // Back on, no code is live (the route is not there), and the old secret pairs nothing.
+    expect((await pair({ secret, name: 'x', viewport: { width: 640, height: 480 } })).status).toBe(404)
+  })
+
+  it('kills a live code and its secret when the certificate is reset', async () => {
+    const { secret } = await issueOffer()
+    const clear = vi.spyOn(PairingCodes.prototype, 'clear')
+    try {
+      expect((await app.inject({ method: 'POST', url: '/api/devices/reset-certificate' })).statusCode).toBe(200)
+      expect(clear).toHaveBeenCalled()
+    } finally {
+      clear.mockRestore()
+    }
+    expect((await pair({ secret, name: 'x', viewport: { width: 640, height: 480 } })).status).toBe(404)
+  })
+
   it('refuses every code after five wrong ones in a minute, a wrong secret counted as one', async () => {
     const stale = (await issueOffer()).secret
     const code = await issueCode()
@@ -401,27 +518,25 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
   })
 
   it('pairs with the QR secret while this peer is refused codes', async () => {
-    // The peer spent its allowance in the test above, and a new code does not give it back.
-    const { code, secret } = await issueOffer()
-    const viewport = { width: 640, height: 480 }
-    expect((await pair({ code, name: 'x', viewport })).status).toBe(429)
-    const wrong = await pair({ secret: secret.startsWith('A') ? 'B'.repeat(43) : 'A'.repeat(43), name: 'x', viewport })
-    expect(wrong.status).toBe(429)
-    expect(JSON.parse(wrong.body).error).toBe('too many wrong codes: try again in a minute')
-    const res = await pair({ secret, name: 'QR', viewport })
-    expect(res.status).toBe(200)
-    expect((await me(JSON.parse(res.body).token)).status).toBe(200)
-  })
-
-  it('kills a live secret when pairing is switched off', async () => {
-    const { secret } = await issueOffer()
-    const off = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: false } })
-    expect(off.statusCode).toBe(200)
-    const on = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
-    expect(on.statusCode).toBe(200)
-    port = on.json().port
-    // Back on, no code is live: the route is not there, and the old secret pairs nothing.
-    expect((await pair({ secret, name: 'x', viewport: { width: 640, height: 480 } })).status).toBe(404)
+    // A fresh minute, whatever the tests above spent: this one spends the allowance itself.
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 61_000 })
+    try {
+      const { code, secret } = await issueOffer()
+      const wrongCode = code === 'AAAAAAAA' ? 'BBBBBBBB' : 'AAAAAAAA'
+      const viewport = { width: 640, height: 480 }
+      for (let i = 0; i < MAX_WRONG_PER_MINUTE; i++) {
+        expect((await pair({ code: wrongCode, name: 'x', viewport })).status).toBe(403)
+      }
+      expect((await pair({ code, name: 'x', viewport })).status).toBe(429)
+      const wrong = await pair({ secret: secret.startsWith('A') ? 'B'.repeat(43) : 'A'.repeat(43), name: 'x', viewport })
+      expect(wrong.status).toBe(429)
+      expect(JSON.parse(wrong.body).error).toBe('too many wrong codes: try again in a minute')
+      const res = await pair({ secret, name: 'QR', viewport })
+      expect(res.status).toBe(200)
+      expect((await me(JSON.parse(res.body).token)).status).toBe(200)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   // Last: it turns remote access off.

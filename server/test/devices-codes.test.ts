@@ -226,6 +226,21 @@ describe('PairingCodes', () => {
       expect(codes.consumeSecret(secret, '192.168.1.66')).toBe('ok')
     })
 
+    it('pairs after a flood of wrong secrets from many peers has spent the total', () => {
+      const codes = new PairingCodes(clock().now)
+      const { code, secret } = codes.issue()
+      const peers = MAX_WRONG_PER_MINUTE_TOTAL / MAX_WRONG_PER_MINUTE
+      expect(peers).toBeGreaterThanOrEqual(12)
+      for (let p = 0; p < peers; p++) {
+        for (let i = 0; i < MAX_WRONG_PER_MINUTE; i++) {
+          expect(codes.consumeSecret(otherSecret(secret), `10.1.0.${p}`)).toBe('wrong')
+        }
+      }
+      expect(codes.consumeSecret(otherSecret(secret), '10.1.1.1')).toBe('limited')
+      expect(codes.consume(code, '192.168.1.20')).toBe('limited')
+      expect(codes.consumeSecret(secret, '10.1.0.0')).toBe('ok')
+    })
+
     it('fails a wrong secret as a wrong code: counted while allowed, refused once limited', () => {
       const codes = new PairingCodes(clock().now)
       const { code, secret } = codes.issue()

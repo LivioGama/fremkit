@@ -130,9 +130,11 @@ export async function deviceRoutes(app: FastifyInstance, opts: DeviceRoutesOptio
   })
 
   app.post('/api/devices/code', { onRequest: localOnly }, async (_req, reply) => {
-    if (!service.listening) return reply.code(409).send({ error: tr(locale(), 'device.notEnabled') })
     reply.header('cache-control', 'no-store')
-    return service.pairingCode()
+    // Listening is checked inside, on the same chain as the switch (`DeviceService.pairingCode`).
+    const offer = await service.pairingCode()
+    if (offer === 'notListening') return reply.code(409).send({ error: tr(locale(), 'device.notEnabled') })
+    return offer
   })
 
   app.patch<{ Params: { id: string } }>('/api/devices/:id', { onRequest: localOnly }, async (req, reply) => {

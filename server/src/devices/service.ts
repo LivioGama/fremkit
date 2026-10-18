@@ -224,11 +224,19 @@ export class DeviceService {
   }
 
   /**
-   * A fresh code and the QR payload carrying it and its secret (`s=`). Only while listening: the
-   * caller checks. The secret is in the link and nowhere else: not a field of its own, not in the
-   * status, not in a log.
+   * A fresh code and the QR payload carrying it and its secret (`s=`), or `notListening`. The
+   * secret is in the link and nowhere else: not a field of its own, not in the status, not in a log.
+   *
+   * On the chain with the switch and the certificate reset, so that a code asked for while either
+   * runs is issued before it (and dropped by it) or after it (and refused while off): never a code
+   * left live by a switch-off, nor one carrying the pin a reset has just replaced.
    */
-  async pairingCode(): Promise<PairingOffer> {
+  pairingCode(): Promise<PairingOffer | 'notListening'> {
+    return this.serialize(() => this.issueCode())
+  }
+
+  private async issueCode(): Promise<PairingOffer | 'notListening'> {
+    if (!this.listener.running) return 'notListening'
     const key = await ensureKey(this.secrets, { exec: this.exec })
     this.keyHash = spkiHash(key)
     this.keyHashKnown = true
@@ -356,6 +364,9 @@ export class DeviceService {
       await this.store.setEnabled(true)
       return { enabled: true }
     }
+    // Nothing pairs with a code from before the switch went off; `stop()` drops it already, this is
+    // in case anything ever issued one while off.
+    this.codes.clear()
     const key = await ensureKey(this.secrets, { exec: this.exec })
     this.keyHash = spkiHash(key)
     this.keyHashKnown = true
