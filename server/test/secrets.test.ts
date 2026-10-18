@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FileSecretStore } from '../src/secrets/file.js'
-import { KeychainSecretStore, parsePassword, passwordArgument, runSecurity } from '../src/secrets/keychain.js'
+import { KeychainSecretStore, accountsInDump, parsePassword, passwordArgument, runSecurity } from '../src/secrets/keychain.js'
 import { assertSecretKey, createSecretStore, defaultSecretsBackend } from '../src/secrets/index.js'
 
 const dir = () => mkdtemp(join(tmpdir(), 'fremkit-secrets-'))
@@ -175,6 +175,19 @@ describe('KeychainSecretStore', () => {
     await expect(new KeychainSecretStore(run).get('ado-x1z9/pat')).rejects.toThrow('trousseau : lecture impossible (code 51)')
   })
 
+  it('lists the accounts of its own service out of dump-keychain, attributes only', async () => {
+    const dump = [
+      'keychain: "/k"\nclass: "genp"\nattributes:\n    "acct"<blob>="gh-x1/token"\n    "svce"<blob>="fremkit"\n',
+      'keychain: "/k"\nclass: "genp"\nattributes:\n    "acct"<blob>="gh-x1/other"\n    "svce"<blob>="fremkit"\n',
+      'keychain: "/k"\nclass: "genp"\nattributes:\n    "acct"<blob>="gh-x1/token"\n    "svce"<blob>="something-else"\n',
+      'keychain: "/k"\nclass: "genp"\nattributes:\n    "acct"<blob>="gh-x12/token"\n    "svce"<blob>="fremkit"\n',
+    ].join('')
+    expect(accountsInDump(dump, 'fremkit')).toEqual(['gh-x1/token', 'gh-x1/other', 'gh-x12/token'])
+    const { calls, run } = fake(async () => ({ stdout: dump }))
+    expect(await new KeychainSecretStore(run).keysOf('gh-x1')).toEqual(['gh-x1/token', 'gh-x1/other'])
+    expect(calls[0].args).toEqual(['dump-keychain'])
+  })
+
   it('refuses a keychain path it could not put on an interactive line', () => {
     expect(() => new KeychainSecretStore(undefined, 'fremkit', '/tmp/a b.keychain')).toThrow()
   })
@@ -215,6 +228,7 @@ describe.runIf(process.platform === 'darwin' && process.env.FREMKIT_KEYCHAIN_IT 
     expect(await store.get('it/k0')).toBe('replaced')
     await store.delete('it/k0')
     expect(await store.get('it/k0')).toBeNull()
+    expect((await store.keysOf('it')).sort()).toEqual(values.slice(1).map((_, i) => `it/k${i + 1}`).sort())
   })
 })
 

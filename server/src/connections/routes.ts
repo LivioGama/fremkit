@@ -213,6 +213,9 @@ export async function connectionRoutes(
     })
 
     try {
+      // A new connection starts from nothing: whatever an earlier one of the same id left in the
+      // store is removed before this one's secrets go in, never adopted.
+      if (!existing) await manager.purgeStale(id, parsed.data.type)
       for (const [key, value] of Object.entries(submitted)) {
         if (value === '') await secrets.delete(`${id}/${key}`)
         else await secrets.set(`${id}/${key}`, value)

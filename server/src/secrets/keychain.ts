@@ -28,7 +28,9 @@ export type SecurityRun = (args: string[], input?: string) => Promise<{ stdout: 
 
 export const runSecurity: SecurityRun = (args, input) =>
   new Promise((resolve, reject) => {
-    const child = execFile(SECURITY_TOOL, args, { timeout: TIMEOUT_MS, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+    // `dump-keychain` lists every item's attributes, which on a full login keychain is a few MB
+    // and a few seconds; everything else is one line and instant.
+    const child = execFile(SECURITY_TOOL, args, { timeout: 30_000, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) reject(Object.assign(err, { stderr }))
       else resolve({ stdout, stderr })
     })
@@ -54,6 +56,20 @@ export function passwordArgument(value: string): string {
   if (/^[\x20-\x7e]+$/.test(value)) return `-w "${value.replace(/[\\"]/g, (c) => `\\${c}`)}"`
   if (value === '') return '-w ""'
   return `-X ${Buffer.from(value, 'utf8').toString('hex')}`
+}
+
+/**
+ * The accounts filed under `service` in `security dump-keychain`'s output (attributes only, no
+ * secret is read or printed): one record per item, `"svce"<blob>="…"` and `"acct"<blob>="…"`.
+ */
+export function accountsInDump(dump: string, service: string): string[] {
+  const out: string[] = []
+  for (const record of dump.split(/^keychain: /m)) {
+    const svce = /^\s*"svce"<blob>="(.*)"\s*$/m.exec(record)?.[1]
+    const acct = /^\s*"acct"<blob>="(.*)"\s*$/m.exec(record)?.[1]
+    if (svce === service && acct !== undefined) out.push(acct)
+  }
+  return out
 }
 
 /**
@@ -147,6 +163,17 @@ export class KeychainSecretStore implements SecretStore {
     } catch (err) {
       throw new Error(`${tr(undefined, 'secrets.writeFailed')} (${describe(err)})`)
     }
+  }
+
+  async keysOf(connectionId: string): Promise<string[]> {
+    const prefix = `${connectionId}/`
+    let stdout: string
+    try {
+      ;({ stdout } = await this.run(['dump-keychain', ...this.keychainArgs]))
+    } catch (err) {
+      throw new Error(`${tr(undefined, 'secrets.readFailed')} (${describe(err)})`)
+    }
+    return [...new Set(accountsInDump(stdout, this.service).filter((a) => a.startsWith(prefix)))]
   }
 
   async delete(key: string): Promise<void> {

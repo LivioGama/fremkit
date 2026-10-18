@@ -112,6 +112,9 @@ tagged `vX.Y.Z`.
 - **Restoring a backup keeps your security choices.** A restored archive no longer changes where
   secrets are kept, the privacy switches, or what installed widgets were granted; and an old admin
   tab saving the dashboard can no longer bring back a permission you withdrew.
+- **Deleting a connection deletes its secret, always.** A connection whose widget had been
+  uninstalled kept its password or token in the keychain after being deleted, and a new
+  connection given the same name could pick it up. Both are fixed.
 
 ## 0.4.1 — 2026-10-16
 
