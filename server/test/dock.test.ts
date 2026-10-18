@@ -171,6 +171,7 @@ describe('the hub carries the socket origin into the dock command', () => {
     sent: unknown[] = []
     send(data: string) { this.sent.push(JSON.parse(data)) }
     receive(msg: unknown) { this.emit('message', Buffer.from(JSON.stringify(msg))) }
+    close() { this.emit('close') }
   }
 
   const setup = async () => {

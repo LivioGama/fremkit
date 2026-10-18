@@ -35,6 +35,16 @@ export async function wsRoutes(app: FastifyInstance, opts: { hub: Hub }): Promis
       socket.close(1008, 'origin not allowed')
       return
     }
+    if (isRemoteRequest(req)) {
+      // The devices gate refuses a remote `/ws` with no valid token, so a device id is always
+      // here; closing anyway keeps a paired socket from ever attaching without one.
+      if (!req.deviceId) {
+        socket.close(4401, 'unpaired')
+        return
+      }
+      opts.hub.attach(socket, { loopback: false, paired: true, deviceId: req.deviceId })
+      return
+    }
     opts.hub.attach(socket, { loopback: isLocalRequest(req), paired: false })
   })
 }

@@ -200,6 +200,21 @@ describe('channels a manifest may not ask for', () => {
     expect(ManifestSchema.safeParse({ ...base, subscriptions: ['config:anything'] }).success).toBe(false)
   })
 
+  it('refuses the device channel, which only the hub speaks on', () => {
+    expect(ManifestSchema.safeParse({ ...base, subscriptions: ['device'] }).success).toBe(false)
+    expect(ManifestSchema.safeParse({ ...base, commands: ['device'] }).success).toBe(false)
+    expect(ManifestSchema.safeParse({ ...base, subscriptions: ['device:*'] }).success).toBe(false)
+    expect(ManifestSchema.safeParse({
+      ...base,
+      settingsSchema: { s: { type: 'string', label: 'S', default: '', preview: { channel: 'device', command: 'x' } } },
+    }).success).toBe(false)
+    // The same field on an ordinary channel is accepted, so the refusal above is the channel's.
+    expect(ManifestSchema.safeParse({
+      ...base,
+      settingsSchema: { s: { type: 'string', label: 'S', default: '', preview: { channel: 'volume', command: 'x' } } },
+    }).success).toBe(true)
+  })
+
   it('names the reason', () => {
     const parsed = ManifestSchema.safeParse({ ...base, subscriptions: ['config'] })
     expect(parsed.success).toBe(false)

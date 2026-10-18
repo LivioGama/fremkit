@@ -156,8 +156,11 @@ export type Compact = z.infer<typeof CompactSchema>
  * fields of every connection. A widget that asked for it would be handed all of it, and no
  * widget here has ever needed it. Refused when the manifest is read, so a folder dropped into
  * `widgets/` cannot quietly ask for the lot.
+ *
+ * `device` is what the hub tells a paired device about itself. It has no provider, and a widget
+ * that declared it would be handed its device's own description.
  */
-const RESERVED_CHANNELS = new Set(['config'])
+const RESERVED_CHANNELS = new Set(['config', 'device'])
 
 const ChannelSchema = z.string().min(1).refine((channel) => {
   // `azure-devops:*` covers every connection of a type, so the family is what matters here.
