@@ -26,8 +26,10 @@ export interface Health {
   of(instanceId: string): InstanceHealth
   /** Runs the button of a problem of this widget. */
   run(instanceId: string, action: HealthAction): void
-  /** The menus' first item: the widget's first problem's fix, or null when it is well. */
+  /** The menus' first item: the widget's first problem's fix, or null when it has none. */
   fix(instanceId: string): { label: string; run: () => void } | null
+  /** A plain menu item for a widget with a newer version in the registry, or null. Not a fix. */
+  update(instanceId: string): { label: string; run: () => void } | null
 }
 
 export interface HealthDeps {
@@ -65,6 +67,7 @@ export function createHealth(deps: HealthDeps): Health {
   const marketEntries = computed<MarketEntry[]>(() => market.state.widgets.map((w) => ({
     id: w.id,
     updateAvailable: w.updateAvailable,
+    version: w.version,
     installable: !w.installed && !w.sdkTooNew && !w.shadowsBuiltin,
   })))
 
@@ -131,7 +134,16 @@ export function createHealth(deps: HealthDeps): Health {
     return { label: t('admin.health.fix', { action: actionLabel(action) }), run: () => run(instanceId, action) }
   }
 
-  return { all, entries, of, run, fix }
+  function update(instanceId: string): { label: string; run: () => void } | null {
+    const u = of(instanceId).update
+    if (!u) return null
+    return {
+      label: u.version ? t('admin.health.update.to', { version: u.version }) : actionLabel({ kind: 'update', widgetId: u.widgetId }),
+      run: () => run(instanceId, { kind: 'update', widgetId: u.widgetId }),
+    }
+  }
+
+  return { all, entries, of, run, fix, update }
 }
 
 let singleton: Health | null = null

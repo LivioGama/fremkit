@@ -20,7 +20,7 @@ const s = useAdminStore()
 const host = ref<HTMLElement>()
 const health = useHealth()
 /** A bar widget's menu leads with its fix too, as a tile's does. */
-const menuUi = { ...editorFocus, fix: health.fix }
+const menuUi = { ...editorFocus, fix: health.fix, update: health.update }
 
 /**
  * Test mode behaves like the screen: a swipe on the bar or on the board changes page, wrapping
