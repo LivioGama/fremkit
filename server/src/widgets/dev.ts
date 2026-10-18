@@ -30,6 +30,14 @@ export const WIDGET_DEV_MAX_WAIT_MS = 1000
  */
 export function widgetDevDir(env: NodeJS.ProcessEnv, dataDir: string): string | undefined {
   if (env.FREMKIT_WIDGET_DEV !== '1') return undefined
+  return authorWidgetsDir(env, dataDir)
+}
+
+/**
+ * The author's folder whether or not this process reads it: `pnpm widget:new` writes there for
+ * the server that will. Same rules as `widgetDevDir`.
+ */
+export function authorWidgetsDir(env: NodeJS.ProcessEnv, dataDir: string): string {
   const custom = env.FREMKIT_WIDGET_DEV_DIR
   if (custom) {
     if (!isAbsolute(custom)) throw new Error(`FREMKIT_WIDGET_DEV_DIR must be an absolute path, got ${custom}`)

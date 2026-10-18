@@ -57,6 +57,12 @@ tagged `vX.Y.Z`.
   `FREMKIT_WIDGET_DEV_DIR` names — with the permissions their manifest asks for. Saving a
   widget's file reloads it on the dashboard and in the admin's previews; saving its manifest
   reads the catalogue again first. A shipped Fremkit watches nothing.
+- **For widget authors: `pnpm widget:new` and `pnpm widget:check`.** `pnpm widget:new my-widget`
+  asks for a name in French and English, a category, a size and the data channel it reads, then
+  writes a working widget into that folder — transparent background, theme accent, compact and
+  light-tile layouts, every text in both languages — and has a running server pick it up.
+  `pnpm widget:check <folder>` applies the registry's and the installer's rules to a widget
+  before you open a pull request on the Sietch.
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer
