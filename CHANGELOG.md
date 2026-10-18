@@ -152,6 +152,8 @@ tagged `vX.Y.Z`.
 - **Adding a screen** creates an Edge screen; an iPad screen is now created from a paired iPad.
 
 ### Fixed
+- **Right-clicking a widget in the bar of the editor's preview opens its menu in Safari and in
+  the Mac's admin window too.** WebKit sent the click to the widget itself, so nothing opened.
 - Escape in a right-click menu opened inside a dialog (the Screen panel's bar widgets) closes
   the menu only, not the dialog under it.
 - **The install instructions say `pnpm run setup`.** They said `pnpm setup`, which runs pnpm's
