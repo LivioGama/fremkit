@@ -13,6 +13,8 @@ import { fitAround, fits, moveRect, resizeRect, snapPoint, type Handle, type Rec
 import { openContextMenu } from '../shared/ui/contextMenu'
 import { canvasMenu, widgetMenu } from './canvasMenu'
 import { editorFocus } from './editorFocus'
+import { describeProblem } from './health'
+import { useHealth } from './useHealth'
 
 const props = defineProps<{ scale: number }>()
 const s = useAdminStore()
@@ -26,6 +28,26 @@ const widgets = computed(() => (s.page.value?.items ?? []).map((p) => tileOf(s.s
 /** How many screens show each tile's widget; more than one and the tile wears the count. */
 const shownOn = (instanceId: string): number => screensShowing(s.state.config!, instanceId).length
 const boardH = computed(() => s.grid.value.rows * cell.value)
+
+const health = useHealth()
+/** The menus lead with the fix of a widget that is not well. */
+const menuUi = { ...editorFocus, fix: health.fix }
+/**
+ * The health badge is drawn inside the scaled board, so it is sized in the board's pixels from
+ * the size it should have on screen: a fixed 12 px here is 5 px once the Edge's 2560 px are fitted
+ * into the editor's column, which is how the lock icon ended up unreadable.
+ */
+const BADGE_SCREEN_PX = 20
+const badgeStyle = computed(() => {
+  const k = props.scale || 1
+  const size = BADGE_SCREEN_PX / k
+  return {
+    width: size + 'px', height: size + 'px', left: 6 / k + 'px', bottom: 6 / k + 'px',
+    fontSize: size * 0.68 + 'px', borderWidth: 2 / k + 'px',
+  }
+})
+/** The badge's tooltip: every problem, one per line. */
+const healthTitle = (instanceId: string): string => health.of(instanceId).problems.map(describeProblem).join('\n')
 
 interface Drag { kind: 'move' | 'resize' | 'create'; instanceId: string; widgetId: string; start: Rect; handle: Handle; min: [number, number]; ox: number; oy: number }
 const drag = ref<Drag | null>(null)
@@ -112,11 +134,11 @@ function onBackgroundDown(): void {
 /** A right click on a tile selects it, as on the Mac's desktop, then opens its menu. */
 function onTileMenu(e: MouseEvent, instanceId: string): void {
   s.select(instanceId)
-  openContextMenu(e, widgetMenu(s, instanceId, editorFocus))
+  openContextMenu(e, widgetMenu(s, instanceId, menuUi))
 }
 function onBackgroundMenu(e: MouseEvent): void {
   s.select(null)
-  openContextMenu(e, canvasMenu(s, editorFocus))
+  openContextMenu(e, canvasMenu(s, menuUi))
 }
 
 /**
@@ -201,6 +223,8 @@ function onDragLeave(): void { ghost.value = null }
       <BaseChip v-if="shownOn(w.instanceId) > 1" class="shared" :title="t('admin.overlay.sharedOn', { n: shownOn(w.instanceId) })">
         <BaseIcon name="monitor" :size="12" />{{ shownOn(w.instanceId) }}
       </BaseChip>
+      <span v-if="health.of(w.instanceId).level !== 'ok'" class="health" :class="health.of(w.instanceId).level"
+        :style="badgeStyle" :title="healthTitle(w.instanceId)" role="img" :aria-label="healthTitle(w.instanceId)" data-health-badge>!</span>
       <span v-if="w.locked" class="lock" :title="t('admin.overlay.locked')"><BaseIcon name="lock" :size="12" /></span>
       <span
         v-for="hnd in HANDLES" v-show="w.instanceId === s.state.selectedId && !w.locked" :key="hnd"
@@ -224,6 +248,11 @@ function onDragLeave(): void { ghost.value = null }
 .hit.locked { cursor: default; }
 .lock { position: absolute; right: 6px; bottom: 6px; display: inline-flex; padding: 4px; pointer-events: none;
   border-radius: var(--radius-sm); background: var(--surface-3); color: var(--text-muted); }
+.health { position: absolute; display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+  border-radius: 50%; border-style: solid; border-color: var(--bg); color: #fff; font-weight: 800; line-height: 1;
+  font-family: var(--font); box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); cursor: help; }
+.health.error { background: var(--danger); }
+.health.warning { background: var(--warn); }
 .shared { position: absolute; right: 6px; top: 6px; pointer-events: none; gap: 2px; }
 .tag { position: absolute; left: 6px; top: 6px; pointer-events: none; }
 .handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 3px;

@@ -190,6 +190,17 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // The widget previews are frames, and a frame may only ever be a widget document — the
+        // same rule as the kiosk's (see `WidgetFrames`).
+        if navigationAction.targetFrame?.isMainFrame == false {
+            if WidgetFrames.allows(navigationAction.request.url, on: url) {
+                decisionHandler(.allow)
+            } else {
+                NSLog("fremkit: admin refused a frame navigation outside /widgets/")
+                decisionHandler(.cancel)
+            }
+            return
+        }
         if openInBrowserIfExternal(navigationAction) { decisionHandler(.cancel); return }
         let isMainFrame = navigationAction.targetFrame?.isMainFrame != false
         if isMainFrame, !AdminOrigin.allows(navigationAction.request.url, admin: url) {

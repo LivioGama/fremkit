@@ -246,7 +246,14 @@ final class KioskWindow: NSObject, WKNavigationDelegate {
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard navigationAction.targetFrame?.isMainFrame != false else {
-            decisionHandler(.allow)
+            // A frame is a widget, and a widget may only ever be another widget document: a
+            // sandboxed frame can still navigate itself, and the request would carry its data.
+            if WidgetFrames.allows(navigationAction.request.url, on: url) {
+                decisionHandler(.allow)
+            } else {
+                NSLog("fremkit: kiosk refused a frame navigation outside /widgets/")
+                decisionHandler(.cancel)
+            }
             return
         }
         let target = navigationAction.request.url

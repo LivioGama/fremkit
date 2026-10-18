@@ -177,6 +177,10 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   under `FREMKIT_WIDGET_DEV=1`, its widgets skip the consent dialog, and nothing shipped sets the
   flag. Never read it, or watch files, without that flag, and never let it shadow a built-in or
   an installed id.
+- **Editor-only channels live under `config:`.** `config:health` (`server/src/providers/health.ts`)
+  is kept from widgets by the manifest schema's reserved `config` family and from paired devices
+  because `HOST_CHANNELS` names only the literal `config`. A new channel for the editor's eyes goes
+  there too, and `HOST_CHANNELS` never grows a `config:*` entry.
 - **Every editor action goes through the admin store's `apply()`**, menus and shortcuts
   included, so it is undoable and saved. Context menus are data built for
   `ui/src/shared/ui/contextMenu.ts`; do not write a second menu component.
@@ -223,6 +227,33 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   for an app in the current Dock snapshot; a URL handed to `open` is the parsed `href` that was
   checked, never the raw string.
 
+
+- **No WebRTC in a widget.** `server/src/bridge/fremkit.js` starts by making the WebRTC
+  constructors `undefined` and unrecoverable, and the server injects it ahead of everything the
+  widget wrote (`injectBridge`: after the doctype, never "after `<head>`"). The only exception is
+  the `local` level — no ICE server, loopback/this-Mac candidates only — for **built-ins** listed
+  in `WEBRTC_LOCAL_BUILTINS` (`server/src/widgets/webrtc.ts`). Never let a manifest, a consent
+  record or an installed folder reach that list; never serve a widget document that runs script
+  without the bridge (other HTML/SVG/XML files get `script-src 'none'`).
+- **Host pages carry a CSP.** `hostCsp()` in `server/src/http/headers.ts` covers every HTML page
+  the server writes (loopback and the 4243 listener, built per request from the checked Host);
+  `ui/vite.config.ts` sends the same under `pnpm dev`. `frame-src` stays `<origin>/widgets/`,
+  `frame-ancestors 'none'`, `script-src 'self'` with no `unsafe-inline`. A new page, frame or
+  external resource changes that function, not a route.
+- **Frames hold widgets only.** The kiosk and admin web views cancel any subframe navigation that
+  `WidgetFrames.allows` (`native/Sources/FremkitCore/WidgetFrames.swift`) refuses; a new web view
+  that shows widgets uses it too.
+- **A settings `preview` is a granted command.** The manifest schema requires its channel in
+  `commands`, `grantedManifest` drops one its granted commands do not cover, and `SettingsForm`
+  sends one only on a channel `commands` covers. Never add preview channels to anything on their own.
+- **The host talks to a frame over its port, never its window.** `useWidgetBridge` answers only
+  the document that said hello, over the `MessagePort` it handed it, after the nonce came back;
+  nothing but that `fremkit:connect` is posted to a frame's window. A second hello for the same
+  src disowns the frame.
+- **Check it in browsers.** After touching the bridge, the widget or host CSP, the frames or
+  `useWidgetBridge`, run `scripts/check-widget-sandbox.ts` (Chromium and WebKit through
+  Playwright; not part of `pnpm test`, which has no browser) — see its header for the command.
+
 ## Gotchas learned the hard way
 
 - macOS *Local Network* privacy: LAN calls (printer, Homey) fail with `EHOSTUNREACH`
@@ -260,5 +291,6 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
 | the app, its signing, notarization or updates | `scripts/build-app.sh`, `scripts/release.sh`, `native/Sources/FremkitCore/ServerLaunch.swift` (checkout or bundled server), `server/src/paths.ts` (the bundle's layout), `docs/releasing.md` |
 | change the disk map | `server/src/providers/disk-map*.ts`, `native/Sources/FremkitCore/Disk*.swift`, `native/Sources/FremkitScan`, `widgets/disk-map` |
 | bug reports, diagnostics | `server/src/diagnostics/` (report, `redact.ts`, log tail), `ui/src/admin/DiagnosticsSection.vue`, the helper's `StatusMenu.swift` |
+| change what the editor says about a failing widget | `ui/src/admin/health.ts` (pure, tested), `useHealth.ts` (stores, socket, the fixes), `server/src/providers/health.ts` (the `config:health` channel) |
 | pair a device, the remote listener | `server/src/devices/`, `ui/src/admin/DevicesSection.vue` |
 | change the iPad app | `ios/FremkitKit/Sources/FremkitKit/` (logic, `AppModel.swift` for the screens' state, `PairingFlow.swift` for pairing; test there), `ios/Fremkit/` (`RootView.swift`, `DashboardView.swift` for the web view, `LocalNetwork.swift` for Bonjour), `ui/src/dashboard/native.ts` (what the page tells the app), `scripts/build-ios.sh` |

@@ -30,6 +30,37 @@ beforeEach(async () => {
 })
 afterEach(async () => { await app.close() })
 
+describe('the host pages', () => {
+  it('carry a CSP that keeps widget frames on /widgets/ and the page unframeable', async () => {
+    const ui = join(dir, 'ui')
+    await mkdir(ui, { recursive: true })
+    await writeFile(join(ui, 'index.html'), '<!doctype html><title>dashboard</title>')
+    await writeFile(join(ui, 'admin.html'), '<!doctype html><title>admin</title>')
+    await writeFile(join(ui, 'app.js'), 'x')
+    const served = await buildApp({ accessToken: null, dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets'), uiDist: ui, port: 4301 })
+    try {
+      for (const url of ['/', '/index.html', '/admin', '/admin/', '/admin.html']) {
+        const res = await served.inject({ url, headers: { host: '127.0.0.1:4301' } })
+        expect(res.statusCode, url).toBe(200)
+        const csp = String(res.headers['content-security-policy'])
+        expect(csp, url).toContain('frame-src http://127.0.0.1:4301/widgets/')
+        expect(csp, url).toContain("connect-src 'self' ws://127.0.0.1:4301")
+        expect(csp, url).toContain("script-src 'self'")
+        expect(csp, url).not.toContain("script-src 'self' 'unsafe-inline'")
+        for (const d of ["frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'"]) expect(csp, url).toContain(d)
+      }
+      // Under localhost the page's origin is localhost, and so are its frames.
+      const viaName = await served.inject({ url: '/', headers: { host: 'localhost:4301' } })
+      expect(String(viaName.headers['content-security-policy'])).toContain('frame-src http://localhost:4301/widgets/')
+      // Not a page: no host CSP, and the widgets keep their own.
+      expect((await served.inject({ url: '/app.js', headers: { host: '127.0.0.1:4301' } })).headers['content-security-policy']).toBeUndefined()
+      expect((await served.inject({ url: '/widgets/clock/index.html', headers: { host: '127.0.0.1:4301' } })).headers['content-security-policy']).toBe(widgetCsp(4301))
+    } finally {
+      await served.close()
+    }
+  })
+})
+
 describe('config routes', () => {
   it('GET /api/config returns the default config', async () => {
     const res = await app.inject({ url: '/api/config' })
@@ -188,8 +219,7 @@ describe('widget routes', () => {
     expect(res.statusCode).toBe(200)
     expect(res.headers['content-type']).toContain('text/html')
     expect(res.headers['content-security-policy']).toBe(WIDGET_CSP)
-    expect(res.body).toContain('<head><script src="/fremkit.js"></script>')
-    expect(res.body).toContain('hi')
+    expect(res.body).toBe('<!doctype html><script src="/fremkit.js"></script><html><head><title>c</title></head><body>hi</body></html>')
   })
   it('allows the bridge and a widget-owned relative script in an opaque frame', async () => {
     await writeFile(join(dir, 'widgets', 'clock', 'index.html'),
@@ -229,9 +259,67 @@ describe('widget routes', () => {
     // case-insensitive filesystem: all the same untrusted code, all the same header.
     await writeFile(join(dir, 'widgets', 'clock', 'popup.html'), '<html><body>second</body></html>')
     for (const url of ['/widgets/clock/', '/widgets/clock/index.html', '/widgets/clock/Index.html',
-      '/widgets/clock/popup.html', '/widgets/clock/style.css', '/widgets/ghost/index.html']) {
+      '/widgets/clock/style.css', '/widgets/ghost/index.html']) {
       const res = await app.inject({ url })
       expect(res.headers['content-security-policy'], url).toBe(WIDGET_CSP)
+    }
+  })
+  it('runs no script in a document that is not the widget\'s page', async () => {
+    // Only index.html gets the bridge, and the bridge is what takes WebRTC away: a second page,
+    // an SVG or an XML file the frame navigated to would otherwise run with it intact.
+    for (const name of ['popup.html', 'page.HTM', 'image.svg', 'feed.xml', 'doc.xhtml', 'sub/index.html']) {
+      await mkdir(join(dir, 'widgets', 'clock', 'sub'), { recursive: true })
+      await writeFile(join(dir, 'widgets', 'clock', name), '<svg xmlns="http://www.w3.org/2000/svg"><script>1</script></svg>')
+      const res = await app.inject({ url: `/widgets/clock/${name}` })
+      expect(res.statusCode, name).toBe(200)
+      const csp = String(res.headers['content-security-policy'])
+      expect(csp, name).toContain("script-src 'none'")
+      expect(csp, name).toContain('sandbox allow-scripts')
+      expect(csp, name).toContain("connect-src 'none'")
+    }
+    expect((await app.inject({ url: '/widgets/clock/style.css' })).headers['content-security-policy']).toBe(WIDGET_CSP)
+  })
+  it('puts the bridge ahead of anything the widget wrote, wherever its <head> is', async () => {
+    // Each of these once let a script of the widget's run before the bridge, which is the one
+    // thing the WebRTC guard cannot survive: `<header>` and a commented `<head>` both matched the
+    // old "after <head>" rule, and a page with no doctype has nothing ahead of it at all.
+    const pages = [
+      '<!doctype html><script>evil()</script><header>x</header>',
+      '<!doctype html><!-- <head> --><script>evil()</script><head></head>',
+      '<script>evil()</script><html><head></head></html>',
+      '<!--><script>evil()</script><!-- --><!doctype html><head></head>',
+      '\uFEFF  <!DOCTYPE html>\n<script>evil()</script>',
+    ]
+    for (const page of pages) {
+      await writeFile(join(dir, 'widgets', 'clock', 'index.html'), page)
+      const body = (await app.inject({ url: '/widgets/clock/index.html' })).body
+      expect(body.indexOf('<script src="/fremkit.js"></script>'), page).toBeGreaterThanOrEqual(0)
+      expect(body.indexOf('<script src="/fremkit.js"></script>'), page).toBeLessThan(body.indexOf('evil'))
+      // Nothing but a doctype ahead of it.
+      expect(body.slice(0, body.indexOf('<script src="/fremkit.js">')).replace(/^\uFEFF?\s*(<!doctype[^>]*>)?/i, ''), page).toBe('')
+    }
+  })
+  it('gives WebRTC\'s local level to a listed built-in only, never to an installed widget', async () => {
+    const listed = await buildApp({
+      accessToken: null, dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets'),
+      webrtcLocalBuiltins: new Set(['clock', 'synology']),
+    })
+    try {
+      const folder = join(dir, 'data', 'widgets', 'synology')
+      await mkdir(folder, { recursive: true })
+      await writeFile(join(folder, 'manifest.json'), JSON.stringify({ id: 'synology', name: 'NAS', version: '1.0.0', minSize: [8, 4], defaultSize: [8, 4] }))
+      await writeFile(join(folder, 'index.html'), '<!doctype html><body>nas</body>')
+      await listed.inject({ method: 'POST', url: '/api/widgets/rescan' })
+      const builtin = (await listed.inject({ url: '/widgets/clock/index.html' })).body
+      expect(builtin).toMatch(/^<!doctype html><script src="\/fremkit\.js" data-webrtc="local" data-webrtc-hosts="[0-9a-f.: ]*"><\/script>/)
+      expect(builtin).toContain('127.0.0.1')
+      // On the list by id, but installed: the source decides, not the name.
+      const installed = (await listed.inject({ url: '/widgets/synology/index.html' })).body
+      expect(installed).toBe('<!doctype html><script src="/fremkit.js"></script><body>nas</body>')
+      // And with the shipped list, which is empty, nobody has it.
+      expect((await app.inject({ url: '/widgets/clock/index.html' })).body).not.toContain('data-webrtc')
+    } finally {
+      await listed.close()
     }
   })
   it('spells out what a widget may load', async () => {
@@ -280,7 +368,7 @@ describe('widget routes', () => {
     const html = await app.inject({ url: '/widgets/synology/index.html' })
     expect(html.statusCode).toBe(200)
     expect(html.headers['content-security-policy']).toBe(WIDGET_CSP)
-    expect(html.body).toContain('<head><script src="/fremkit.js"></script>')
+    expect(html.body).toBe('<!doctype html><script src="/fremkit.js"></script><html><head></head><body>nas</body></html>')
     expect((await app.inject({ url: '/widgets/synology/app.js' })).body).toBe('console.log(1)')
 
     const dotfile = await app.inject({ url: '/widgets/synology/.env' })

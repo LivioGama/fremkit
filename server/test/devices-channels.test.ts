@@ -44,7 +44,9 @@ describe('screenChannels', () => {
     const channels = screenChannels(config(), 'tablet', manifests)
     // `calendar:*` with no connection bound on the screen grants no calendar at all.
     expect(channels.subscriptions.sort()).toEqual(['system'])
-    expect(channels.commands.sort()).toEqual(['system-cmd', 'weather'])
+    // `clock` names `weather` in a preview but not in `commands`: a manifest the schema refuses
+    // today, and one that must not widen a device's policy even if it got through.
+    expect(channels.commands.sort()).toEqual(['system-cmd'])
     expect(channels.subscriptions).not.toContain('spotify')
     expect(channels.commands).not.toContain('spotify')
   })

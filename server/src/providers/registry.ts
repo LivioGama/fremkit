@@ -56,6 +56,8 @@ export function errorCode(data: unknown, threw: boolean): string | null {
 
 export class ProviderRegistry {
   private states = new Map<string, State>()
+  /** Told whenever `status()` would answer differently: see `onStatus`. */
+  private statusListeners = new Set<() => void>()
 
   /**
    * `forget` is told when a channel stops having anything to say: its provider was torn down,
@@ -82,6 +84,7 @@ export class ProviderRegistry {
     const state: State = { provider, subscribers, started: false, timer: null, backoffMs: 0, lastJson: undefined, inFlight: false, pollAgain: false, refreshAgain: false, lastError: undefined }
     this.states.set(provider.channel, state)
     if (state.subscribers > 0) this.activate(state)
+    this.statusChanged()
   }
 
   /** Removes a channel entirely: used when a connection disappears from the config. */
@@ -90,6 +93,7 @@ export class ProviderRegistry {
     if (!s) return
     this.teardown(s, 'gone')
     this.states.delete(channel)
+    this.statusChanged()
   }
 
   channels(): string[] { return [...this.states.keys()] }
@@ -101,6 +105,22 @@ export class ProviderRegistry {
       watched: s.subscribers > 0,
       ...(s.lastError !== undefined ? { lastError: s.lastError } : {}),
     }))
+  }
+
+  /**
+   * Calls `cb` whenever a channel appears, goes away, or its last poll ends differently from the
+   * one before (clean → `offline`, `unauthorized` → clean…). Not on every poll: a channel that
+   * keeps failing the same way says so once. Returns the function that stops listening.
+   */
+  onStatus(cb: () => void): () => void {
+    this.statusListeners.add(cb)
+    return () => { this.statusListeners.delete(cb) }
+  }
+
+  private statusChanged(): void {
+    for (const cb of this.statusListeners) {
+      try { cb() } catch { /* a listener's failure is not the registry's */ }
+    }
   }
 
   /**
@@ -241,7 +261,10 @@ export class ProviderRegistry {
     }
     // Checked again after the await, not only before it: this is where the replacement happens.
     if (!this.isCurrent(s)) return
-    s.lastError = errorCode(data, threw)
+    const lastError = errorCode(data, threw)
+    const changed = lastError !== s.lastError
+    s.lastError = lastError
+    if (changed) this.statusChanged()
     if (s.pollAgain) {
       // Computed under a privacy setting the user has changed since: never published. Forgotten
       // again in case the channel went idle meanwhile, so nothing is cached for the next widget.

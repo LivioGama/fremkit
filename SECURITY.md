@@ -93,6 +93,11 @@ enforces that — but it can *send*, and it can embed. So:
 - Every answer carries `X-Content-Type-Options: nosniff`, and the ones that hand back bytes from
   elsewhere also carry `Content-Security-Policy: default-src 'none'; sandbox`, so a browser
   talked into treating one as a document gets an inert one.
+- The dashboard and the admin carry their own CSP: only scripts from this server, no plugins, no
+  `<base>`, frames only from `/widgets/`, and `frame-ancestors 'none'` — no other page can frame
+  them. It is written for the origin the page came from: 4242, a second checkout's port, or a
+  paired device's `https://<mac>:4243` (`hostCsp` in `server/src/http/headers.ts`; under
+  `pnpm dev`, Vite sends the same one from `ui/vite.config.ts`).
 
 ### A third-party widget
 
@@ -103,18 +108,42 @@ it does counts as coming from `http://127.0.0.1:4242`.
 
 What a widget **cannot** do:
 
-- Reach the network directly. There is no `connect-src` at all: `fetch`, `XMLHttpRequest` and
-  `WebSocket` are dead inside a widget. Every call goes through `Fremkit.fetch`, the host, and the
-  proxy, which only allows the hosts the manifest declares — never a private, loopback,
-  link-local or reserved address, in any spelling.
+- Reach the network directly. `connect-src 'none'`: `fetch`, `XMLHttpRequest`, `WebSocket`,
+  `EventSource`, `sendBeacon` and `WebTransport` are dead inside a widget. Every call goes through
+  `Fremkit.fetch`, the host, and the proxy, which only allows the hosts the manifest declares —
+  never a private, loopback, link-local or reserved address, in any spelling.
+- Use WebRTC. No CSP directive covers it (Chrome and WebKit ignore `webrtc 'block'`), and a peer
+  connection would reach any STUN or TURN server, or any candidate address, with the widget's
+  data in it. So the bridge, which the server places ahead of everything the widget wrote, makes
+  `RTCPeerConnection`, `webkitRTCPeerConnection`, `RTCDataChannel`, `RTCSessionDescription` and
+  `RTCIceCandidate` undefined, non-writable and non-configurable before any widget code runs; a
+  child frame that could hold a fresh copy is refused by `frame-src 'none'`. The one exception
+  is a **built-in** widget on a list in the server (`server/src/widgets/webrtc.ts`, empty today):
+  it gets a wrapped `RTCPeerConnection` with no ICE server, ever, that drops every candidate not
+  on loopback or on one of this Mac's own addresses. A widget from the registry never gets
+  WebRTC — not from its manifest, not through the consent dialog.
+- Navigate its frame anywhere but another widget document. A sandboxed frame may navigate
+  itself, and `location = 'https://…?d=<data>'` would send the data in the request. The
+  dashboard and the admin carry a CSP whose `frame-src` is `<their own origin>/widgets/`, and the
+  helper's kiosk and admin windows cancel any frame navigation outside `/widgets/` themselves.
+  Only a widget's `index.html` runs script there: its other HTML, SVG or XML files are served
+  with `script-src 'none'`.
 - Read a channel its manifest does not declare, or send a command on one. `config`, which carries
   the whole dashboard, cannot be declared at all.
 - Act on something that is not its own. A command that does something on your behalf — pressing a
   shortcut button, probing a service — names only *its own instance*, and the host stamps that
   identity itself; the target is then read from your saved settings. A widget cannot press
   another widget's buttons, and cannot name an application or a URL of its own.
-- Keep talking after navigating itself. If a widget replaces its own document, the host drops its
-  subscriptions and stops answering it.
+- Keep talking after navigating itself. The host answers a widget over a `MessagePort` handed to
+  the document that said hello, and only once that document has repeated a nonce on it; a port
+  does not survive a navigation, so nothing the host sends afterwards reaches the next document.
+  A second hello from the same frame, or a reload of it, and the host drops its subscriptions and
+  stops answering.
+- Press ▶ on a channel it was not granted. A settings `preview` must name one of the widget's
+  `commands`; the grant drops a preview its commands no longer cover, and the admin sends one
+  only on a channel the widget may command.
+- Have an image of its choosing fetched. `Fremkit.image` fetches an address only when it is in
+  the instance's own settings — what you typed, not a default the manifest wrote.
 - Store anything. `localStorage` throws in an opaque origin.
 
 What a widget **can** do, and what that means for you: a widget that declares `homey:*` can drive
@@ -253,7 +282,9 @@ the Dock badges, and supervises the server process.
   `codesign` alone. It is not notarised, and it is not a substitute for a Developer ID.
 - **The kiosk cannot be navigated away from**: a main-frame navigation off the dashboard's origin
   is cancelled, and WebKit's context menu is removed, because the Edge has no keyboard and no
-  window chrome to get back with.
+  window chrome to get back with. In the kiosk and in the admin window, a **frame** may only
+  load a widget document (`<origin>/widgets/…`); anything else is cancelled before the request
+  leaves.
 - **macOS Local Network** permission belongs to the *responsible app* — "Fremkit Helper" under the
   helper, your terminal otherwise. Deleting the helper's bundle drops the grant, which is why the
   install script replaces its contents in place.
@@ -283,6 +314,12 @@ These are real and not fixed. They are here so you can decide whether they matte
   peer is not authenticated. See [docs/connections.md](docs/connections.md#synology).
 - **The Claude usage endpoint is undocumented.** `api.anthropic.com/api/oauth/usage` is not a
   published API and may change or disappear.
+- **WebKit preconnects whatever the CSP says.** A widget's `<link rel="preconnect"
+  href="https://<anything>.example">` makes WebKit — the kiosk, the admin window, Safari —
+  resolve that name and open a TCP connection to it; no request is sent, but the name itself
+  reaches a DNS server the widget's author may run. Chrome honours the CSP and does not. No
+  header or CSP directive turns it off for a document; `scripts/check-widget-sandbox.ts`
+  watches it.
 - **DNS rebinding is closed for the widget proxy and the favicons, not for declared
   connections.** A widget's `GET` through the proxy and every favicon fetch connect through a
   lookup that judges the very address the socket is opened on, so a name that answers a public

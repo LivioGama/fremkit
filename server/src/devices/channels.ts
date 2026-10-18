@@ -65,8 +65,8 @@ function referencedConnections(manifest: ChannelManifest, settings: Record<strin
 
 /**
  * The channels the widgets of one screen may subscribe to and command: every widget placed on
- * any of its pages, and every widget in its navigation bar. A settings field's `preview` runs a
- * command, so its channel counts as a command channel. `manifests` is the granted catalogue
+ * any of its pages, and every widget in its navigation bar. A settings field's `preview` is one of
+ * the widget's commands and adds nothing of its own. `manifests` is the granted catalogue
  * (`grantedCatalog`), so a channel the user did not consent to is not here either.
  *
  * Per-connection channels are narrowed to the connections the screen actually uses. A manifest's
@@ -114,10 +114,10 @@ export function screenChannels(
       }
     }
     for (const ch of manifest.subscriptions) grant(ch, subscriptions)
+    // A settings preview adds nothing: its channel has to be one of `commands` (the manifest
+    // schema says so, and the grant drops a preview its commands no longer cover), so it is
+    // already here — and a device must not gain a channel the user never agreed to through it.
     for (const ch of manifest.commands) grant(ch, commands)
-    for (const field of Object.values(manifest.settingsSchema ?? {})) {
-      if (field.preview) grant(field.preview.channel, commands)
-    }
   }
   return { subscriptions: [...subscriptions], commands: [...commands] }
 }

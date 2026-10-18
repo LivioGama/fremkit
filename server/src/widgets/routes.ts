@@ -10,6 +10,8 @@ import { SDK_VERSION } from '../bridge/sdk.js'
 import { tr } from '../i18n.js'
 import { isRemoteRequest } from '../net/remote.js'
 import { requestScope, widgetInScope, type ScreenOfDevice } from '../devices/scope.js'
+import { isIP } from 'node:net'
+import { hostAddresses, webrtcLevel, type WebRtcLevel } from './webrtc.js'
 
 
 /**
@@ -54,15 +56,41 @@ export function widgetCsp(port = 4242, dev = false, remoteOrigin?: string): stri
 
 export const WIDGET_CSP = widgetCsp()
 
-export function injectBridge(html: string): string {
-  const tag = '<script src="/fremkit.js"></script>'
+/**
+ * Where the bridge goes: before anything of the widget's own can run.
+ *
+ * The bridge is what takes WebRTC away (see `webrtc.ts`), so a single widget script running
+ * before it would have the constructors to itself. It is placed straight after a leading
+ * doctype — the only thing allowed ahead of it, since a doctype cannot run anything and moving
+ * it behind a script would put the page in quirks mode — and at the very start otherwise. Not
+ * "after `<head>`": a regex for that also matches `<header>`, or a `<head>` inside a comment,
+ * with a script of the widget's written before it.
+ */
+const LEADING_DOCTYPE = /^\uFEFF?[\t\n\f\r ]*<!doctype[^>]*>/i
 
-  const i = html.search(/<head[^>]*>/i)
-  if (i >= 0) {
-    const end = html.indexOf('>', i) + 1
-    return html.slice(0, end) + tag + html.slice(end)
-  }
-  return tag + html
+export function bridgeTag(level: WebRtcLevel = 'none', addresses: string[] = []): string {
+  if (level === 'none') return '<script src="/fremkit.js"></script>'
+  // IP literals only (hostAddresses), so nothing here needs escaping; filtered again regardless.
+  const hosts = addresses.filter((a) => isIP(a)).join(' ')
+  return `<script src="/fremkit.js" data-webrtc="local" data-webrtc-hosts="${hosts}"></script>`
+}
+
+export function injectBridge(html: string, tag: string = bridgeTag()): string {
+  const doctype = LEADING_DOCTYPE.exec(html)
+  const at = doctype ? doctype[0].length : 0
+  return html.slice(0, at) + tag + html.slice(at)
+}
+
+/**
+ * Files a browser would run script in if the frame navigated to them. Only a widget's
+ * `index.html` gets the bridge, so any other document is served with no script at all: a second
+ * page would otherwise run with WebRTC intact. A widget has one page — the host disowns a frame
+ * that navigates (`FrameTrust`) — so nothing that works today is lost.
+ */
+const DOCUMENT_EXTENSIONS = /\.(html?|xhtml|xht|svgz?|xml|xsl|xslt|mht|mhtml)$/i
+
+export function scriptlessCsp(csp: string): string {
+  return csp.replace(/script-src [^;]*/, "script-src 'none'")
 }
 
 export async function widgetRoutes(
@@ -71,6 +99,8 @@ export async function widgetRoutes(
     catalog: WidgetCatalog; store: ConfigStore; bridgePath: string; port?: number; dev?: boolean
     /** The device screen a paired device is attached to: what its catalogue is narrowed to. */
     screenOfDevice?: ScreenOfDevice
+    /** The built-ins allowed WebRTC's `local` level; `WEBRTC_LOCAL_BUILTINS` unless a test says otherwise. */
+    webrtcLocalBuiltins?: ReadonlySet<string>
   },
 ): Promise<void> {
   const bridge = await readFile(opts.bridgePath, 'utf8')
@@ -142,9 +172,10 @@ export async function widgetRoutes(
     // untrusted code, and on a case-insensitive filesystem so is `Index.html`.
     // Remote: built per request from the Host the devices gate has already checked against the
     // names the listener answers to, so it cannot be steered to an origin of the sender's choice.
-    reply.header('content-security-policy', isRemoteRequest(req)
+    const policy = isRemoteRequest(req)
       ? widgetCsp(opts.port, opts.dev, `https://${String(req.headers.host).toLowerCase()}`)
-      : csp)
+      : csp
+    reply.header('content-security-policy', policy)
     // The folder rather than the root: a widget may be a built-in or one the user installed, and
     // which of the two owns an id is the catalogue's answer, decided once at scan time.
     const folder = opts.catalog.folderOf(id)
@@ -159,11 +190,13 @@ export async function widgetRoutes(
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') return reply.code(404).send({ error: tr(undefined, 'widgets.missing') })
         throw err
       }
+      const level = webrtcLevel(id, opts.catalog.entry(id)?.source, opts.webrtcLocalBuiltins)
       return reply
         .type('text/html; charset=utf-8')
         .header('cache-control', 'no-store')
-        .send(injectBridge(html))
+        .send(injectBridge(html, bridgeTag(level, level === 'local' ? hostAddresses() : [])))
     }
+    if (DOCUMENT_EXTENSIONS.test(safeRel)) reply.header('content-security-policy', scriptlessCsp(policy))
     // A widget folder has no business serving its own dotfiles, whatever an author drops in it.
     // `folder` is the widget's own, so `root` is it: @fastify/static still refuses a path that
     // escapes the root it is handed, and `safeRel` was checked before getting here.

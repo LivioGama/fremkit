@@ -13,6 +13,9 @@ import { useAdminStore } from './store'
 import { openContextMenu } from '../shared/ui/contextMenu'
 import { screenMenu } from './menus'
 import { useDevices } from './devices'
+import HealthDot from './HealthDot.vue'
+import { screenLevel } from './health'
+import { useHealth } from './useHealth'
 
 /** Beyond this many screens the row would crowd the canvas header, so it becomes a menu. */
 const SEGMENTED_MAX = 3
@@ -25,6 +28,10 @@ const current = computed(() => s.screen.value)
 const adding = ref(false)
 const menuOpen = ref(false)
 const menu = ref<HTMLElement>()
+
+const health = useHealth()
+/** Red or orange when a widget of that screen, on a page or in its bar, is not well. */
+const levelOf = (x: Screen) => screenLevel(health.all.value, x)
 
 const iconOf = (x: Screen): string => (x.kind === 'edge' ? 'monitor' : 'tablet')
 
@@ -110,6 +117,7 @@ onUnmounted(() => {
           :class="{ on: x.id === current?.id }" :title="t(`admin.screens.kind.${x.kind}`)" @click="choose(x.id)"
           @dblclick="startRename(x.id)" @contextmenu="onMenu($event, x.id)">
           <BaseIcon :name="iconOf(x)" :size="16" /><span class="name">{{ x.name }}</span>
+          <HealthDot :level="levelOf(x)" :title="t('admin.health.screenDot')" />
         </button>
       </template>
     </div>
@@ -122,12 +130,14 @@ onUnmounted(() => {
       <button v-else type="button" class="trigger" aria-haspopup="listbox" :aria-expanded="menuOpen"
         :title="t('admin.screens.menu')" @click="menuOpen = !menuOpen" @contextmenu="current && onMenu($event, current.id)">
         <BaseIcon v-if="current" :name="iconOf(current)" :size="16" /><span class="name">{{ current?.name }}</span>
+        <HealthDot v-if="current" :level="levelOf(current)" :title="t('admin.health.screenDot')" />
         <BaseIcon name="chevron-down" :size="16" />
       </button>
       <ul v-if="menuOpen" class="list" role="listbox">
         <li v-for="x in screens" :key="x.id" role="option" :aria-selected="x.id === current?.id">
           <button type="button" :class="{ on: x.id === current?.id }" @click="choose(x.id)" @contextmenu="onMenu($event, x.id)">
             <BaseIcon :name="iconOf(x)" :size="16" /><span class="name">{{ x.name }}</span>
+            <HealthDot :level="levelOf(x)" :title="t('admin.health.screenDot')" />
           </button>
         </li>
       </ul>
