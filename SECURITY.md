@@ -251,18 +251,18 @@ pair, and the request shows its name and code on the Edge; the code is meant to 
 request you did not make is refused. If you allow it, it is a Companion like any other, with what
 that carries below. Do not allow a request you did not start.
 
-**What a linked extension can do**, and it is little: send metadata about the video being shared
-(a title, a host, a position), and a WebRTC offer, to the Edge. It cannot read your dashboard, your
-config or your connections, call any other API, or send a command to a widget other than
-driving its own share. Its offer may only name this Mac — host candidates on loopback, a `.local`
-name or one of the Mac's own addresses — so the kiosk is never sent to another machine on the
-network, and the video does not leave your Mac; it never goes through the server either. The
-picture is cropped to the page's main video element; a page can make that element cover the whole
-tab, frames from other sites included, but the picture only goes to your own dashboard. The
-extension asks for another site's frames only when you allow that site, after its popup has named
-it, and gives the grant back when that site's frame holds no video. It drives the video from its
-isolated world (only YouTube's volume goes through the page's own), keeps its token where code it
-injects into a page cannot read it, and listens only to its own pages.
+**What a linked extension can do**, and it is little: send metadata about the video being shared (a
+title, a host, a position), and a WebRTC offer, to the Edge. It cannot read your dashboard, your
+config or your connections, call any other API, or send a command to a widget other than driving its
+own share. Its offer may only name this Mac — host candidates on loopback, a `.local` name or one of
+the Mac's own addresses — so the kiosk is never sent to another machine on the network, and the
+video does not leave your Mac; it never goes through the server either. The picture is cropped to
+the page's main video element; a page can make that element cover the whole tab, frames from other
+sites included, but the picture only goes to your own dashboard. The extension asks for another
+site's frames only when you allow that site, after its popup has named it, and gives the grant back
+unless the share starts with a video in that site's frame. It drives the video from its isolated
+world (only YouTube's volume goes through the page's own), keeps its token where code it injects
+into a page cannot read it, and listens only to its own pages.
 
 **What a local program can do.** A process running as you can read the access secret and anything
 else; it is out of scope, as under *Known limits*. One running as another account, or anything that

@@ -87,12 +87,12 @@ Edge*), or press **⌥⇧E**. Press it again to stop. The shortcut can be change
 
 ### Players from another site
 
-Some videos play in a frame from another site (Dailymotion embeds, for instance). The first time
-you share one, the popup names **that site** (*Fremplay needs access to … to find the video*),
-and pressing the button lets the browser ask you to allow it. The extension cannot look inside the
-frame before you do, so check the name: if the frame turns out to hold no video, the extension
-gives the permission back at once. A grant is per site, and you can revoke it at any time in
-`chrome://extensions`. The extension asks for no access to every site at install.
+Some videos play in a frame from another site (Dailymotion embeds, for instance). The first time you
+share one, the popup names **that site** (*Fremplay needs access to … to find the video*), and
+pressing the button lets the browser ask you to allow it. The extension cannot look inside the frame
+before you do, so check the name: unless the share starts and that site's frame holds a video, the
+extension gives the permission back as the attempt ends. A grant is per site, and you can revoke it
+at any time in `chrome://extensions`. The extension asks for no access to every site at install.
 
 ## Limits
 

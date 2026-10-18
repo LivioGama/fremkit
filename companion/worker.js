@@ -8,11 +8,12 @@
 
 import { browserName } from './lib/browser.js'
 import { handshake } from './lib/handshake.js'
+import { grantToReturn } from './lib/grant.js'
 import { closeOutcome } from './lib/link.js'
 import { idleDelay } from './lib/presence.js'
 import { isOwnContext } from './lib/sender.js'
 import * as protocol from './lib/protocol.js'
-import { cleanFrames, cleanState, control, embeddedPlayer, pickVideo, survey, videoFrameOf, youtubeVolume } from './lib/video.js'
+import { cleanFrames, cleanState, control, embeddedPlayer, pickVideo, survey, youtubeVolume } from './lib/video.js'
 
 /** Fremkit's local server. The extension never talks to anything else. */
 const PORT = 4242
@@ -558,15 +559,30 @@ function metaOf(previous, state, tab, frames) {
  * has just allowed from the popup. Resolves `{ ok }` or `{ ok: false, error }`.
  */
 async function start(tabId, { fromShortcut = false, grantedOrigin = null } = {}) {
+  const seen = { frames: null }
+  let result = { ok: false, error: 'failed' }
+  try {
+    result = await startShare(tabId, { fromShortcut }, seen)
+    return result
+  } finally {
+    // Whatever way the start ended: a grant it did not use goes back (lib/grant.js).
+    await giveBack(grantToReturn(grantedOrigin, { ok: result.ok, frames: seen.frames }))
+  }
+}
+
+/** Takes back the host permission of `origin`; nothing for null. */
+async function giveBack(origin) {
+  if (origin) await chrome.permissions.remove({ origins: [`${origin}/*`] }).catch(() => undefined)
+}
+
+/** The start itself; `seen.frames` gets the survey it ran on, for `start` to judge the grant. */
+async function startShare(tabId, { fromShortcut }, seen) {
   await ready
   if (!local.token || local.revoked) return { ok: false, error: 'unpaired' }
   if (!validId(tabId)) return { ok: false, error: 'failed' }
   const frames = await surveyTab(tabId)
   if (!frames) return { ok: false, error: 'capture' }
-  // The page chose which frame looked like a player; only one that holds a video keeps the grant.
-  if (grantedOrigin && !videoFrameOf(frames, grantedOrigin)) {
-    await chrome.permissions.remove({ origins: [`${grantedOrigin}/*`] }).catch(() => undefined)
-  }
+  seen.frames = frames
   const picked = pickVideo(frames)
   // A player in another site's iframe needs that site's permission, which only the popup can ask for.
   if (fromShortcut && embeddedPlayer(frames, picked)) return { ok: false, error: 'needsPermission' }

@@ -19,6 +19,8 @@ import { handshake, PROOF_TIMEOUT_MS } from '../../companion/lib/handshake.js'
 import * as ext from '../../companion/lib/protocol.js'
 // @ts-expect-error plain JS module
 import { isOwnContext } from '../../companion/lib/sender.js'
+// @ts-expect-error plain JS module
+import { grantToReturn } from '../../companion/lib/grant.js'
 import { isLocalSdp, parseExtensionMessage, PROOF_LABEL as SERVER_PROOF_LABEL, PROTOCOL } from '../src/companion/protocol.js'
 import { HELLO_TIMEOUT_MS } from '../src/companion/socket.js'
 import { COMPANION_NAMES } from '../src/companion/routes.js'
@@ -713,5 +715,24 @@ describe('isOwnContext (who the worker and the offscreen document listen to)', (
     expect(isOwnContext({ id: EXT_ID, url: `${BASE}options.html`, tab: { id: 1 } }, { id: EXT_ID, base: BASE })).toBe(false)
     expect(isOwnContext({ id: '', url: BASE }, { id: '', base: BASE })).toBe(false)
     expect(isOwnContext({ id: EXT_ID, url: 'https://example.com/' }, { id: EXT_ID, base: '' })).toBe(false)
+  })
+})
+
+describe('grantToReturn (the grant a start gives back)', () => {
+  const ORIGIN = 'https://player.example.org'
+  const child = (video: Rect | null) => frame(3, { href: `${ORIGIN}/e`, top: false, vw: 800, vh: 400, title: '', video, iframes: [] })
+  const withVideo = [frame(0, top(null)), child({ x: 0, y: 0, w: 640, h: 360 })]
+  const withoutVideo = [frame(0, top({ x: 0, y: 0, w: 500, h: 250 })), child(null)]
+  const cases: [string, string | null, { ok: boolean; frames: unknown[] | null }, string | null][] = [
+    ['nothing was granted', null, { ok: false, frames: null }, null],
+    ['a share that started on a frame holding a video keeps it', ORIGIN, { ok: true, frames: withVideo }, null],
+    ['a share that started from another video, the granted frame empty', ORIGIN, { ok: true, frames: withoutVideo }, ORIGIN],
+    ['not paired, or the tab gone, before any survey', ORIGIN, { ok: false, frames: null }, ORIGIN],
+    ['the survey failed', ORIGIN, { ok: false, frames: null }, ORIGIN],
+    ['the capture or the server failed after a survey that found the video', ORIGIN, { ok: false, frames: withVideo }, ORIGIN],
+    ['no video anywhere', ORIGIN, { ok: false, frames: withoutVideo }, ORIGIN],
+  ]
+  it.each(cases)('%s', (_, granted, outcome, expected) => {
+    expect(grantToReturn(granted, outcome)).toBe(expected)
   })
 })
