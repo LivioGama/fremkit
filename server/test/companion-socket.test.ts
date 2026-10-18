@@ -264,7 +264,20 @@ describe('companion socket in the app', () => {
     await rm(appDir, { recursive: true, force: true })
   })
 
-  it('needs no access secret but still checks the Host', async () => {
+  it('opens without the access secret, then waits for hello and closes 1008 without one', async () => {
+    await full.listen({ port: 0, host: '127.0.0.1' })
+    const listening = (full.server.address() as { port: number }).port
+    // The app checks the Host against the port it was built for, whatever it listens on here.
+    const ws = new WebSocket(`ws://127.0.0.1:${listening}/companion/ws`, { origin: ORIGIN, headers: { host: HOST } })
+    const refused = new Promise<number>((resolve) => ws.once('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0)))
+    const opened = new Promise<'open'>((resolve) => ws.once('open', () => resolve('open')))
+    const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)))
+    ws.on('error', () => undefined)
+    expect(await Promise.race([opened, refused])).toBe('open')
+    expect(await closed).toBe(1008)
+  }, 10_000)
+
+  it('still checks the Host', async () => {
     const wsHeaders = { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==', origin: ORIGIN }
     const wrongHost = await full.inject({ method: 'GET', url: '/companion/ws', headers: { ...wsHeaders, host: 'evil.example.com' } })
     expect(wrongHost.statusCode).toBe(421)
