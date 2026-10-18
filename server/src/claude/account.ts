@@ -57,7 +57,7 @@ async function loadUsage(filePath: string): Promise<Persisted | null> {
 
 async function persistUsage(filePath: string, data: Persisted): Promise<void> {
   const tmp = `${filePath}.tmp`
-  await writeFile(tmp, JSON.stringify(data), 'utf8')
+  await writeFile(tmp, JSON.stringify(data), { encoding: 'utf8', mode: 0o600 })
   await rename(tmp, filePath)
 }
 

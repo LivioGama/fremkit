@@ -79,6 +79,7 @@ import { deviceRoutes } from './devices/routes.js'
 import { REMOTE_PORT } from './devices/listener.js'
 import type { Advertiser } from './devices/bonjour.js'
 import type { Exec } from './secrets/keychain.js'
+import { tightenDataDir } from './data-permissions.js'
 
 export interface AppOptions {
   dataDir: string
@@ -143,6 +144,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   app.decorateRequest('deviceId', null)
   if (opts.onRoute) app.addHook('onRoute', opts.onRoute)
 
+  // Private before anything is read from it or written to it: see data-permissions.ts.
+  await tightenDataDir(opts.dataDir)
   const store = new ConfigStore(join(opts.dataDir, 'fremkit.json'))
   await store.load()
   // Providers, the proxy and the connection types are far from any request, so they read the

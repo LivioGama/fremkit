@@ -106,6 +106,9 @@ tagged `vX.Y.Z`.
 - **Fremkit runs macOS's own tools.** The helper and the server now call system tools by their
   full path and put the system folders first, so a program dropped into a Homebrew folder can no
   longer stand in for one of them.
+- **Your dashboard's files are yours alone.** Fremkit's data folder and everything in it — the
+  dashboard and its backups, the disk map's caches, the Claude caches — can no longer be read by
+  other accounts on the Mac; files left by earlier versions are fixed the next time it starts.
 
 ## 0.4.1 — 2026-10-16
 

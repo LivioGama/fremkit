@@ -6,6 +6,10 @@ import { DEFAULT_BACKGROUND } from './backgrounds/seed.js'
 import { safePath } from './system-path.js'
 import { accessTokenPath, removeAccessToken, resolveAccessToken, writeAccessToken } from './http/access-file.js'
 
+// Every file and folder this process (and its children) creates is this account's alone; the data
+// folder's older files are brought to the same modes at start (data-permissions.ts).
+process.umask(0o077)
+
 // System folders first on PATH, for every child this process runs: see system-path.ts.
 process.env.PATH = safePath(process.env.PATH)
 
