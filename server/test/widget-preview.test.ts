@@ -117,3 +117,17 @@ describe('widget:check', () => {
     expect(ok.warnings).toEqual([])
   })
 })
+
+describe('setPreviewField', async () => {
+  const { setPreviewField } = await import('../src/cli/preview.js')
+  it('adds the field after the version and keeps the rest of the text as it was', () => {
+    const text = '{ "id": "cpu", "name": "CPU", "version": "1.1.0",\n  "icon": "cpu" }\n'
+    expect(setPreviewField(text, 'preview.webp')).toBe('{ "id": "cpu", "name": "CPU", "version": "1.1.0", "preview": "preview.webp",\n  "icon": "cpu" }\n')
+  })
+  it('replaces an existing one', () => {
+    expect(JSON.parse(setPreviewField('{"id":"a","version":"1.0.0","preview":"old.png"}', 'preview.webp')).preview).toBe('preview.webp')
+  })
+  it('falls back to a clean rewrite when there is no version to anchor on', () => {
+    expect(JSON.parse(setPreviewField('{"id":"a"}', 'preview.webp'))).toEqual({ id: 'a', preview: 'preview.webp' })
+  })
+})

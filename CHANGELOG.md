@@ -13,6 +13,10 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **`pnpm widget:preview`.** Takes a widget's preview image for you: it renders the widget alone at
+  its default size against a demo server, waits for it to show data, and writes `preview.webp`
+  into its folder. Works on the built-ins (`--all`) and on your own widget (`--dir`). See
+  [docs/writing-widgets.md](docs/writing-widgets.md#a-preview-image).
 - **Widget previews in the manifest.** A widget may name a `preview` image (`preview.webp` or
   `.png`, at most 200 KB, twice its default size in pixels). The installer refuses a package whose
   preview is missing or is not the image it claims to be, and `pnpm widget:check` checks its
