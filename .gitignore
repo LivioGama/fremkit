@@ -23,6 +23,8 @@ data/backgrounds/
 data/widgets/
 data/fremkit.json
 data/fremkit.v3.json
+data/devices.json
+data/devices.json.corrupt
 # Working notes of the coding agents: local only
 docs/superpowers/
 .superpowers/
