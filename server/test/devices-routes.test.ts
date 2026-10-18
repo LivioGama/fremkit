@@ -414,7 +414,7 @@ describe('browser extensions in the device list', () => {
     const status = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
     expect(status.companionRequest).toMatchObject({ requestId, name: 'Chrome' })
     expect((await eapp.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/approve`, headers: { host: HOST } })).statusCode).toBe(200)
-    const collected = (await eapp.inject({ url: `/api/companion/pair/${requestId}`, headers: { host: HOST, origin: ORIGIN } })).json()
+    const collected = (await eapp.inject({ method: 'POST', url: `/api/companion/pair/${requestId}`, headers: { host: HOST, origin: ORIGIN } })).json()
     return { requestId, deviceId: collected.deviceId }
   }
 

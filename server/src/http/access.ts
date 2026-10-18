@@ -103,15 +103,17 @@ export function isPublicRoute(method: string, routeUrl: string | undefined): boo
  *
  * An extension cannot read a file only this user can read, so it pairs instead: it asks
  * (`POST /api/companion/pair`), the user approves on the Edge or in the admin, and it collects
- * its own token (`GET /api/companion/pair/:requestId`), which the socket (`/companion/ws`) then
+ * its own token (`POST /api/companion/pair/:requestId`), which the socket (`/companion/ws`) then
  * asks for. Each of these checks the extension's origin itself, and the Host check still applies.
+ * Collecting is a POST because Chrome sends no `Origin` on an extension's GET to a host it holds a
+ * permission for, and a POST always carries it.
  * Approving and refusing are not here: they stay behind the secret.
  *
  * Matched on the method and the route Fastify matched, like `PUBLIC_ROUTES`.
  */
 export const COMPANION_ROUTES: ReadonlySet<string> = new Set([
   'POST /api/companion/pair',
-  'GET /api/companion/pair/:requestId',
+  'POST /api/companion/pair/:requestId',
   'GET /companion/ws',
 ])
 

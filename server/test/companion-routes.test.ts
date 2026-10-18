@@ -43,19 +43,20 @@ function pair(origin: string | undefined, body: unknown = { name: 'Chrome', inst
 }
 
 function collect(requestId: string, origin: string | null = ORIGIN) {
-  return app.inject({ method: 'GET', url: `/api/companion/pair/${requestId}`, headers: { host: HOST, ...(origin ? { origin } : {}) } })
+  return app.inject({ method: 'POST', url: `/api/companion/pair/${requestId}`, headers: { host: HOST, ...(origin ? { origin } : {}) } })
 }
 
 describe('isCompanionRoute', () => {
   it('lists the three routes the extension reaches without the access secret, by method', () => {
     expect(isCompanionRoute('POST', '/api/companion/pair')).toBe(true)
-    expect(isCompanionRoute('get', '/api/companion/pair/:requestId')).toBe(true)
+    expect(isCompanionRoute('post', '/api/companion/pair/:requestId')).toBe(true)
     expect(isCompanionRoute('GET', '/companion/ws')).toBe(true)
     expect(isCompanionRoute('GET', '/api/companion/pair')).toBe(false)
-    expect(isCompanionRoute('POST', '/api/companion/pair/:requestId')).toBe(false)
+    // A GET would arrive without the extension's Origin: Chrome leaves it off.
+    expect(isCompanionRoute('GET', '/api/companion/pair/:requestId')).toBe(false)
     expect(isCompanionRoute('HEAD', '/api/companion/pair/:requestId')).toBe(false)
     expect(isCompanionRoute('POST', '/api/companion/requests/:requestId/approve')).toBe(false)
-    expect(isCompanionRoute('GET', '/api/companion/pair/abc')).toBe(false)
+    expect(isCompanionRoute('POST', '/api/companion/pair/abc')).toBe(false)
     expect(isCompanionRoute('GET', undefined)).toBe(false)
     expect(isPublicRoute('POST', '/api/companion/pair')).toBe(false)
   })
@@ -160,7 +161,7 @@ describe('companion routes', () => {
     const body = JSON.stringify({ name: 'Chrome', installId: INSTALL })
     const res = await remote(port, { method: 'POST', path: '/api/companion/pair', host, headers: { 'content-type': 'application/json', origin: ORIGIN }, body })
     expect(res.status).toBe(404)
-    expect((await remote(port, { path: '/api/companion/pair/x', host, headers: { origin: ORIGIN } })).status).toBe(404)
+    expect((await remote(port, { method: 'POST', path: '/api/companion/pair/x', host, headers: { origin: ORIGIN } })).status).toBe(404)
     expect((await remote(port, { method: 'POST', path: '/api/companion/requests/x/approve', host })).status).toBe(404)
     const off = await app.inject({ method: 'PUT', url: '/api/devices/settings', headers: { host: HOST, ...auth }, payload: { enabled: false } })
     expect(off.statusCode).toBe(200)

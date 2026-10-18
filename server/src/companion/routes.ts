@@ -1,9 +1,10 @@
 /**
  * Pairing the browser extension. Two audiences, never mixed:
  *
- * - the extension: `POST /api/companion/pair` and `GET /api/companion/pair/:requestId`. They answer
+ * - the extension: `POST /api/companion/pair` and `POST /api/companion/pair/:requestId`. They answer
  *   without the access secret (see `isCompanionRoute`), so each one checks the extension origin
- *   itself; a web page cannot send a `chrome-extension://` origin.
+ *   itself; a web page cannot send a `chrome-extension://` origin. Collecting is a POST, not a GET:
+ *   Chrome leaves `Origin` off an extension's GET to a host it has a permission for.
  * - the Edge and the admin, on this Mac: approve and refuse, behind the access secret like
  *   everything else.
  *
@@ -70,7 +71,7 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
     return result
   })
 
-  app.get<Params>('/api/companion/pair/:requestId', { onRequest: localOnly }, async (req, reply) => {
+  app.post<Params>('/api/companion/pair/:requestId', { onRequest: localOnly }, async (req, reply) => {
     const origin = extensionOrigin(req)
     if (origin === null) return fail(reply, 403, 'companion.originNotAllowed')
     reply.header('cache-control', 'no-store')
