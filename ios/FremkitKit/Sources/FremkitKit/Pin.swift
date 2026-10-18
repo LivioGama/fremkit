@@ -46,7 +46,7 @@ public enum PinDecision: Equatable, Sendable {
 /// The pin, applied to the TLS challenge. Holds `observedKeyHash` and `rejectedPin`, written from
 /// URLSession's delegate queue and read from the caller's task: both are behind `lock`, which is
 /// why the class can be `@unchecked Sendable`. Everything else is immutable.
-public final class PinnedSession: NSObject, URLSessionDelegate, @unchecked Sendable {
+public final class PinnedSession: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     /// The expected pin, or nil for first-contact mode: record what the server presents (so the
     /// app can show its words before trusting it) and trust nothing.
     public let keyHash: String?
@@ -85,11 +85,19 @@ public final class PinnedSession: NSObject, URLSessionDelegate, @unchecked Senda
         }
     }
 
+    /// No redirects: a redirect would take the device cookie and the pin's trust somewhere the app
+    /// did not choose. The 3xx itself becomes the response.
+    public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                           newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+
     /// Decides, and records what an allowed host presented.
     func apply(host: String, presented: String?) -> PinDecision {
         let decision = Self.decide(host: host, presented: presented, expected: keyHash, hosts: hosts)
         lock.withLock {
-            if decision != .defaultHandling { observed = presented }
+            // A challenge whose key could not be read must not erase one that was.
+            if decision != .defaultHandling, let presented { observed = presented }
             if case .reject = decision { rejected = true }
         }
         return decision

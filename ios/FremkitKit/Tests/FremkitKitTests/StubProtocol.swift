@@ -6,6 +6,8 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
     enum Answer: Sendable {
         case status(Int, String)
         case failure(URLError.Code)
+        /// A 302 to `location`.
+        case redirect(String)
     }
 
     struct Seen: Sendable {
@@ -47,6 +49,14 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
                                            headerFields: ["Content-Type": "application/json"])!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(text.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        case let .redirect(location)?:
+            let response = HTTPURLResponse(url: request.url!, statusCode: 302, httpVersion: "HTTP/1.1",
+                                           headerFields: ["Location": location])!
+            var next = request
+            next.url = URL(string: location)
+            client?.urlProtocol(self, wasRedirectedTo: next, redirectResponse: response)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocolDidFinishLoading(self)
         case let .failure(code)?:
             client?.urlProtocol(self, didFailWithError: URLError(code))

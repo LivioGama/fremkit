@@ -82,6 +82,13 @@ final class PinDecisionTests: XCTestCase {
         XCTAssertTrue(session.rejectedPin)
     }
 
+    func testAnUnreadableKeyDoesNotEraseARecordedOne() {
+        let session = PinnedSession(keyHash: nil, hosts: hosts)
+        _ = session.apply(host: "studio.local", presented: "abc")
+        _ = session.apply(host: "studio.local", presented: nil)
+        XCTAssertEqual(session.observedKeyHash, "abc")
+    }
+
     func testPinnedSessionDoesNotFlagATrustedHost() {
         let session = PinnedSession(keyHash: "abc", hosts: hosts)
         XCTAssertEqual(session.apply(host: "studio.local", presented: "abc"), .trust)

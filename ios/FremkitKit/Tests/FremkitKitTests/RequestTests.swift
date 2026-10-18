@@ -46,6 +46,14 @@ final class HTTPProberTests: XCTestCase {
         XCTAssertEqual(outcome, .unreachable)
     }
 
+    func testUnreachableOnARedirectItDoesNotFollow() async {
+        StubProtocol.answer("192.0.2.28", with: .redirect("https://198.51.100.28:4243/api/devices/me"))
+        StubProtocol.answer("198.51.100.28", with: .status(200, me))
+        let outcome = await HTTPProber(configuration: StubProtocol.configuration).probe(host: "192.0.2.28", port: 4243, mac: sampleMac)
+        XCTAssertEqual(outcome, .unreachable)
+        XCTAssertTrue(StubProtocol.requests(to: "198.51.100.28").isEmpty)
+    }
+
     func testPinMismatchWhenThePinRejectsTheKey() async {
         let outcome = await HTTPProber(transport: { _, _ in .pinRejected }).probe(host: "192.0.2.27", port: 4243, mac: sampleMac)
         XCTAssertEqual(outcome, .pinMismatch)
@@ -168,9 +176,53 @@ final class PairClientTests: XCTestCase {
         XCTAssertEqual(policies.items.first?.hosts, ["studio.local", "192.0.2.39"])
     }
 
-    func testErrorsNeverCarryTheToken() {
-        let errors: [PairError] = [.rejected("m"), .limited("m"), .wrongMac, .unreachable, .invalidRequest]
-        for error in errors { XCTAssertFalse("\(error)".contains("tok")) }
+    func testErrorsCarryOnlyTheServersMessage() async {
+        let secret = "tok-secret-0451"
+        StubProtocol.answer("192.0.2.40", with: .status(403, #"{"error":"Wrong code","token":"\#(secret)","deviceId":"d"}"#))
+        StubProtocol.answer("192.0.2.41", with: .status(429, #"{"token":"\#(secret)","error":"Too many tries"}"#))
+        for (host, expected) in [("192.0.2.40", PairError.rejected("Wrong code")), ("192.0.2.41", .limited("Too many tries"))] {
+            do {
+                _ = try await pair(PairClient(configuration: StubProtocol.configuration), hosts: [host])
+                XCTFail("paired")
+            } catch {
+                XCTAssertEqual(error as? PairError, expected)
+                XCTAssertFalse("\(error)".contains(secret))
+                XCTAssertFalse(String(reflecting: error).contains(secret))
+            }
+        }
+    }
+
+    func testDropsATrailingDotFromTheMacsName() async throws {
+        StubProtocol.answer("192.0.2.42", with: .status(200, #"{"token":"t","deviceId":"d"}"#))
+        let policies = Recorder<PinPolicy>()
+        let client = PairClient(transport: { request, policy in
+            policies.add(policy)
+            return await PinnedTransport.send(request, policy: policy, configuration: StubProtocol.configuration)
+        })
+        let mac = try await pair(client, hosts: ["Studio.local.", "192.0.2.42"])
+        XCTAssertEqual(mac.host, "Studio.local")
+        XCTAssertEqual(policies.items.first?.hosts, ["Studio.local", "192.0.2.42"])
+    }
+
+    func testRefusesARedirect() async {
+        StubProtocol.answer("192.0.2.43", with: .redirect("https://198.51.100.43:4243/api/pair"))
+        StubProtocol.answer("198.51.100.43", with: .status(200, #"{"token":"t","deviceId":"d"}"#))
+        do {
+            _ = try await pair(PairClient(configuration: StubProtocol.configuration), hosts: ["192.0.2.43"])
+            XCTFail("followed the redirect")
+        } catch {
+            XCTAssertEqual(error as? PairError, .unreachable)
+        }
+        XCTAssertTrue(StubProtocol.requests(to: "198.51.100.43").isEmpty)
+    }
+
+    func testPolicyPrintingNeverShowsThePin() {
+        let policy = PinPolicy(keyHash: SPKIFixture.keyHash, hosts: ["studio.local"])
+        var dumped = ""
+        dump(policy, to: &dumped)
+        let text = "\(policy) \(String(reflecting: policy)) \(dumped)"
+        XCTAssertFalse(text.contains(SPKIFixture.keyHash))
+        XCTAssertTrue(text.contains("studio.local"))
     }
 
     func testViewportClampsToTheServersBounds() {

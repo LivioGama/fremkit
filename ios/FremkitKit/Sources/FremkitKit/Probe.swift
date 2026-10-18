@@ -54,6 +54,13 @@ public struct PinPolicy: Equatable, Sendable {
     }
 }
 
+/// Printing a policy never shows the pin.
+extension PinPolicy: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public var description: String { "PinPolicy(hosts: \(hosts.sorted()))" }
+    public var debugDescription: String { description }
+    public var customMirror: Mirror { Mirror(self, children: ["keyHash": redacted, "hosts": hosts.sorted()]) }
+}
+
 /// How a pinned request ended.
 public enum Exchange: Sendable {
     case response(status: Int, body: Data)

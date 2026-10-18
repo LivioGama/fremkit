@@ -63,6 +63,21 @@ final class PairingLinkTests: XCTestCase {
         XCTAssertNil(PairingLink(url: URL(string: "fremkit://unpair?\(valid)")!))
     }
 
+    func testDropsATrailingDotFromTheHost() throws {
+        let parsed = try XCTUnwrap(link("h=Studio.local.&a=192.0.2.10&p=4243&c=ABCDEFGH&k=\(Self.key)"))
+        XCTAssertEqual(parsed.host, "Studio.local")
+    }
+
+    func testPrintingNeverShowsTheKeyOrCode() throws {
+        let parsed = try XCTUnwrap(link(valid))
+        var dumped = ""
+        dump(parsed, to: &dumped)
+        let text = "\(parsed) \(String(reflecting: parsed)) \(dumped)"
+        XCTAssertFalse(text.contains(Self.key))
+        XCTAssertFalse(text.contains("ABCDEFGH"))
+        XCTAssertTrue(dumped.contains("studio.local"))
+    }
+
     func testRefusesABadCode() {
         XCTAssertNil(link("h=studio.local&a=192.0.2.10&p=4243&c=ABCDEFG0&k=\(Self.key)"))
     }

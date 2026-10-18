@@ -44,7 +44,7 @@ public struct PairingLink: Equatable, Sendable {
             guard fields[item.name] == nil, let value = item.value else { return nil }
             fields[item.name] = value
         }
-        guard let host = fields["h"], isLocalName(host),
+        guard let host = fields["h"].map(trimmingTrailingDot), isLocalName(host),
               let address = fields["a"], isIPLiteral(address),
               let portText = fields["p"], let port = parsePort(portText),
               let codeText = fields["c"], let code = normaliseCode(codeText),
@@ -53,8 +53,23 @@ public struct PairingLink: Equatable, Sendable {
     }
 }
 
-/// `name.local`, each label letters, digits and hyphens: what Bonjour gives a Mac.
+/// Printing a link never shows its pin (nor its code, which is as good as a password while it lives).
+extension PairingLink: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public var description: String { "PairingLink(\(host), \(address):\(port))" }
+    public var debugDescription: String { description }
+    public var customMirror: Mirror {
+        Mirror(self, children: ["host": host, "address": address, "port": port, "code": redacted, "keyHash": redacted])
+    }
+}
+
+/// A fully qualified name's trailing dot dropped: `studio.local.` is `studio.local`.
+func trimmingTrailingDot(_ s: String) -> String {
+    s.hasSuffix(".") ? String(s.dropLast()) : s
+}
+
+/// `name.local` (or `name.local.`), each label letters, digits and hyphens: what Bonjour gives a Mac.
 func isLocalName(_ s: String) -> Bool {
+    let s = trimmingTrailingDot(s)
     guard s.lowercased().hasSuffix(".local") else { return false }
     let labels = s.split(separator: ".", omittingEmptySubsequences: false)
     return labels.count >= 2 && labels.allSatisfy { label in

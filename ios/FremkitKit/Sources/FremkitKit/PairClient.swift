@@ -61,6 +61,7 @@ public struct PairClient: Sendable {
     ///   - macName: the Mac's name for people, stored in the record.
     public func pair(hosts: [String], port: Int, keyHash: String, code: String, name: String, viewport: Viewport,
                      macName: String) async throws -> PairedMac {
+        let hosts = hosts.map(trimmingTrailingDot)
         let policy = PinPolicy(keyHash: keyHash, hosts: Set(hosts))
         let body = try JSONEncoder().encode(Body(code: code, name: name, viewport: viewport))
         var sawWrongMac = false

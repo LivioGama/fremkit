@@ -36,14 +36,23 @@ public struct PairedMac: Codable, Equatable, Sendable {
     }
 }
 
-/// Printing a pairing never shows its token or its pin.
-extension PairedMac: CustomStringConvertible, CustomDebugStringConvertible {
+/// Printing a pairing, `dump()` included, never shows its token or its pin.
+extension PairedMac: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
     public var description: String { "PairedMac(\(name), \(host), \(address):\(port), device \(deviceId))" }
     public var debugDescription: String { description }
+    public var customMirror: Mirror {
+        Mirror(self, children: ["host": host, "address": address, "port": port, "deviceId": deviceId, "name": name,
+                                "token": redacted, "keyHash": redacted])
+    }
 }
 
+/// What a secret prints as.
+let redacted = "<redacted>"
+
 public protocol CredentialStore: Sendable {
-    func load() -> PairedMac?
+    /// nil when nothing is stored (not paired). Throws when something is stored but cannot be read,
+    /// so a keychain failure is never mistaken for "not paired".
+    func load() throws -> PairedMac?
     func save(_ mac: PairedMac) throws
     func clear()
 }
@@ -69,22 +78,29 @@ public struct KeychainCredentialStore: CredentialStore {
          kSecUseDataProtectionKeychain: true]
     }
 
-    public func load() -> PairedMac? {
+    public func load() throws -> PairedMac? {
         var lookup = query
         lookup[kSecReturnData] = true
         lookup[kSecMatchLimit] = kSecMatchLimitOne
         var item: CFTypeRef?
-        guard SecItemCopyMatching(lookup as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
-        return try? JSONDecoder().decode(PairedMac.self, from: data)
+        let status = SecItemCopyMatching(lookup as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess else { throw KeychainError(status: status) }
+        guard let data = item as? Data else { throw KeychainError(status: errSecDecode) }
+        return try JSONDecoder().decode(PairedMac.self, from: data)
     }
 
+    /// Updates the stored item in place, adding it only when there is none: a failure between a
+    /// delete and an add would lose the pairing.
     public func save(_ mac: PairedMac) throws {
         let data = try JSONEncoder().encode(mac)
-        SecItemDelete(query as CFDictionary)
-        var item = query
-        item[kSecValueData] = data
-        item[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let status = SecItemAdd(item as CFDictionary, nil)
+        let changes: [CFString: Any] = [kSecValueData: data, kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
+        var status = SecItemUpdate(query as CFDictionary, changes as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = query
+            item.merge(changes) { _, new in new }
+            status = SecItemAdd(item as CFDictionary, nil)
+        }
         guard status == errSecSuccess else { throw KeychainError(status: status) }
     }
 
@@ -103,7 +119,7 @@ public final class MemoryCredentialStore: CredentialStore, @unchecked Sendable {
         stored = mac
     }
 
-    public func load() -> PairedMac? { lock.withLock { stored } }
+    public func load() throws -> PairedMac? { lock.withLock { stored } }
     public func save(_ mac: PairedMac) throws { lock.withLock { stored = mac } }
     public func clear() { lock.withLock { stored = nil } }
 }

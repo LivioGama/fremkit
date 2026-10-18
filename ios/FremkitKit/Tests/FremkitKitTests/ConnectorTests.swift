@@ -62,21 +62,24 @@ final class ConnectorTests: XCTestCase {
         XCTAssertEqual(sampleMac.updating(address: "198.51.100.7").token, "device-token")
     }
 
-    func testDescriptionNeverShowsTheTokenOrKey() {
-        let text = "\(sampleMac) \(String(reflecting: sampleMac))"
+    func testPrintingNeverShowsTheTokenOrKey() {
+        var dumped = ""
+        dump(sampleMac, to: &dumped)
+        let text = "\(sampleMac) \(String(reflecting: sampleMac)) \(dumped)"
         XCTAssertFalse(text.contains("device-token"))
         XCTAssertFalse(text.contains(SPKIFixture.keyHash))
+        XCTAssertTrue(dumped.contains("studio.local"))
     }
 }
 
 final class CredentialStoreTests: XCTestCase {
     func testMemoryStoreSavesLoadsAndClears() throws {
         let store = MemoryCredentialStore()
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
         try store.save(sampleMac)
-        XCTAssertEqual(store.load(), sampleMac)
+        XCTAssertEqual(try store.load(), sampleMac)
         store.clear()
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
     }
 
     func testPairedMacRoundTripsThroughJSON() throws {
