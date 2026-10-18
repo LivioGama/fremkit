@@ -39,6 +39,9 @@ const ExtensionSchema = z.object({
   installId: z.string().uuid(),
 })
 
+/** What a caller may hand `createExtension`: the fields the loader would validate on the next start. */
+const ExtensionInputSchema = ExtensionSchema.pick({ name: true, origin: true, installId: true })
+
 const DeviceSchema = z.discriminatedUnion('kind', [IpadSchema, ExtensionSchema])
 
 /** A version 1 record has no `kind`: every one of them is an iPad. */
@@ -180,20 +183,23 @@ export class DeviceStore {
     origin: string
     installId: string
   }): Promise<{ device: PublicDevice; token: string }> {
+    // Parsed before anything is written: a record the loader would refuse makes the next start
+    // move the whole file aside as corrupt, and every paired iPad with it.
+    const checked = ExtensionInputSchema.parse(input)
     return this.enqueue(async () => {
       const token = randomBytes(32).toString('base64url')
       const device: ExtensionDevice = {
         id: randomUUID(),
         kind: 'extension',
-        name: input.name,
+        name: checked.name,
         tokenHash: hashToken(token),
         pairedAt: this.now().toISOString(),
         lastSeen: null,
-        origin: input.origin,
-        installId: input.installId,
+        origin: checked.origin,
+        installId: checked.installId,
       }
       const kept = this.state.devices.filter(
-        (d) => !(d.kind === 'extension' && d.origin === input.origin && d.installId === input.installId),
+        (d) => !(d.kind === 'extension' && d.origin === checked.origin && d.installId === checked.installId),
       )
       await this.commit({ ...this.state, devices: [...kept, device] })
       return { device: toPublic(device), token }
