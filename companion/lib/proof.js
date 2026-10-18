@@ -31,12 +31,17 @@ export function newNonce() {
   return base64url(crypto.getRandomValues(new Uint8Array(32)))
 }
 
-/** base64url(HMAC-SHA256(key = sha256(token) raw bytes, PROOF_LABEL + nonce)). */
-export async function expectedMac(token, nonce) {
+/** HMAC-SHA256(key = sha256(token) raw bytes, PROOF_LABEL + nonce), as bytes. */
+async function macBytes(token, nonce) {
   const subtle = globalThis.crypto.subtle
   const key = await subtle.digest('SHA-256', utf8(token))
   const hmac = await subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  return base64url(new Uint8Array(await subtle.sign('HMAC', hmac, utf8(PROOF_LABEL + nonce))))
+  return new Uint8Array(await subtle.sign('HMAC', hmac, utf8(PROOF_LABEL + nonce)))
+}
+
+/** The proof the server should send, in base64url as it travels. */
+export async function expectedMac(token, nonce) {
+  return base64url(await macBytes(token, nonce))
 }
 
 /** Byte-wise comparison with no early exit, so the time taken says nothing of where they differ. */
@@ -50,6 +55,5 @@ export function sameBytes(a, b) {
 /** True when `mac` is the proof this token's record gives for this nonce. */
 export async function verifyProof(token, nonce, mac) {
   const got = fromBase64url(mac)
-  const want = fromBase64url(await expectedMac(token, nonce))
-  return sameBytes(got, want)
+  return sameBytes(got, await macBytes(token, nonce))
 }
