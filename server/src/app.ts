@@ -94,6 +94,8 @@ export interface AppOptions {
   uiDist?: string
   /** The widget SDK served as `/fremkit.js`. Defaults to the one in the checkout, see `paths.ts`. */
   bridgePath?: string
+  /** Only ever passed by the tests: the built-ins allowed WebRTC's `local` level (`widgets/webrtc.ts`). */
+  webrtcLocalBuiltins?: ReadonlySet<string>
   /** The wallpaper copied into a fresh background library. Defaults like `bridgePath`. */
   wallpaperPath?: string
   providers?: Provider[]
@@ -352,6 +354,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     bridgePath: opts.bridgePath ?? shippedPaths().bridgePath,
     port: opts.port,
     dev: process.env.FREMKIT_DEV === '1',
+    ...(opts.webrtcLocalBuiltins ? { webrtcLocalBuiltins: opts.webrtcLocalBuiltins } : {}),
   })
   await app.register(themeRoutes, { catalog: themes })
   await app.register(proxyRoutes, { catalog, store, secrets, cache: connCache })

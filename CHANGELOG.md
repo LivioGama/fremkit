@@ -79,6 +79,11 @@ tagged `vX.Y.Z`.
   page saying so.
   Scripts calling the server read the secret from
   `~/Library/Application Support/Fremkit/access-4242.token` (see the README).
+- **Widgets can no longer use WebRTC.** A peer connection was a way for a widget to send its
+  data off the Mac with no network permission and no consent dialog; the constructors are now
+  gone before any widget code runs, and a second page of a widget runs no script at all. A
+  built-in widget that needs a peer on this Mac can be given a narrow, local-only WebRTC; a
+  widget from the registry never can.
 
 ## 0.4.1 — 2026-10-16
 
