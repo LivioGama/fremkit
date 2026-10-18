@@ -262,7 +262,9 @@ export async function buildLayout(deps: ShareDeps, req: ExportRequest, locale?: 
       if (verdict === 'connection' || verdict === 'unknown' || verdict === 'invalid') { leftOut(verdict); continue }
       // Every value is read by the net, closed ones too: an enum value can still be a name.
       if (!clean({ [key]: value }, ctx)) { leftOut('personal'); continue }
-      if (verdict === 'optional') {
+      // An empty free-text field says nothing about anyone: it travels as the default it is.
+      const empty = value === '' || (Array.isArray(value) && !value.length)
+      if (verdict === 'optional' && !empty) {
         const id = `${instanceId}:${key}`
         const included = include.has(id)
         report.optional.push({ id, instanceId, widget: label, key, label: fieldLabel, preview: previewValue(value), included })

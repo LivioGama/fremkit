@@ -119,7 +119,8 @@ export function readLayout(raw: unknown, deps: ImportDeps, locale?: Locale): Imp
       const field = Object.hasOwn(schema, k) ? schema[k] : undefined
       const verdict = classifySetting(field, value)
       if ((verdict === 'keep' || verdict === 'optional') && !mentions(value, connectionIds)) settings[k] = value
-      else dropped.settings++
+      // A connection setting is blanked on purpose and asked about below; it is not a loss.
+      else if (verdict !== 'connection') dropped.settings++
     }
     widget.settings = settings
     for (const [k, field] of Object.entries(schema)) {

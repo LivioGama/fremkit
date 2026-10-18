@@ -158,6 +158,14 @@ describe('buildLayout', () => {
     expect(report.removed).toContainEqual(expect.objectContaining({ instanceId: 'sc-1', key: 'items', reason: 'personal' }))
   })
 
+  it('carries an empty free-text field as is, without asking', async () => {
+    const config = sampleConfig()
+    config.widgets['my-clock'].settings.label = ''
+    const { file, report } = await buildLayout(deps(config), { scope: 'setup' })
+    expect(file.widgets.w1.settings.label).toBe('')
+    expect(report.optional).toEqual([])
+  })
+
   it('shares a ticked free-text setting', async () => {
     const { file, report } = await buildLayout(deps(sampleConfig()), { scope: 'setup', include: ['my-clock:label'] })
     expect(file.widgets.w1.settings.label).toBe('Kitchen')
@@ -250,6 +258,8 @@ describe('readLayout', () => {
     expect(report.widgets.find((w) => w.widgetId === 'not-installed-anywhere')?.status).toBe('missing')
     expect(report.dropped.images).toBe(1)
     expect(report.dropped.placements).toBeGreaterThanOrEqual(2)
+    // The connection settings were blanked on purpose and are asked about, not counted as lost.
+    expect(report.dropped.settings).toBe(3)
   })
 })
 
