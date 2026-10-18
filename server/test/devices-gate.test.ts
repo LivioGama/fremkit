@@ -177,6 +177,17 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
     }
   })
 
+  it('keeps the helper\'s brightness hook off the remote listener, even from this Mac', async () => {
+    // The request comes from 127.0.0.1, as the helper's would, but over the remote listener.
+    const res = await remote(port, {
+      method: 'POST', path: '/api/hooks/brightness',
+      headers: { ...cookie(token), 'content-type': 'application/json' },
+      body: JSON.stringify({ available: true, value: 10 }),
+    })
+    expect(res.status).toBe(404)
+    expect((await app.inject({ method: 'POST', url: '/api/hooks/brightness', payload: { available: true, value: 10 } })).statusCode).toBe(204)
+  })
+
   it('serves the public shell without a token', async () => {
     const index = await remote(port, { path: '/' })
     expect(index.status).toBe(200)
