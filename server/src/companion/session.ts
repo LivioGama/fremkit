@@ -11,6 +11,9 @@ import { isLocalSdp, PROTOCOL, type Control, type ExtensionMessage, type ServerM
 /** Widget frames that may watch the share at once. */
 export const MAX_RECEIVERS = 4
 
+/** Refused receiver ids remembered for one share, at most. */
+const MAX_REFUSED = MAX_RECEIVERS * 4
+
 /** A share whose extension said nothing (`tab.started`, `tab.meta`) for this long is over. */
 export const STALE_MS = 10_000
 
@@ -37,6 +40,11 @@ export interface CompanionState {
      * server restarted under a live peer — announces itself again with the same id.
      */
     receivers: string[]
+    /**
+     * Receivers whose offer was refused in this share (it named more than this Mac). Their frame
+     * stops asking and says so until the share changes: asking again gets the same offer.
+     */
+    refused: string[]
   }
 }
 
@@ -83,6 +91,8 @@ export class CompanionSession {
   private metaTimer: ReturnType<typeof setTimeout> | null = null
   /** In registration order, so the first entry of an instance is its oldest. */
   private readonly receivers = new Map<string, Receiver>()
+  /** Receivers whose offer was refused in the current share; cleared when the share changes or ends. */
+  private readonly refused = new Set<string>()
 
   constructor(opts: CompanionSessionOptions) {
     this.now = opts.now ?? Date.now
@@ -150,8 +160,12 @@ export class CompanionSession {
         // The receiver stays known with no offer, so its frame waits rather than asking again.
         if (!isLocalSdp(msg.sdp)) {
           this.send(deviceId, { type: 'tab.refused', sessionId: msg.sessionId, reason: 'offer', receiverId: msg.receiverId })
-          if (receiver && receiver.offer !== null) {
+          // Remembered for a receiver this server knows, so the set stays bounded by the receivers.
+          if (receiver) {
             receiver.offer = null
+            this.refused.add(msg.receiverId)
+            // Frames that reload make new ids: the oldest refusals go first past a few rounds.
+            if (this.refused.size > MAX_REFUSED) this.refused.delete(this.refused.values().next().value as string)
             this.changed()
           }
           return
@@ -174,7 +188,7 @@ export class CompanionSession {
     const known = this.receivers.get(receiverId)
     if (known) {
       if (known.instanceId !== instanceId) return false
-      if (known.offer === null && this.share) this.send(this.share.deviceId, { type: 'tab.view', receiverId })
+      if (known.offer === null && this.share && !this.refused.has(receiverId)) this.send(this.share.deviceId, { type: 'tab.view', receiverId })
       return true
     }
     if (this.receivers.size >= MAX_RECEIVERS) {
@@ -185,7 +199,8 @@ export class CompanionSession {
       this.drop(oldest)
     }
     this.receivers.set(receiverId, { instanceId, offer: null })
-    if (this.share) this.send(this.share.deviceId, { type: 'tab.view', receiverId })
+    // A refused receiver that left and came back is not asked of the extension again in this share.
+    if (this.share && !this.refused.has(receiverId)) this.send(this.share.deviceId, { type: 'tab.view', receiverId })
     // The frame reads its id in `receivers` to know it is known, so a new one is news.
     this.changed()
     return true
@@ -226,6 +241,7 @@ export class CompanionSession {
         meta: share?.meta ?? null,
         offers,
         receivers: [...this.receivers.keys()],
+        refused: share ? [...this.refused] : [],
       },
     }
   }
@@ -264,11 +280,12 @@ export class CompanionSession {
       return
     }
     this.clearMetaTimer()
+    if (!current) this.refused.clear()
     this.share = { deviceId, sessionId: session.sessionId, meta: session.meta, lastSeen: this.now(), resumed: current?.resumed ?? true }
     this.send(deviceId, { type: 'tab.accepted', sessionId: session.sessionId })
     // Receivers that re-announced themselves first, or are still waiting on an offer, ask now.
     for (const [receiverId, r] of this.receivers) {
-      if (r.offer === null) this.send(deviceId, { type: 'tab.view', receiverId })
+      if (r.offer === null && !this.refused.has(receiverId)) this.send(deviceId, { type: 'tab.view', receiverId })
     }
     this.changed()
   }
@@ -290,6 +307,7 @@ export class CompanionSession {
       // The widget frames keep their receiver ids: an offer from the previous tab is worthless,
       // so each one is asked again of the new sharer, after it heard it was accepted.
       for (const r of this.receivers.values()) r.offer = null
+      this.refused.clear()
       this.clearMetaTimer()
       this.share = { deviceId, sessionId, meta, lastSeen: this.now(), resumed: false }
       this.send(deviceId, { type: 'tab.accepted', sessionId })
@@ -341,6 +359,7 @@ export class CompanionSession {
     this.clearMetaTimer()
     this.share = null
     this.receivers.clear()
+    this.refused.clear()
     this.changed()
   }
 }

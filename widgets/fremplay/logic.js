@@ -43,6 +43,9 @@
    * - `view`: ask the extension for an offer — on a new share, when the receiver has neither a
    *   pending view nor a peer, or when the server does not list it (it restarted). Not on a
    *   direct switch from one share to another: the session asks every receiver it knows itself.
+   * - `refused` (set only when true): the server lists this receiver in `tab.refused`, its offer
+   *   named more than this Mac. Nothing is answered or asked: asking again gets the same offer.
+   *   The frame says so until the share changes, which clears the list.
    *
    * An offer stays in the snapshot after it was answered, so `lastOffer` is kept across a dead
    * peer and only forgotten with the share: a peer that died is replaced by viewing again, never
@@ -64,6 +67,11 @@
     var receivers = Array.isArray(snap.tab.receivers) ? snap.tab.receivers : null
     var known = receivers === null || receivers.indexOf(local.receiverId) >= 0
     var lastOffer = reset ? null : local.lastOffer
+    var refused = Array.isArray(snap.tab.refused) && snap.tab.refused.indexOf(local.receiverId) >= 0
+    if (refused) {
+      out.refused = true
+      return out
+    }
     if (typeof offer === 'string' && offer !== lastOffer) out.answer = offer
     else if (reset) out.view = !switched(local) || !known
     else if (!local.viewed && !local.live) out.view = true

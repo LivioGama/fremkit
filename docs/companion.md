@@ -129,6 +129,7 @@ at any time in `chrome://extensions`. The extension asks for no access to every 
   keeps trying on its own.
 - *"The Edge refused the video connection"* (in the extension's popup) — the browser offered an
   address that is not one of this Mac's (a network interface that changed during the share, for
-  instance), and Fremkit relays nothing else. That widget gets no picture; the share goes on for
+  instance), and Fremkit relays nothing else. That widget gets no picture and says *The Edge
+  refused this video connection* until the next share, without asking again; the share goes on for
   any other widget watching it, and the toolbar icon flashes **!**. Send the video again.
 - *"Fremplay and Fremkit speak different versions: update Fremkit"*

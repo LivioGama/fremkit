@@ -18,7 +18,7 @@ interface Local {
   receiverId: string; sessionId: string | null; viewed: boolean; pending: boolean; live: boolean; connected: boolean
   lastOffer: string | null; hidden: boolean
 }
-interface Plan { hold: boolean; reset: boolean; view: boolean; answer: string | null }
+interface Plan { hold: boolean; reset: boolean; view: boolean; answer: string | null; refused?: boolean }
 interface Logic {
   stateOf(snapshot: unknown): string | null
   plan(snapshot: unknown, local: Local): Plan
@@ -191,6 +191,18 @@ describe('fremplay/logic.js plan', () => {
     expect(plan(sharing('s1', { [RECEIVER]: 'v=0 x' }), fresh({ hidden: true }))).toEqual({ hold: false, reset: true, view: false, answer: null })
     expect(plan(snap(), fresh({ sessionId: 's1', viewed: true, live: true }))).toEqual({ hold: false, reset: true, view: false, answer: null })
     expect(plan(snap(), fresh())).toEqual({ hold: false, reset: false, view: false, answer: null })
+  })
+
+  it('neither answers nor views once the server lists its receiver as refused', async () => {
+    const { plan } = await loadLogic()
+    const refused = (offers: Record<string, string> = {}) =>
+      ({ ...sharing('s1', offers, [RECEIVER]), tab: { ...sharing('s1', offers, [RECEIVER]).tab, refused: [RECEIVER] } })
+    const local = fresh({ sessionId: 's1', viewed: true })
+    expect(plan(refused(), local)).toEqual({ hold: false, reset: false, view: false, answer: null, refused: true })
+    expect(plan(refused({ [RECEIVER]: 'v=0 x' }), fresh({ sessionId: 's1' }))).toEqual({ hold: false, reset: false, view: false, answer: null, refused: true })
+    // Another receiver's refusal is not this one's.
+    const theirs = { ...sharing('s1', {}, [RECEIVER]), tab: { ...sharing('s1', {}, [RECEIVER]).tab, refused: [OTHER] } }
+    expect(plan(theirs, fresh({ sessionId: 's1' })).refused).toBeUndefined()
   })
 
   it('never views under a protocol it does not speak', async () => {
@@ -437,6 +449,36 @@ describe('the fremplay page', () => {
       expect(page.nodes.get('sub')!.textContent).toBe('La vidéo n’arrive pas : arrêtez le partage puis relancez-le')
       expect(page.nodes.get('mark')!.hidden).toBe(true)
       expect(names(page)).toEqual(['view', 'leave', 'view'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops asking once its offer is refused, says so, and starts again with the next share', async () => {
+    vi.useFakeTimers()
+    try {
+      const page = await loadPage()
+      page.publish(sharing('s1'))
+      const receiverId = page.commands[0][1].receiverId as string
+      const refusedSnap = (sessionId: string) => {
+        const s = sharing(sessionId, {}, [receiverId])
+        return { ...s, tab: { ...s.tab, refused: [receiverId] } }
+      }
+      page.publish(refusedSnap('s1'))
+      expect(page.nodes.get('sub')!.textContent).toBe('L’Edge a refusé cette connexion vidéo.')
+      expect(page.nodes.get('mark')!.hidden).toBe(true)
+      // The 10 s timer no longer rejoins: no leave, no view, however long it waits.
+      await vi.advanceTimersByTimeAsync(35_000)
+      page.publish(refusedSnap('s1'))
+      expect(names(page)).toEqual(['view'])
+      // Hidden and shown again: still refused, still not asking.
+      page.setVisibility('hidden')
+      page.setVisibility('visible')
+      expect(names(page).filter((n) => n === 'view')).toEqual(['view'])
+      // A new share clears it: the frame views again and the line goes.
+      page.publish(sharing('s2', {}, []))
+      expect(names(page).filter((n) => n === 'view')).toEqual(['view', 'view'])
+      expect(page.nodes.get('sub')!.textContent).not.toBe('L’Edge a refusé cette connexion vidéo.')
     } finally {
       vi.useRealTimers()
     }

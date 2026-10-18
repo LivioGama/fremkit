@@ -46,7 +46,7 @@ describe('CompanionSession', () => {
     expect(t.session.snapshot()).toEqual({
       protocol: 2,
       extensions: { connected: 1, paired: 3 },
-      tab: { state: 'idle', sessionId: null, device: null, meta: null, offers: {}, receivers: [] },
+      tab: { state: 'idle', sessionId: null, device: null, meta: null, offers: {}, receivers: [], refused: [] },
     })
     t.session.disconnect('a')
     expect(t.session.snapshot().extensions.connected).toBe(0)
@@ -60,7 +60,7 @@ describe('CompanionSession', () => {
     t.start('a')
     expect(t.to('a')).toEqual([{ type: 'tab.accepted', sessionId: S1 }])
     expect(t.changes()).toBeGreaterThan(before)
-    expect(t.session.snapshot().tab).toEqual({ state: 'sharing', sessionId: S1, device: 'Browser a', meta: META, offers: {}, receivers: [] })
+    expect(t.session.snapshot().tab).toEqual({ state: 'sharing', sessionId: S1, device: 'Browser a', meta: META, offers: {}, receivers: [], refused: [] })
   })
 
   it('a share from a second extension replaces the first and stops it', () => {
@@ -263,7 +263,7 @@ describe('CompanionSession', () => {
     t.start('a')
     t.session.view(R(1), 'w1')
     t.session.onMessage('a', { type: 'tab.stopped', sessionId: S1 })
-    expect(t.session.snapshot().tab).toEqual({ state: 'idle', sessionId: null, device: null, meta: null, offers: {}, receivers: [] })
+    expect(t.session.snapshot().tab).toEqual({ state: 'idle', sessionId: null, device: null, meta: null, offers: {}, receivers: [], refused: [] })
   })
 
   it('no meta for 10 s clears the share', () => {
@@ -350,6 +350,36 @@ describe('CompanionSession refused offer', () => {
     // The share and the other receiver go on; the refused one stays known, with no offer, so its
     // frame waits instead of asking again.
     expect(t.session.snapshot().tab).toMatchObject({ state: 'sharing', sessionId: S1, offers: { [R(2)]: 'v=0 local' }, receivers: [R(1), R(2)] })
+  })
+
+  it('lists a refused receiver until the share changes, and never asks the extension for it again', () => {
+    const t = setup()
+    t.hello('a')
+    t.start('a', S1)
+    t.session.view(R(1), 'w1')
+    const lan = 'v=0\r\na=candidate:1 1 udp 2122260223 198.51.100.7 54321 typ host\r\n'
+    t.session.onMessage('a', { type: 'tab.offer', sessionId: S1, receiverId: R(1), sdp: lan })
+    expect(t.session.snapshot().tab).toMatchObject({ receivers: [R(1)], refused: [R(1)] })
+    t.clear()
+    // The frame's 10 s timer: leave, then view again. Neither reaches the extension.
+    t.session.view(R(1), 'w1')
+    t.session.leave(R(1), 'w1')
+    t.session.view(R(1), 'w1')
+    expect(t.to('a').filter((m) => m.type === 'tab.view')).toEqual([])
+    expect(t.session.snapshot().tab.refused).toEqual([R(1)])
+    // A bad offer for a receiver nobody registered is refused, not remembered.
+    t.session.onMessage('a', { type: 'tab.offer', sessionId: S1, receiverId: R(3), sdp: lan })
+    expect(t.session.snapshot().tab.refused).toEqual([R(1)])
+    // A new share starts clean, and asks for the receiver again.
+    t.clear()
+    t.start('a', S2)
+    expect(t.session.snapshot().tab.refused).toEqual([])
+    expect(t.to('a')).toContainEqual({ type: 'tab.view', receiverId: R(1) })
+    // And no share lists none.
+    t.session.onMessage('a', { type: 'tab.offer', sessionId: S2, receiverId: R(1), sdp: lan })
+    expect(t.session.snapshot().tab.refused).toEqual([R(1)])
+    t.session.onMessage('a', { type: 'tab.stopped', sessionId: S2 })
+    expect(t.session.snapshot().tab).toMatchObject({ state: 'idle', refused: [] })
   })
 
   it('takes back a receiver\'s earlier offer when its new one is refused', () => {
