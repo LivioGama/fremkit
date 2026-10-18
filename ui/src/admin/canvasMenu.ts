@@ -21,6 +21,8 @@ export interface MenuUi {
    * with it, so the problem a badge shows is one click from its cure.
    */
   fix?(instanceId: string): { label: string; run: () => void } | null
+  /** "Update to vX" for a widget with a newer version in the registry: news, not a fix. */
+  update?(instanceId: string): { label: string; run: () => void } | null
 }
 
 /** The inspector section `revealSection` opens for a page's own background. */
@@ -106,10 +108,12 @@ export function widgetMenu(s: AdminStore, instanceId: string, ui: MenuUi): MenuE
   const hasSettings = !!manifest && Object.keys(manifest.settingsSchema ?? {}).length > 0
 
   const fix = ui.fix?.(instanceId)
+  const update = ui.update?.(instanceId)
 
   return tidy([
     fix && { label: fix.label, run: fix.run },
-    fix && SEPARATOR,
+    update && { label: update.label, run: update.run },
+    (fix || update) && SEPARATOR,
     { label: t('admin.menu.settings'), run: () => { s.select(instanceId); ui.revealSection(hasSettings ? 'widget.settings' : '') } },
     SEPARATOR,
     { label: t('admin.menu.showTitle'), checked: widget.showTitle, run: () => s.updateInstance(instanceId, { showTitle: !widget.showTitle }) },
