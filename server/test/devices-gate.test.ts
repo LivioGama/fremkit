@@ -7,6 +7,7 @@ import { buildApp } from '../src/app.js'
 import { RemoteListener } from '../src/devices/listener.js'
 import { remoteAccess } from '../src/devices/allowlist.js'
 import { readCookie } from '../src/devices/gate.js'
+import { generateToken } from '../src/http/access.js'
 import { hasOpenssl, remote, tlsMaterial, upgrade } from './helpers/remote.js'
 
 let dir: string
@@ -253,5 +254,75 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
     expect((await app.inject({ method: 'PUT', url: '/api/config', headers: { origin: `https://127.0.0.1:${port}` }, payload: {} })).statusCode).toBe(403)
     const local = await app.inject({ url: '/widgets/clock/index.html' })
     expect(String(local.headers['content-security-policy'])).toContain('http://127.0.0.1:4242')
+  })
+})
+
+describe.skipIf(!hasOpenssl)('the remote gate beside the local access secret', () => {
+  const ACCESS_PORT = 4301
+  const accessToken = generateToken()
+  let adir: string
+  let aapp: FastifyInstance
+  let alistener: RemoteListener
+  let aport: number
+  let atoken: string
+  const aroutes: { method: string; url: string }[] = []
+
+  beforeAll(async () => {
+    adir = await mkdtemp(join(tmpdir(), 'fremkit-gate-access-'))
+    await writeFixture(adir)
+    aapp = await buildApp({
+      accessToken,
+      port: ACCESS_PORT,
+      dataDir: join(adir, 'data'),
+      widgetsDir: join(adir, 'widgets'),
+      uiDist: join(adir, 'ui'),
+      onRoute: (r: RouteOptions) => {
+        for (const method of [r.method].flat()) aroutes.push({ method, url: r.url })
+      },
+    })
+    alistener = new RemoteListener(aapp, 0)
+    const { key, cert } = await tlsMaterial()
+    await alistener.start(key, cert)
+    aport = alistener.port
+    aapp.pairing.setRemoteHosts(() => new Set([`127.0.0.1:${aport}`]))
+    ;({ token: atoken } = await aapp.pairing.store.create('iPad', { width: 1180, height: 820 }, null))
+  })
+  afterAll(async () => {
+    await alistener?.stop()
+    await aapp?.pairing.store.touch('none')
+    await aapp?.close()
+    await rm(adir, { recursive: true, force: true })
+  })
+
+  it('is a real 32-byte secret', () => {
+    expect(Buffer.from(accessToken, 'base64url').length).toBe(32)
+  })
+
+  it('lets a paired request through without the access secret', async () => {
+    const res = await remote(aport, { path: '/api/config', headers: cookie(atoken) })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body).screens).toBeDefined()
+    expect((await remote(aport, { path: '/' })).status).toBe(200)
+  })
+
+  it('still asks the access secret of a local request', async () => {
+    const host = `127.0.0.1:${ACCESS_PORT}`
+    expect((await aapp.inject({ url: '/api/config', headers: { host } })).statusCode).toBe(401)
+    // A device cookie means nothing on the loopback listener.
+    expect((await aapp.inject({ url: '/api/config', headers: { host, ...cookie(atoken) } })).statusCode).toBe(401)
+    expect((await aapp.inject({ url: '/api/config', headers: { host, authorization: `Bearer ${accessToken}` } })).statusCode).toBe(200)
+  })
+
+  it('hides the access routes from the network', async () => {
+    for (const headers of [{}, cookie(atoken), { authorization: `Bearer ${accessToken}` }]) {
+      expect((await remote(aport, { path: '/auth?code=x', headers })).status).toBe(404)
+      expect((await remote(aport, { method: 'POST', path: '/api/auth/code', headers })).status).toBe(404)
+    }
+  })
+
+  it('answers 404 for every route the allow-list does not name, the access routes included', async () => {
+    const walked = await walkRoutes(aroutes, aport, atoken)
+    expect(walked.length).toBeGreaterThan(40)
+    expect(walked.map((r) => `${r.method} ${r.url}`)).toEqual(expect.arrayContaining(['GET /auth', 'POST /api/auth/code']))
   })
 })
