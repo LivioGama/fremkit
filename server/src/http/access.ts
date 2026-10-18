@@ -16,7 +16,8 @@
  *   someone who already holds the secret. The helper writes the same cookie straight into its
  *   web views instead.
  *
- * A few routes are exempt, by route rather than by path text — see `isPublicRoute`.
+ * A few routes are exempt, by route rather than by path text — see `isPublicRoute` and
+ * `isCompanionRoute`.
  */
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
@@ -95,6 +96,27 @@ export function isPublicRoute(method: string, routeUrl: string | undefined): boo
   const m = method.toUpperCase()
   if (m !== 'GET' && m !== 'HEAD') return false
   return routeUrl !== undefined && PUBLIC_ROUTES.has(routeUrl)
+}
+
+/**
+ * The routes the browser extension reaches without the secret, as `METHOD url-pattern`.
+ *
+ * An extension cannot read a file only this user can read, so it pairs instead: it asks
+ * (`POST /api/companion/pair`), the user approves on the Edge or in the admin, and it collects
+ * its own token (`GET /api/companion/pair/:requestId`), which the socket (`/companion/ws`) then
+ * asks for. Each of these checks the extension's origin itself, and the Host check still applies.
+ * Approving and refusing are not here: they stay behind the secret.
+ *
+ * Matched on the method and the route Fastify matched, like `PUBLIC_ROUTES`.
+ */
+export const COMPANION_ROUTES: ReadonlySet<string> = new Set([
+  'POST /api/companion/pair',
+  'GET /api/companion/pair/:requestId',
+  'GET /companion/ws',
+])
+
+export function isCompanionRoute(method: string, routeUrl: string | undefined): boolean {
+  return routeUrl !== undefined && COMPANION_ROUTES.has(`${method.toUpperCase()} ${routeUrl}`)
 }
 
 /**
