@@ -63,6 +63,7 @@ pnpm typecheck                    # server + ui (vue-tsc)
 pnpm test                         # vitest, server + ui
 pnpm --filter server exec vitest run test/<file>.test.ts
 pnpm --filter ui build            # required before the server shows a UI change
+pnpm e2e                          # Playwright on the built UI, one throwaway server per worker (4330–4339)
 pnpm dev                          # server + Vite with hot reload for the UI
 pnpm helper:build && pnpm helper:install && pnpm helper:test
 ```
@@ -140,7 +141,8 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
   `ui/src/shared/credits.ts`, which the admin's **Screen → About** reads, and to the README's
   Credits section; `credits.test.ts` fails when the two disagree. A registry widget or theme
   credits its own authors in its `author` field, which the registry refuses to leave empty.
-- **Tests before done**: `pnpm typecheck` and `pnpm test` green, the UI rebuilt if touched, a
+- **Tests before done**: `pnpm typecheck` and `pnpm test` green, the UI rebuilt if touched,
+  `pnpm e2e` green when the admin or the dashboard changed (CI runs it in Chromium), a
   rescan if a manifest changed, and — for anything visible — a look at `/admin` or `/` in a
   browser. The widget catalogue test in `server/test/` reads the real `widgets/` folder, so a
   broken manifest fails it. "A look" means you open the screenshot and read it: a capture taken
@@ -282,6 +284,12 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   fails at once (`invalid-json`, `offline`) while every unit test, which injects `fetch`, stays
   green. Go through `loadUndici()` in `server/src/net/pinned.ts`; `net-pinned.test.ts` replays
   the server's load order in a fresh process.
+- WebKit sends a right click into an iframe under the pointer even when the frame has
+  `pointer-events: none`: a context menu the host page must hear over a widget frame needs an
+  element covering the frame (`CompactWidgetFrame`'s `.shield` in the editor). Chromium hides it.
+- `playwright install` deletes every browser build in `~/Library/Caches/ms-playwright` that no
+  installed Playwright version links to — including one another tool or agent launches by path.
+  Install for the e2e package only when needed, and say so if you did.
 - A layer drawn above a `BaseModal` (a context menu, the command palette) carries `data-overlay`:
   the dialog and the layer both hear Escape on the window, and without it one Escape closes both.
 
@@ -296,6 +304,7 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
 | add a provider | `server/src/providers/calendar.ts` (polling) or `shortcuts.ts` (commands only), register in `providers/index.ts` |
 | change the admin | `ui/src/admin/store.ts` (state), `Canvas.vue`/`EditOverlay.vue` (editing), `SettingsForm.vue` (setting types), `ScreenInspector.vue`, `ConnectionsInspector.vue`; right-click menus in `ui/src/shared/ui/contextMenu.ts` + `ContextMenu.vue` and the menu builders beside the component that opens them |
 | add an editor command or shortcut | A command goes into the menu builder it belongs to (`canvasMenu.ts`, `menus.ts`): the ⌘K palette reads those menus (`paletteCommands.ts`), so it appears there too; only what no menu holds is written in `paletteCommands.ts`. A key goes into `ui/src/admin/shortcuts.ts`, which the key handler in `App.vue`, the `?` sheet and the menus' hints all read |
+| add an end-to-end test | `e2e/fixtures/test.ts` (`seed`, `connections`, `signIn`, `openAdmin`, `savedConfig`), a spec in `e2e/tests/` to copy, and [docs/contributing.md](docs/contributing.md#end-to-end-tests). Roles and visible text first; a `data-test` attribute only where neither exists, in its own commit |
 | change the dashboard | `ui/src/dashboard/App.vue`, `NavBar.vue`, `CompactWidgetFrame.vue`, `NavPopover.vue` |
 | change what widgets can do | `server/src/bridge/fremkit.js` and `ui/src/shared/useWidgetBridge.ts`, together |
 | touch or the kiosk window | `native/Sources/FremkitHelper/` |
