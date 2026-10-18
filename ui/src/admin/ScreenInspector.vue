@@ -16,6 +16,7 @@ import BackgroundPicker from './BackgroundPicker.vue'
 import NavWidgetsEditor from './NavWidgetsEditor.vue'
 import DevicesSection from './DevicesSection.vue'
 import { useDevices } from './devices'
+import ScreenBrightness from './ScreenBrightness.vue'
 import { surfaceOpacity } from '../shared/background'
 import { pick, useI18n, type Locale } from '../shared/i18n'
 import { useConfirm } from '../shared/useConfirm'
@@ -330,6 +331,8 @@ function setBackground(patch: Partial<Background>): void {
 
   <BackgroundPicker :model-value="bg" @update="setBackground($event)" />
   </BaseSection>
+
+  <ScreenBrightness />
 
   <BaseSection id="screen.kiosk" :title="t('admin.inspector.screen.kiosk')">
   <BaseField :label="t('admin.inspector.screen.kioskUrl')">
