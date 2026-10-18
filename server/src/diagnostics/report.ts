@@ -47,6 +47,7 @@ export interface DiagnosticsFacts {
 const SOURCE_LABEL: Record<DiagnosticsFacts['widgets'][number]['source'], string> = {
   builtin: 'built-in',
   installed: 'Sietch',
+  dev: 'author folder',
   missing: 'missing',
 }
 
