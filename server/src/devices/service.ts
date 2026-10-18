@@ -15,7 +15,7 @@ import type { SecretStore } from '../secrets/types.js'
 import type { WidgetCatalog } from '../widgets/catalog.js'
 import type { Hub } from '../ws/hub.js'
 import { advertise as bonjourAdvertise, type Advertisement, type Advertiser } from './bonjour.js'
-import { ensureKey, issueCertificate, resetKey, spkiHash, TLS_KEY_SECRET } from './certificate.js'
+import { ensureKey, issueCertificate, readKey, resetKey, spkiHash } from './certificate.js'
 import { screenChannels, type ChannelManifest, type ScreenChannels } from './channels.js'
 import type { PairingCodes } from './codes.js'
 import { lanAddresses as readLanAddresses, localHostName } from './host.js'
@@ -171,7 +171,7 @@ export class DeviceService {
    */
   async loadKeyHash(): Promise<void> {
     if (this.keyHashKnown) return
-    const pem = await this.secrets.get(TLS_KEY_SECRET)
+    const pem = await readKey(this.secrets)
     this.keyHash = pem ? spkiHash(pem) : null
     this.keyHashKnown = true
   }

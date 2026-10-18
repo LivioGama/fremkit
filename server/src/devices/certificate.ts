@@ -1,4 +1,4 @@
-import { createPublicKey, createHash } from 'node:crypto'
+import { createHash, createPrivateKey, createPublicKey } from 'node:crypto'
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { isIP } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -56,21 +56,85 @@ async function generateKey(opts: OpensslOptions): Promise<string> {
   return pem
 }
 
+/**
+ * How the key is kept in the store: base64 of its PKCS8 DER, on one line.
+ *
+ * Not the PEM itself: the macOS keychain hands back a value that contains a newline as a hex
+ * dump (`security find-generic-password -w`), so a stored PEM never reads back as a PEM.
+ */
+function toStored(pem: string): string {
+  return createPrivateKey(pem).export({ type: 'pkcs8', format: 'der' }).toString('base64')
+}
+
+function keyUnreadable(): Error {
+  return new Error(`${tr(undefined, 'devices.keyFailed')} (stored key unreadable)`)
+}
+
+/**
+ * Turns a stored value into a PKCS8 PEM. Accepts the one-line base64 DER this module writes,
+ * a PEM (the file backend and values written before the one-line form), and the hex dump the
+ * keychain returns for a PEM that was stored as is. Errors never quote the value.
+ */
+function fromStored(value: string): { pem: string; canonical: boolean } {
+  const text = value.trim()
+  try {
+    if (text.startsWith('-----BEGIN')) return { pem: normalisePem(text), canonical: false }
+    if (/^(?:[0-9a-fA-F]{2})+$/.test(text)) {
+      const decoded = Buffer.from(text, 'hex').toString('utf8')
+      if (decoded.startsWith('-----BEGIN')) return { pem: normalisePem(decoded), canonical: false }
+    }
+    const der = Buffer.from(text, 'base64')
+    const pem = createPrivateKey({ key: der, format: 'der', type: 'pkcs8' })
+      .export({ type: 'pkcs8', format: 'pem' })
+      .toString()
+    return { pem, canonical: true }
+  } catch {
+    throw keyUnreadable()
+  }
+}
+
+function normalisePem(pem: string): string {
+  return createPrivateKey(pem).export({ type: 'pkcs8', format: 'pem' }).toString()
+}
+
+/**
+ * The stored pairing key as a PEM, or null when there is none. A value found in an older form
+ * (a PEM, or the keychain's hex dump of one) is written back in the one-line form.
+ */
+export async function readKey(secrets: SecretStore): Promise<string | null> {
+  const value = await secrets.get(TLS_KEY_SECRET)
+  if (!value) return null
+  const { pem, canonical } = fromStored(value)
+  if (!canonical) {
+    // Best effort: a store that cannot be written still serves the key it holds.
+    await secrets.set(TLS_KEY_SECRET, toStored(pem)).catch(() => undefined)
+  }
+  return pem
+}
+
+async function storeNewKey(secrets: SecretStore, opts: OpensslOptions): Promise<string> {
+  const generated = await generateKey(opts)
+  let pem: string
+  let stored: string
+  try {
+    pem = normalisePem(generated)
+    stored = toStored(pem)
+  } catch {
+    throw new Error(`${tr(undefined, 'devices.keyFailed')} (openssl: unexpected output)`)
+  }
+  await secrets.set(TLS_KEY_SECRET, stored)
+  return pem
+}
+
 // One generation at a time per store: two listeners starting together must not each mint a key
 // and leave the store holding a different one from the certificate already handed out.
 const pending = new WeakMap<SecretStore, Promise<string>>()
 
-/** The pairing TLS key (PEM), generated and stored on first use. */
+/** The pairing TLS key (PKCS8 PEM), generated and stored on first use. */
 export function ensureKey(secrets: SecretStore, opts: OpensslOptions = {}): Promise<string> {
   const inFlight = pending.get(secrets)
   if (inFlight) return inFlight
-  const run = (async () => {
-    const existing = await secrets.get(TLS_KEY_SECRET)
-    if (existing) return existing
-    const pem = await generateKey(opts)
-    await secrets.set(TLS_KEY_SECRET, pem)
-    return pem
-  })()
+  const run = (async () => (await readKey(secrets)) ?? (await storeNewKey(secrets, opts)))()
   pending.set(secrets, run)
   return run.finally(() => pending.delete(secrets))
 }
@@ -78,9 +142,7 @@ export function ensureKey(secrets: SecretStore, opts: OpensslOptions = {}): Prom
 /** Replaces the pairing TLS key. Every paired device pinned the old one and has to pair again. */
 export async function resetKey(secrets: SecretStore, opts: OpensslOptions = {}): Promise<string> {
   await pending.get(secrets)?.catch(() => undefined)
-  const pem = await generateKey(opts)
-  await secrets.set(TLS_KEY_SECRET, pem)
-  return pem
+  return storeNewKey(secrets, opts)
 }
 
 function configFor(names: { host: string | null; addresses: string[] }): string {

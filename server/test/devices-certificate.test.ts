@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { spawnSync } from 'node:child_process'
-import { X509Certificate } from 'node:crypto'
+import { X509Certificate, createPrivateKey } from 'node:crypto'
 import { mkdtemp, readdir } from 'node:fs/promises'
 import { isIPv4 } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -9,6 +9,7 @@ import {
   DEFAULT_OPENSSL,
   TLS_KEY_SECRET,
   ensureKey,
+  readKey,
   issueCertificate,
   resetKey,
   spkiHash,
@@ -17,8 +18,34 @@ import { lanAddresses, localHostName } from '../src/devices/host.js'
 import { FileSecretStore } from '../src/secrets/file.js'
 import { assertSecretKey } from '../src/secrets/types.js'
 import type { Exec } from '../src/secrets/keychain.js'
+import type { SecretStore } from '../src/secrets/types.js'
 
 const hasOpenssl = spawnSync(DEFAULT_OPENSSL, ['version']).status === 0
+
+const ONE_LINE_BASE64 = /^[A-Za-z0-9+/]+=*$/
+
+/**
+ * Behaves like the macOS keychain through `security`: a value containing a newline comes back
+ * from `find-generic-password -w` as a hex dump of its bytes.
+ */
+class KeychainLikeStore implements SecretStore {
+  readonly raw = new Map<string, string>()
+  writes = 0
+  async get(key: string): Promise<string | null> {
+    assertSecretKey(key)
+    const value = this.raw.get(key)
+    if (value === undefined) return null
+    return value.includes('\n') ? Buffer.from(value, 'utf8').toString('hex') : value
+  }
+  async set(key: string, value: string): Promise<void> {
+    assertSecretKey(key)
+    this.writes++
+    this.raw.set(key, value)
+  }
+  async delete(key: string): Promise<void> {
+    this.raw.delete(key)
+  }
+}
 
 async function tempStore(): Promise<FileSecretStore> {
   return new FileSecretStore(join(await mkdtemp(join(tmpdir(), 'fremkit-tls-test-')), 'secrets.json'))
@@ -45,14 +72,14 @@ describe('pairing TLS key and certificate', () => {
     const first = await ensureKey(secrets)
     expect(first).toMatch(/^-----BEGIN [A-Z ]*PRIVATE KEY-----\n/)
     expect(await ensureKey(secrets)).toBe(first)
-    expect(await secrets.get(TLS_KEY_SECRET)).toBe(first)
+    expect(await secrets.get(TLS_KEY_SECRET)).toMatch(ONE_LINE_BASE64)
   })
 
   it.skipIf(!hasOpenssl)('generates a single key for overlapping first calls', async () => {
     const secrets = await tempStore()
     const [a, b] = await Promise.all([ensureKey(secrets), ensureKey(secrets)])
     expect(a).toBe(b)
-    expect(await secrets.get(TLS_KEY_SECRET)).toBe(a)
+    expect(spkiHash(a)).toBe(spkiHash((await readKey(secrets))!))
   })
 
   it.skipIf(!hasOpenssl)('keeps the SPKI hash across certificates for different addresses', async () => {
@@ -125,6 +152,48 @@ describe('pairing TLS key and certificate', () => {
     const exec: Exec = async () => ({ stdout: '' })
     await expect(issueCertificate('k', { host: 'a\n[v3]', addresses: [] }, { exec })).rejects.toThrow()
     await expect(issueCertificate('k', { host: null, addresses: ['192.0.2.1,DNS:x'] }, { exec })).rejects.toThrow()
+  })
+})
+
+describe('pairing TLS key in a keychain-like store', () => {
+  it.skipIf(!hasOpenssl)('reads back a usable key with the same hash after a restart', async () => {
+    const store = new KeychainLikeStore()
+    const first = await ensureKey(store)
+    expect(store.raw.get(TLS_KEY_SECRET)).toMatch(ONE_LINE_BASE64)
+    // A fresh read goes through the store, as after a server restart.
+    const again = await ensureKey(store)
+    expect(spkiHash(again)).toBe(spkiHash(first))
+    const cert = await issueCertificate(again, { host: 'example.local', addresses: ['192.0.2.10'] })
+    expect(spkiHash(cert)).toBe(spkiHash(first))
+  })
+
+  it.skipIf(!hasOpenssl)('heals a PEM the keychain returns as hex', async () => {
+    const pem = await ensureKey(await tempStore())
+    const store = new KeychainLikeStore()
+    store.raw.set(TLS_KEY_SECRET, createPrivateKey(pem).export({ type: 'sec1', format: 'pem' }).toString())
+    expect(await store.get(TLS_KEY_SECRET)).toMatch(/^2d2d2d2d2d424547494e/)
+    const read = await ensureKey(store)
+    expect(spkiHash(read)).toBe(spkiHash(pem))
+    expect(store.raw.get(TLS_KEY_SECRET)).toMatch(ONE_LINE_BASE64)
+    const writes = store.writes
+    expect(spkiHash((await ensureKey(store))!)).toBe(spkiHash(pem))
+    expect(store.writes).toBe(writes)
+  })
+
+  it.skipIf(!hasOpenssl)('reads a stored PEM and rewrites it on one line', async () => {
+    const secrets = await tempStore()
+    const pem = await ensureKey(await tempStore())
+    await secrets.set(TLS_KEY_SECRET, pem)
+    expect(spkiHash((await readKey(secrets))!)).toBe(spkiHash(pem))
+    expect(await secrets.get(TLS_KEY_SECRET)).toMatch(ONE_LINE_BASE64)
+  })
+
+  it('keeps an unreadable stored value out of the error', async () => {
+    const store = new KeychainLikeStore()
+    store.raw.set(TLS_KEY_SECRET, 'not-a-key-SENTINELVALUE')
+    const err = await readKey(store).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).not.toContain('SENTINELVALUE')
   })
 })
 
