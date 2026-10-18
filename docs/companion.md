@@ -23,8 +23,7 @@ Store, load it unpacked:
 
 The extension's ID is fixed by the `key` in its manifest: `lnckeodobpbbmfbdlpnegjpchgkehdlk`. That
 is the ID the store listing will have (publication is pending), so a link made with the unpacked
-copy keeps working when you switch to the store version: the store's own key replaces the
-development copy without a new pairing. The server accepts any extension origin, and what makes
+copy keeps working when you switch to the store version. The server accepts any extension origin, and what makes
 one yours is that you allowed it on the Edge.
 
 ## Link it to Fremkit
@@ -80,8 +79,9 @@ access to every site at install.
 
 ## Troubleshooting
 
-- *Fremplay shows "Install Fremkit Companion"* — no extension is linked. Link one as above.
+- *"Install Fremkit Companion in Chrome, then tap Connect"* — no extension is linked. Link one
+  as above.
 - *"Browser closed or extension inactive"* — the linked extension is not connected. Open the
   browser; if it is open, click the icon, which wakes the extension.
-- *"The video is not coming through"* — stop the share and start it again.
-- *Fremkit and Fremplay speak different versions* — update Fremkit.
+- *"The video is not coming through: stop the share and start it again"* — stop the share and start it again.
+- *"Fremplay and Fremkit speak different versions: update Fremkit"* — update Fremkit.

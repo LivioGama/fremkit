@@ -26,12 +26,12 @@ The name is the Fremen survival kit from *Dune*.
   auto-rotation.
 - **A live editor** at `/admin`: the real page rendered with real widgets, drag and resize with
   snapping, overlap refused, keyboard nudges, undo/redo and autosave.
-- **Thirty-seven widgets** — clock, weather, a pomodoro timer, CPU, memory, disks, a disk map, network
+- **Thirty-nine widgets** — clock, weather, a pomodoro timer, CPU, memory, disks, a disk map, network
   throughput, batteries, processes, volume, Spotify, Dock badges, a clipboard history, shortcut
   buttons, service status checks, published calendars, Claude Code sessions and limits; and,
   *from the registry*, meeting controls, CleanShot X actions, Azure DevOps builds, GitHub
   notifications and Actions, a Bambu Lab printer, Homey devices and flows, a Synology NAS.
-  Twenty ship with Fremkit; the rest are one press away in the admin.
+  Twenty-two ship with Fremkit; the rest are one press away in the admin.
 - **A browser extension** — *Fremkit Companion* sends the video of a Chromium tab to the Fremplay widget on the Edge, with touch controls. See [docs/companion.md](docs/companion.md).
 - **Compact widgets** in the navigation bar, with a full-size popover on touch.
 - **Per-tile appearance** — background colour, opacity, background image, accent colour and how

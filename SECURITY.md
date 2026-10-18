@@ -195,8 +195,9 @@ that carries below. Do not allow a request you did not start.
 
 **What a linked extension can do**, and it is little: send metadata about the video being shared
 (a title, a host, a position), and a WebRTC offer, to the Edge. It cannot read your dashboard, your
-config or your connections, call any other API, or send a command to a widget other than driving its own share. Its offer must carry
-local-network addresses only, so the video does not leave your machine, and it never goes through
+config or your connections, call any other API, or send a command to a widget other than
+driving its own share. Its offer must carry local-network addresses only, so the video does not
+leave your machine, and it never goes through
 the server. The extension asks for the video of a tab, never the tab itself, and for another
 site's frames only when you allow that site.
 
