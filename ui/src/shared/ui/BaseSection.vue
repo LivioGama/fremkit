@@ -34,13 +34,20 @@ const props = withDefaults(defineProps<{
   defaultOpen?: boolean
   /** A short count or state shown on the right of the header, visible while folded. */
   badge?: string
-}>(), { defaultOpen: false, badge: '' })
+  /** Open whatever was remembered, without remembering it: a search showing what it found. */
+  forceOpen?: boolean
+}>(), { defaultOpen: false, badge: '', forceOpen: false })
 
-const isOpen = computed(() => open[props.id] ?? props.defaultOpen)
+const isOpen = computed(() => props.forceOpen || (open[props.id] ?? props.defaultOpen))
+
+/** The toggle a forced opening fires is not the person's choice, so it is not kept. */
+function onToggle(e: Event): void {
+  if (!props.forceOpen) remember(props.id, (e.target as HTMLDetailsElement).open)
+}
 </script>
 
 <template>
-  <details class="section" :open="isOpen" @toggle="remember(props.id, ($event.target as HTMLDetailsElement).open)">
+  <details class="section" :open="isOpen" @toggle="onToggle">
     <summary>
       <BaseIcon class="chevron" name="chevron-down" :size="14" />
       <span class="title">{{ title }}</span>

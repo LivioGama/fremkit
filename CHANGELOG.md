@@ -46,6 +46,10 @@ tagged `vX.Y.Z`.
 - **Widget SDK generation 3.** `Fremkit.screen` names the screen a widget is drawn on, for
   widgets whose data differs from one screen to the next, and `Fremkit.holdSwipe()` keeps the
   page from turning while a finger slides a widget's control past its edge.
+- **Search the widgets.** A box above the editor's widget list filters it by name, description
+  or category as you type, accents or not ("meteo" finds Météo); Enter adds the first match. The
+  pages and the search stay in place while the widget list scrolls under them. The Sietch's
+  search ignores accents too now.
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer

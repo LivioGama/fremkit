@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { categoryOf, groupByCategory, otherScreenWidgets } from '../src/admin/library'
+import { categoryOf, groupByCategory, otherScreenWidgets, fold, matchesQuery } from '../src/admin/library'
 import type { Config, WidgetManifest } from '../src/shared/types'
 
 const widget = (id: string, category?: string): WidgetManifest => ({
@@ -66,5 +66,23 @@ describe('otherScreenWidgets', () => {
   it('is empty with a single screen or an unknown screen id', () => {
     expect(otherScreenWidgets({ ...config, screens: [config.screens[0]] } as Config, 'edge')).toEqual([])
     expect(otherScreenWidgets(config, 'nope')).toEqual(['clock-1', 'cpu-1', 'bar-1', 'note-1', 'bar-2', 'mail-1'])
+  })
+})
+
+describe('matchesQuery', () => {
+  it('matches everything when the box is empty or blank', () => {
+    expect(matchesQuery(['Clock'], '')).toBe(true)
+    expect(matchesQuery(['Clock'], '   ')).toBe(true)
+  })
+
+  it('needs every word typed, anywhere in the card', () => {
+    expect(matchesQuery(['weather', 'Weather', 'Forecast for the day'], 'day weather')).toBe(true)
+    expect(matchesQuery(['weather', 'Weather', 'Forecast for the day'], 'day clock')).toBe(false)
+  })
+
+  it('ignores case and accents on both sides', () => {
+    expect(matchesQuery(['Météo'], 'meteo')).toBe(true)
+    expect(matchesQuery(['Meteo'], 'MÉTÉO')).toBe(true)
+    expect(fold('Écran Luminosité')).toBe('ecran luminosite')
   })
 })
