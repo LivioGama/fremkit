@@ -143,7 +143,33 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
 - **Tests before done**: `pnpm typecheck` and `pnpm test` green, the UI rebuilt if touched, a
   rescan if a manifest changed, and — for anything visible — a look at `/admin` or `/` in a
   browser. The widget catalogue test in `server/test/` reads the real `widgets/` folder, so a
-  broken manifest fails it.
+  broken manifest fails it. "A look" means you open the screenshot and read it: a capture taken
+  and never looked at verifies nothing. Headless Chromium works for the admin (see the Gotchas
+  for what it cannot show).
+- **Several agents at once**: branches written in parallel each pass on their own and still
+  break together — a union gains a member (`WidgetSource` got `dev`) while another branch adds an
+  exhaustive `Record` over it. After merging anything into `main`, run `pnpm typecheck` and
+  `pnpm test` on the merge result before calling it done, and fix the seam in its own commit.
+- **Security review findings are fixed, not filed.** The last full review is the reason for the
+  rules under *Security invariants*; a new feature that touches one of them says so in its commit
+  body and adds the test that proves the invariant still holds.
+
+## Security invariants
+
+Each line here was a real hole once. Break one only with the owner's explicit say-so.
+
+- **Diagnostics never carry identity.** Anything added to `GET /api/diagnostics` or the helper's
+  *Copy diagnostics* goes through `redact()` (`server/src/diagnostics/redact.ts`) and names
+  *kinds*, never instances: connection types, not connection names; widget ids, not titles;
+  counts, not device names. A new kind of value that could identify someone (a host, an account,
+  a path) gets a redaction rule and a test with documentation-range fixtures.
+- **The author's widget folder is a development tool.** `<dataDir>/widgets-dev` is read only
+  under `FREMKIT_WIDGET_DEV=1`, its widgets skip the consent dialog, and nothing shipped sets the
+  flag. Never read it, or watch files, without that flag, and never let it shadow a built-in or
+  an installed id.
+- **Every editor action goes through the admin store's `apply()`**, menus and shortcuts
+  included, so it is undoable and saved. Context menus are data built for
+  `ui/src/shared/ui/contextMenu.ts`; do not write a second menu component.
 
 ## Gotchas learned the hard way
 
@@ -175,10 +201,11 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
 | change the marketplace | `server/src/marketplace/` (registry client, installer, consent), `ui/src/admin/marketplace.ts` and `MarketplacePanel.vue`, `docs/marketplace.md` |
 | add a connection type | **A coded type is the exception, and has to earn it.** One auth header on HTTP(S) is a `connection` the widget *declares* in its own manifest — no release of Fremkit per service; see `docs/writing-widgets.md`. Write code only for what a declaration cannot express: a session handshake, a protocol that is not HTTP, OAuth, a local binary. Nothing else counts — "it already has a provider" does not, and neither does "a picker would be nice" (a declared connection feeds no `pick`; the widget lists ids instead). Homey was coded and should not have been: two widgets on one Homey meant two connections, and a Homey invalidates the previous API key when a new one is issued, so the second key broke the first. If it does earn it: `server/src/connections/types/ics.ts` (simplest) or `github.ts` (fullest), register in `types/index.ts`, document in `docs/connections.md` |
 | add a provider | `server/src/providers/calendar.ts` (polling) or `shortcuts.ts` (commands only), register in `providers/index.ts` |
-| change the admin | `ui/src/admin/store.ts` (state), `Canvas.vue`/`EditOverlay.vue` (editing), `SettingsForm.vue` (setting types), `ScreenInspector.vue`, `ConnectionsInspector.vue` |
+| change the admin | `ui/src/admin/store.ts` (state), `Canvas.vue`/`EditOverlay.vue` (editing), `SettingsForm.vue` (setting types), `ScreenInspector.vue`, `ConnectionsInspector.vue`; right-click menus in `ui/src/shared/ui/contextMenu.ts` + `ContextMenu.vue` and the menu builders beside the component that opens them |
 | change the dashboard | `ui/src/dashboard/App.vue`, `NavBar.vue`, `CompactWidgetFrame.vue`, `NavPopover.vue` |
 | change what widgets can do | `server/src/bridge/fremkit.js` and `ui/src/shared/useWidgetBridge.ts`, together |
 | touch or the kiosk window | `native/Sources/FremkitHelper/` |
 | the app, its signing, notarization or updates | `scripts/build-app.sh`, `scripts/release.sh`, `native/Sources/FremkitCore/ServerLaunch.swift` (checkout or bundled server), `server/src/paths.ts` (the bundle's layout), `docs/releasing.md` |
 | change the disk map | `server/src/providers/disk-map*.ts`, `native/Sources/FremkitCore/Disk*.swift`, `native/Sources/FremkitScan`, `widgets/disk-map` |
+| bug reports, diagnostics | `server/src/diagnostics/` (report, `redact.ts`, log tail), `ui/src/admin/DiagnosticsSection.vue`, the helper's `StatusMenu.swift` |
 | pair a device, the remote listener | `server/src/devices/`, `ui/src/admin/DevicesSection.vue` |
