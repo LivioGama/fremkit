@@ -286,7 +286,16 @@ and without the token it never sees an offer to answer, which is what keeps the 
 extension also drops the answer's candidates that are not loopback or a `.local` name, as defence in
 depth only: WebRTC learns the receiver's address from its incoming checks whatever the answer lists.
 Such a program can make the extension show itself removed (an unproven refusal), but the token stays
-until you pair again. Pairing with it gives it a token it made up itself, never the real one. The
+until you pair again. Pairing is where it can win: pairing carries no secret yet, so a program that
+already holds port 4242 when the extension pairs (Fremkit stopped or restarting) can approve the
+request itself, hand the extension a token it made up, and then pass every later challenge and
+receive every share, picture and controls included. It never learns the real token, and does not
+need to. This is accepted as a residual risk: whatever holds Fremkit's port, running as you or as
+another account, also serves the kiosk, so no check inside the exchange can tell it from Fremkit.
+What narrows it: the extension refuses an approval collected less than two seconds after its request
+was accepted (no tap on the Edge is that fast; a program that waits passes), and the popup's removed
+state warns not to reconnect unless you removed the browser in Fremkit yourself. Pair only while the
+code is on the Edge. The
 turned-away count is a hint, not a proof: such a program can also raise it on your own request with
 install ids it makes up, so compare the code before you refuse.
 

@@ -55,8 +55,19 @@ that credential is.
 Each time it connects, the extension first has the server prove that it holds this extension's
 record, and sends its credential only then: another program listening on the port in Fremkit's
 place cannot learn it, and the popup says *The server on this port is not your Fremkit*. Pairing
-itself involves no secret yet: a program posing as Fremkit while you pair can only make up a
-credential of its own, and learns nothing of the real one.
+is different: it involves no secret yet, so the extension trusts whatever answers on Fremkit's port
+at that moment. A program that already holds port 4242 when you press **Connect** (Fremkit was not
+running, or was restarting) can approve the request itself, pair the extension with itself instead
+of Fremkit, and then receive every video you share afterwards. It never learns the real credential,
+but it does not need it. Nothing the extension can check tells such a program from Fremkit, since
+whatever holds Fremkit's port also serves the dashboard, so:
+
+- Press **Connect** only when the code the popup shows is on the Edge, and allow it there yourself.
+  The extension refuses an approval that comes back less than two seconds after its request, which
+  no hand on the Edge is fast enough for, but a program can simply wait.
+- If the popup says the extension was removed and you did not remove it in **Screen → Devices**,
+  do not reconnect: another program may be answering instead of Fremkit. Quit it, or restart the
+  Mac, and the extension finds Fremkit again on its own.
 
 Linked extensions are listed in **Screen → Devices**, where you can rename or remove them.
 Removing one closes its connection at once, and the extension goes back to showing the **Connect**
