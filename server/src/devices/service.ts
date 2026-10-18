@@ -385,8 +385,10 @@ export class DeviceService {
     this.manifests = null
     for (const device of this.store.list()) {
       if (device.screenId === null || isDeviceScreen(cfg, device.screenId)) continue
-      void this.store.update(device.id, { screenId: null })
-        .then(() => this.hub.refreshDevice(device.id))
+      // Conditional, inside the store's queue: an attach to another screen queued before this
+      // write runs must not be undone by it.
+      void this.store.detach(device.id, device.screenId)
+        .then((changed) => { if (changed) this.hub.refreshDevice(device.id) })
         .catch((err: unknown) => {
           this.app.log.warn({ err: (err as Error).message }, 'could not detach a device from its screen')
         })

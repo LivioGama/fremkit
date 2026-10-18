@@ -186,6 +186,21 @@ export class DeviceStore {
     })
   }
 
+  /**
+   * Takes a device off `screenId`, only if it is still on it when its turn in the queue comes: a
+   * device the user attached elsewhere in the meantime keeps its new screen. True when it wrote.
+   */
+  async detach(id: string, screenId: string): Promise<boolean> {
+    return this.enqueue(async () => {
+      const index = this.state.devices.findIndex((d) => d.id === id)
+      if (index < 0 || this.state.devices[index].screenId !== screenId) return false
+      const devices = [...this.state.devices]
+      devices[index] = { ...devices[index], screenId: null }
+      await this.commit({ ...this.state, devices })
+      return true
+    })
+  }
+
   async remove(id: string): Promise<boolean> {
     return this.enqueue(async () => {
       const devices = this.state.devices.filter((d) => d.id !== id)

@@ -103,6 +103,30 @@ describe('DeviceStore', () => {
     expect(writes).toBe(2)
   })
 
+  it('detaches a device only from the screen it is still on', async () => {
+    const store = new DeviceStore(await tempFile())
+    await store.load()
+    const { device } = await store.create('iPad', viewport, 'old')
+    expect(await store.detach(device.id, 'other')).toBe(false)
+    expect(store.list()[0].screenId).toBe('old')
+    expect(await store.detach('unknown', 'old')).toBe(false)
+    expect(await store.detach(device.id, 'old')).toBe(true)
+    expect(store.list()[0].screenId).toBeNull()
+  })
+
+  it('lets an attach queued first win over a detach from the old screen', async () => {
+    const store = new DeviceStore(await tempFile())
+    await store.load()
+    const { device } = await store.create('iPad', viewport, 'old')
+    const [attached, detached] = await Promise.all([
+      store.update(device.id, { screenId: 'new' }),
+      store.detach(device.id, 'old'),
+    ])
+    expect(attached?.screenId).toBe('new')
+    expect(detached).toBe(false)
+    expect(store.list()[0].screenId).toBe('new')
+  })
+
   it('writes lastSeen again when the clock stepped back behind it', async () => {
     const file = await tempFile()
     let t = Date.parse('2026-10-18T10:00:00.000Z')
