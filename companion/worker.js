@@ -6,6 +6,7 @@
 // What must survive the worker being stopped is in chrome.storage: the install id, the token and a
 // pairing waiting for its answer in `local`; the share and the link state in `session`.
 
+import { approvalTooFast } from './lib/approval.js'
 import { browserName } from './lib/browser.js'
 import { handshake } from './lib/handshake.js'
 import { grantToReturn } from './lib/grant.js'
@@ -132,7 +133,8 @@ async function pair() {
   }
   const body = res.ok ? await res.json().catch(() => null) : null
   if (!body?.requestId || !body.code) return saveLocal({ pairError: 'failed' })
-  await saveLocal({ pairing: { requestId: body.requestId, code: body.code, expiresAt: body.expiresAt }, name })
+  // `acceptedAt`: an approval sooner than a person can give one is refused (lib/approval.js).
+  await saveLocal({ pairing: { requestId: body.requestId, code: body.code, expiresAt: body.expiresAt, acceptedAt: Date.now() }, name })
   pollPairing()
 }
 
@@ -154,6 +156,9 @@ async function pollPairing() {
       } catch { /* not running yet: keep asking until the code expires */ }
       if (local.pairing?.requestId !== pending.requestId) continue
       if (answer?.state === 'approved' && answer.token) {
+        // No hand on the Edge is this fast: whatever approved it is not the user, so its token is
+        // not taken. (A program that waits is not caught here; see docs/companion.md.)
+        if (approvalTooFast(pending.acceptedAt, Date.now())) return await endPairing('tooFast')
         await saveLocal({ token: answer.token, deviceId: answer.deviceId, pairing: null, pairError: null, revoked: false })
         await setLink('connecting')
         stayFor(PRESENCE_MS)

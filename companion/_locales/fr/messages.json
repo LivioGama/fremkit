@@ -159,6 +159,9 @@
   "pairCooldown": {
     "message": "Demande refusée, réessayez dans une minute."
   },
+  "pairTooFast": {
+    "message": "Approbation trop rapide, refusée."
+  },
   "pairUnreachable": {
     "message": "Fremkit ne répond pas sur ce Mac. Est-il lancé ?"
   },

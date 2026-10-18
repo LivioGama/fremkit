@@ -21,6 +21,8 @@ import * as ext from '../../companion/lib/protocol.js'
 import { isOwnContext } from '../../companion/lib/sender.js'
 // @ts-expect-error plain JS module
 import { grantToReturn } from '../../companion/lib/grant.js'
+// @ts-expect-error plain JS module
+import { approvalTooFast, MIN_APPROVAL_MS } from '../../companion/lib/approval.js'
 import { isLocalSdp, parseExtensionMessage, PROOF_LABEL as SERVER_PROOF_LABEL, PROTOCOL } from '../src/companion/protocol.js'
 import { HELLO_TIMEOUT_MS } from '../src/companion/socket.js'
 import { COMPANION_NAMES } from '../src/companion/routes.js'
@@ -734,5 +736,26 @@ describe('grantToReturn (the grant a start gives back)', () => {
   ]
   it.each(cases)('%s', (_, granted, outcome, expected) => {
     expect(grantToReturn(granted, outcome)).toBe(expected)
+  })
+})
+
+describe('approvalTooFast (an approval no hand on the Edge could give)', () => {
+  it('waits as long as the Edge and the admin hold Allow back (COMPANION_ALLOW_DELAY_MS)', () => {
+    expect(MIN_APPROVAL_MS).toBe(2_000)
+  })
+
+  it('refuses an approval collected less than 2 s after the request was accepted', () => {
+    const at = 1_000_000
+    expect(approvalTooFast(at, at)).toBe(true)
+    expect(approvalTooFast(at, at + 1_500)).toBe(true)
+    expect(approvalTooFast(at, at + 1_999)).toBe(true)
+    expect(approvalTooFast(at, at + 2_000)).toBe(false)
+    expect(approvalTooFast(at, at + 30_000)).toBe(false)
+  })
+
+  it('counts a pairing that does not say when it began as too fast', () => {
+    for (const acceptedAt of [undefined, null, '1000', Number.NaN, Infinity]) {
+      expect(approvalTooFast(acceptedAt, 5_000), String(acceptedAt)).toBe(true)
+    }
   })
 })

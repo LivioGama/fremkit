@@ -29,6 +29,7 @@ const PAIR_ERRORS = {
   limited: () => t('pairLimited'),
   busy: () => t('pairBusy'),
   cooldown: () => t('pairCooldown'),
+  tooFast: () => t('pairTooFast'),
   unreachable: () => t('pairUnreachable'),
   failed: () => t('pairFailed'),
 }
