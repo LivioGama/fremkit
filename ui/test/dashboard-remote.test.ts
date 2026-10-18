@@ -101,18 +101,18 @@ afterEach(() => {
 
 describe('the dashboard on a paired device', () => {
   it('shows the screen the server assigned, whatever ?screen= says', async () => {
-    stubFetch({ status: 200, body: { id: 'd1', name: 'Kitchen iPad', screenId: 'pad' } })
+    stubFetch({ status: 200, body: { id: 'd1', name: 'Kitchen iPad', screenId: 'pad', brightness: null } })
     const wrapper = await mountApp('https://example.local:4243/?screen=edge')
     expect(wrapper.find('.page-stub').text()).toBe('pad-home')
     wrapper.unmount()
   })
 
   it('follows a push that takes the screen away, and shows the message with the device name', async () => {
-    stubFetch({ status: 200, body: { id: 'd1', name: 'Kitchen iPad', screenId: 'pad' } })
+    stubFetch({ status: 200, body: { id: 'd1', name: 'Kitchen iPad', screenId: 'pad', brightness: null } })
     const wrapper = await mountApp('https://example.local:4243/')
     expect(wrapper.find('.page-stub').exists()).toBe(true)
 
-    push('device', { id: 'd1', name: 'Kitchen iPad', screenId: null })
+    push('device', { id: 'd1', name: 'Kitchen iPad', screenId: null, brightness: null })
     await nextTick()
     expect(wrapper.find('.page-stub').exists()).toBe(false)
     expect(wrapper.text()).toContain('Kitchen iPad')
@@ -121,9 +121,9 @@ describe('the dashboard on a paired device', () => {
   })
 
   it('treats a screen id naming no screen like no screen', async () => {
-    stubFetch({ status: 200, body: { id: 'd1', name: 'Kitchen iPad', screenId: 'pad' } })
+    stubFetch({ status: 200, body: { id: 'd1', name: 'Kitchen iPad', screenId: 'pad', brightness: null } })
     const wrapper = await mountApp('https://example.local:4243/')
-    push('device', { id: 'd1', name: 'Kitchen iPad', screenId: 'deleted' })
+    push('device', { id: 'd1', name: 'Kitchen iPad', screenId: 'deleted', brightness: null })
     await nextTick()
     expect(wrapper.find('.page-stub').exists()).toBe(false)
     expect(wrapper.text()).toContain('Choose a screen for this iPad')
@@ -131,10 +131,10 @@ describe('the dashboard on a paired device', () => {
   })
 
   it('follows a push to another screen', async () => {
-    stubFetch({ status: 200, body: { id: 'd1', name: 'Kitchen iPad', screenId: null } })
+    stubFetch({ status: 200, body: { id: 'd1', name: 'Kitchen iPad', screenId: null, brightness: null } })
     const wrapper = await mountApp('https://example.local:4243/')
     expect(wrapper.find('.page-stub').exists()).toBe(false)
-    push('device', { id: 'd1', name: 'Kitchen iPad', screenId: 'edge' })
+    push('device', { id: 'd1', name: 'Kitchen iPad', screenId: 'edge', brightness: null })
     await nextTick()
     expect(wrapper.find('.page-stub').text()).toBe('edge-home')
     wrapper.unmount()
@@ -149,7 +149,7 @@ describe('the dashboard on a paired device', () => {
   })
 
   it('opens no admin from the bar', async () => {
-    const calls = stubFetch({ status: 200, body: { id: 'd1', name: 'Kitchen iPad', screenId: 'pad' } })
+    const calls = stubFetch({ status: 200, body: { id: 'd1', name: 'Kitchen iPad', screenId: 'pad', brightness: null } })
     const open = vi.fn()
     vi.stubGlobal('open', open)
     const wrapper = await mountApp('https://example.local:4243/')

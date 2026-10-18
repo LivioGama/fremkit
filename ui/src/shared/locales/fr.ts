@@ -401,7 +401,7 @@ export const fr: Record<string, string> = {
   'brightness.admin.next.night': 'nuit à {time}',
   'brightness.admin.next.day': 'jour à {time}',
   'brightness.admin.resume': 'Revenir à l’automatique',
-  'brightness.admin.deviceLater': 'Les réglages ci-dessous sont gardés pour cet écran ; ils s’appliqueront quand l’app de l’appareil saura régler sa luminosité.',
+  'brightness.admin.deviceLater': 'Ces réglages s’appliquent pendant que l’iPad affiche cet écran.',
   'brightness.admin.dayNight': 'Jour / nuit',
   'brightness.admin.dayLevel': 'Le jour : {percent} %',
   'brightness.admin.nightLevel': 'La nuit : {percent} %',

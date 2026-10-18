@@ -223,6 +223,8 @@ export class BrightnessService {
     const kiosk = this.kioskScreen(config)
     const now = this.now()
     const screens: Record<string, ScreenBrightness> = {}
+    const ids = new Set(config.screens.map((s) => s.id))
+    for (const id of this.deviceReports.keys()) if (!ids.has(id)) this.deviceReports.delete(id)
     for (const screen of config.screens) {
       const r = this.rt(screen.id)
       const reason = this.unavailable(screen, kiosk?.id)

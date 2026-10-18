@@ -11,7 +11,14 @@ export interface DeviceInfo {
   /** The screen the admin assigned to the device, or null when none is. */
   screenId: string | null
   /** What the app should do with its screen's brightness; null when the screen has none. */
-  brightness?: { target: number | null; seq: number } | null
+  brightness: { target: number | null; seq: number } | null
+}
+
+function isBrightness(v: unknown): v is DeviceInfo['brightness'] {
+  if (v === null) return true
+  if (!v || typeof v !== 'object') return false
+  const b = v as Record<string, unknown>
+  return (b.target === null || typeof b.target === 'number') && typeof b.seq === 'number'
 }
 
 function isDeviceInfo(v: unknown): v is DeviceInfo {
@@ -19,6 +26,7 @@ function isDeviceInfo(v: unknown): v is DeviceInfo {
   const d = v as Record<string, unknown>
   return typeof d.id === 'string' && typeof d.name === 'string'
     && (d.screenId === null || typeof d.screenId === 'string')
+    && isBrightness(d.brightness)
 }
 
 /**
@@ -35,7 +43,7 @@ export function useDeviceScreen(): { device: Ref<DeviceInfo | null>; unauthorize
   const off = useSocket().subscribe('device', (data) => {
     if (!isDeviceInfo(data)) return
     pushed = true
-    device.value = { id: data.id, name: data.name, screenId: data.screenId }
+    device.value = { id: data.id, name: data.name, screenId: data.screenId, brightness: data.brightness }
   })
   onUnmounted(off)
 
@@ -44,7 +52,7 @@ export function useDeviceScreen(): { device: Ref<DeviceInfo | null>; unauthorize
       if (res.status === 401) { deviceUnauthorized.value = true; return }
       if (!res.ok) return
       const data: unknown = await res.json()
-      if (!pushed && isDeviceInfo(data)) device.value = { id: data.id, name: data.name, screenId: data.screenId }
+      if (!pushed && isDeviceInfo(data)) device.value = { id: data.id, name: data.name, screenId: data.screenId, brightness: data.brightness }
     })
     .catch(() => { /* the server is down: the socket's push brings the device when it is back */ })
 

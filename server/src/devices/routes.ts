@@ -22,7 +22,7 @@ export interface DeviceRoutesOptions {
   service: DeviceService
   config: ConfigStore
   /** Hands a device's brightness report to whoever decides brightness (injected, not imported). */
-  reportBrightness?: (screenId: string, report: DeviceReport) => void
+  reportBrightness: (screenId: string, report: DeviceReport) => void
 }
 
 const NameSchema = z.string().trim().min(1).max(60)
@@ -94,7 +94,7 @@ export async function deviceRoutes(app: FastifyInstance, opts: DeviceRoutesOptio
     // The screen is the device's now, never one the body names.
     const screenId = service.deviceScreenOf(deviceId)
     if (screenId === null) return reply.code(409).send({ error: tr(locale(), 'device.noScreen') })
-    opts.reportBrightness?.(screenId, parsed.data)
+    opts.reportBrightness(screenId, parsed.data)
     return reply.code(204).send()
   })
 

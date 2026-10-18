@@ -227,19 +227,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   registry.register(createServiceStatusProvider({}, instances))
   // Per-screen settings from the store, reports from the helper: see brightness/service.ts.
   const brightness = opts.brightness ?? new BrightnessService({ config: () => store.get() })
-  const brightnessChanged = (): void => {
-    registry.refresh('brightness')
-    // Also decides now, so a device is told of a new target even when nothing watches the channel.
-    brightness.snapshot()
-  }
-  // The clock moves a ramp and ends a manual hold with nobody asking; a paired device does not
-  // watch the `brightness` channel, so something has to keep deciding for it.
-  const brightnessTick = setInterval(() => brightness.snapshot(), BRIGHTNESS_INTERVAL_MS)
-  brightnessTick.unref()
-  app.addHook('onClose', async () => { clearInterval(brightnessTick) })
+  // The service decides (and tells the devices) on every command and report itself; this only
+  // asks the channel's watchers for an immediate poll.
+  const brightnessChanged = (): void => registry.refresh('brightness')
   // A paired device may set only its own screen's brightness: see mayCommandBrightness. Read
   // at command time, so a device moved to another screen (or unpaired) is judged as it is now.
-  registry.register(createBrightnessProvider(brightness, brightnessChanged, (id) => deviceService.me(id)?.screenId ?? null))
+  registry.register(createBrightnessProvider(brightness, brightnessChanged, (id) => deviceService.deviceScreenOf(id)))
   const secrets = createSecretStore(store.get().secrets.backend, opts.dataDir)
   // v2 → v3 moved the Homey connection to the type its widget declares, and the declaration
   // calls the key `token` where the coded type called it `apiKey`. The config half of that is in
@@ -290,6 +283,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     }
     syncDeclared()
     hub.broadcast('config', cfg)
+    brightness.snapshot()
     brightnessChanged()
     // Fire and forget: a failed sync must not break the save that triggered it.
     void connections.sync(cfg.connections)
@@ -412,6 +406,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   })
   // A new target for a screen reaches the devices bound to it over the `device` channel.
   brightness.onChange((screens) => deviceService.screensChanged(screens))
+  // The clock moves a ramp and ends a manual hold with nobody asking, and a paired device does
+  // not watch the `brightness` channel: something has to keep deciding for it. Started here, after
+  // the last await that can throw, so a failed start leaves no timer behind.
+  const brightnessTick = setInterval(() => brightness.snapshot(), BRIGHTNESS_INTERVAL_MS)
+  brightnessTick.unref()
+  app.addHook('onClose', async () => { clearInterval(brightnessTick) })
   await app.register(deviceRoutes, {
     service: deviceService,
     config: store,
