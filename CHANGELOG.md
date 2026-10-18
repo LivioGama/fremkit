@@ -139,6 +139,8 @@ tagged `vX.Y.Z`.
 - **Adding a screen** creates an Edge screen; an iPad screen is now created from a paired iPad.
 
 ### Fixed
+- Escape in a right-click menu opened inside a dialog (the Screen panel's bar widgets) closes
+  the menu only, not the dialog under it.
 - **The install instructions say `pnpm run setup`.** They said `pnpm setup`, which runs pnpm's
   own command instead: it edits your shell profile and never sets Fremkit up.
 - **A connection used only by the navigation bar is protected.** A widget shown only in the bar

@@ -237,7 +237,7 @@ const setPanel = (depth: number) => (el: unknown) => { if (el) panels.value[dept
     <template v-for="(level, depth) in levels" :key="depth">
       <div
         :ref="setPanel(depth)"
-        class="ctx-menu" role="menu" tabindex="-1"
+        class="ctx-menu" role="menu" tabindex="-1" data-overlay
         :class="{ checks: hasChecks(level.items) }"
         :style="level.pos ? { left: level.pos.x + 'px', top: level.pos.y + 'px' } : { left: '0px', top: '0px', visibility: 'hidden' }"
         @contextmenu.prevent

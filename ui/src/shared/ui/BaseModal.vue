@@ -19,6 +19,10 @@ const panel = ref<HTMLElement | null>(null)
  */
 function onKeyDown(e: KeyboardEvent): void {
   if (e.key !== 'Escape') return
+  // A layer drawn above the dialog (a context menu, the command palette) closes itself on this
+  // Escape: the dialog under it stays. Both listen on the window, and stopPropagation() there
+  // does not keep a second listener of the same window from running.
+  if (e.target instanceof Element && e.target.closest('[data-overlay]')) return
   e.preventDefault()
   e.stopPropagation()
   emit('close')
