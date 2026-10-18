@@ -282,6 +282,8 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   fails at once (`invalid-json`, `offline`) while every unit test, which injects `fetch`, stays
   green. Go through `loadUndici()` in `server/src/net/pinned.ts`; `net-pinned.test.ts` replays
   the server's load order in a fresh process.
+- A layer drawn above a `BaseModal` (a context menu, the command palette) carries `data-overlay`:
+  the dialog and the layer both hear Escape on the window, and without it one Escape closes both.
 
 ## Where to look first
 
@@ -293,6 +295,7 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
 | add a connection type | **A coded type is the exception, and has to earn it.** One auth header on HTTP(S) is a `connection` the widget *declares* in its own manifest — no release of Fremkit per service; see `docs/writing-widgets.md`. Write code only for what a declaration cannot express: a session handshake, a protocol that is not HTTP, OAuth, a local binary. Nothing else counts — "it already has a provider" does not, and neither does "a picker would be nice" (a declared connection feeds no `pick`; the widget lists ids instead). Homey was coded and should not have been: two widgets on one Homey meant two connections, and a Homey invalidates the previous API key when a new one is issued, so the second key broke the first. If it does earn it: `server/src/connections/types/ics.ts` (simplest) or `github.ts` (fullest), register in `types/index.ts`, document in `docs/connections.md` |
 | add a provider | `server/src/providers/calendar.ts` (polling) or `shortcuts.ts` (commands only), register in `providers/index.ts` |
 | change the admin | `ui/src/admin/store.ts` (state), `Canvas.vue`/`EditOverlay.vue` (editing), `SettingsForm.vue` (setting types), `ScreenInspector.vue`, `ConnectionsInspector.vue`; right-click menus in `ui/src/shared/ui/contextMenu.ts` + `ContextMenu.vue` and the menu builders beside the component that opens them |
+| add an editor command or shortcut | A command goes into the menu builder it belongs to (`canvasMenu.ts`, `menus.ts`): the ⌘K palette reads those menus (`paletteCommands.ts`), so it appears there too; only what no menu holds is written in `paletteCommands.ts`. A key goes into `ui/src/admin/shortcuts.ts`, which the key handler in `App.vue`, the `?` sheet and the menus' hints all read |
 | change the dashboard | `ui/src/dashboard/App.vue`, `NavBar.vue`, `CompactWidgetFrame.vue`, `NavPopover.vue` |
 | change what widgets can do | `server/src/bridge/fremkit.js` and `ui/src/shared/useWidgetBridge.ts`, together |
 | touch or the kiosk window | `native/Sources/FremkitHelper/` |
