@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyServerOptions, type RouteOptions } from 'fastify'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import { homedir } from 'node:os'
@@ -67,6 +67,9 @@ import { LOGGER_OPTIONS } from './http/logging.js'
 import { MAX_WS_PAYLOAD_BYTES } from './ws/hub.js'
 import { isOriginAllowed } from './ws/routes.js'
 import { tr } from './i18n.js'
+import { isRemoteRequest } from './net/remote.js'
+import { DeviceStore } from './devices/store.js'
+import { registerRemoteGate } from './devices/gate.js'
 
 export interface AppOptions {
   dataDir: string
@@ -102,6 +105,11 @@ export interface AppOptions {
    * `null`.
    */
   accessToken: string | null
+  /**
+   * Test seam: called for every route as it is registered, from before the first plugin, so a
+   * test can walk the whole route table (the remote allow-list test does).
+   */
+  onRoute?: (route: RouteOptions) => void
 }
 
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
@@ -112,6 +120,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // The paired device a remote request authenticated as (see `net/remote.ts`). Declared up front
   // with a null value so every request has the same shape; only the devices gate sets it.
   app.decorateRequest('deviceId', null)
+  if (opts.onRoute) app.addHook('onRoute', opts.onRoute)
 
   const store = new ConfigStore(join(opts.dataDir, 'fremkit.json'))
   await store.load()
@@ -249,12 +258,26 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       .catch((err: Error) => app.log.warn({ err }, 'connection sync failed'))
   })
 
+  // The paired devices, and what the remote listener answers to. The hosts start empty — every
+  // remote request is refused 421 — until whoever starts the listener says which names it has.
+  const devices = new DeviceStore(join(opts.dataDir, 'devices.json'))
+  await devices.load()
+  let remoteHosts: () => Set<string> = () => new Set()
+  app.decorate('pairing', {
+    store: devices,
+    setRemoteHosts: (fn: () => Set<string>) => { remoteHosts = fn },
+  })
+  // First of the request hooks: a request that came in on the remote listener is judged there
+  // and only there (see devices/gate.ts). The two below skip it.
+  registerRemoteGate(app, { devices, remoteHosts: () => remoteHosts() })
+
   // The gate described in http/guard.ts: no request whose Host names anything but this server
   // (DNS rebinding), and no write from a page we did not serve (cross-site writes). It runs
   // before every route, the WebSocket handshake and the static UI included. A client that sends
   // no Origin at all — curl, the Claude Code hook scripts, the native helper — is not a browser
   // doing cross-site work and passes.
   app.addHook('onRequest', async (req, reply) => {
+    if (isRemoteRequest(req)) return
     if (!isAllowedHost(req.headers.host, opts.port)) {
       return reply.code(421).send({ error: tr(store.get().locale, 'http.hostNotAllowed') })
     }
@@ -266,7 +289,11 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // http/access.ts). A hook of its own, after the one above, so a rebinding attempt is still
   // told 421 and a cross-site write 403 whatever it carries.
   if (opts.accessToken !== null) {
-    installAccessGate(app, { gate: new AccessGate(opts.accessToken, { port: opts.port }) })
+    installAccessGate(app, {
+      gate: new AccessGate(opts.accessToken, { port: opts.port }),
+      // A paired device has its own credential, checked by the devices gate.
+      appliesTo: (req) => !isRemoteRequest(req),
+    })
   }
 
   // Never let a browser re-guess a type we declared, and make the answers that carry bytes from

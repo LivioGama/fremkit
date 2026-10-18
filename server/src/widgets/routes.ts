@@ -8,6 +8,7 @@ import type { ConfigStore } from '../config/store.js'
 import { grantedCatalog, permissionsOf, type Permissions } from '../marketplace/consent.js'
 import { SDK_VERSION } from '../bridge/sdk.js'
 import { tr } from '../i18n.js'
+import { isRemoteRequest } from '../net/remote.js'
 
 
 /**
@@ -27,9 +28,13 @@ import { tr } from '../i18n.js'
  * Spotify app hands us as an https URL. No `connect-src` at all: every network call goes through
  * `Fremkit.fetch`, which asks the host, which asks the proxy, which checks the manifest.
  */
-export function widgetCsp(port = 4242, dev = false): string {
-  const ownOrigins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`]
-  if (dev) ownOrigins.push('http://127.0.0.1:5173', 'http://localhost:5173')
+export function widgetCsp(port = 4242, dev = false, remoteOrigin?: string): string {
+  // On the remote listener the page was loaded from `https://<host>:4243` and nothing else: the
+  // loopback origins would name the iPad itself.
+  const ownOrigins = remoteOrigin !== undefined
+    ? [remoteOrigin]
+    : [`http://127.0.0.1:${port}`, `http://localhost:${port}`]
+  if (dev && remoteOrigin === undefined) ownOrigins.push('http://127.0.0.1:5173', 'http://localhost:5173')
   const own = ownOrigins.join(' ')
   return [
     'sandbox allow-scripts',
@@ -112,7 +117,11 @@ export async function widgetRoutes(
     const rel = req.params['*'] || 'index.html'
     // On every answer, not just the entry point: a widget's second HTML file is the same
     // untrusted code, and on a case-insensitive filesystem so is `Index.html`.
-    reply.header('content-security-policy', csp)
+    // Remote: built per request from the Host the devices gate has already checked against the
+    // names the listener answers to, so it cannot be steered to an origin of the sender's choice.
+    reply.header('content-security-policy', isRemoteRequest(req)
+      ? widgetCsp(opts.port, opts.dev, `https://${String(req.headers.host).toLowerCase()}`)
+      : csp)
     // The folder rather than the root: a widget may be a built-in or one the user installed, and
     // which of the two owns an id is the catalogue's answer, decided once at scan time.
     const folder = opts.catalog.folderOf(id)

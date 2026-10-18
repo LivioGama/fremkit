@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import type { Hub } from './hub.js'
-import { isLocalRequest } from '../net/remote.js'
+import { isLocalRequest, isRemoteRequest } from '../net/remote.js'
 
 /**
  * Origins allowed to drive this server — the WebSocket, and every write, through the gate in
@@ -29,7 +29,9 @@ export function isOriginAllowed(origin: string | undefined): boolean {
 
 export async function wsRoutes(app: FastifyInstance, opts: { hub: Hub }): Promise<void> {
   app.get('/ws', { websocket: true }, (socket, req) => {
-    if (!isOriginAllowed(req.headers.origin)) {
+    // A remote upgrade's Origin was already held to `https://<Host>` by the devices gate; the
+    // loopback origins below would refuse every one of them.
+    if (!isRemoteRequest(req) && !isOriginAllowed(req.headers.origin)) {
       socket.close(1008, 'origin not allowed')
       return
     }
