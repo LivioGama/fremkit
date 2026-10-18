@@ -244,7 +244,7 @@ public final class AppModel {
             } else {
                 unansweredChecks += 1
                 if unansweredChecks >= Self.unansweredChecksBeforeRelocating {
-                    relocate(from: host, mac: mac, preferringCurrent: false)
+                    relocate(from: host, mac: mac)
                 }
             }
         }
@@ -258,20 +258,21 @@ public final class AppModel {
     @discardableResult
     public func addressesChanged() -> Task<Void, Never>? {
         guard case let .dashboard(host, _) = state, let mac, running == nil else { return nil }
-        return relocate(from: host, mac: mac, preferringCurrent: true)
+        return relocate(from: host, mac: mac)
     }
 
     /// Runs the `Connector` without leaving the dashboard, and moves it only when the Mac answers
     /// at another host. A Mac that answers nowhere (asleep, say) leaves the page as it is, so it
-    /// does not flicker; a revocation or a wrong key shows their screens, as a check would.
+    /// does not flicker; a revocation shows its screen, and a wrong key does only when the host in
+    /// use presented it (`Connector.relocate`). The host in use is tried first, so a page that
+    /// still works stays where it is.
     @discardableResult
-    private func relocate(from host: String, mac: PairedMac, preferringCurrent: Bool) -> Task<Void, Never> {
+    private func relocate(from host: String, mac: PairedMac) -> Task<Void, Never> {
         let generation = generation
         let candidates = discovered()
         isConnecting = true
         let task = Task { [connector] in
-            let result = await connector.connect(mac: mac, discovered: candidates,
-                                                 preferring: preferringCurrent ? host : nil)
+            let result = await connector.relocate(mac: mac, discovered: candidates, current: host)
             self.finishRelocate(result, from: host, generation: generation)
         }
         running = task

@@ -69,6 +69,23 @@ final class ConnectorTests: XCTestCase {
                        ["studio.local", "192.0.2.10", "198.51.100.7"])
     }
 
+    func testARelocationIsKeyChangedOnlyWhenTheHostInUsePresentsAnotherKey() async {
+        // A stale address another Mac now holds answers with its key: not this one, and not proof
+        // that this Mac's key changed while the host in use simply missed a request.
+        let stale = FakeProber(["198.51.100.7": .pinMismatch])
+        let result = await Connector(prober: stale).relocate(mac: sampleMac, discovered: ["198.51.100.7"], current: "192.0.2.10")
+        XCTAssertEqual(result, .unreachable)
+        XCTAssertEqual(stale.hosts, ["192.0.2.10", "studio.local", "198.51.100.7"])
+
+        let reset = FakeProber(["192.0.2.10": .pinMismatch, "198.51.100.7": .pinMismatch])
+        let changed = await Connector(prober: reset).relocate(mac: sampleMac, discovered: ["198.51.100.7"], current: "192.0.2.10")
+        XCTAssertEqual(changed, .keyChanged)
+
+        let moved = FakeProber(["192.0.2.10": .pinMismatch, "198.51.100.7": .ok(sampleInfo)])
+        let found = await Connector(prober: moved).relocate(mac: sampleMac, discovered: ["198.51.100.7"], current: "192.0.2.10")
+        XCTAssertEqual(found, .connected(host: "198.51.100.7", info: sampleInfo))
+    }
+
     func testAPreferredHostIsTriedFirst() {
         XCTAssertEqual(Connector.candidates(mac: sampleMac, discovered: ["198.51.100.7"], preferring: "198.51.100.7"),
                        ["198.51.100.7", "studio.local", "192.0.2.10"])

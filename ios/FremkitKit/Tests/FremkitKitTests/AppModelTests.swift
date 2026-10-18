@@ -401,6 +401,25 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(model.addressesChanged())
     }
 
+    func testAStaleAddressWithAnotherKeyNeverReplacesTheDashboard() async {
+        let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo)])
+        let (model, _) = await dashboardOnAnAddress(prober, discovered: { ["198.51.100.7"] })
+        // The host in use misses a request; another Fremkit Mac holds an address this one once had.
+        prober.set("192.0.2.10", .unreachable)
+        prober.set("198.51.100.7", .pinMismatch)
+        await model.addressesChanged()?.value
+        XCTAssertEqual(model.state, .dashboard(host: "192.0.2.10", info: sampleInfo))
+        await model.checkAuthorization()?.value
+        await model.checkAuthorization()?.value
+        await settle(model)
+        XCTAssertEqual(model.state, .dashboard(host: "192.0.2.10", info: sampleInfo), "nor does the periodic path")
+
+        // The host in use itself presents another key: that is a changed key.
+        prober.set("192.0.2.10", .pinMismatch)
+        await model.addressesChanged()?.value
+        XCTAssertEqual(model.state, .keyChanged(name: "studio"))
+    }
+
     func testAReconnectDoesNotJoinARelocation() async {
         let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo)])
         let (model, _) = await dashboardOnAnAddress(prober, discovered: { [] })
