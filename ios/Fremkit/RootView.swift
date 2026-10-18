@@ -109,12 +109,30 @@ private struct DashboardScreen: View {
     let mac: PairedMac
     let model: AppModel
     @Environment(\.scenePhase) private var scenePhase
+    @State private var brightness: BrightnessSync
+
+    init(host: String, mac: PairedMac, model: AppModel) {
+        self.host = host
+        self.mac = mac
+        self.model = model
+        let reporter = BrightnessReporter(mac: mac, host: host)
+        let transport = BrightnessReporter.pinnedTransport()
+        _brightness = State(initialValue: BrightnessSync(
+            read: { ScreenBrightness.level },
+            write: { ScreenBrightness.level = $0 },
+            send: { level, applied in await reporter.send(brightness: level, applied: applied, transport: transport) },
+            // Same path as the probe's 401: the pairing was removed on the Mac.
+            unauthorized: { model.pageSaidUnauthorized() }))
+    }
 
     var body: some View {
         DashboardView(host: host, port: mac.port, mac: mac,
                       onMessage: { message in
-                          if message == .unauthorized { model.pageSaidUnauthorized() }
-                          // `screen` and `brightness` are for later: brightness is the iPad's next step.
+                          switch message {
+                          case .unauthorized: model.pageSaidUnauthorized()
+                          case let .brightness(target, seq): brightness.receive(target: target, seq: seq)
+                          case .screen: break
+                          }
                       },
                       onFailure: { model.dashboardFailed() })
             .task(id: scenePhase) {
@@ -128,8 +146,36 @@ private struct DashboardScreen: View {
                     await model.checkAuthorization()?.value
                 }
             }
+            .task(id: scenePhase) {
+                // Heartbeat: the level goes to the Mac every 10 s while the dashboard is shown and
+                // the app active, which is what keeps the screen from going `no-device`.
+                guard scenePhase == .active else {
+                    brightness.stop()
+                    return
+                }
+                await brightness.run()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification)) { _ in
+                if scenePhase == .active { brightness.levelChanged() }
+            }
             .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
-            .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+            .onDisappear {
+                UIApplication.shared.isIdleTimerDisabled = false
+                brightness.stop()
+            }
+    }
+}
+
+/// The brightness of the screen the app's window scene is on (`UIScreen.main` is deprecated).
+@MainActor
+private enum ScreenBrightness {
+    private static var screen: UIScreen? {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.screen
+    }
+
+    static var level: Double {
+        get { screen.map { Double($0.brightness) } ?? 0.5 }
+        set { screen?.brightness = CGFloat(newValue) }
     }
 }
 
