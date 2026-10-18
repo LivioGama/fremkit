@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 // @ts-expect-error plain JS modules outside server/, no declarations
 import { control, cropRect, embeddedPlayer, pickVideo, placeFrame, survey } from '../../companion/lib/video.js'
 // @ts-expect-error plain JS module
@@ -8,7 +10,7 @@ import { IDLE_SLACK_MS, idleDelay } from '../../companion/lib/presence.js'
 // @ts-expect-error plain JS module
 import { closeOutcome, POLICY_CLOSE_CODE, REVOKED_CLOSE_CODE } from '../../companion/lib/link.js'
 // @ts-expect-error plain JS module
-import { localCandidatesOnly } from '../../companion/lib/sdp.js'
+import { localCandidatesOnly, loopbackForMdns } from '../../companion/lib/sdp.js'
 // @ts-expect-error plain JS module
 import * as ext from '../../companion/lib/protocol.js'
 import { isLocalSdp, parseExtensionMessage, PROTOCOL } from '../src/companion/protocol.js'
@@ -118,6 +120,66 @@ describe('localCandidatesOnly agrees with the server isLocalSdp', () => {
     const line = `a=candidate:1 1 udp 2122260223 ${address} 54321 typ host generation 0`
     const offer = ['v=0', 'm=video 9 UDP/TLS/RTP/SAVPF 96', line, ''].join('\r\n')
     expect(localCandidatesOnly(offer).includes(line), address).toBe(isLocalSdp(offer))
+  })
+})
+
+describe('loopbackForMdns', () => {
+  // As Chrome writes an offscreen document's offer: its address hidden behind an mDNS name.
+  const MDNS = 'a=candidate:680590759 1 udp 2113937151 01d56785-bba5-4960-bb7d-61791c640b67.local 60466 typ host generation 0 network-cost 999'
+  const offer = (...lines: string[]) => ['v=0', 'm=video 9 UDP/TLS/RTP/SAVPF 96', 'c=IN IP4 0.0.0.0', ...lines, 'a=mid:0', ''].join('\r\n')
+
+  it('writes an mDNS host candidate on 127.0.0.1 and leaves every other line alone', () => {
+    const real = 'a=candidate:2 1 udp 2113937151 192.168.1.20 50001 typ host generation 0'
+    const out = loopbackForMdns(offer(MDNS, real))
+    expect(out).toBe(offer(
+      'a=candidate:680590759 1 udp 2113937151 127.0.0.1 60466 typ host generation 0 network-cost 999', real))
+    expect(isLocalSdp(out)).toBe(true)
+    expect(loopbackForMdns(out)).toBe(out)
+  })
+
+  it('touches only host candidates', () => {
+    const srflx = 'a=candidate:3 1 udp 1677729535 abcd.local 50002 typ srflx raddr 0.0.0.0 rport 0'
+    expect(loopbackForMdns(offer(srflx))).toBe(offer(srflx))
+    const bare = ['v=0', 'a=candidate:4 1 udp 1 abcd.local 50003 typ host'].join('\n')
+    expect(loopbackForMdns(bare)).toBe('v=0\na=candidate:4 1 udp 1 127.0.0.1 50003 typ host')
+  })
+
+  /**
+   * What the offscreen document sends is what the Fremplay widget dials: run through the bridge's
+   * `local` wrapper, an mDNS-only offer keeps no candidate, and the rewritten one keeps it. Seen in
+   * a real run (Chrome offerer, WKWebView answerer configured like the kiosk): without the rewrite
+   * the connection stays `new`, with it it connects.
+   */
+  it('gives the wrapped receiver a candidate it keeps, where the mDNS name gives it none', async () => {
+    const bridge = await readFile(fileURLToPath(new URL('../src/bridge/fremkit.js', import.meta.url)), 'utf8')
+    const remote: string[] = []
+    class Native {
+      setRemoteDescription(d: { sdp: string }) { remote.push(d.sdp); return Promise.resolve() }
+    }
+    const attrs: Record<string, string> = { 'data-webrtc': 'local', 'data-webrtc-hosts': '127.0.0.1 ::1 192.0.2.10' }
+    const window: Record<string, unknown> = { RTCPeerConnection: Native, parent: { postMessage: () => {} }, addEventListener: () => {} }
+    const document = {
+      currentScript: { getAttribute: (n: string) => attrs[n] ?? null },
+      documentElement: { classList: { add: () => {}, remove: () => {} }, style: { setProperty: () => {}, removeProperty: () => {} } },
+      head: { firstChild: null, insertBefore: () => {}, appendChild: () => {} },
+      createElement: () => ({ setAttribute: () => {}, textContent: '' }),
+      querySelector: () => null,
+      addEventListener: () => {},
+      dispatchEvent: () => {},
+    }
+    new Function('window', 'document', 'console', bridge)(window, document, console)
+    const RTC = window.RTCPeerConnection as new (c: unknown) => { setRemoteDescription(d: unknown): Promise<void> }
+    const kept = (sdp: string) => sdp.split('\r\n').filter((l) => l.startsWith('a=candidate'))
+
+    await new RTC({ iceServers: [] }).setRemoteDescription({ type: 'offer', sdp: localCandidatesOnly(offer(MDNS)) })
+    expect(kept(remote[0])).toEqual([])
+    await new RTC({ iceServers: [] }).setRemoteDescription({ type: 'offer', sdp: loopbackForMdns(localCandidatesOnly(offer(MDNS))) })
+    expect(kept(remote[1])).toEqual(['a=candidate:680590759 1 udp 2113937151 127.0.0.1 60466 typ host generation 0 network-cost 999'])
+  })
+
+  it('is what the offscreen document sends', async () => {
+    const src = await readFile(fileURLToPath(new URL('../../companion/offscreen.js', import.meta.url)), 'utf8')
+    expect(src).toContain('return loopbackForMdns(localCandidatesOnly(pc.localDescription.sdp))')
   })
 })
 

@@ -55,3 +55,28 @@ export function localCandidatesOnly(sdp) {
     })
     .join('')
 }
+
+/**
+ * Each `host` candidate on a `.local` name written on 127.0.0.1 instead, so a receiver that only
+ * dials loopback or this Mac's own addresses can reach it.
+ *
+ * Chrome hides a page's addresses behind mDNS names (`<uuid>.local`), and the socket behind such
+ * a name answers on loopback too (checked in Chrome and a WKWebView configured like the kiosk). The Fremplay widget runs under the bridge's `local` WebRTC level
+ * (server/src/widgets/webrtc.ts), which refuses a remote `.local` name: resolving it asks the
+ * whole network. With only that name in the offer, the receiver has nothing to dial, and Chrome
+ * does not reach the WKWebView's own `.local` name either, so the share never connects. The
+ * receiver is on this Mac, so loopback reaches the same socket.
+ */
+export function loopbackForMdns(sdp) {
+  return sdp
+    .split(/(?<=\n)/)
+    .map((line) => {
+      if (!line.startsWith('a=candidate:')) return line
+      const fields = line.split(' ')
+      const address = fields[4] ?? ''
+      if (fields[6] !== 'typ' || fields[7]?.trim() !== 'host' || !address.endsWith('.local')) return line
+      fields[4] = '127.0.0.1'
+      return fields.join(' ')
+    })
+    .join('')
+}
