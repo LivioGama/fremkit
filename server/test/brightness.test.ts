@@ -11,6 +11,7 @@ import { createBrightnessProvider, mayCommandBrightness } from '../src/brightnes
 import { buildApp } from '../src/app.js'
 import Fastify from 'fastify'
 import { brightnessRoutes } from '../src/brightness/routes.js'
+import { markRemoteSocket } from '../src/net/remote.js'
 import { GEOCODE_URL, GeocodeError, searchPlaces } from '../src/brightness/geocode.js'
 
 const MIN = 60_000
@@ -367,6 +368,28 @@ describe('POST /api/hooks/brightness', () => {
     expect((await app.inject({ method: 'POST', url: '/api/hooks/brightness', payload: { available: true, value: 101 } })).statusCode).toBe(400)
     const remote = await app.inject({ method: 'POST', url: '/api/hooks/brightness', payload: { available: true }, remoteAddress: '203.0.113.7' })
     expect(remote.statusCode).toBe(403)
+  })
+})
+
+describe('POST /api/hooks/brightness on the remote listener', () => {
+  // The route alone, past any allow-list: a request on a socket the remote listener marked, from
+  // a loopback address, as one sent to port 4243 by the Mac itself would be. The socket decides.
+  it('refuses a request from this Mac that came in on the remote listener', async () => {
+    const reports: unknown[] = []
+    const service = { helperReport: (r: unknown) => { reports.push(r) } } as unknown as BrightnessService
+    const f = Fastify({ logger: false })
+    f.decorateRequest('deviceId', null)
+    f.addHook('onRequest', async (req) => { if (req.headers['x-remote'] === '1') markRemoteSocket(req.raw.socket) })
+    await f.register(brightnessRoutes, { service, changed: () => {} })
+    const send = (remote: boolean) => f.inject({
+      method: 'POST', url: '/api/hooks/brightness', remoteAddress: '127.0.0.1',
+      headers: remote ? { 'x-remote': '1' } : {}, payload: { available: true, value: 10 },
+    })
+    expect((await send(true)).statusCode).toBe(403)
+    expect(reports).toEqual([])
+    expect((await send(false)).statusCode).toBe(204)
+    expect(reports).toHaveLength(1)
+    await f.close()
   })
 })
 
