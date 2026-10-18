@@ -40,6 +40,18 @@ export const DEVICE_CLOSE_CODE = 4401
 export const DEVICE_TERMINATE_MS = 2000
 
 /**
+ * Channels a paired device never reaches, whatever its screen holds. `companion` carries the
+ * pairing code shown on the Edge, what a browser tab here is playing and the WebRTC offers to
+ * watch it: this Mac's dashboard only, in this first version. Matched by family, so a
+ * `companion:<suffix>` is refused too.
+ */
+export const LOCAL_ONLY_CHANNELS: ReadonlySet<string> = new Set(['companion'])
+
+function isLocalOnly(channel: string): boolean {
+  return LOCAL_ONLY_CHANNELS.has(channel.split(':')[0])
+}
+
+/**
  * What a paired device's screen lets it touch, or null when the device has no screen: then only
  * the host channels and its own `device` channel are open to it.
  */
@@ -216,7 +228,7 @@ export class Hub {
       case 'command': {
         const { id, channel, name, payload } = msg
         const ctx = this.contextOf(socket)
-        if (ctx.paired && (typeof channel !== 'string' || !channelAllowed(this.policyOf(ctx)?.commands ?? [], channel))) {
+        if (ctx.paired && (typeof channel !== 'string' || isLocalOnly(channel) || !channelAllowed(this.policyOf(ctx)?.commands ?? [], channel))) {
           return this.refuse(socket, id)
         }
         this.registry.runCommand(channel, name, payload, ctx).then(
@@ -255,7 +267,9 @@ export class Hub {
     }
   }
 
+  /** For a paired socket only: a local one subscribes to anything. */
   private subscriptionAllowed(allowed: ScreenChannels | null, channel: string): boolean {
+    if (isLocalOnly(channel)) return false
     return HOST_CHANNELS.includes(channel) || channelAllowed(allowed?.subscriptions ?? [], channel)
   }
 

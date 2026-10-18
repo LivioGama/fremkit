@@ -269,6 +269,29 @@ describe('a paired socket', () => {
 
   afterEach(() => { vi.useRealTimers() })
 
+  it('refuses companion to a paired socket even when its screen holds fremplay', async () => {
+    const { hub, paired, registry, setPolicy } = pairedSetup()
+    const steered: unknown[] = []
+    registry.register({ channel: 'companion', intervalMs: 1000, commands: { control: async (p) => { steered.push(p); return { ok: true } } } })
+    hub.broadcast('companion', { pairing: { code: 'ABCD' } })
+    // What the policy builds for a screen holding fremplay, wildcard included.
+    setPolicy({ 'dev-a': { subscriptions: ['companion', 'companion:*'], commands: ['companion'] } })
+    const socket = paired('dev-a')
+    socket.receive({ type: 'subscribe', channel: 'companion' })
+    socket.receive({ type: 'subscribe', channel: 'companion:x' })
+    socket.receive({ type: 'command', id: 'c1', channel: 'companion', name: 'control', payload: { action: 'toggle' } })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(socket.sent).toEqual([REFUSED, REFUSED, { ...REFUSED, id: 'c1' }])
+    expect(steered).toEqual([])
+    expect((registry as any).states.get('companion').subscribers).toBe(0)
+    // This Mac's dashboard still gets it.
+    const local = new FakeSocket()
+    hub.attach(local, { loopback: true, paired: false })
+    local.receive({ type: 'subscribe', channel: 'companion' })
+    expect(local.sent).toEqual([{ type: 'data', channel: 'companion', data: { pairing: { code: 'ABCD' } } }])
+    registry.stop()
+  })
+
   it('is not heard once closed, even before the close handshake ends', async () => {
     const { hub, count, focused, attach, registry } = pairedSetup()
     const socket = attach(new LingeringSocket(), 'dev-a')
