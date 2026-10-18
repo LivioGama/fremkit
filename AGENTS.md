@@ -116,6 +116,11 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
   every route to keep it so. Judge locality with `isLocalRequest(req)` (`server/src/net/remote.ts`),
   never `isLoopbackAddress(req.ip)` alone: a request to 4243 from the Mac itself has a loopback
   address.
+- **Demo mode** (`FREMKIT_DEMO=1`, `server/src/demo/`, docs/demo-mode.md) must never construct a
+  real provider: a new provider is registered in `registerRealProviders()` in `app.ts`, and a
+  channel a built-in widget reads needs a fake in `demo/providers.ts` too (`demo.test.ts` fails
+  otherwise). A new built-in widget also gets `DEMO_SETTINGS` if its defaults show an empty state,
+  and a preview from `pnpm widget:preview <id>`.
 - **Config schema** changes go through `server/src/config/schema.ts` with a migration in the
   same commit and a test; the store never rewrites a file it could not migrate.
 - **Commits**: small, one concern each — a native fix noticed *while I was in there* is its own
@@ -304,4 +309,5 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
 | bug reports, diagnostics | `server/src/diagnostics/` (report, `redact.ts`, log tail), `ui/src/admin/DiagnosticsSection.vue`, the helper's `StatusMenu.swift` |
 | change what the editor says about a failing widget | `ui/src/admin/health.ts` (pure, tested), `useHealth.ts` (stores, socket, the fixes), `server/src/providers/health.ts` (the `config:health` channel) |
 | pair a device, the remote listener | `server/src/devices/`, `ui/src/admin/DevicesSection.vue` |
+| demo mode, widget previews | `server/src/demo/` (fakes, seed), `server/src/cli/preview.ts`, `previewProblems` in `server/src/widgets/manifest.ts` (vendored by the Sietch), `ui/src/admin/WidgetPreviewPopover.vue` |
 | export or import a layout | `server/src/share/` (file format, export, import), `ui/src/admin/share.ts`, `shareApply.ts`, `Share*Dialog.vue`, `docs/sharing.md` |
