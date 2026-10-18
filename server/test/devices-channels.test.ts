@@ -101,6 +101,15 @@ describe('screenChannels and per-connection channels', () => {
     expect(screenChannels(both, 'tablet', set, channelOf).commands).toEqual(['github:gh-edge'])
   })
 
+  it('follows a connection the manifest gives as a default, as the widget does', () => {
+    const withDefault = new Map([['cal', { ...cal, settingsSchema: { source: { type: 'connection', default: 'ics-c' } } }]])
+    const unset = withConnections({ 'cal-1': { widgetId: 'cal', settings: {} } }, ['cal-1'])
+    expect(screenChannels(unset, 'tablet', withDefault, channelOf).subscriptions).toEqual(['calendar:ics-c'])
+    // A saved value wins over the default.
+    const saved = withConnections({ 'cal-1': { widgetId: 'cal', settings: { source: 'ics-a' } } }, ['cal-1'])
+    expect(screenChannels(saved, 'tablet', withDefault, channelOf).subscriptions).toEqual(['calendar:ics-a'])
+  })
+
   it('grants nothing for a connection used only on another screen', () => {
     const cfg = withConnections({
       'cal-1': { widgetId: 'cal', settings: { source: 'ics-a' } },

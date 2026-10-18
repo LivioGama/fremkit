@@ -20,7 +20,7 @@ export const DEVICE_CHANNEL = 'device'
 export interface ChannelManifest {
   subscriptions: string[]
   commands: string[]
-  settingsSchema?: Record<string, { type?: string; preview?: { channel: string } }>
+  settingsSchema?: Record<string, { type?: string; default?: unknown; preview?: { channel: string } }>
 }
 
 export interface ScreenChannels {
@@ -42,12 +42,15 @@ export function channelAllowed(allowed: readonly string[], channel: string): boo
   return false
 }
 
-/** The connection ids an instance's settings name, through its `connection`/`connections` fields. */
+/**
+ * The connection ids an instance's settings name, through its `connection`/`connections` fields:
+ * the saved value, or the manifest's `default` when nothing is saved — what the widget is handed
+ * (`mergeSettings` in the bridge), so the policy follows the same connection the widget does.
+ */
 function referencedConnections(manifest: ChannelManifest, settings: Record<string, unknown>): string[] {
   const ids: string[] = []
   for (const [key, field] of Object.entries(manifest.settingsSchema ?? {})) {
-    if (!Object.hasOwn(settings, key)) continue
-    const value = settings[key]
+    const value = Object.hasOwn(settings, key) ? settings[key] : field.default
     if (field.type === 'connection' && typeof value === 'string') ids.push(value)
     if (field.type === 'connections' && Array.isArray(value)) {
       for (const v of value) if (typeof v === 'string') ids.push(v)
