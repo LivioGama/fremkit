@@ -14,6 +14,7 @@ import BaseButton from '../shared/ui/BaseButton.vue'
 import BaseCheckbox from '../shared/ui/BaseCheckbox.vue'
 import BaseIcon from '../shared/ui/BaseIcon.vue'
 import { useI18n } from '../shared/i18n'
+import { COMPANION_ALLOW_DELAY_MS, useSettled } from '../shared/useSettled'
 import { useConfirm } from '../shared/useConfirm'
 import type { PublicExtensionDevice, PublicIpadDevice } from '../shared/api'
 import type { Screen } from '../shared/types'
@@ -68,6 +69,12 @@ const request = computed(() => {
   const r = status.value?.companionRequest ?? null
   return r && now.value < r.expiresAt ? r : null
 })
+/**
+ * Allow waits two seconds whenever another request takes the card, as on the Edge: a request
+ * swapped in just before the click is not the one whose code was read. The answer carries the
+ * code on show, which the server checks too.
+ */
+const requestSettled = useSettled(() => request.value?.requestId, COMPANION_ALLOW_DELAY_MS)
 
 /** Keeps the name when it is emptied or unchanged: the server refuses an empty one anyway. */
 function rename(device: PublicExtensionDevice, event: Event): void {
@@ -139,7 +146,7 @@ async function onCreated(screenId: string): Promise<void> {
       <p class="value mono" data-test="request-code">{{ request.code }}</p>
       <div class="row">
         <BaseButton data-test="request-refuse" @click="devices.answerCompanion(request, false)">{{ t('admin.devices.extension.refuse') }}</BaseButton>
-        <BaseButton variant="primary" data-test="request-approve" @click="devices.answerCompanion(request, true)">{{ t('admin.devices.extension.approve') }}</BaseButton>
+        <BaseButton variant="primary" data-test="request-approve" :disabled="!requestSettled" @click="devices.answerCompanion(request, true)">{{ t('admin.devices.extension.approve') }}</BaseButton>
       </div>
     </div>
 

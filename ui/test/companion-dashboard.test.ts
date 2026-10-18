@@ -52,9 +52,12 @@ describe('the pairing prompt', () => {
   beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); fake.approve.mockClear(); fake.refuse.mockClear() })
   afterEach(() => { vi.useRealTimers() })
 
-  async function mountPrompt(p: unknown) {
+  /** Mounts the prompt and, unless told not to, lets Allow's two-second hold run out. */
+  async function mountPrompt(p: unknown, { settle = true } = {}) {
     const { default: CompanionPrompt } = await import('../src/dashboard/CompanionPrompt.vue')
-    return mount(CompanionPrompt, { props: { pairing: p as never } })
+    const w = mount(CompanionPrompt, { props: { pairing: p as never } })
+    if (settle) { vi.advanceTimersByTime(2000); await nextTick() }
+    return w
   }
 
   it('shows the code and name and calls approve on Autoriser, with the code on show', async () => {
@@ -67,9 +70,33 @@ describe('the pairing prompt', () => {
   })
 
   it('calls refuse on Refuser, with the code on show', async () => {
-    const w = await mountPrompt(pairing())
+    const w = await mountPrompt(pairing(), { settle: false })
+    // Refuse needs no hold: refusing the wrong request costs a retry, not a pairing.
     await w.find('button.refuse').trigger('click')
     expect(fake.refuse).toHaveBeenCalledWith('r1', 'K7M2')
+  })
+
+  it('holds Allow for two seconds after the request on show changes', async () => {
+    const w = await mountPrompt(pairing(), { settle: false })
+    expect(w.find('button.approve').attributes('disabled')).toBeDefined()
+    expect(w.find('button.refuse').attributes('disabled')).toBeUndefined()
+    await w.find('button.approve').trigger('click')
+    expect(fake.approve).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1999)
+    await nextTick()
+    expect(w.find('button.approve').attributes('disabled')).toBeDefined()
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(w.find('button.approve').attributes('disabled')).toBeUndefined()
+    // A new deadline for the same request does not hold it again; another request does.
+    await w.setProps({ pairing: pairing({ expiresAt: NOW + 60_000 }) as never })
+    expect(w.find('button.approve').attributes('disabled')).toBeUndefined()
+    await w.setProps({ pairing: pairing({ requestId: 'r2', code: 'P4Q9' }) as never })
+    expect(w.find('button.approve').attributes('disabled')).toBeDefined()
+    vi.advanceTimersByTime(2000)
+    await nextTick()
+    await w.find('button.approve').trigger('click')
+    expect(fake.approve).toHaveBeenCalledWith('r2', 'P4Q9')
   })
 
   it('shows a short error in the prompt when the answer fails', async () => {
@@ -104,6 +131,9 @@ describe('the pairing prompt', () => {
     await w.setProps({ pairing: pairing({ expiresAt: NOW + 60_000 }) as never })
     expect(w.find('button.approve').attributes('disabled')).toBeDefined()
     await w.setProps({ pairing: pairing({ requestId: 'r2' }) as never })
+    expect(w.find('button.refuse').attributes('disabled')).toBeUndefined()
+    vi.advanceTimersByTime(2000)
+    await nextTick()
     expect(w.find('button.approve').attributes('disabled')).toBeUndefined()
   })
 

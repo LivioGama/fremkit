@@ -2,13 +2,16 @@
 import { ref, watch, onUnmounted } from 'vue'
 import { api } from '../shared/api'
 import { useI18n } from '../shared/i18n'
+import { COMPANION_ALLOW_DELAY_MS, useSettled } from '../shared/useSettled'
 
 /**
  * A browser extension asked to pair: the code it shows and the name it gave, to be matched by eye
  * on this screen before the Mac says yes. Drawn over everything; it hides at `expiresAt` even
  * before the server's next snapshot says the request is gone.
  *
- * The answer carries the code on show, which the server checks against the waiting request.
+ * Allow waits two seconds whenever the request on show changes, so a request swapped in under the
+ * user's finger is not the one approved; the answer also carries the code on show, which the
+ * server checks against the waiting request.
  */
 const props = defineProps<{ pairing: { requestId: string; code: string; name: string; expiresAt: number } }>()
 const { t } = useI18n()
@@ -17,6 +20,7 @@ const failed = ref(false)
 const busy = ref(false)
 /** The failure the server gave, when it said why (a changed request); otherwise the generic one. */
 const reason = ref('')
+const settled = useSettled(() => props.pairing.requestId, COMPANION_ALLOW_DELAY_MS)
 let timer: number | undefined
 
 watch(() => [props.pairing.requestId, props.pairing.expiresAt], ([id], previous) => {
@@ -59,7 +63,7 @@ async function answer(call: (id: string, code: string) => Promise<unknown>) {
       <p v-if="failed" class="error" role="alert">{{ reason || t('dashboard.companion.failed') }}</p>
       <div class="actions">
         <button type="button" class="refuse" :disabled="busy" @click="answer(api.refuseCompanion)">{{ t('dashboard.companion.refuse') }}</button>
-        <button type="button" class="approve" :disabled="busy" @click="answer(api.approveCompanion)">{{ t('dashboard.companion.approve') }}</button>
+        <button type="button" class="approve" :disabled="busy || !settled" @click="answer(api.approveCompanion)">{{ t('dashboard.companion.approve') }}</button>
       </div>
     </div>
   </div>

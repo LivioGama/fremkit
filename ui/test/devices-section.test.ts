@@ -151,12 +151,46 @@ describe('the devices section', () => {
     try {
       const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
       await flushPromises()
+      vi.advanceTimersByTime(2000)
+      await flushPromises()
       await wrapper.find('[data-test="request-approve"]').trigger('click')
       await flushPromises()
       expect(deviceApi.approveCompanion).toHaveBeenCalledWith('req-1', 'AB2C')
       await wrapper.find('[data-test="request-refuse"]').trigger('click')
       await flushPromises()
       expect(deviceApi.refuseCompanion).toHaveBeenCalledWith('req-1', 'AB2C')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('holds Allow for two seconds whenever another request takes the card', async () => {
+    vi.useFakeTimers()
+    try {
+      deviceApi.getDevices.mockResolvedValue(status({
+        companionRequest: { requestId: 'req-1', code: 'AB2C', name: 'Chrome', expiresAt: Date.now() + 60_000 },
+      }))
+      const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+      await flushPromises()
+      const approve = () => wrapper.find('[data-test="request-approve"]')
+      expect(approve().attributes('disabled')).toBeDefined()
+      vi.advanceTimersByTime(1999)
+      await flushPromises()
+      expect(approve().attributes('disabled')).toBeDefined()
+      vi.advanceTimersByTime(1)
+      await flushPromises()
+      expect(approve().attributes('disabled')).toBeUndefined()
+
+      deviceApi.getDevices.mockResolvedValue(status({
+        companionRequest: { requestId: 'req-2', code: 'XY3Z', name: 'Chrome', expiresAt: Date.now() + 60_000 },
+      }))
+      await useDevices().refresh()
+      await flushPromises()
+      expect(wrapper.find('[data-test="request-code"]').text()).toBe('XY3Z')
+      expect(approve().attributes('disabled')).toBeDefined()
+      await approve().trigger('click')
+      expect(deviceApi.approveCompanion).not.toHaveBeenCalled()
       wrapper.unmount()
     } finally {
       vi.useRealTimers()
