@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FileSecretStore } from '../src/secrets/file.js'
-import { KeychainSecretStore, accountsInDump, parsePassword, passwordArgument, runSecurity } from '../src/secrets/keychain.js'
+import { KeychainSecretStore, accountsInDump, instanceService, parsePassword, passwordArgument, runSecurity } from '../src/secrets/keychain.js'
 import { assertSecretKey, createSecretStore, defaultSecretsBackend } from '../src/secrets/index.js'
 
 const dir = () => mkdtemp(join(tmpdir(), 'fremkit-secrets-'))
@@ -188,6 +188,46 @@ describe('KeychainSecretStore', () => {
     expect(calls[0].args).toEqual(['dump-keychain'])
   })
 
+  it('files each instance under its own service, named after its data folder', () => {
+    expect(instanceService('/tmp/a/data')).toMatch(/^fremkit:[0-9a-f]{12}$/)
+    expect(instanceService('/tmp/a/data')).toBe(instanceService('/tmp/a/./data'))
+    expect(instanceService('/tmp/a/data')).not.toBe(instanceService('/tmp/b/data'))
+  })
+
+  it('adopts an item an earlier version filed under the shared service, only when allowed', async () => {
+    const store = new Map<string, string>([['fremkit|gh-x1/token', 'legacy-token']])
+    const keyOf = (args: string[]) => `${args[args.indexOf('-s') + 1]}|${args[args.indexOf('-a') + 1]}`
+    const { calls, run } = fake(async (args, input) => {
+      if (args[0] === 'find-generic-password') {
+        const v = store.get(keyOf(args))
+        if (v === undefined) throw notFound()
+        return { stdout: '', stderr: `password: "${v}"\n` }
+      }
+      if (args[0] === '-i') {
+        const words = input!.trim().split(' ')
+        store.set(`${words[words.indexOf('-s') + 1]}|${words[words.indexOf('-a') + 1]}`, input!.match(/-w "(.*)"/)![1])
+        return { stdout: '' }
+      }
+      if (args[0] === 'delete-generic-password') {
+        if (!store.delete(keyOf(args))) throw notFound()
+        return { stdout: '' }
+      }
+      return { stdout: '' }
+    })
+    // A second instance (no legacy service) neither sees nor touches the shared item.
+    const second = new KeychainSecretStore(run, 'fremkit:bbbbbbbbbbbb')
+    expect(await second.get('gh-x1/token')).toBeNull()
+    await second.delete('gh-x1/token')
+    expect(store.get('fremkit|gh-x1/token')).toBe('legacy-token')
+    expect(calls.every((c) => !c.args.includes('fremkit') && !(c.input ?? '').includes('-s fremkit '))).toBe(true)
+    // The live instance moves it to its own service on first read.
+    const live = new KeychainSecretStore(run, 'fremkit:aaaaaaaaaaaa', undefined, 'fremkit')
+    expect(await live.get('gh-x1/token')).toBe('legacy-token')
+    expect(store.get('fremkit:aaaaaaaaaaaa|gh-x1/token')).toBe('legacy-token')
+    expect(store.has('fremkit|gh-x1/token')).toBe(false)
+    expect(await live.get('gh-x1/token')).toBe('legacy-token')
+  })
+
   it('refuses a keychain path it could not put on an interactive line', () => {
     expect(() => new KeychainSecretStore(undefined, 'fremkit', '/tmp/a b.keychain')).toThrow()
   })
@@ -223,6 +263,14 @@ describe.runIf(process.platform === 'darwin' && process.env.FREMKIT_KEYCHAIN_IT 
       await store.set(`it/k${i}`, v)
       expect(await store.get(`it/k${i}`), JSON.stringify(v).slice(0, 40)).toBe(v)
     }
+    // Another instance's service sees none of it.
+    expect(await new KeychainSecretStore(runSecurity, 'fremkit-it-other', keychain).get('it/k1')).toBeNull()
+    // Adoption from a legacy service, for real.
+    await new KeychainSecretStore(runSecurity, 'fremkit-it-legacy', keychain).set('it/old', 'from before')
+    const adopting = new KeychainSecretStore(runSecurity, 'fremkit-it-new', keychain, 'fremkit-it-legacy')
+    expect(await adopting.get('it/old')).toBe('from before')
+    expect(await new KeychainSecretStore(runSecurity, 'fremkit-it-legacy', keychain).get('it/old')).toBeNull()
+    expect(await new KeychainSecretStore(runSecurity, 'fremkit-it-new', keychain).get('it/old')).toBe('from before')
     // -U replaces.
     await store.set('it/k0', 'replaced')
     expect(await store.get('it/k0')).toBe('replaced')

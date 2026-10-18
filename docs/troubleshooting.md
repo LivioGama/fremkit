@@ -91,7 +91,7 @@ the same way.
 | Dashboard, connections, backgrounds, installed widgets and themes | `~/Library/Application Support/Fremkit` | the checkout's `data/` |
 | Helper settings (`helper.json`) | `~/Library/Application Support/Fremkit` | the same |
 | Server log | `~/Library/Logs/Fremkit/server.log` | the same |
-| Connection secrets | the login keychain, service `fremkit` | the same |
+| Connection secrets | the login keychain, service `fremkit:<hash of the data folder>` | the same |
 
 The app never writes inside itself: its bundle is replaced by every update and its signature
 has to stay intact. What decides which server runs is `repoPath` in `helper.json`: present, the
@@ -138,7 +138,8 @@ tccutil reset All dev.fremkit.helper
 ```
 
 The connection secrets stay in the login keychain until you delete them: open Keychain Access
-and search for `fremkit`, or `security delete-generic-password -s fremkit` once per secret. If you
+and search for `fremkit`, or `security delete-generic-password -s 'fremkit:<…>'` once per secret
+(the full service name is in Keychain Access). If you
 added the Claude Code hook, remove its lines from `~/.claude/settings.json`.
 
 ## The helper's icon is missing from the menu bar

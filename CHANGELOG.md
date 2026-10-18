@@ -120,6 +120,9 @@ tagged `vX.Y.Z`.
 - **Updates are checked before they are unpacked, and the update feed must be signed.** The app
   now verifies an update's signature before extracting it, and refuses an update feed that does
   not carry Fremkit's signature.
+- **Another copy of Fremkit cannot touch your saved passwords.** Each Fremkit now keeps its
+  secrets in the keychain under a name of its own, so a test copy given a backup of your
+  dashboard can no longer read or delete the real one's. Existing secrets move over by themselves.
 
 ## 0.4.1 — 2026-10-16
 

@@ -1,9 +1,29 @@
 import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { assertSecretKey, type SecretStore } from './types.js'
 import { tr } from '../i18n.js'
 
-/** Keychain service under which every Fremkit secret is filed. */
+/**
+ * The keychain service every Fremkit secret used to be filed under, whatever the instance. Items
+ * are now filed per data folder (`instanceService`); this one is only read to adopt what an
+ * earlier version stored, by the instance allowed to (see `KeychainSecretStore`).
+ */
 export const KEYCHAIN_SERVICE = 'fremkit'
+
+/**
+ * The service one instance files its secrets under: `fremkit:<hash of its data folder>`.
+ *
+ * Keyed by connection id alone, two instances on one Mac — the live one, and a second checkout
+ * or a from-scratch run given a restored backup — shared every item, and the second deleting a
+ * connection deleted the live one's secret. The data folder is what makes an instance itself.
+ */
+export function instanceService(dataDir: string): string {
+  let path = resolve(dataDir)
+  try { path = realpathSync(path) } catch { /* not there yet: the resolved path is the identity */ }
+  return `${KEYCHAIN_SERVICE}:${createHash('sha256').update(path).digest('hex').slice(0, 12)}`
+}
 
 export type Exec = (cmd: string, args: string[]) => Promise<{ stdout: string }>
 
@@ -128,10 +148,17 @@ function describe(err: unknown): string {
  * one. It goes on the interactive line, so it may not contain spaces or quotes.
  */
 export class KeychainSecretStore implements SecretStore {
+  /**
+   * `legacyService`, when given, is where an earlier version filed this instance's secrets: a
+   * key missing under `service` is looked for there and moved over, and a write or a delete
+   * clears it there too. Only the live instance passes it (index.ts: the one on 4242), so a
+   * second checkout never reads, takes or deletes what the live one stored.
+   */
   constructor(
     private readonly run: SecurityRun = runSecurity,
     private readonly service: string = KEYCHAIN_SERVICE,
     private readonly keychain?: string,
+    private readonly legacyService?: string,
   ) {
     if (keychain !== undefined && !/^[^\s"'\\]+$/.test(keychain)) throw new Error('keychain path must not contain spaces or quotes')
   }
@@ -142,9 +169,20 @@ export class KeychainSecretStore implements SecretStore {
 
   async get(key: string): Promise<string | null> {
     assertSecretKey(key)
+    const value = await this.read(this.service, key)
+    if (value !== null || this.legacyService === undefined) return value
+    // Stored by an earlier version under the shared service: move it to this instance's own.
+    const legacy = await this.read(this.legacyService, key)
+    if (legacy === null) return null
+    await this.write(this.service, key, legacy)
+    await this.remove(this.legacyService, key).catch(() => {})
+    return legacy
+  }
+
+  private async read(service: string, key: string): Promise<string | null> {
     let stderr: string
     try {
-      ;({ stderr } = await this.run(['find-generic-password', '-s', this.service, '-a', key, '-g', ...this.keychainArgs]))
+      ;({ stderr } = await this.run(['find-generic-password', '-s', service, '-a', key, '-g', ...this.keychainArgs]))
     } catch (err) {
       if (isNotFound(err)) return null
       throw new Error(`${tr(undefined, 'secrets.readFailed')} (${describe(err)})`)
@@ -156,7 +194,13 @@ export class KeychainSecretStore implements SecretStore {
 
   async set(key: string, value: string): Promise<void> {
     assertSecretKey(key)
-    const line = ['add-generic-password', '-U', '-s', this.service, '-a', key, passwordArgument(value), ...this.keychainArgs].join(' ')
+    await this.write(this.service, key, value)
+    // A copy left under the old service would come back the day this one is deleted.
+    if (this.legacyService !== undefined) await this.remove(this.legacyService, key).catch(() => {})
+  }
+
+  private async write(service: string, key: string, value: string): Promise<void> {
+    const line = ['add-generic-password', '-U', '-s', service, '-a', key, passwordArgument(value), ...this.keychainArgs].join(' ')
     if (line.length > MAX_INTERACTIVE_LINE) throw new Error(`${tr(undefined, 'secrets.writeFailed')} (too long)`)
     try {
       await this.run(['-i'], `${line}\n`)
@@ -173,13 +217,19 @@ export class KeychainSecretStore implements SecretStore {
     } catch (err) {
       throw new Error(`${tr(undefined, 'secrets.readFailed')} (${describe(err)})`)
     }
-    return [...new Set(accountsInDump(stdout, this.service).filter((a) => a.startsWith(prefix)))]
+    const services = this.legacyService === undefined ? [this.service] : [this.service, this.legacyService]
+    return [...new Set(services.flatMap((svc) => accountsInDump(stdout, svc)).filter((a) => a.startsWith(prefix)))]
   }
 
   async delete(key: string): Promise<void> {
     assertSecretKey(key)
+    await this.remove(this.service, key)
+    if (this.legacyService !== undefined) await this.remove(this.legacyService, key)
+  }
+
+  private async remove(service: string, key: string): Promise<void> {
     try {
-      await this.run(['delete-generic-password', '-s', this.service, '-a', key, ...this.keychainArgs])
+      await this.run(['delete-generic-password', '-s', service, '-a', key, ...this.keychainArgs])
     } catch (err) {
       if (isNotFound(err)) return
       throw new Error(`${tr(undefined, 'secrets.deleteFailed')} (${describe(err)})`)

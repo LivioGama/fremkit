@@ -31,8 +31,8 @@ const port = Number(process.env.FREMKIT_PORT) || 4242
  *
  * `FREMKIT_DATA_DIR` is what makes a from-scratch run possible on the live checkout without
  * moving anything: the dashboard, the connections list and the background library all come from
- * here, so pointing it elsewhere gives a brand-new install. The keychain is keyed by connection
- * id, so a fresh config never names the real items and they are left untouched.
+ * here, so pointing it elsewhere gives a brand-new install. Keychain items are filed per data
+ * folder (`instanceService`), so another data folder never reads or deletes the real ones.
  *
  * Absolute only: a relative path would be read against whatever directory the process happened
  * to start in, which for the helper's child is the checkout and for a shell is anywhere.
@@ -84,6 +84,8 @@ async function main(): Promise<void> {
   const app = await buildApp({
     accessToken: access.token,
     dataDir,
+    // Keychain items from before they were filed per data folder belong to the live instance.
+    adoptLegacyKeychain: port === 4242,
     widgetsDir: shipped.widgetsDir,
     ...(registryUrl ? { registryUrl, registryDev: true } : {}),
     themesDir: shipped.themesDir,
