@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { CONFIG_VERSION, type Config, type Placement } from '../config/schema.js'
 import { BUILTIN_THEME } from '../themes/theme.js'
 import { DEFAULT_BACKGROUND } from '../backgrounds/seed.js'
+import { FileSecretStore } from '../secrets/file.js'
 import { DEMO_APPS, DEMO_CALENDARS } from './world.js'
 
 /**
@@ -148,6 +149,12 @@ export async function prepareDemoDataDir(opts: { configured?: string; liveDataDi
     temporary = true
   }
   if (!existsSync(join(dir, DEMO_MARKER))) await writeFile(join(dir, DEMO_MARKER), 'This folder belongs to a Fremkit demo server (FREMKIT_DEMO=1).\n')
-  if (!existsSync(join(dir, 'fremkit.json'))) await writeFile(join(dir, 'fremkit.json'), JSON.stringify(demoConfig(opts.locale), null, 2) + '\n')
+  if (!existsSync(join(dir, 'fremkit.json'))) {
+    await writeFile(join(dir, 'fremkit.json'), JSON.stringify(demoConfig(opts.locale), null, 2) + '\n')
+    // The calendars' address is a required secret: without one the editor lists them as broken.
+    // Never fetched — the demo connection types publish invented events.
+    const secrets = new FileSecretStore(join(dir, 'secrets.json'))
+    for (const c of DEMO_CALENDARS) await secrets.set(`${c.id}/url`, `https://calendar.example.com/${c.id}.ics`)
+  }
   return { dir, temporary }
 }

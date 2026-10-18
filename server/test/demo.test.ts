@@ -137,6 +137,8 @@ describe('the demo data folder', () => {
       expect(prepared.temporary).toBe(true)
       expect(existsSync(join(prepared.dir, DEMO_MARKER))).toBe(true)
       expect(existsSync(join(prepared.dir, 'fremkit.json'))).toBe(true)
+      // The calendars' required address, so the editor does not list them as broken.
+      expect(Object.keys(JSON.parse(await readFile(join(prepared.dir, 'secrets.json'), 'utf8')))).toContain('demo-work/url')
     } finally {
       await rm(prepared.dir, { recursive: true, force: true })
     }
