@@ -98,6 +98,8 @@ tagged `vX.Y.Z`.
   site-icon fetches now check the address they actually connect to, so a site whose name points
   somewhere public at first and at your Mac or your network a moment later is refused. Two more
   private IPv6 ranges and one more way of spelling `..` in a connection's path are refused too.
+- **The Dock widget opens only what is in your Dock.** Asking it to bring forward an app that is
+  not in the Dock is now refused.
 
 ## 0.4.1 — 2026-10-16
 
