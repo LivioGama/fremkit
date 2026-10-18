@@ -18,6 +18,19 @@ tagged `vX.Y.Z`.
   screen brightness's day and night, and its place is offered when it has one. The dashboard,
   the editor, a paired iPad and every widget switch together, with a crossfade, and a screen
   turned on at night starts with the night theme.
+- **A background per page.** A page can have its own colour or image, shown instead of the
+  screen's while that page is on screen, with a short crossfade when you swipe between pages
+  that differ. Set it in the editor's right column when no widget is selected, or from
+  **Page background…** in the canvas's right-click menu; **Use the screen's background** puts the
+  screen's back. The screen settings name the pages that override its background. Backups carry
+  page backgrounds like any other.
+- **Right-click menus on the rest of the editor.** On a page in the list: rename, duplicate, page
+  background, copy to another screen (as new widgets with the same settings, laid out for that
+  screen), move up or down, delete. Pages now reorder by dragging, and a row shows a single "…"
+  on hover instead of five buttons. On a widget in the library: add it to any page, add it to the
+  bar, and for a widget from the Sietch, show it there, update it or uninstall it. On a bar widget,
+  in the preview or in the Screen settings: its settings, move left or right, remove. On a screen
+  above the canvas: rename it in place (or double-click it), its settings, delete it.
 - **Right-click menus in the editor.** A right click on a widget opens a real menu, like a Mac
   app's: settings, show title, appearance (opacity presets, colours, background image, reset),
   copy and paste a widget's style, duplicate, copy and paste, move it to another page or screen,

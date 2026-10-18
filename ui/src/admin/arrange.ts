@@ -62,7 +62,9 @@ export function arrangeInto(
   }
 
   for (const page of source.pages) {
-    let current: Page = { id: page.id, name: page.name, items: [] }
+    // A page's own background goes with it, onto its overflow pages too: they are the same page, split.
+    const own = page.background ? { background: { ...page.background } } : {}
+    let current: Page = { id: page.id, name: page.name, items: [], ...own }
     let part = 1
     pages.push(current)
     const ordered = [...page.items].sort((a, b) => a.y - b.y || a.x - b.x)
@@ -74,7 +76,7 @@ export function arrangeInto(
       let spot = firstFreeSpot(size, grid, current.items)
       if (!spot) {
         part++
-        current = { id: overflowId(page.id), name: `${page.name} ${part}`, items: [] }
+        current = { id: overflowId(page.id), name: `${page.name} ${part}`, items: [], ...own }
         pages.push(current)
         spot = firstFreeSpot(size, grid, current.items)
       }

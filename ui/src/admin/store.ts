@@ -2,10 +2,11 @@ import { reactive, computed, watch, type ComputedRef } from 'vue'
 import { api as realApi } from '../shared/api'
 import { pick, setLocale, t } from '../shared/i18n'
 import { useSocket } from '../shared/socket'
-import type { Config, NavHeight, NavItem, Page, Placement, Screen, ScreenDisplay, Widget, WidgetInstance, WidgetManifest, WidgetPermissionSet, WidgetSource, WidgetsResponse } from '../shared/types'
+import type { Background, Config, NavHeight, NavItem, Page, Placement, Screen, ScreenDisplay, Widget, WidgetInstance, WidgetManifest, WidgetPermissionSet, WidgetSource, WidgetsResponse } from '../shared/types'
 import { DEFAULT_NAV_HEIGHT, MAX_NAV_WIDGETS, ROWS_BY_NAV_HEIGHT, compactWidth, mergeSettings, navHasRoom, navWiderClusterWidth } from '../shared/types'
 import { DEVICE_CELL, DEVICE_NAV_HEIGHT, deviceGrid, pickScreen, screensShowing, tileOf } from '../shared/screens'
 import { fits, largestFreeSpot, type Grid, type Rect } from './layout'
+import { arrangeInto } from './arrange'
 
 export type Mode = 'edit' | 'test'
 /** The modal dialogs opened from the top bar. Kept in the store so a widget setting can open one. */
@@ -154,6 +155,24 @@ export interface AdminStore {
   duplicatePage(i: number): void
   removePage(i: number): void
   movePage(i: number, delta: number): void
+  /**
+   * Changes page `i`'s own background by a patch — a key set to `undefined` is dropped — or, given
+   * null, removes it so the page shows the screen's again. A background left empty is removed too.
+   */
+  setPageBackground(i: number, patch: Partial<Background> | null): void
+  /** Moves page `from` so it ends up at index `to`: what dropping a dragged page does. */
+  reorderPage(from: number, to: number): void
+  /**
+   * A copy of page `i` at the end of another screen: its tiles become new widgets set up like
+   * the originals — as `duplicatePage` makes them — laid out for that screen's grid, continuing
+   * on further pages when they do not fit. Widgets too large for that grid are left out, and a
+   * toast says so. The editor stays where it is.
+   */
+  copyPageToScreen(i: number, screenId: string): void
+  /** `addWidget`, onto page `i` of this screen: the editor follows it there. Refused when full. */
+  addWidgetToPage(widgetId: string, i: number): void
+  /** True when a screen, a page or a widget of the config still shows the stored image `name`. */
+  backgroundInUse(name: string): boolean
   placeWidget(widgetId: string, rect: Rect): void
   addWidget(widgetId: string): void
   placeExisting(instanceId: string, rect?: Rect): void
@@ -584,7 +603,10 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
           c.widgets[id] = clone(widget)
           items.push({ ...p, instanceId: id })
         }
-        pages.splice(i + 1, 0, { id: freePageId(pages), name: t('admin.store.pageCopy', { name: src.name }), items })
+        pages.splice(i + 1, 0, {
+          id: freePageId(pages), name: t('admin.store.pageCopy', { name: src.name }), items,
+          ...(src.background ? { background: clone(src.background) } : {}),
+        })
         state.pageIndex = i + 1
         state.selectedId = null
       })
@@ -612,6 +634,82 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
         if (state.pageIndex === i) state.pageIndex = j
         else if (state.pageIndex === j) state.pageIndex = i
       })
+    },
+
+    setPageBackground(i: number, patch: Partial<Background> | null): void {
+      if (!screen.value?.pages[i]) return
+      apply((c) => {
+        const target = here(c).pages[i]
+        const next: Record<string, unknown> = patch ? { ...target.background, ...patch } : {}
+        for (const [k, v] of Object.entries(next)) if (v === undefined) delete next[k]
+        if (Object.keys(next).length) target.background = next as Background
+        else delete target.background
+      })
+    },
+
+    reorderPage(from: number, to: number): void {
+      const pages = screen.value?.pages
+      if (!pages || from === to || !pages[from] || to < 0 || to >= pages.length) return
+      const shown = pages[state.pageIndex]?.id
+      apply((c) => {
+        const list = here(c).pages
+        const [moved] = list.splice(from, 1)
+        list.splice(to, 0, moved)
+        // The editor keeps showing the page it showed, wherever that page now sits.
+        state.pageIndex = Math.max(0, list.findIndex((p) => p.id === shown))
+      })
+    },
+
+    copyPageToScreen(i: number, screenId: string): void {
+      const cfg = state.config
+      const src = screen.value?.pages[i]
+      const target = cfg?.screens.find((x) => x.id === screenId)
+      if (!cfg || !src || !target || target.id === screen.value?.id) return
+      let leftOut = 0
+      apply((c) => {
+        const to = c.screens.find((x) => x.id === screenId)!
+        // New widgets first, set up like the originals, so the arrangement can place them.
+        const items: Placement[] = []
+        const made: string[] = []
+        for (const p of src.items) {
+          const widget = c.widgets[p.instanceId]
+          if (!widget) continue
+          const id = freeInstanceId(c, widget.widgetId)
+          c.widgets[id] = clone(widget)
+          made.push(id)
+          items.push({ ...clone(p), instanceId: id })
+        }
+        const copy: Page = { id: src.id, name: src.name, items, ...(src.background ? { background: clone(src.background) } : {}) }
+        const laid = arrangeInto(
+          { ...to, nav: [], pages: [copy] },
+          { cols: to.display.cols, rows: to.display.rows, navCols: to.display.cols, navHeight: to.display.navHeight },
+          c.widgets, state.manifests,
+        )
+        for (const p of laid.pages) to.pages.push({ ...p, id: freePageId(to.pages, p.id) })
+        dropUnplaced(c, made)
+        leftOut = laid.leftOut.length
+      })
+      state.toast = leftOut
+        ? t('admin.store.pageCopiedLeftOut', { page: src.name, screen: target.name, n: leftOut })
+        : t('admin.store.pageCopied', { page: src.name, screen: target.name })
+    },
+
+    addWidgetToPage(widgetId: string, i: number): void {
+      const manifest = state.manifests[widgetId]
+      const target = screen.value?.pages[i]
+      if (!manifest) { state.toast = t('admin.store.unknownWidget', { id: widgetId }); return }
+      if (!target) return
+      const spot = largestFreeSpot(manifest.defaultSize, manifest.minSize, grid.value, target.items.map(rectOf))
+      if (!spot) { state.toast = t('admin.store.noRoomOnPage', { page: target.name, id: pick(manifest.name) || widgetId }); return }
+      store.selectPage(i)
+      store.placeWidget(widgetId, spot)
+    },
+
+    backgroundInUse(name: string): boolean {
+      const cfg = state.config
+      if (!cfg) return false
+      return cfg.screens.some((x) => x.display.background?.image === name || x.pages.some((p) => p.background?.image === name))
+        || Object.values(cfg.widgets).some((w) => w.background?.image === name)
     },
 
     /** A new widget and its placement, in one mutation: the server drops a widget placed nowhere. */
@@ -915,7 +1013,10 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       for (const p of input.prefill?.pages ?? []) {
         const items = p.items.filter((x) => cfg.widgets[x.instanceId] && !seen.has(x.instanceId))
         for (const x of items) seen.add(x.instanceId)
-        pages.push({ id: freePageId(pages, p.id), name: p.name, items: items.map((x) => ({ ...x })) })
+        pages.push({
+          id: freePageId(pages, p.id), name: p.name, items: items.map((x) => ({ ...x })),
+          ...(p.background ? { background: clone(p.background) } : {}),
+        })
       }
       if (!pages.length) pages.push({ id: freePageId(pages), name: t('admin.store.newPage'), items: [] })
       const added: Screen = { id, name, kind: input.kind, display, nav: [], pages }

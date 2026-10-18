@@ -170,11 +170,21 @@ describe('widgetMenu', () => {
 })
 
 describe('canvasMenu', () => {
+  it('leads "Page background…" to the page inspector, with no widget selected', async () => {
+    const s = await make()
+    const u = ui()
+    s.selectPage(1)
+    s.select('clock-1')
+    find(canvasMenu(s, u), 'Page background').run!()
+    expect(s.state.pageIndex).toBe(1)
+    expect(s.state.selectedId).toBeNull()
+    expect(u.revealSection).toHaveBeenCalledWith('page.background')
+  })
   it('pastes, adds, makes a page and opens the screen settings', async () => {
     const s = await make()
     const u = ui()
     const menu = canvasMenu(s, u)
-    expect(items(menu).map((e) => e.label)).toEqual(['Paste', 'Add a widget…', 'New page', 'Screen settings…'])
+    expect(items(menu).map((e) => e.label)).toEqual(['Paste', 'Add a widget…', 'New page', 'Page background…', 'Screen settings…'])
     expect(find(menu, 'Paste').disabled).toBe(true)
     find(menu, 'Add a widget').run!()
     expect(u.focusLibrarySearch).toHaveBeenCalled()

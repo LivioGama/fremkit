@@ -39,7 +39,11 @@ export interface Placement {
  * widget. Never stored — built by `tileOf` (or `compactOf` for the bar) from the config.
  */
 export type WidgetInstance = Widget & Placement
-export interface Page { id: string; name: string; items: Placement[] }
+/**
+ * Mirrors the server schema. `background`, when present, is shown instead of the screen's while
+ * this page is on screen; absent, the page shows the screen's.
+ */
+export interface Page { id: string; name: string; items: Placement[]; background?: Background }
 /** Mirrors the server schema: which side of the centred dots a bar widget sits on. */
 export type NavSlot = 'left' | 'right'
 /** The two clusters, in the order the Screen tab offers them. */

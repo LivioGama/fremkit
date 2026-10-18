@@ -49,6 +49,18 @@ describe('ConfigStore', () => {
     expect(JSON.parse(await readFile(file + '.bak', 'utf8'))).toEqual(DEFAULT_CONFIG)
     await expect(stat(file + '.tmp')).rejects.toThrow()
   })
+  it('round-trips a page background through the file', async () => {
+    const file = join(dir, 'fremkit.json')
+    const store = new ConfigStore(file)
+    await store.load()
+    const cfg = v4('p', 'P')
+    const background = { color: '#101820', image: 'dunes.webp', fit: 'contain' }
+    ;(cfg.screens[0].pages[0] as Record<string, unknown>).background = background
+    await store.save(cfg)
+    expect(JSON.parse(await readFile(file, 'utf8')).screens[0].pages[0].background).toEqual(background)
+    const reread = new ConfigStore(file)
+    expect((await reread.load()).screens[0].pages[0].background).toEqual(background)
+  })
   it('save rejects an invalid config and keeps the old one', async () => {
     const store = new ConfigStore(join(dir, 'fremkit.json'))
     await store.load()

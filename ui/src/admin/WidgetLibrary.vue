@@ -44,6 +44,8 @@ import { pick, useI18n } from '../shared/i18n'
 import { DND_EXISTING_TYPE, DND_TYPE, useAdminStore } from './store'
 import { useMarketplaceStore } from './marketplace'
 import { groupByCategory, matchesQuery, otherScreenWidgets, widgetKindsOnScreen } from './library'
+import { openContextMenu } from '../shared/ui/contextMenu'
+import { libraryMenu } from './menus'
 
 const s = useAdminStore()
 const market = useMarketplaceStore()
@@ -201,7 +203,7 @@ onBeforeUnmount(unbindDragFallback)
       :badge="String(g.widgets.length)" default-open :force-open="searching">
       <div class="list">
         <BaseCard v-for="m in g.widgets" :key="m.id" grab :draggable="true" @dragstart="onDragStart($event, m.id)" @dragend="s.setDragWidget(null)"
-          @click="s.addWidget(m.id)">
+          @click="s.addWidget(m.id)" @contextmenu="openContextMenu($event, libraryMenu(s, market, m.id))">
           <BaseIcon :name="m.icon" :size="20" />
           <div class="txt">
             <strong>

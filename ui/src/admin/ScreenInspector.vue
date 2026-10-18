@@ -159,6 +159,8 @@ const d = computed(() => s.screen.value!.display)
 /** The selected screen inside the config a mutation is handed. */
 const onScreen = (c: Config): Screen => c.screens.find((x) => x.id === s.screen.value!.id)!
 const bg = computed<Background>(() => d.value.background ?? {})
+/** This screen's pages that show a background of their own instead of the one edited here. */
+const overriding = computed(() => s.screen.value!.pages.filter((p) => p.background).map((p) => p.name).join(', '))
 const navHeight = computed(() => navHeightOf(d.value))
 /** "80 px" and "40 px" read the same in both languages, so the labels need no dictionary entry. */
 const NAV_OPTIONS = NAV_HEIGHTS.map((h) => ({ value: String(h), label: `${h} px` }))
@@ -333,6 +335,7 @@ function setBackground(patch: Partial<Background>): void {
   </BaseField>
 
   <BackgroundPicker :model-value="bg" @update="setBackground($event)" />
+  <p v-if="overriding" class="ro">{{ t('admin.inspector.screen.background.overridden', { pages: overriding }) }}</p>
   </BaseSection>
 
   <ScreenBrightness />
