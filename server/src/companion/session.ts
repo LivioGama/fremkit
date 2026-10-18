@@ -1,0 +1,274 @@
+/**
+ * The browser extension's share, as state: which extensions are connected, the one tab shared
+ * at a time, the widget frames watching it (receivers) and the offer each one is waiting on.
+ *
+ * Pure: it speaks through `send` and `changed` and knows nothing of sockets or Fastify, so the
+ * socket module (`socket.ts`) and the provider each drive it from their side.
+ */
+
+import { isLocalSdp, PROTOCOL, type Control, type ExtensionMessage, type ServerMessage, type TabMeta } from './protocol.js'
+
+/** Widget frames that may watch the share at once. */
+export const MAX_RECEIVERS = 4
+
+/** A share whose extension said nothing (`tab.started`, `tab.meta`) for this long is over. */
+export const STALE_MS = 10_000
+
+export interface CompanionState {
+  protocol: 1
+  extensions: { connected: number; paired: number }
+  tab: {
+    state: 'idle' | 'sharing'
+    sessionId: string | null
+    /** The sharing extension's name, as the user sees it in Appareils. */
+    device: string | null
+    meta: TabMeta | null
+    /** receiverId → the extension's offer for it. */
+    offers: Record<string, string>
+  }
+}
+
+export interface CompanionSessionOptions {
+  now?: () => number
+  send: (deviceId: string, msg: ServerMessage) => void
+  changed: () => void
+  /** Whether anything on a local dashboard could show a share; false refuses one with `noWidget`. */
+  canShare?: () => boolean
+  /** How many extensions are paired, connected or not. */
+  pairedCount?: () => number
+}
+
+interface Share {
+  deviceId: string
+  sessionId: string
+  meta: TabMeta
+  lastSeen: number
+}
+
+interface Receiver {
+  instanceId: string
+  offer: string | null
+}
+
+export class CompanionSession {
+  private readonly now: () => number
+  private readonly send: (deviceId: string, msg: ServerMessage) => void
+  private readonly changed: () => void
+  private readonly canShare: () => boolean
+  private readonly pairedCount: () => number
+  /** Connected extensions: device id → name. */
+  private readonly connected = new Map<string, string>()
+  /** Extensions that said hello with a protocol this server does not speak. */
+  private readonly foreign = new Set<string>()
+  /** The name of every extension that ever connected, so a share outliving its socket keeps one. */
+  private readonly names = new Map<string, string>()
+  private share: Share | null = null
+  /** In registration order, so the first entry of an instance is its oldest. */
+  private readonly receivers = new Map<string, Receiver>()
+
+  constructor(opts: CompanionSessionOptions) {
+    this.now = opts.now ?? Date.now
+    this.send = opts.send
+    this.changed = opts.changed
+    this.canShare = opts.canShare ?? (() => false)
+    this.pairedCount = opts.pairedCount ?? (() => 0)
+  }
+
+  connect(deviceId: string, name: string): void {
+    this.connected.set(deviceId, name)
+    this.names.set(deviceId, name)
+    this.foreign.delete(deviceId)
+    this.changed()
+  }
+
+  /**
+   * A socket went away. The share stays: a server restart or a dropped socket comes back with a
+   * `hello` that carries it, and a share nobody comes back for goes stale in `tick`.
+   */
+  disconnect(deviceId: string): void {
+    if (!this.connected.delete(deviceId)) return
+    this.foreign.delete(deviceId)
+    this.changed()
+  }
+
+  /** The device was unpaired: unlike a disconnect, whatever it was sharing ends now. */
+  revoke(deviceId: string): void {
+    const wasConnected = this.connected.delete(deviceId)
+    this.foreign.delete(deviceId)
+    this.names.delete(deviceId)
+    if (this.share?.deviceId === deviceId) this.endShare()
+    else if (wasConnected) this.changed()
+  }
+
+  /** Revokes every device the session knows of, connected or sharing, that is no longer paired. */
+  prune(isPaired: (deviceId: string) => boolean): void {
+    const known = new Set([...this.connected.keys(), ...(this.share ? [this.share.deviceId] : [])])
+    for (const id of known) if (!isPaired(id)) this.revoke(id)
+  }
+
+  onMessage(deviceId: string, msg: ExtensionMessage): void {
+    switch (msg.type) {
+      case 'hello':
+        return this.hello(deviceId, msg.protocol, msg.session)
+      case 'tab.started':
+        return this.started(deviceId, msg.sessionId, msg.meta)
+      case 'tab.meta': {
+        const share = this.shareOf(deviceId, msg.sessionId)
+        if (!share) return
+        share.meta = msg.meta
+        share.lastSeen = this.now()
+        return this.changed()
+      }
+      case 'tab.offer': {
+        if (!this.shareOf(deviceId, msg.sessionId)) return
+        const receiver = this.receivers.get(msg.receiverId)
+        if (!receiver) return
+        receiver.offer = msg.sdp
+        return this.changed()
+      }
+      case 'tab.stopped':
+        if (this.shareOf(deviceId, msg.sessionId)) this.endShare()
+        return
+    }
+  }
+
+  /**
+   * A widget frame wants to watch. A receiver is bound to the instance that registered it; a
+   * known one coming back (after a restart) is kept and only asked for again without an offer.
+   */
+  view(receiverId: string, instanceId: string): boolean {
+    const known = this.receivers.get(receiverId)
+    if (known) {
+      if (known.instanceId !== instanceId) return false
+      if (known.offer === null && this.share) this.send(this.share.deviceId, { type: 'tab.view', receiverId })
+      return true
+    }
+    if (this.receivers.size >= MAX_RECEIVERS) {
+      // An instance that reloads its frame makes a new receiver: its own oldest one gives way,
+      // never another instance's.
+      const oldest = [...this.receivers].find(([, r]) => r.instanceId === instanceId)?.[0]
+      if (oldest === undefined) return false
+      this.drop(oldest)
+    }
+    this.receivers.set(receiverId, { instanceId, offer: null })
+    if (this.share) this.send(this.share.deviceId, { type: 'tab.view', receiverId })
+    return true
+  }
+
+  answer(receiverId: string, instanceId: string, sdp: string): boolean {
+    const receiver = this.receivers.get(receiverId)
+    if (!this.share || !receiver || receiver.instanceId !== instanceId || receiver.offer === null) return false
+    if (!isLocalSdp(sdp)) return false
+    this.send(this.share.deviceId, { type: 'tab.answer', receiverId, sdp })
+    return true
+  }
+
+  leave(receiverId: string, instanceId: string): void {
+    if (this.receivers.get(receiverId)?.instanceId !== instanceId) return
+    this.drop(receiverId)
+  }
+
+  control(c: Control): boolean {
+    if (!this.share) return false
+    this.send(this.share.deviceId, { type: 'tab.control', ...c })
+    return true
+  }
+
+  snapshot(): CompanionState {
+    const share = this.share
+    const offers: Record<string, string> = {}
+    if (share) {
+      for (const [id, r] of this.receivers) if (r.offer !== null) offers[id] = r.offer
+    }
+    return {
+      protocol: PROTOCOL,
+      extensions: { connected: this.connected.size, paired: this.pairedCount() },
+      tab: {
+        state: share ? 'sharing' : 'idle',
+        sessionId: share?.sessionId ?? null,
+        device: share ? (this.names.get(share.deviceId) ?? null) : null,
+        meta: share?.meta ?? null,
+        offers,
+      },
+    }
+  }
+
+  /** Clears a share that went quiet. Driven by an interval in the socket module. */
+  tick(): void {
+    if (this.share && this.now() - this.share.lastSeen >= STALE_MS) {
+      const { deviceId } = this.share
+      this.endShare()
+      // Still connected yet silent: whatever it believes it shares, the server no longer does.
+      if (this.connected.has(deviceId)) this.send(deviceId, { type: 'tab.stop' })
+    }
+  }
+
+  private hello(deviceId: string, protocol: number, session?: { sessionId: string; meta: TabMeta }): void {
+    this.send(deviceId, { type: 'ready', protocol: PROTOCOL })
+    if (protocol !== PROTOCOL) {
+      this.foreign.add(deviceId)
+      if (session) this.send(deviceId, { type: 'tab.refused', sessionId: session.sessionId, reason: 'protocol' })
+      return
+    }
+    if (!session) return
+    const current = this.share
+    if (current && (current.deviceId !== deviceId || current.sessionId !== session.sessionId)) {
+      // One share overall, and the running one was here first.
+      this.send(deviceId, { type: 'tab.stop' })
+      return
+    }
+    if (!current && !this.canShare()) {
+      this.send(deviceId, { type: 'tab.refused', sessionId: session.sessionId, reason: 'noWidget' })
+      return
+    }
+    this.share = { deviceId, sessionId: session.sessionId, meta: session.meta, lastSeen: this.now() }
+    this.send(deviceId, { type: 'tab.accepted', sessionId: session.sessionId })
+    // Receivers that re-announced themselves first, or are still waiting on an offer, ask now.
+    for (const [receiverId, r] of this.receivers) {
+      if (r.offer === null) this.send(deviceId, { type: 'tab.view', receiverId })
+    }
+    this.changed()
+  }
+
+  private started(deviceId: string, sessionId: string, meta: TabMeta): void {
+    if (this.foreign.has(deviceId)) {
+      return this.send(deviceId, { type: 'tab.refused', sessionId, reason: 'protocol' })
+    }
+    if (!this.canShare()) {
+      return this.send(deviceId, { type: 'tab.refused', sessionId, reason: 'noWidget' })
+    }
+    const current = this.share
+    if (current?.deviceId === deviceId && current.sessionId === sessionId) {
+      // The same share announced again: nothing to replace.
+      current.meta = meta
+      current.lastSeen = this.now()
+    } else {
+      if (current && current.deviceId !== deviceId) this.send(current.deviceId, { type: 'tab.stop' })
+      // Receivers were negotiating with the previous tab; they register again for this one.
+      this.receivers.clear()
+      this.share = { deviceId, sessionId, meta, lastSeen: this.now() }
+    }
+    this.send(deviceId, { type: 'tab.accepted', sessionId })
+    this.changed()
+  }
+
+  /** The current share, when this device's message is about it; null otherwise. */
+  private shareOf(deviceId: string, sessionId: string): Share | null {
+    const share = this.share
+    return share && share.deviceId === deviceId && share.sessionId === sessionId ? share : null
+  }
+
+  private drop(receiverId: string): void {
+    const receiver = this.receivers.get(receiverId)
+    if (!receiver) return
+    this.receivers.delete(receiverId)
+    if (this.share) this.send(this.share.deviceId, { type: 'tab.detach', receiverId })
+    if (receiver.offer !== null) this.changed()
+  }
+
+  private endShare(): void {
+    this.share = null
+    this.receivers.clear()
+    this.changed()
+  }
+}
