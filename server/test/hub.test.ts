@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { EventEmitter } from 'node:events'
-import { Hub, MAX_CHANNELS_PER_SOCKET, DEVICE_CLOSE_CODE } from '../src/ws/hub.js'
+import { Hub, MAX_CHANNELS_PER_SOCKET, DEVICE_CLOSE_CODE, DEVICE_TERMINATE_MS } from '../src/ws/hub.js'
 import { ProviderRegistry } from '../src/providers/registry.js'
 
 class FakeSocket extends EventEmitter {
@@ -253,8 +253,96 @@ describe('a paired socket', () => {
       hub.attach(socket, { loopback: false, paired: true, deviceId })
       return socket
     }
-    return { hub, registry, focused, count, paired, setPolicy: (p: typeof policy) => { policy = p } }
+    const attach = <S extends FakeSocket>(socket: S, deviceId: string): S => {
+      hub.attach(socket, { loopback: false, paired: true, deviceId })
+      return socket
+    }
+    return { hub, registry, focused, count, paired, attach, setPolicy: (p: typeof policy) => { policy = p } }
   }
+
+  /** Like `ws`: close() only starts the handshake, and `close` fires later, if ever. */
+  class LingeringSocket extends FakeSocket {
+    terminated = false
+    override close(code?: number) { this.closedWith = code }
+    terminate() { this.terminated = true; this.emit('close') }
+  }
+
+  afterEach(() => { vi.useRealTimers() })
+
+  it('is not heard once closed, even before the close handshake ends', async () => {
+    const { hub, count, focused, attach, registry } = pairedSetup()
+    const socket = attach(new LingeringSocket(), 'dev-a')
+    socket.receive({ type: 'subscribe', channel: 'system' })
+    expect(count('system')).toBe(1)
+
+    hub.closeDevice('dev-a')
+    expect(socket.closedWith).toBe(4401)
+    expect(count('system')).toBe(0)
+
+    socket.receive({ type: 'command', id: 'c1', channel: 'claude', name: 'focus', payload: { pid: 1 } })
+    socket.receive({ type: 'subscribe', channel: 'system' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(focused).toEqual([])
+    expect(count('system')).toBe(0)
+    expect(socket.sent).toEqual([])
+
+    // The late `close` event changes nothing: detaching is idempotent.
+    socket.emit('close')
+    expect(count('system')).toBe(0)
+    registry.stop()
+  })
+
+  it('is dropped without a handshake when the peer does not finish closing', () => {
+    vi.useFakeTimers()
+    const { hub, attach, registry } = pairedSetup()
+    const a = attach(new LingeringSocket(), 'dev-a'), b = attach(new LingeringSocket(), 'dev-b')
+    hub.closeRemote()
+    expect(a.terminated).toBe(false)
+    vi.advanceTimersByTime(DEVICE_TERMINATE_MS)
+    expect(a.terminated).toBe(true)
+    expect(b.terminated).toBe(true)
+    registry.stop()
+  })
+
+  it('fails closed when the policy throws, without throwing out of the message handler', async () => {
+    const { hub, count, focused, paired, registry } = pairedSetup()
+    hub.setPolicy(() => { throw new Error('config unreadable') })
+    const socket = paired('dev-a')
+    expect(() => socket.receive({ type: 'subscribe', channel: 'system' })).not.toThrow()
+    expect(() => socket.receive({ type: 'command', id: 'c1', channel: 'claude', name: 'focus', payload: {} })).not.toThrow()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(count('system')).toBe(0)
+    expect(focused).toEqual([])
+    expect(socket.sent).toEqual([REFUSED, { ...REFUSED, id: 'c1' }])
+    // The host channel stays open: a device with no screen still gets the page.
+    socket.receive({ type: 'subscribe', channel: 'config' })
+    expect(socket.sent).toHaveLength(2)
+    registry.stop()
+  })
+
+  it('drops what a throwing policy can no longer vouch for on refresh', () => {
+    const { hub, count, paired, registry } = pairedSetup()
+    const socket = paired('dev-a')
+    socket.receive({ type: 'subscribe', channel: 'system' })
+    hub.setPolicy(() => { throw new Error('config unreadable') })
+    expect(() => hub.refreshDevice('dev-a')).not.toThrow()
+    expect(count('system')).toBe(0)
+    registry.stop()
+  })
+
+  it('still revokes on refresh when the device payload throws, and sends nothing', () => {
+    const { hub, count, paired, registry, setPolicy } = pairedSetup()
+    const socket = paired('dev-a')
+    socket.receive({ type: 'subscribe', channel: 'system' })
+    setPolicy({ 'dev-a': { subscriptions: [], commands: [] } })
+    hub.setDevicePayload(() => { throw new Error('store unreadable') })
+    expect(() => hub.refreshDevice('dev-a')).not.toThrow()
+    expect(count('system')).toBe(0)
+    expect(socket.sent).toEqual([])
+    expect(() => socket.receive({ type: 'subscribe', channel: 'device' })).not.toThrow()
+    expect(socket.sent).toEqual([])
+    registry.stop()
+  })
 
   it('is refused a channel its screen does not show, and leaves no subscriber', () => {
     const { count, paired, registry } = pairedSetup()

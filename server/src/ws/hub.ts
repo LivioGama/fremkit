@@ -25,10 +25,19 @@ export interface SocketLike {
   send(data: string): void
   on(event: 'message' | 'close', cb: (...args: any[]) => void): void
   close(code?: number): void
+  /** Drops the connection without a closing handshake. `ws` has it; only paired sockets use it. */
+  terminate?(): void
 }
 
 /** Close code sent to a paired socket whose device was revoked, or when remote access is turned off. */
 export const DEVICE_CLOSE_CODE = 4401
+
+/**
+ * How long a closed paired socket gets to finish the closing handshake before it is dropped.
+ * The hub has already stopped listening to it; this only frees the connection sooner than `ws`'s
+ * own 30 s close timeout.
+ */
+export const DEVICE_TERMINATE_MS = 2000
 
 /**
  * What a paired device's screen lets it touch, or null when the device has no screen: then only
@@ -70,17 +79,27 @@ export class Hub {
       sockets.add(socket)
     }
     socket.on('message', (raw: Buffer | string) => this.onMessage(socket, channels, raw))
-    socket.on('close', () => {
-      if (!this.clients.has(socket)) return
-      this.clients.delete(socket)
-      this.contexts.delete(socket)
-      if (deviceId !== undefined) {
-        const sockets = this.deviceSockets.get(deviceId)
-        sockets?.delete(socket)
-        if (sockets?.size === 0) this.deviceSockets.delete(deviceId)
-      }
-      for (const ch of channels) this.registry.removeSubscriber(ch)
-    })
+    socket.on('close', () => this.detach(socket))
+  }
+
+  /**
+   * Forgets a socket: its subscriptions are released and nothing it sends is read any more.
+   * Idempotent, because `closeDevice` detaches before `close` fires, and with `ws` that event
+   * only comes once the peer finished the handshake — up to 30 s later.
+   */
+  private detach(socket: SocketLike): void {
+    const channels = this.clients.get(socket)
+    if (!channels) return
+    const ctx = this.contexts.get(socket)
+    this.clients.delete(socket)
+    this.contexts.delete(socket)
+    const deviceId = ctx?.paired ? ctx.deviceId : undefined
+    if (deviceId !== undefined) {
+      const sockets = this.deviceSockets.get(deviceId)
+      sockets?.delete(socket)
+      if (sockets?.size === 0) this.deviceSockets.delete(deviceId)
+    }
+    for (const ch of channels) this.registry.removeSubscriber(ch)
   }
 
   setPolicy(policy: DevicePolicy): void {
@@ -99,19 +118,20 @@ export class Hub {
   refreshDevice(deviceId: string): void {
     const sockets = this.deviceSockets.get(deviceId)
     if (!sockets) return
-    const allowed = this.policy(deviceId)
-    const msg = JSON.stringify({ type: 'data', channel: DEVICE_CHANNEL, data: this.devicePayload(deviceId) })
+    // Revocation first, and on its own: nothing the payload does can leave a subscription alive.
+    const allowed = this.policyFor(deviceId)
     for (const socket of sockets) {
       const channels = this.clients.get(socket)
-      if (channels) {
-        for (const ch of [...channels]) {
-          if (this.subscriptionAllowed(allowed, ch)) continue
-          channels.delete(ch)
-          this.registry.removeSubscriber(ch)
-        }
+      if (!channels) continue
+      for (const ch of [...channels]) {
+        if (this.subscriptionAllowed(allowed, ch)) continue
+        channels.delete(ch)
+        this.registry.removeSubscriber(ch)
       }
-      this.safeSend(socket, msg)
     }
+    const msg = this.deviceMessage(deviceId)
+    if (msg === null) return
+    for (const socket of sockets) this.safeSend(socket, msg)
   }
 
   /** Closes every socket of one device, for a device that was unpaired. */
@@ -152,6 +172,8 @@ export class Hub {
   }
 
   private onMessage(socket: SocketLike, channels: Set<string>, raw: Buffer | string): void {
+    // A detached socket may still be finishing its closing handshake: it is heard no more.
+    if (!this.clients.has(socket)) return
     let msg: Incoming
     try { msg = JSON.parse(raw.toString()) } catch {
       return this.safeSend(socket, JSON.stringify({ type: 'error', error: 'JSON invalide' }))
@@ -165,7 +187,8 @@ export class Hub {
           // out, and only `refreshDevice` speaks on it. A local socket has no device and hears
           // nothing; a paired one gets its own payload replayed.
           if (ctx.paired && ctx.deviceId !== undefined) {
-            this.safeSend(socket, JSON.stringify({ type: 'data', channel: DEVICE_CHANNEL, data: this.devicePayload(ctx.deviceId) }))
+            const reply = this.deviceMessage(ctx.deviceId)
+            if (reply !== null) this.safeSend(socket, reply)
           }
           return
         }
@@ -212,7 +235,24 @@ export class Hub {
 
   /** A paired context with no device id cannot be checked against anything: nothing is allowed. */
   private policyOf(ctx: CommandContext): ScreenChannels | null {
-    return ctx.deviceId === undefined ? null : this.policy(ctx.deviceId)
+    return ctx.deviceId === undefined ? null : this.policyFor(ctx.deviceId)
+  }
+
+  /** Fails closed: a policy that throws is a device with no screen. */
+  private policyFor(deviceId: string): ScreenChannels | null {
+    try { return this.policy(deviceId) } catch { return null }
+  }
+
+  /**
+   * The `device` message for one device, or null when its payload could not be built. Nothing is
+   * logged: the payload describes the device, and an error from building it may quote it.
+   */
+  private deviceMessage(deviceId: string): string | null {
+    try {
+      return JSON.stringify({ type: 'data', channel: DEVICE_CHANNEL, data: this.devicePayload(deviceId) })
+    } catch {
+      return null
+    }
   }
 
   private subscriptionAllowed(allowed: ScreenChannels | null, channel: string): boolean {
@@ -224,8 +264,14 @@ export class Hub {
     this.safeSend(socket, JSON.stringify(id === undefined ? { type: 'error', error } : { type: 'error', id, error }))
   }
 
+  /** Detaches first, so nothing the peer sends while the close handshake runs is acted on. */
   private safeClose(socket: SocketLike): void {
+    this.detach(socket)
     try { socket.close(DEVICE_CLOSE_CODE) } catch { /* already closed */ }
+    if (socket.terminate) {
+      const timer = setTimeout(() => { try { socket.terminate?.() } catch { /* gone */ } }, DEVICE_TERMINATE_MS)
+      timer.unref?.()
+    }
   }
 
   private safeSend(socket: SocketLike, data: string): void {
