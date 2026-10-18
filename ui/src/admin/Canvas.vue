@@ -9,11 +9,18 @@ import { useSwipe } from '../dashboard/useSwipe'
 import EditOverlay from './EditOverlay.vue'
 import ScreenSelector from './ScreenSelector.vue'
 import { navHeightOf, navItemsOf, type NavItem } from '../shared/types'
-import { backgroundStyle } from '../shared/background'
+import { backgroundStyle, pageBackground } from '../shared/background'
 import { useAdminStore } from './store'
+import { openContextMenu } from '../shared/ui/contextMenu'
+import { navWidgetMenu } from './menus'
+import { editorFocus } from './editorFocus'
+import { useHealth } from './useHealth'
 
 const s = useAdminStore()
 const host = ref<HTMLElement>()
+const health = useHealth()
+/** A bar widget's menu leads with its fix too, as a tile's does. */
+const menuUi = { ...editorFocus, fix: health.fix }
 
 /**
  * Test mode behaves like the screen: a swipe on the bar or on the board changes page, wrapping
@@ -41,12 +48,13 @@ const navH = computed(() => navHeightOf(display.value))
 const totalH = computed(() => boardH.value + navH.value)
 /**
  * The dashboard repeats its background on the root, behind the nav bar strip; the board does the
- * same, so a translucent bar shows the same thing here as it does on the screen.
+ * same, so a translucent bar shows the same thing here as it does on the screen. Like the
+ * dashboard, it follows the page shown: a page with its own background repaints the whole board.
  */
 const boardStyle = computed(() => ({
   width: boardW.value + 'px', height: totalH.value + 'px',
   transform: `scale(${scale.value})`,
-  ...backgroundStyle(display.value.background),
+  ...backgroundStyle(pageBackground(display.value, s.page.value)),
 }))
 
 const board = ref<HTMLElement>()
@@ -95,11 +103,12 @@ onUnmounted(() => observer?.disconnect())
   <div class="host" ref="host">
     <div class="board" ref="board" :style="boardStyle"
       @pointerdown="onBoardDown" @pointerup="onBoardUp" @pointercancel="onBoardCancel" @wheel="onBoardWheel">
-      <PageView v-if="s.page.value" :page="s.page.value" :config="s.state.config!" :display="display" :manifests="s.state.manifests" :edit="s.state.mode === 'edit'" />
+      <PageView v-if="s.page.value" :page="s.page.value" :config="s.state.config!" :display="display" :manifests="s.state.manifests" :edit="s.state.mode === 'edit'" :reloads="s.state.reloads" />
       <NavBar :pages="screen.pages" :active="s.state.pageIndex" :height="navH"
         :opacity="display.navOpacity" :nav-items="navItemsOf(screen)" :widgets="s.state.config!.widgets" :manifests="s.state.manifests"
         :cell="display.cell" :edit="s.state.mode === 'edit'" :nav-style="display.navStyle" @select="s.selectPage"
-        @swipe="go" @tap="popover.toggle" />
+        @swipe="go" @tap="popover.toggle"
+        @item-menu="(item, e) => openContextMenu(e, navWidgetMenu(s, item.instanceId, menuUi))" />
       <!-- Test mode only: in Edit mode the overlay is inert, so no tap ever reaches here. -->
       <NavPopover v-if="popover.open.value"
         :key="popover.open.value.item.instanceId"

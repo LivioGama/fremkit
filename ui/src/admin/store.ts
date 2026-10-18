@@ -2,14 +2,15 @@ import { reactive, computed, watch, type ComputedRef } from 'vue'
 import { api as realApi } from '../shared/api'
 import { pick, setLocale, t } from '../shared/i18n'
 import { useSocket } from '../shared/socket'
-import type { Config, NavHeight, NavItem, Page, Placement, Screen, ScreenDisplay, Widget, WidgetInstance, WidgetManifest, WidgetPermissionSet, WidgetSource, WidgetsResponse } from '../shared/types'
+import type { Background, Config, NavHeight, NavItem, Page, Placement, Screen, ScreenDisplay, Widget, WidgetInstance, WidgetManifest, WidgetPermissionSet, WidgetSource, WidgetsResponse } from '../shared/types'
 import { DEFAULT_NAV_HEIGHT, MAX_NAV_WIDGETS, ROWS_BY_NAV_HEIGHT, compactWidth, mergeSettings, navHasRoom, navWiderClusterWidth } from '../shared/types'
 import { DEVICE_CELL, DEVICE_NAV_HEIGHT, deviceGrid, pickScreen, screensShowing, tileOf } from '../shared/screens'
 import { fits, largestFreeSpot, type Grid, type Rect } from './layout'
+import { arrangeInto } from './arrange'
 
 export type Mode = 'edit' | 'test'
 /** The modal dialogs opened from the top bar. Kept in the store so a widget setting can open one. */
-export type ModalName = 'screen' | 'connections' | 'marketplace'
+export type ModalName = 'screen' | 'connections' | 'marketplace' | 'about'
 export type Status = 'saved' | 'saving' | 'error'
 
 /** Edits are grouped this long before one PUT of the whole config. */
@@ -22,6 +23,13 @@ export const DND_TYPE = 'application/x-fremkit-widget'
 export const DND_EXISTING_TYPE = 'application/x-fremkit-existing-widget'
 /** Mirrors the server's 409 body: saving is impossible until the file on disk is fixed. */
 export const degradedMessage = (): string => t('admin.store.degraded')
+
+/** The keys "Copy style" carries from one tile to another: its look, never its settings. */
+export const STYLE_KEYS = ['bgColor', 'accentColor', 'accentMode', 'background', 'opacity'] as const
+export type WidgetStyle = Pick<Widget, typeof STYLE_KEYS[number]>
+
+/** What "Copy" holds: a widget as it is set up, and the size of the tile it was copied from. */
+export interface CopiedWidget { widget: Widget; size: [number, number] }
 
 export interface AdminState {
   config: Config | null
@@ -50,6 +58,25 @@ export interface AdminState {
    * would put somebody back on a form they had already left.
    */
   newConnectionType: string
+  /**
+   * The connection the Connections dialog should open on, or ''. Like `newConnectionType`, it
+   * only survives the one open it was set for.
+   */
+  editConnectionId: string
+  /** The widget the "About this widget" dialog describes, by instance id. */
+  aboutId: string
+  /**
+   * The editor's own clipboard for widgets — not the system one, which a WKWebView may not
+   * share and which would hand someone's settings to any other app. Kept for the visit.
+   */
+  clipboard: CopiedWidget | null
+  /** What "Copy style" took, for "Paste style". */
+  styleClipboard: WidgetStyle | null
+  /**
+   * Bumped by "Reload widget": the preview keys a tile's frame on it, so a new value reloads that
+   * one iframe and nothing else.
+   */
+  reloads: Record<string, number>
   status: Status
   toast: string
   /** The server cannot read data/fremkit.json: nothing may be saved until it is fixed. */
@@ -128,12 +155,59 @@ export interface AdminStore {
   duplicatePage(i: number): void
   removePage(i: number): void
   movePage(i: number, delta: number): void
+  /**
+   * Changes page `i`'s own background by a patch — a key set to `undefined` is dropped — or, given
+   * null, removes it so the page shows the screen's again. A background left empty is removed too.
+   */
+  setPageBackground(i: number, patch: Partial<Background> | null): void
+  /** Moves page `from` so it ends up at index `to`: what dropping a dragged page does. */
+  reorderPage(from: number, to: number): void
+  /**
+   * A copy of page `i` at the end of another screen: its tiles become new widgets set up like
+   * the originals — as `duplicatePage` makes them — laid out for that screen's grid, continuing
+   * on further pages when they do not fit. Widgets too large for that grid are left out, and a
+   * toast says so. The editor stays where it is.
+   */
+  copyPageToScreen(i: number, screenId: string): void
+  /** `addWidget`, onto page `i` of this screen: the editor follows it there. Refused when full. */
+  addWidgetToPage(widgetId: string, i: number): void
+  /** True when a screen, a page or a widget of the config still shows the stored image `name`. */
+  backgroundInUse(name: string): boolean
   placeWidget(widgetId: string, rect: Rect): void
   addWidget(widgetId: string): void
   placeExisting(instanceId: string, rect?: Rect): void
   updateInstance(instanceId: string, patch: Partial<WidgetInstance>): void
   duplicateWidget(instanceId: string): void
   moveWidget(instanceId: string, targetPageIndex: number): void
+  /** A new page at the end of this screen, with the widget moved onto it: one step to undo. */
+  moveWidgetToNewPage(instanceId: string): void
+  /**
+   * The same widget placed on another screen too — its first page with room — as the library's
+   * "on your other screens" does. Refused when that screen already shows it or has no room.
+   */
+  showOnScreen(instanceId: string, screenId: string): void
+  /** `showOnScreen`, then off this one: one step to undo. */
+  moveToScreen(instanceId: string, screenId: string): void
+  /** Resizes the tile in place; refused (a toast) when that size does not fit where it sits. */
+  resizeWidget(instanceId: string, size: [number, number]): void
+  /** Whether `resizeWidget` would accept that size, for a menu to grey what it would refuse. */
+  canResize(instanceId: string, size: [number, number]): boolean
+  /** Locks or unlocks this screen's placement: a locked tile is neither dragged nor resized. */
+  setLocked(instanceId: string, locked: boolean): void
+  copyWidget(instanceId: string): void
+  /**
+   * A new widget set up like the copied one — settings and look — on the current page, at the
+   * copied size or the largest that fits. False when there was nothing to paste or no room.
+   */
+  pasteWidget(): boolean
+  copyStyle(instanceId: string): void
+  pasteStyle(instanceId: string): void
+  /** Back to the theme's look: no colours, no image, a solid surface. Settings are kept. */
+  resetAppearance(instanceId: string): void
+  reloadWidget(instanceId: string): void
+  openAbout(instanceId: string): void
+  /** Opens Connections on an existing connection's form. */
+  openConnection(connectionId: string): void
   removeFromScreen(instanceId: string): void
   /** True when no other screen shows the widget: removing it from this one deletes it. */
   isLastPlace(instanceId: string): boolean
@@ -221,7 +295,8 @@ function stable(value: unknown): string {
 export function createAdminStore(deps: StoreDeps): AdminStore {
   const debounceMs = deps.debounceMs ?? SAVE_DEBOUNCE_MS
   const state = reactive<AdminState>({
-    newConnectionType: '',
+    newConnectionType: '', editConnectionId: '', aboutId: '',
+    clipboard: null, styleClipboard: null, reloads: {},
     config: null, manifests: {}, sources: {}, asks: {}, catalogErrors: [],
     screenId: '', pageIndex: 0, selectedId: null, dragWidgetId: null,
     mode: 'edit', modal: null, status: 'saved', toast: '', degraded: false,
@@ -373,6 +448,35 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     clampSelection()
   })
 
+  /**
+   * Where `showOnScreen` puts a widget on another screen: the first of its pages with room, at the
+   * tile's size here when that screen's grid takes it, else its manifest's default, shrunk towards
+   * its minimum. Null (with a toast saying why) when the screen already shows it or is full.
+   */
+  function spotOnScreen(instanceId: string, screenId: string): { page: number; rect: Rect } | null {
+    const cfg = state.config
+    const target = cfg?.screens.find((x) => x.id === screenId)
+    const widget = cfg?.widgets[instanceId]
+    if (!cfg || !target || !widget || target.id === screen.value?.id) return null
+    if (screensShowing(cfg, instanceId).some((x) => x.id === screenId)) {
+      state.toast = t('admin.store.alreadyOnThatScreen', { name: nameOf(widget), screen: target.name })
+      return null
+    }
+    const manifest = state.manifests[widget.widgetId]
+    const min = manifest?.minSize ?? [1, 1]
+    const src = page.value?.items.find((p) => p.instanceId === instanceId)
+    const targetGrid: Grid = { cols: target.display.cols, rows: target.display.rows }
+    const size: [number, number] = src && src.w <= targetGrid.cols && src.h <= targetGrid.rows
+      ? [src.w, src.h]
+      : manifest?.defaultSize ?? min
+    for (let i = 0; i < target.pages.length; i++) {
+      const rect = largestFreeSpot(size, min, targetGrid, target.pages[i].items.map(rectOf))
+      if (rect) return { page: i, rect }
+    }
+    state.toast = t('admin.store.noRoomOnScreen', { screen: target.name, name: nameOf(widget) })
+    return null
+  }
+
   const store: AdminStore = {
     state, screen, page, selected, grid, canUndo, canRedo,
 
@@ -432,8 +536,10 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     select(id: string | null): void { state.selectedId = id },
     selectPage(i: number): void { state.pageIndex = i; state.selectedId = null },
     setMode(mode: Mode): void { state.mode = mode; if (mode === 'test') state.selectedId = null },
-    openModal(name: ModalName): void { state.modal = name; state.newConnectionType = '' },
-    openNewConnection(typeId: string): void { state.newConnectionType = typeId; state.modal = 'connections' },
+    openModal(name: ModalName): void { state.modal = name; state.newConnectionType = ''; state.editConnectionId = '' },
+    openNewConnection(typeId: string): void { store.openModal('connections'); state.newConnectionType = typeId },
+    openConnection(connectionId: string): void { store.openModal('connections'); state.editConnectionId = connectionId },
+    openAbout(instanceId: string): void { store.openModal('about'); state.aboutId = instanceId },
     closeModal(): void { state.modal = null },
     setDragWidget(id: string | null): void { state.dragWidgetId = id },
     dismissToast(): void { state.toast = '' },
@@ -497,7 +603,10 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
           c.widgets[id] = clone(widget)
           items.push({ ...p, instanceId: id })
         }
-        pages.splice(i + 1, 0, { id: freePageId(pages), name: t('admin.store.pageCopy', { name: src.name }), items })
+        pages.splice(i + 1, 0, {
+          id: freePageId(pages), name: t('admin.store.pageCopy', { name: src.name }), items,
+          ...(src.background ? { background: clone(src.background) } : {}),
+        })
         state.pageIndex = i + 1
         state.selectedId = null
       })
@@ -525,6 +634,82 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
         if (state.pageIndex === i) state.pageIndex = j
         else if (state.pageIndex === j) state.pageIndex = i
       })
+    },
+
+    setPageBackground(i: number, patch: Partial<Background> | null): void {
+      if (!screen.value?.pages[i]) return
+      apply((c) => {
+        const target = here(c).pages[i]
+        const next: Record<string, unknown> = patch ? { ...target.background, ...patch } : {}
+        for (const [k, v] of Object.entries(next)) if (v === undefined) delete next[k]
+        if (Object.keys(next).length) target.background = next as Background
+        else delete target.background
+      })
+    },
+
+    reorderPage(from: number, to: number): void {
+      const pages = screen.value?.pages
+      if (!pages || from === to || !pages[from] || to < 0 || to >= pages.length) return
+      const shown = pages[state.pageIndex]?.id
+      apply((c) => {
+        const list = here(c).pages
+        const [moved] = list.splice(from, 1)
+        list.splice(to, 0, moved)
+        // The editor keeps showing the page it showed, wherever that page now sits.
+        state.pageIndex = Math.max(0, list.findIndex((p) => p.id === shown))
+      })
+    },
+
+    copyPageToScreen(i: number, screenId: string): void {
+      const cfg = state.config
+      const src = screen.value?.pages[i]
+      const target = cfg?.screens.find((x) => x.id === screenId)
+      if (!cfg || !src || !target || target.id === screen.value?.id) return
+      let leftOut = 0
+      apply((c) => {
+        const to = c.screens.find((x) => x.id === screenId)!
+        // New widgets first, set up like the originals, so the arrangement can place them.
+        const items: Placement[] = []
+        const made: string[] = []
+        for (const p of src.items) {
+          const widget = c.widgets[p.instanceId]
+          if (!widget) continue
+          const id = freeInstanceId(c, widget.widgetId)
+          c.widgets[id] = clone(widget)
+          made.push(id)
+          items.push({ ...clone(p), instanceId: id })
+        }
+        const copy: Page = { id: src.id, name: src.name, items, ...(src.background ? { background: clone(src.background) } : {}) }
+        const laid = arrangeInto(
+          { ...to, nav: [], pages: [copy] },
+          { cols: to.display.cols, rows: to.display.rows, navCols: to.display.cols, navHeight: to.display.navHeight },
+          c.widgets, state.manifests,
+        )
+        for (const p of laid.pages) to.pages.push({ ...p, id: freePageId(to.pages, p.id) })
+        dropUnplaced(c, made)
+        leftOut = laid.leftOut.length
+      })
+      state.toast = leftOut
+        ? t('admin.store.pageCopiedLeftOut', { page: src.name, screen: target.name, n: leftOut })
+        : t('admin.store.pageCopied', { page: src.name, screen: target.name })
+    },
+
+    addWidgetToPage(widgetId: string, i: number): void {
+      const manifest = state.manifests[widgetId]
+      const target = screen.value?.pages[i]
+      if (!manifest) { state.toast = t('admin.store.unknownWidget', { id: widgetId }); return }
+      if (!target) return
+      const spot = largestFreeSpot(manifest.defaultSize, manifest.minSize, grid.value, target.items.map(rectOf))
+      if (!spot) { state.toast = t('admin.store.noRoomOnPage', { page: target.name, id: pick(manifest.name) || widgetId }); return }
+      store.selectPage(i)
+      store.placeWidget(widgetId, spot)
+    },
+
+    backgroundInUse(name: string): boolean {
+      const cfg = state.config
+      if (!cfg) return false
+      return cfg.screens.some((x) => x.display.background?.image === name || x.pages.some((p) => p.background?.image === name))
+        || Object.values(cfg.widgets).some((w) => w.background?.image === name)
     },
 
     /** A new widget and its placement, in one mutation: the server drops a widget placed nowhere. */
@@ -644,11 +829,125 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
         const items = pages[state.pageIndex].items
         const i = items.findIndex((p) => p.instanceId === instanceId)
         if (i < 0) return
-        items.splice(i, 1)
-        pages[targetPageIndex].items.push({ instanceId, ...spot })
+        const [moved] = items.splice(i, 1)
+        pages[targetPageIndex].items.push({ instanceId, ...spot, ...(moved.locked ? { locked: true } : {}) })
         state.pageIndex = targetPageIndex
         state.selectedId = instanceId
       })
+    },
+
+    moveWidgetToNewPage(instanceId: string): void {
+      const src = page.value?.items.find((p) => p.instanceId === instanceId)
+      if (!src) return
+      apply((c) => {
+        const pages = here(c).pages
+        const items = pages[state.pageIndex].items
+        const i = items.findIndex((p) => p.instanceId === instanceId)
+        if (i < 0) return
+        const [moved] = items.splice(i, 1)
+        // An empty page has room for any tile that fitted the grid already, so it keeps its spot.
+        pages.push({ id: freePageId(pages), name: t('admin.store.newPage'), items: [moved] })
+        state.pageIndex = pages.length - 1
+        state.selectedId = instanceId
+      })
+    },
+
+    showOnScreen(instanceId: string, screenId: string): void {
+      const at = spotOnScreen(instanceId, screenId)
+      if (!at) return
+      apply((c) => {
+        c.screens.find((x) => x.id === screenId)!.pages[at.page].items.push({ instanceId, ...at.rect })
+      })
+    },
+
+    moveToScreen(instanceId: string, screenId: string): void {
+      const at = spotOnScreen(instanceId, screenId)
+      if (!at) return
+      apply((c) => {
+        c.screens.find((x) => x.id === screenId)!.pages[at.page].items.push({ instanceId, ...at.rect })
+        const scr = here(c)
+        for (const p of scr.pages) {
+          const i = p.items.findIndex((x) => x.instanceId === instanceId)
+          if (i >= 0) p.items.splice(i, 1)
+        }
+        const n = scr.nav.findIndex((x) => x.instanceId === instanceId)
+        if (n >= 0) scr.nav.splice(n, 1)
+        if (state.selectedId === instanceId) state.selectedId = null
+      })
+    },
+
+    canResize(instanceId: string, size: [number, number]): boolean {
+      const src = page.value?.items.find((p) => p.instanceId === instanceId)
+      if (!src || src.locked) return false
+      return fits({ x: src.x, y: src.y, w: size[0], h: size[1] }, grid.value, store.others(instanceId))
+    },
+
+    resizeWidget(instanceId: string, size: [number, number]): void {
+      const src = page.value?.items.find((p) => p.instanceId === instanceId)
+      if (!src || (src.w === size[0] && src.h === size[1])) return
+      if (src.locked) { state.toast = t('admin.store.locked'); return }
+      if (!store.canResize(instanceId, size)) { state.toast = t('admin.store.occupied'); return }
+      store.updateInstance(instanceId, { w: size[0], h: size[1] })
+    },
+
+    setLocked(instanceId: string, locked: boolean): void {
+      if (!page.value?.items.some((p) => p.instanceId === instanceId)) return
+      apply((c) => {
+        for (const p of here(c).pages) {
+          const placement = p.items.find((x) => x.instanceId === instanceId)
+          // Unlocked is stored as an absent key, the way the file had it before locks existed.
+          if (placement) { if (locked) placement.locked = true; else delete placement.locked }
+        }
+      })
+    },
+
+    copyWidget(instanceId: string): void {
+      const src = page.value?.items.find((p) => p.instanceId === instanceId)
+      const widget = state.config?.widgets[instanceId]
+      if (!src || !widget) return
+      state.clipboard = { widget: clone(widget), size: [src.w, src.h] }
+    },
+
+    pasteWidget(): boolean {
+      const copied = state.clipboard
+      if (!copied || !state.config || !page.value) return false
+      const min = state.manifests[copied.widget.widgetId]?.minSize ?? [1, 1]
+      const spot = largestFreeSpot(copied.size, min, grid.value, store.others())
+      if (!spot) { state.toast = t('admin.store.noRoom'); return false }
+      apply((c) => {
+        const id = freeInstanceId(c, copied.widget.widgetId)
+        c.widgets[id] = clone(copied.widget)
+        here(c).pages[state.pageIndex].items.push({ instanceId: id, ...spot })
+        state.selectedId = id
+      })
+      return true
+    },
+
+    copyStyle(instanceId: string): void {
+      const widget = state.config?.widgets[instanceId]
+      if (!widget) return
+      const style: WidgetStyle = {}
+      for (const key of STYLE_KEYS) if (widget[key] !== undefined) (style as Record<string, unknown>)[key] = clone(widget[key])
+      state.styleClipboard = style
+    },
+
+    pasteStyle(instanceId: string): void {
+      const style = state.styleClipboard
+      if (!style || !state.config?.widgets[instanceId]) return
+      // Every style key is written, the absent ones as undefined: the target takes the copied
+      // look as a whole rather than keeping a colour the source did not have.
+      const patch: Partial<Widget> = {}
+      for (const key of STYLE_KEYS) (patch as Record<string, unknown>)[key] = style[key] === undefined ? undefined : clone(style[key])
+      store.updateInstance(instanceId, patch)
+    },
+
+    resetAppearance(instanceId: string): void {
+      if (!state.config?.widgets[instanceId]) return
+      store.updateInstance(instanceId, Object.fromEntries(STYLE_KEYS.map((k) => [k, undefined])) as Partial<Widget>)
+    },
+
+    reloadWidget(instanceId: string): void {
+      state.reloads[instanceId] = (state.reloads[instanceId] ?? 0) + 1
     },
 
     /**
@@ -714,7 +1013,10 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       for (const p of input.prefill?.pages ?? []) {
         const items = p.items.filter((x) => cfg.widgets[x.instanceId] && !seen.has(x.instanceId))
         for (const x of items) seen.add(x.instanceId)
-        pages.push({ id: freePageId(pages, p.id), name: p.name, items: items.map((x) => ({ ...x })) })
+        pages.push({
+          id: freePageId(pages, p.id), name: p.name, items: items.map((x) => ({ ...x })),
+          ...(p.background ? { background: clone(p.background) } : {}),
+        })
       }
       if (!pages.length) pages.push({ id: freePageId(pages), name: t('admin.store.newPage'), items: [] })
       const added: Screen = { id, name, kind: input.kind, display, nav: [], pages }

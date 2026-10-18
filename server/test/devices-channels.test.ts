@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ConfigSchema, DEFAULT_CONFIG, type Config } from '../src/config/schema.js'
+import { WIDGET_DEV_CHANNEL } from '../src/widgets/dev.js'
 import { channelAllowed, HOST_CHANNELS, screenChannels, type ChannelManifest } from '../src/devices/channels.js'
 
 const manifests = new Map<string, ChannelManifest>([
@@ -42,7 +43,9 @@ describe('screenChannels', () => {
   it('collects the channels of the widgets on the screen\'s pages and in its bar, and no other', () => {
     const channels = screenChannels(config(), 'tablet', manifests)
     expect(channels.subscriptions.sort()).toEqual(['calendar:*', 'system'])
-    expect(channels.commands.sort()).toEqual(['system-cmd', 'weather'])
+    // `clock` names `weather` in a preview but not in `commands`: a manifest the schema refuses
+    // today, and one that must not widen a device's policy even if it got through.
+    expect(channels.commands.sort()).toEqual(['system-cmd'])
     expect(channels.subscriptions).not.toContain('spotify')
     expect(channels.commands).not.toContain('spotify')
   })
@@ -66,7 +69,7 @@ describe('channelAllowed', () => {
     expect(channelAllowed([], 'config')).toBe(false)
   })
 
-  it('names config as the only host channel', () => {
-    expect(HOST_CHANNELS).toEqual(['config'])
+  it('names config, the widget-reload channel and the theme in force as the only host channels', () => {
+    expect(HOST_CHANNELS).toEqual(['config', WIDGET_DEV_CHANNEL, 'theme'])
   })
 })

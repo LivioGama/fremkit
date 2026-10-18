@@ -108,7 +108,8 @@ describe('readPackage', () => {
       // `clipboard` carries a preview of everything copied.
       { subscriptions: ['clipboard'] },
       { commands: ['clipboard'] },
-      { settingsSchema: { sound: { type: 'enum', label: 'S', options: [], preview: { channel: 'disk-map', command: 'view' } } } },
+      { commands: ['disk-map'], settingsSchema: { sound: { type: 'enum', label: 'S', options: [], preview: { channel: 'disk-map', command: 'view' } } } },
+      { commands: ['brightness'], settingsSchema: { level: { type: 'enum', label: 'L', options: [], preview: { channel: 'brightness', command: 'set' } } } },
       // `brightness` changes the screen itself: commanding it is for the built-in widget.
       { commands: ['brightness'] },
       { subscriptions: ['brightness'], commands: ['brightness'] },
@@ -116,6 +117,12 @@ describe('readPackage', () => {
       const zip = packageOf(over)
       expect(() => readPackage(zip, expected(zip))).toThrow(expect.objectContaining({ key: 'marketplace.builtinOnlyChannel' }))
     }
+  })
+
+  it('refuses a preview on a channel the widget does not declare in commands', () => {
+    // The admin sends a preview with its own authority; off `commands` it is outside consent.
+    const zip = packageOf({ settingsSchema: { sound: { type: 'enum', label: 'S', options: [], preview: { channel: 'mutedeck', command: 'leave' } } } })
+    expect(() => readPackage(zip, expected(zip))).toThrow(expect.objectContaining({ key: 'marketplace.badManifest' }))
   })
 
   it('lets a widget read the brightness without commanding it', () => {
@@ -144,6 +151,17 @@ describe('readPackage', () => {
     // an archive gets to ask.
     const twice = packageOf({}, [{ name: 'Index.html', data: Buffer.from('other') }])
     expect(() => readPackage(twice, expected(twice))).toThrow(expect.objectContaining({ key: 'marketplace.badPackage' }))
+  })
+
+  it('refuses one name spelled twice in two Unicode normalisations, which APFS takes as one file', () => {
+    const nfc = 'caf\u00e9.css'
+    const nfd = 'cafe\u0301.css'
+    expect(nfc).not.toBe(nfd)
+    const both = packageOf({}, [{ name: nfc, data: Buffer.from('a{}') }, { name: nfd, data: Buffer.from('b{}') }])
+    expect(() => readPackage(both, expected(both))).toThrow(expect.objectContaining({ key: 'marketplace.badPackage' }))
+    // One of them alone is fine.
+    const one = packageOf({}, [{ name: nfd, data: Buffer.from('b{}') }])
+    expect(() => readPackage(one, expected(one))).not.toThrow()
   })
 
   it('refuses a package with no manifest or no index.html', () => {

@@ -311,6 +311,8 @@ describe('companion socket in the app', () => {
     const on = await full.inject({ method: 'PUT', url: '/api/devices/settings', headers: { host: HOST, authorization: `Bearer ${SECRET}` }, payload: { enabled: true } })
     expect(on.statusCode).toBe(200)
     const remotePort = on.json().port as number
+    // A Host the listener answers to, so the 404 is the route's and not the Host check's 421.
+    full.pairing.setRemoteHosts(() => new Set([`example.local:${remotePort}`]))
     const res = await upgrade(remotePort, { origin: ORIGIN }, `example.local:${remotePort}`, '/companion/ws')
     expect(res.status).toBe(404)
   })

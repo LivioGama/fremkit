@@ -183,6 +183,20 @@ export class Hub {
     }
   }
 
+  /**
+   * Sends to a channel's subscribers without keeping the value.
+   *
+   * For an event rather than a state: `broadcast` replays the last value to every new
+   * subscriber, which is right for "the CPU is at 40 %" and wrong for "this widget's files just
+   * changed" — a page opened a minute later would reload its widgets for a save it never saw.
+   */
+  notify(channel: string, data: unknown): void {
+    const msg = JSON.stringify({ type: 'data', channel, data })
+    for (const [socket, channels] of this.clients) {
+      if (channels.has(channel)) this.safeSend(socket, msg)
+    }
+  }
+
   private onMessage(socket: SocketLike, channels: Set<string>, raw: Buffer | string): void {
     // A detached socket may still be finishing its closing handshake: it is heard no more.
     if (!this.clients.has(socket)) return

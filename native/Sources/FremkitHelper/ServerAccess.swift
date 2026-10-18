@@ -1,63 +1,154 @@
 import Foundation
 import FremkitCore
-import WebKit
 
 /// The server's access secret, as the helper presents it (see `AccessToken` in FremkitCore).
 ///
-/// One secret per helper launch, handed to every server the helper spawns, so a respawned server
-/// keeps taking the kiosk's cookie. Which secret to *present* is read from the per-port token file
-/// each time: that is ours when the server is ours, and the other one's when a `pnpm dev` holds
-/// the port. Everything here runs on the main thread.
+/// A fresh secret for every server the helper spawns, so a respawned server never honours what
+/// its predecessor handed out. For a server the helper did not start — a `pnpm dev` holding the
+/// port — the secret is read from the per-port token file.
+///
+/// The secret is presented only to a listener that has *proved* it holds it (`AccessProof`): until
+/// a probe says so, and from the moment one doubts it or the spawned server dies, `authorize`
+/// adds nothing and `signInURL` mints nothing, so nothing that took the port in between — another
+/// account's program — ever receives the secret or gets its pages shown in the kiosk.
+/// Everything here runs on the main thread.
 final class ServerAccess {
-    /// This launch's secret, passed to the servers the helper spawns.
-    let launchToken = AccessToken.generate()
     let port: Int
     private let file: URL
+    /// The secret of the server this helper spawned and supervises, while it lives.
+    private var spawnToken: String?
+    /// The secret of the listener that last proved itself, nil until one has and after any doubt.
+    private var verified: String?
+    /// What the last probe concluded, for the menu and the browser link.
+    private(set) var verdict: AccessProof.Verdict = .absent
 
     init(port: Int) {
         self.port = port
         file = AccessToken.fileURL(port: port, supportDirectory: HelperPaths.supportDirectory())
     }
 
-    /// The secret the server on the port holds, as far as the helper can tell.
-    var current: String {
-        AccessToken.read(from: file) ?? launchToken
+    /// A new secret for a server about to be spawned. Nothing is presented until it proves it.
+    func newSpawnToken() -> String {
+        let token = AccessToken.generate()
+        spawnToken = token
+        verified = nil
+        return token
     }
 
-    /// Adds the bearer header to a request for the server.
-    func authorize(_ request: inout URLRequest) {
-        request.setValue(AccessToken.bearer(current), forHTTPHeaderField: "Authorization")
+    /// The spawned server is gone (or was never ours): forget its secret and trust nothing.
+    func forgetSpawn() {
+        spawnToken = nil
+        verified = nil
+    }
+
+    /// The secret the listener should hold: our spawn's, else the token file's.
+    private var expected: String? {
+        spawnToken ?? AccessToken.read(from: file)
+    }
+
+    /// Adds the bearer header to a request for the server, if the listener proved itself; returns
+    /// whether it did. A request sent without it is simply refused by our server.
+    @discardableResult
+    func authorize(_ request: inout URLRequest) -> Bool {
+        guard let verified else { return false }
+        request.setValue(AccessToken.bearer(verified), forHTTPHeaderField: "Authorization")
+        return true
     }
 
     /**
-     Writes the session cookie into the web views' shared store for each URL's host, then calls
-     `done` on the main thread. Every web view the helper makes uses the default data store, so
-     the kiosk and the admin window share it.
-
-     The cookie is the one `/auth` would set, written directly: the helper holds the secret, so
-     there is no one-time link to follow and no navigation to show.
+     Asks the listener on the port to prove it holds the secret, with no credential sent, and
+     records the answer: `authorize` works after `.ours` only. `done` runs on the main thread.
      */
-    func installCookie(for urls: [URL], done: @escaping () -> Void) {
-        let token = current
-        let store = WKWebsiteDataStore.default().httpCookieStore
-        let cookies = urls.compactMap { AccessToken.cookie(token: token, port: port, for: $0) }
-        let group = DispatchGroup()
-        for cookie in cookies {
-            group.enter()
-            store.setCookie(cookie) { group.leave() }
+    func probe(timeout: TimeInterval, queue: DispatchQueue? = nil, _ done: @escaping (AccessProof.Verdict) -> Void) {
+        let nonce = AccessProof.newNonce()
+        let token = expected
+        guard let url = AccessProof.url(port: port, nonce: nonce) else {
+            DispatchQueue.main.async { done(.absent) }
+            return
         }
-        group.notify(queue: .main, execute: done)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = timeout
+        configuration.timeoutIntervalForResource = timeout
+        // No cookies either way: the answer must stand on the proof alone.
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        let operations = OperationQueue()
+        operations.maxConcurrentOperationCount = 1
+        if let queue { operations.underlyingQueue = queue }
+        let session = URLSession(configuration: configuration, delegate: nil, delegateQueue: operations)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = timeout
+        session.dataTask(with: request) { [weak self] data, response, _ in
+            let status = (response as? HTTPURLResponse)?.statusCode
+            let verdict = AccessProof.verdict(status: status, body: data, token: token, nonce: nonce)
+            session.finishTasksAndInvalidate()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                // A spawn since the question was asked changed what the listener should hold: the
+                // answer is about a secret that is no longer the one to present.
+                let current = verdict == .ours && token == self.expected
+                self.verdict = verdict
+                if current {
+                    self.verified = token
+                } else if verdict == .absent, self.spawnToken != nil {
+                    // A probe that timed out while our own child lives says nothing new: the
+                    // child holds the port, so nobody else can, and its death clears this anyway.
+                } else {
+                    self.verified = nil
+                }
+                done(current || verdict != .ours ? verdict : .absent)
+            }
+        }.resume()
     }
 
     /**
-     A one-time link that signs the default browser in and lands on `target`, or nil when the
-     server would not mint one. `done` runs on the main thread.
+     The server's diagnostics report (`GET /api/diagnostics`), already redacted by the server, or
+     why there is none. `done` runs on the main thread.
+     */
+    func diagnostics(done: @escaping (HelperDiagnostics.ServerPart) -> Void) {
+        guard let endpoint = URL(string: "http://127.0.0.1:\(port)/api/diagnostics") else {
+            done(.unavailable(reason: "no address"))
+            return
+        }
+        var request = URLRequest(url: endpoint)
+        // The report reads the keychain and runs sw_vers and scutil: a few seconds at worst.
+        request.timeoutInterval = 10
+        authorize(&request)
+        let session = URLSession(configuration: .ephemeral)
+        session.dataTask(with: request) { data, response, error in
+            let status = (response as? HTTPURLResponse)?.statusCode
+            let text = data.flatMap { String(data: $0, encoding: .utf8) }
+            let part: HelperDiagnostics.ServerPart
+            if status == 200, let text, !text.isEmpty {
+                part = .report(text)
+            } else {
+                part = .unavailable(reason: HelperDiagnostics.reason(status: status, error: error))
+            }
+            session.finishTasksAndInvalidate()
+            DispatchQueue.main.async { done(part) }
+        }.resume()
+    }
 
-     The browser has its own cookie jar that the helper cannot write, and the secret itself must
-     not travel in a URL (it would sit in the browser's history), so the server is asked for a
-     code that works once, within a minute.
+    /**
+     A one-time link that signs a browser or a web view in and lands on `target`, or nil when the
+     listener on the port did not prove it is our server, or would not mint one. `done` runs on
+     the main thread.
+
+     Following it opens a session on the server, whose cookie is what the page then carries: the
+     cookie never holds the secret itself (browsers hand a host's cookies to every port on it),
+     and neither does the URL (it would sit in a browser's history). The code works once, within
+     a minute. The kiosk and the admin window sign in this way too.
      */
     func signInURL(for target: URL, done: @escaping (URL?) -> Void) {
+        // Proved right before the code is asked for, every time: what loads next is shown on the
+        // Edge or in the browser, and must come from our server.
+        probe(timeout: 2) { [weak self] verdict in
+            guard let self, verdict == .ours else { done(nil); return }
+            self.mintSignInURL(for: target, done: done)
+        }
+    }
+
+    private func mintSignInURL(for target: URL, done: @escaping (URL?) -> Void) {
         guard let endpoint = URL(string: "http://127.0.0.1:\(port)/api/auth/code") else {
             done(nil)
             return
@@ -65,7 +156,7 @@ final class ServerAccess {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.timeoutInterval = 5
-        authorize(&request)
+        guard authorize(&request) else { done(nil); return }
         let session = URLSession(configuration: .ephemeral)
         session.dataTask(with: request) { data, response, _ in
             let ok = (response as? HTTPURLResponse)?.statusCode == 200

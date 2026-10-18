@@ -228,6 +228,15 @@ describe('createAzureDevOpsProvider', () => {
     await expect(provider.commands!.open({ url: 'https://dev.azure.com@evil.com/x' }, local)).rejects.toThrow('URL refusée')
     expect(opened).toHaveLength(1)
   })
+
+  it('hands open the URL it checked, normalised, not the text it was given', async () => {
+    const opened: string[] = []
+    const { fetchFn } = responder({ builds: BUILDS, timeline: STAGES })
+    const provider = createAzureDevOpsProvider(ctx, { fetchFn, now: () => 0, open: async (u) => { opened.push(u) } })
+    // Whitespace and case a WHATWG parser drops or folds, and another parser might not.
+    await provider.commands!.open({ url: '  HTTPS://DEV.AZURE.COM/example-org/x y\t' }, { loopback: true, paired: false })
+    expect(opened).toEqual(['https://dev.azure.com/example-org/x%20y'])
+  })
 })
 
 describe('azureDevOpsType', () => {

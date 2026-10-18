@@ -47,6 +47,7 @@ const fr = {
   'manifest.pickNeedsSource': 'un réglage de type pick doit déclarer source',
   'manifest.listNeedsItemSchema': 'un réglage de type list doit déclarer itemSchema',
   'manifest.defaultSizeTooSmall': 'defaultSize doit être supérieur ou égal à minSize',
+  'manifest.previewNotACommand': 'le canal d’un preview doit figurer dans commands',
   'ws.tooManyChannels': 'trop de canaux',
   'device.channelRefused': 'canal non autorisé pour l’écran de cet appareil',
   'manifest.badVersion': 'version invalide : un numéro semver est attendu (1.2.3)',
@@ -78,6 +79,7 @@ const fr = {
   'catalog.builtinOnlyChannel': 'canal réservé aux widgets intégrés : {channels}',
   'catalog.folderMismatch': 'id « {id} » différent du dossier « {folder} »',
   'catalog.builtinId': 'l’id « {id} » est déjà celui d’un widget intégré',
+  'catalog.idTaken': 'l’id « {id} » est déjà celui d’un widget installé',
   'catalog.themeMissing': 'theme.json manquant',
   'catalog.themeNotJson': 'theme.json illisible (JSON)',
   'catalog.invalidTheme': 'thème invalide : {issues}',
@@ -278,6 +280,7 @@ const fr = {
 
   // dock/routes.ts
   'dock.notLocal': 'hôte non local',
+  'dock.notInDock': 'cette app n’est pas dans le Dock',
   'dock.iconCacheFull': 'cache d’icônes plein',
   'dock.unknownIcon': 'icône inconnue',
 
@@ -320,6 +323,7 @@ const en: Record<MessageKey, string> = {
   'manifest.pickNeedsSource': 'a pick setting must declare source',
   'manifest.listNeedsItemSchema': 'a list setting must declare itemSchema',
   'manifest.defaultSizeTooSmall': 'defaultSize must be greater than or equal to minSize',
+  'manifest.previewNotACommand': 'a preview\'s channel must be listed in commands',
   'ws.tooManyChannels': 'too many channels',
   'device.channelRefused': 'channel not allowed for this device’s screen',
   'manifest.badVersion': 'invalid version: a semver number is expected (1.2.3)',
@@ -351,6 +355,7 @@ const en: Record<MessageKey, string> = {
   'catalog.builtinOnlyChannel': 'channel reserved to built-in widgets: {channels}',
   'catalog.folderMismatch': 'id “{id}” does not match the folder “{folder}”',
   'catalog.builtinId': 'the id “{id}” is already a built-in widget',
+  'catalog.idTaken': 'the id “{id}” is already an installed widget',
   'catalog.themeMissing': 'theme.json is missing',
   'catalog.themeNotJson': 'theme.json is not valid JSON',
   'catalog.invalidTheme': 'invalid theme: {issues}',
@@ -537,6 +542,7 @@ const en: Record<MessageKey, string> = {
 
 
   'dock.notLocal': 'host is not local',
+  'dock.notInDock': 'this app is not in the Dock',
   'dock.iconCacheFull': 'icon cache full',
   'dock.unknownIcon': 'unknown icon',
 

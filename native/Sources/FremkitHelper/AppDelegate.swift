@@ -140,9 +140,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             server.start()
         } else {
             // Not managing, but the menu should still say whether something answers the port.
-            server.probe { [weak self] alive in
-                guard alive else { return }
-                self?.menu?.update { $0.server = .external }
+            let port = config.port
+            server.probe { [weak self] verdict in
+                guard verdict != .absent else { return }
+                self?.menu?.update { $0.server = verdict == .ours ? .external : .foreign(port) }
             }
         }
 
@@ -259,6 +260,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
+    // MARK: - Diagnostics
+
+    /// The server's report and the helper's own facts, on the pasteboard. The server's part is
+    /// fetched with the access secret; when it does not answer, the helper's part goes alone.
+    private func copyDiagnostics() {
+        guard let access else { return }
+        access.diagnostics { [weak self] part in
+            guard let self else { return }
+            let text = self.helperDiagnostics().report(server: part)
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            self.menu?.diagnosticsCopied()
+        }
+    }
+
+    private func helperDiagnostics() -> HelperDiagnostics {
+        let state = menu?.current ?? MenuState()
+        let info = Bundle.main.infoDictionary ?? [:]
+        let grant: (PermissionStatus) -> HelperDiagnostics.Grant = {
+            switch $0 {
+            case .granted: return .granted
+            case .denied: return .denied
+            case .unknown: return .unknown
+            }
+        }
+        let brightness: String
+        switch state.brightness {
+        case let .level(level): brightness = "available, level \(level) %"
+        case .unavailable(.brightnessNoDDC): brightness = "not adjustable (no DDC)"
+        case .unavailable(.brightnessAmbiguous): brightness = "display not identified for sure"
+        case .unavailable: brightness = "no display"
+        }
+        let server: String
+        switch state.server {
+        case .external: server = "external"
+        case .starting: server = "starting"
+        case .running: server = "running"
+        case .stopped: server = "stopped"
+        case let .restarting(seconds): server = "restarting in \(seconds) s"
+        case let .foreign(port): server = "port \(port) held by another program"
+        }
+        let fence: String
+        switch state.fence {
+        case .off: fence = "off"
+        case .active: fence = "active"
+        case .missingPermission: fence = "Accessibility missing"
+        }
+        let dock: String
+        switch state.dock {
+        case .disabled: dock = "disabled"
+        case .accessibilityMissing: dock = "Accessibility missing"
+        case .noDock: dock = "Dock not found"
+        case .active: dock = "active"
+        }
+        return HelperDiagnostics(
+            version: info["CFBundleShortVersionString"] as? String ?? "unknown",
+            build: info["CFBundleVersion"] as? String ?? "unknown",
+            launch: config.repoPath.map { $0.isEmpty ? "app" : "checkout" } ?? "app",
+            server: server,
+            touch: state.touch.description,
+            inputMonitoring: grant(Permissions.inputMonitoring),
+            accessibility: AXIsProcessTrusted() ? .granted : .denied,
+            kioskDisplay: edge.map { (Int($0.width), Int($0.height)) },
+            kioskWindow: kiosk != nil,
+            brightness: brightness,
+            fence: fence,
+            dock: dock,
+            manageServer: config.manageServer)
+    }
+
     // MARK: - Config
 
     /// Turns a configured string into a URL, naming the offending value before falling back.
@@ -363,13 +435,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.onOpenAdmin = { [weak self] in self?.admin?.show() }
 
         // The browser has a cookie jar of its own: it is handed a one-time sign-in link instead.
-        // Without one (the server is down, or refuses) the plain address still opens, and the
-        // server's page there says how to get in.
+        // Without one — nothing on the port proved it is our server — nothing opens: the plain
+        // address would show whatever holds the port, and the server line says what is wrong.
         menu.onOpenAdminInBrowser = { [weak self] in
             guard let self, let access = self.access else { return }
             let admin = Self.parseURL(self.config.adminUrl, what: "adminUrl")
             access.signInURL(for: admin) { url in
-                NSWorkspace.shared.open(url ?? admin)
+                guard let url else { NSSound.beep(); return }
+                NSWorkspace.shared.open(url)
             }
         }
 
@@ -427,6 +500,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.onOpenLog = {
             NSWorkspace.shared.open(ServerProcess.logURL)
         }
+        menu.onCopyDiagnostics = { [weak self] in self?.copyDiagnostics() }
 
         menu.onFix = { [weak self] fix in
             switch fix {

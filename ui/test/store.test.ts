@@ -505,6 +505,55 @@ describe('pages', () => {
   })
 })
 
+describe('page backgrounds', () => {
+  it('sets, patches and clears a page background, one undo step each', async () => {
+    const { store } = make()
+    await store.load()
+    const page = () => store.state.config!.screens[0].pages[0]
+    store.setPageBackground(0, { color: '#101820' })
+    expect(page().background).toEqual({ color: '#101820' })
+    store.setPageBackground(0, { image: 'dunes.webp', fit: 'cover' })
+    expect(page().background).toEqual({ color: '#101820', image: 'dunes.webp', fit: 'cover' })
+    store.setPageBackground(0, { image: undefined, fit: undefined })
+    expect(page().background).toEqual({ color: '#101820' })
+    // Emptied, it goes away: the page shows the screen's again and the file keeps no empty object.
+    store.setPageBackground(0, { color: undefined })
+    expect(page()).not.toHaveProperty('background')
+    store.setPageBackground(0, { color: '#202020' })
+    store.setPageBackground(0, null)
+    expect(page()).not.toHaveProperty('background')
+    store.undo()
+    expect(page().background).toEqual({ color: '#202020' })
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('duplicatePage copies the background with the page', async () => {
+    const { store } = make()
+    await store.load()
+    store.setPageBackground(0, { image: 'dunes.webp' })
+    store.duplicatePage(0)
+    const [a, b] = store.state.config!.screens[0].pages
+    expect(b.background).toEqual({ image: 'dunes.webp' })
+    expect(b.background).not.toBe(a.background)
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('knows when an image is still shown by a screen, a page or a widget', async () => {
+    const { store } = make()
+    await store.load()
+    expect(store.backgroundInUse('dunes.webp')).toBe(false)
+    store.setPageBackground(0, { image: 'dunes.webp' })
+    expect(store.backgroundInUse('dunes.webp')).toBe(true)
+    store.setPageBackground(0, null)
+    store.updateInstance('clock-1', { background: { image: 'dunes.webp' } })
+    expect(store.backgroundInUse('dunes.webp')).toBe(true)
+    store.updateInstance('clock-1', { background: undefined })
+    store.apply((c) => { c.screens[0].display.background = { image: 'dunes.webp' } })
+    expect(store.backgroundInUse('dunes.webp')).toBe(true)
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+})
+
 describe('moving a tile to another page', () => {
   /** The same fixture with an empty second page to move the clock onto. */
   const twoPages = (): Config => {
@@ -1089,5 +1138,166 @@ describe('freeInstanceId', () => {
   })
   it('keeps a short widget id whole', () => {
     expect(freeInstanceId(config(), 'clock')).toMatch(/^clock-[a-z0-9]{1,6}$/)
+  })
+})
+
+describe('context menu actions', () => {
+  it('copy then paste makes a new widget with the same settings and look on the current page', async () => {
+    const { store } = make()
+    await store.load()
+    store.updateInstance('clock-1', { settings: { tz: 'UTC' }, accentColor: '#112233', opacity: 0.4 })
+    store.copyWidget('clock-1')
+    store.addPage()
+    expect(store.pasteWidget()).toBe(true)
+    const pasted = items(store, 0, 1)
+    expect(pasted).toHaveLength(1)
+    const id = pasted[0].instanceId
+    expect(id).not.toBe('clock-1')
+    expect(widgetsOf(store)[id]).toEqual({ ...widgetsOf(store)['clock-1'] })
+    expect([pasted[0].w, pasted[0].h]).toEqual([16, 4])
+    expect(store.state.selectedId).toBe(id)
+    // The copy is its own widget: changing it leaves the original alone.
+    store.updateInstance(id, { settings: { tz: 'Asia/Tokyo' } })
+    expect(widgetsOf(store)['clock-1'].settings).toEqual({ tz: 'UTC' })
+  })
+
+  it('paste does nothing with an empty clipboard, and is one undo step', async () => {
+    const { store } = make()
+    await store.load()
+    expect(store.pasteWidget()).toBe(false)
+    store.copyWidget('clock-1')
+    store.pasteWidget()
+    expect(items(store)).toHaveLength(2)
+    store.undo()
+    expect(items(store)).toHaveLength(1)
+    expect(Object.keys(widgetsOf(store))).toEqual(['clock-1'])
+  })
+
+  it('pastes on another screen too', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.copyWidget('clock-1')
+    store.selectScreen('ipad')
+    expect(store.pasteWidget()).toBe(true)
+    expect(items(store, 1)).toHaveLength(3)
+  })
+
+  it('copy style / paste style carries the look and not the settings', async () => {
+    const { store } = makeTwoScreens()
+    await store.load()
+    store.updateInstance('clock-1', { bgColor: '#101010', accentMode: 'fill', opacity: 0.5, settings: { a: 1 } })
+    store.updateInstance('cpu-1', { accentColor: '#abcdef', settings: { b: 2 } })
+    store.copyStyle('clock-1')
+    store.pasteStyle('cpu-1')
+    const cpu = widgetsOf(store)['cpu-1']
+    expect(cpu.bgColor).toBe('#101010')
+    expect(cpu.accentMode).toBe('fill')
+    expect(cpu.opacity).toBe(0.5)
+    // The source had no accent colour: the target loses its own rather than keeping it.
+    expect(cpu).not.toHaveProperty('accentColor')
+    expect(cpu.settings).toEqual({ b: 2 })
+  })
+
+  it('reset appearance drops every look key and keeps the settings', async () => {
+    const { store } = make()
+    await store.load()
+    store.updateInstance('clock-1', { bgColor: '#101010', accentColor: '#202020', accentMode: 'frame', opacity: 0.3, background: { image: 'a.png' }, settings: { x: 1 } })
+    store.resetAppearance('clock-1')
+    expect(widgetsOf(store)['clock-1']).toEqual({ widgetId: 'clock', showTitle: true, settings: { x: 1 } })
+  })
+
+  it('locks and unlocks a placement, stored as an absent key when unlocked', async () => {
+    const { store } = make()
+    await store.load()
+    store.setLocked('clock-1', true)
+    expect(items(store)[0].locked).toBe(true)
+    expect(store.canResize('clock-1', [8, 4])).toBe(false)
+    store.resizeWidget('clock-1', [8, 4])
+    expect(items(store)[0].w).toBe(16)
+    store.setLocked('clock-1', false)
+    expect(items(store)[0]).not.toHaveProperty('locked')
+  })
+
+  it('a lock moves with the tile to another page', async () => {
+    const { store } = make()
+    await store.load()
+    store.setLocked('clock-1', true)
+    store.addPage()
+    store.selectPage(0)
+    store.moveWidget('clock-1', 1)
+    expect(items(store, 0, 1)[0].locked).toBe(true)
+  })
+
+  it('resizes in place only when the new size fits', async () => {
+    const { store } = make()
+    await store.load()
+    store.placeWidget('clock', { x: 16, y: 0, w: 8, h: 4 })
+    expect(store.canResize('clock-1', [8, 4])).toBe(true)
+    expect(store.canResize('clock-1', [20, 4])).toBe(false)
+    store.resizeWidget('clock-1', [20, 4])
+    expect(items(store)[0].w).toBe(16)
+    expect(store.state.toast).not.toBe('')
+    store.resizeWidget('clock-1', [8, 4])
+    expect(items(store)[0]).toMatchObject({ x: 0, y: 0, w: 8, h: 4 })
+  })
+
+  it('moves a tile to a new page in one undo step', async () => {
+    const { store } = make()
+    await store.load()
+    store.moveWidgetToNewPage('clock-1')
+    const pages = store.state.config!.screens[0].pages
+    expect(pages).toHaveLength(2)
+    expect(pages[0].items).toEqual([])
+    expect(pages[1].items).toEqual([{ instanceId: 'clock-1', x: 0, y: 0, w: 16, h: 4 }])
+    expect(store.state.pageIndex).toBe(1)
+    store.undo()
+    expect(store.state.config!.screens[0].pages).toHaveLength(1)
+  })
+
+  it('shows the same widget on another screen, refusing one that already shows it', async () => {
+    const { store } = makeTwoScreens((c) => { c.widgets['cpu-2'] = { widgetId: 'cpu', showTitle: true, settings: {} }; c.screens[0].pages[0].items.push({ instanceId: 'cpu-2', x: 20, y: 0, w: 8, h: 4 }) })
+    await store.load()
+    store.showOnScreen('cpu-2', 'ipad')
+    expect(items(store, 1).find((p) => p.instanceId === 'cpu-2')).toBeTruthy()
+    expect(items(store, 0).find((p) => p.instanceId === 'cpu-2')).toBeTruthy()
+    const before = items(store, 1).length
+    store.showOnScreen('clock-1', 'ipad')
+    expect(items(store, 1)).toHaveLength(before)
+    expect(store.state.toast).toContain('iPad')
+  })
+
+  it('moves a widget to another screen, off this one, in one undo step', async () => {
+    const { store } = makeTwoScreens((c) => { c.widgets['cpu-2'] = { widgetId: 'cpu', showTitle: true, settings: {} }; c.screens[0].pages[0].items.push({ instanceId: 'cpu-2', x: 20, y: 0, w: 8, h: 4 }) })
+    await store.load()
+    store.select('cpu-2')
+    store.moveToScreen('cpu-2', 'ipad')
+    expect(items(store, 0).some((p) => p.instanceId === 'cpu-2')).toBe(false)
+    expect(items(store, 1).some((p) => p.instanceId === 'cpu-2')).toBe(true)
+    expect(widgetsOf(store)['cpu-2']).toBeTruthy()
+    expect(store.state.selectedId).toBeNull()
+    store.undo()
+    expect(items(store, 0).some((p) => p.instanceId === 'cpu-2')).toBe(true)
+    expect(items(store, 1).some((p) => p.instanceId === 'cpu-2')).toBe(false)
+  })
+
+  it('reload bumps the counter of that tile only', async () => {
+    const { store } = make()
+    await store.load()
+    store.reloadWidget('clock-1')
+    store.reloadWidget('clock-1')
+    expect(store.state.reloads).toEqual({ 'clock-1': 2 })
+  })
+
+  it('opens About and a connection as one-shot modals', async () => {
+    const { store } = make()
+    await store.load()
+    store.openAbout('clock-1')
+    expect(store.state.modal).toBe('about')
+    expect(store.state.aboutId).toBe('clock-1')
+    store.openConnection('gh')
+    expect(store.state.modal).toBe('connections')
+    expect(store.state.editConnectionId).toBe('gh')
+    store.openModal('connections')
+    expect(store.state.editConnectionId).toBe('')
   })
 })

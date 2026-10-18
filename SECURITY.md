@@ -11,23 +11,40 @@ written around them; the secret is described first because every one of them mee
 
 ### The local access secret
 
-Every launch of the helper makes a new secret — 32 random bytes — and hands it to the server it
-starts, in an environment variable the server removes as soon as it has read it. A server started
-by hand (`pnpm start`, `pnpm dev`) makes its own. The server writes it to
+The helper makes a new secret — 32 random bytes — for every server it starts, and hands it over
+in an environment variable the server removes as soon as it has read it. A server started by hand
+(`pnpm start`, `pnpm dev`) makes its own. Once it listens, the server writes it to
 `~/Library/Application Support/Fremkit/access-<port>.token` (under `FREMKIT_SUPPORT_DIR` when that
-is set), readable by your account only (mode `0600`), replacing the file in one rename at every
-start. It is never logged, never returned by the API and never quoted in an error.
+is set), readable by your account only (mode `0600`), replacing the file in one rename, and
+removes the file when it exits. It is never logged, never returned by the API and never quoted in
+an error.
+
+**The server proves itself first.** Whatever answers on the port is not necessarily Fremkit:
+another account on the Mac could bind 4242 while the server is down — at login, or while the
+helper waits to restart it — and wait for the secret. So before the helper sends the secret or
+shows a page from the port, it asks `/auth/proof` with a random nonce and no credential, and only
+a listener that answers with the right HMAC of that nonce under the secret is treated as the
+server. Anything else is shown in the **F** menu as *port 4242 is held by another program*; the
+Edge and the admin window load nothing from it, and the helper starts its own server once the
+port is free. Because the secret changes with every server and its file goes with the server,
+scripts that read the file find nothing to send while no server runs, and a secret picked up
+from a server that has since died opens nothing.
 
 Every request must carry it, in one of two ways:
 
 - **`Authorization: Bearer <secret>`**, for programs: the helper, the Claude Code hook scripts,
   `curl`. The scripts hand it to `curl` through a file descriptor, never on the command line,
   where any account on the Mac could read it with `ps`.
-- **A cookie**, `HttpOnly` and `SameSite=Strict`, for pages. The helper writes it straight into
-  its own web views — the Edge and the admin window — before loading them. A browser gets it by
-  following a one-time link, `/auth?code=…`: the code is minted by someone who already holds the
-  secret (*Open the admin in the browser* in the **F** menu, `pnpm open`), works once, and
-  expires after a minute. Opening `127.0.0.1:4242` without it shows a page saying how to get in.
+- **A session cookie**, `HttpOnly` and `SameSite=Strict`, for pages. A page gets it by following
+  a one-time link, `/auth?code=…`: the code is minted by someone who already holds the secret
+  (*Open the admin in the browser* in the **F** menu, `pnpm open`, the helper itself for the Edge
+  and the admin window), works once, and expires after a minute. Following it opens a *session*:
+  the cookie holds a random session id the server keeps in memory, **never the secret**. A
+  session ends after a day unused, after a week at most, when the page signs out
+  (`DELETE /api/auth/session`), and for every page at once when the server stops. Browsers send a
+  host's cookies to every port on that host, so a program listening on another loopback port can
+  see the cookie; what it sees cannot mint a code, cannot be presented as a bearer, and dies with
+  the session. Opening `127.0.0.1:4242` without either shows a page saying how to get in.
 
 The comparison takes the same time wherever two values differ. A request without the secret is
 told **401**.
@@ -50,7 +67,7 @@ path that only *looks* like a widget file is not let through.
 just as it can read your keychain, your config and your clipboard without Fremkit's help: the
 secret keeps out other accounts on the Mac and anything that can reach the port without being
 able to read your files, not malware in your own account. A browser holding the cookie is signed
-in until it forgets the cookie or the helper restarts; a page in that browser is still held off by
+in until its session ends (see above) or the server restarts; a page in that browser is still held off by
 the Host and Origin checks below, which stay in place, not by the secret. The Host and Origin
 checks still run first: a request from a rebinding page is told 421, and a write from another
 site 403, whatever it carries.
@@ -76,6 +93,11 @@ enforces that — but it can *send*, and it can embed. So:
 - Every answer carries `X-Content-Type-Options: nosniff`, and the ones that hand back bytes from
   elsewhere also carry `Content-Security-Policy: default-src 'none'; sandbox`, so a browser
   talked into treating one as a document gets an inert one.
+- The dashboard and the admin carry their own CSP: only scripts from this server, no plugins, no
+  `<base>`, frames only from `/widgets/`, and `frame-ancestors 'none'` — no other page can frame
+  them. It is written for the origin the page came from: 4242, a second checkout's port, or a
+  paired device's `https://<mac>:4243` (`hostCsp` in `server/src/http/headers.ts`; under
+  `pnpm dev`, Vite sends the same one from `ui/vite.config.ts`).
 
 ### A third-party widget
 
@@ -86,18 +108,42 @@ it does counts as coming from `http://127.0.0.1:4242`.
 
 What a widget **cannot** do:
 
-- Reach the network directly. There is no `connect-src` at all: `fetch`, `XMLHttpRequest` and
-  `WebSocket` are dead inside a widget. Every call goes through `Fremkit.fetch`, the host, and the
-  proxy, which only allows the hosts the manifest declares — never a private, loopback,
-  link-local or reserved address, in any spelling.
+- Reach the network directly. `connect-src 'none'`: `fetch`, `XMLHttpRequest`, `WebSocket`,
+  `EventSource`, `sendBeacon` and `WebTransport` are dead inside a widget. Every call goes through
+  `Fremkit.fetch`, the host, and the proxy, which only allows the hosts the manifest declares —
+  never a private, loopback, link-local or reserved address, in any spelling.
+- Use WebRTC. No CSP directive covers it (Chrome and WebKit ignore `webrtc 'block'`), and a peer
+  connection would reach any STUN or TURN server, or any candidate address, with the widget's
+  data in it. So the bridge, which the server places ahead of everything the widget wrote, makes
+  `RTCPeerConnection`, `webkitRTCPeerConnection`, `RTCDataChannel`, `RTCSessionDescription` and
+  `RTCIceCandidate` undefined, non-writable and non-configurable before any widget code runs; a
+  child frame that could hold a fresh copy is refused by `frame-src 'none'`. The one exception
+  is a **built-in** widget on a list in the server (`server/src/widgets/webrtc.ts`, empty today):
+  it gets a wrapped `RTCPeerConnection` with no ICE server, ever, that drops every candidate not
+  on loopback or on one of this Mac's own addresses. A widget from the registry never gets
+  WebRTC — not from its manifest, not through the consent dialog.
+- Navigate its frame anywhere but another widget document. A sandboxed frame may navigate
+  itself, and `location = 'https://…?d=<data>'` would send the data in the request. The
+  dashboard and the admin carry a CSP whose `frame-src` is `<their own origin>/widgets/`, and the
+  helper's kiosk and admin windows cancel any frame navigation outside `/widgets/` themselves.
+  Only a widget's `index.html` runs script there: its other HTML, SVG or XML files are served
+  with `script-src 'none'`.
 - Read a channel its manifest does not declare, or send a command on one. `config`, which carries
   the whole dashboard, cannot be declared at all.
 - Act on something that is not its own. A command that does something on your behalf — pressing a
   shortcut button, probing a service — names only *its own instance*, and the host stamps that
   identity itself; the target is then read from your saved settings. A widget cannot press
   another widget's buttons, and cannot name an application or a URL of its own.
-- Keep talking after navigating itself. If a widget replaces its own document, the host drops its
-  subscriptions and stops answering it.
+- Keep talking after navigating itself. The host answers a widget over a `MessagePort` handed to
+  the document that said hello, and only once that document has repeated a nonce on it; a port
+  does not survive a navigation, so nothing the host sends afterwards reaches the next document.
+  A second hello from the same frame, or a reload of it, and the host drops its subscriptions and
+  stops answering.
+- Press ▶ on a channel it was not granted. A settings `preview` must name one of the widget's
+  `commands`; the grant drops a preview its commands no longer cover, and the admin sends one
+  only on a channel the widget may command.
+- Have an image of its choosing fetched. `Fremkit.image` fetches an address only when it is in
+  the instance's own settings — what you typed, not a default the manifest wrote.
 - Store anything. `localStorage` throws in an opaque origin.
 
 What a widget **can** do, and what that means for you: a widget that declares `homey:*` can drive
@@ -240,7 +286,9 @@ the Dock badges, and supervises the server process.
   `codesign` alone. It is not notarised, and it is not a substitute for a Developer ID.
 - **The kiosk cannot be navigated away from**: a main-frame navigation off the dashboard's origin
   is cancelled, and WebKit's context menu is removed, because the Edge has no keyboard and no
-  window chrome to get back with.
+  window chrome to get back with. In the kiosk and in the admin window, a **frame** may only
+  load a widget document (`<origin>/widgets/…`); anything else is cancelled before the request
+  leaves.
 - **macOS Local Network** permission belongs to the *responsible app* — "Fremkit Helper" under the
   helper, your terminal otherwise. Deleting the helper's bundle drops the grant, which is why the
   install script replaces its contents in place.
@@ -270,9 +318,17 @@ These are real and not fixed. They are here so you can decide whether they matte
   peer is not authenticated. See [docs/connections.md](docs/connections.md#synology).
 - **The Claude usage endpoint is undocumented.** `api.anthropic.com/api/oauth/usage` is not a
   published API and may change or disappear.
-- **DNS rebinding has a race no application can win.** The proxy resolves a host and judges the
-  address, then `fetch` resolves it again; a name that changes between the two is not caught.
-  What is caught is a widget simply *asking* for a private address.
+- **WebKit preconnects whatever the CSP says.** A widget's `<link rel="preconnect"
+  href="https://<anything>.example">` makes WebKit — the kiosk, the admin window, Safari —
+  resolve that name and open a TCP connection to it; no request is sent, but the name itself
+  reaches a DNS server the widget's author may run. Chrome honours the CSP and does not. No
+  header or CSP directive turns it off for a document; `scripts/check-widget-sandbox.ts`
+  watches it.
+- **DNS rebinding is closed for the widget proxy and the favicons, not for declared
+  connections.** A widget's `GET` through the proxy and every favicon fetch connect through a
+  lookup that judges the very address the socket is opened on, so a name that answers a public
+  address to the check and `127.0.0.1` to the connection is refused. A declared connection
+  reaches the host *you* typed, LAN included, on purpose, and is not judged that way.
 
 ## Reporting something
 

@@ -21,9 +21,9 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
     private var window: NSWindow?
     private var webView: WKWebView?
     private let url: URL
-    /// Puts the server's cookie in the web view's store before a load.
+    /// Signs the web view in with a one-time link before a first load.
     private let access: ServerAccess
-    /// Set after a refused page was retried once with a fresh cookie, cleared by any other answer,
+    /// Set after a refused page was retried once with a fresh sign-in, cleared by any other answer,
     /// so a server that keeps refusing shows its page instead of reloading for ever.
     private var retriedAfterRefusal = false
     /// The Edge display's frame in AppKit space, kept in step by the helper as displays come and
@@ -78,12 +78,9 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
         // an attachment, which WebKit neither shows nor saves on its own.
         webView.navigationDelegate = self
         window.contentView = webView
-        access.installCookie(for: [url]) { [weak webView, url] in
-            webView?.load(URLRequest(url: url))
-        }
-
         self.window = window
         self.webView = webView
+        signInAndLoad()
 
         // `setFrameAutosaveName` above restored whatever was saved, which may be the frame that
         // put this window under the kiosk in the first place.
@@ -113,13 +110,28 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
         return AdminPlacement.centred(size: Self.size, in: screen)
     }
 
-    /// Reloads the admin page. Wired to Cmd+R and used when a hidden window is reopened.
-    /// The cookie is written again first, from the token file: the server may have been restarted
-    /// with another secret since the page was loaded.
+    /// Reloads the admin page. Wired to Cmd+R and used when a hidden window is reopened. The
+    /// session the web view holds is kept; a server that no longer knows it answers 401, and the
+    /// navigation-response handler signs in again.
     @objc func reloadAdmin() {
-        access.installCookie(for: [url]) { [weak self] in
+        guard let webView else { return }
+        if webView.url == nil { signInAndLoad() } else { webView.reload() }
+    }
+
+    /// Loads the admin through a fresh one-time sign-in link. Without one — nothing proved it is
+    /// our server on the port — nothing is loaded, so whatever holds the port is never shown as
+    /// the admin; it is tried again in a few seconds while the window is open.
+    private func signInAndLoad() {
+        access.signInURL(for: url) { [weak self] signIn in
             guard let self, let webView = self.webView else { return }
-            if webView.url == nil { webView.load(URLRequest(url: self.url)) } else { webView.reload() }
+            guard let signIn else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                    guard let self, self.window?.isVisible == true, self.webView?.url == nil else { return }
+                    self.signInAndLoad()
+                }
+                return
+            }
+            webView.load(URLRequest(url: signIn))
         }
     }
 
@@ -170,10 +182,33 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
 
     /// A plain link to another site would replace the admin, which has no back button: it opens
     /// in the default browser instead, and the admin stays where it was.
+    ///
+    /// Then the main frame is pinned to the admin's origin, as the kiosk's is: a redirect, a
+    /// script setting `location`, or a scheme the browser is not handed (`file:`, `javascript:`,
+    /// an application's own) never loads in this window. Sub-frames are the widgets' previews,
+    /// sandboxed and under their own CSP, and are not touched here.
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        decisionHandler(openInBrowserIfExternal(navigationAction) ? .cancel : .allow)
+        // The widget previews are frames, and a frame may only ever be a widget document — the
+        // same rule as the kiosk's (see `WidgetFrames`).
+        if navigationAction.targetFrame?.isMainFrame == false {
+            if WidgetFrames.allows(navigationAction.request.url, on: url) {
+                decisionHandler(.allow)
+            } else {
+                NSLog("fremkit: admin refused a frame navigation outside /widgets/")
+                decisionHandler(.cancel)
+            }
+            return
+        }
+        if openInBrowserIfExternal(navigationAction) { decisionHandler(.cancel); return }
+        let isMainFrame = navigationAction.targetFrame?.isMainFrame != false
+        if isMainFrame, !AdminOrigin.allows(navigationAction.request.url, admin: url) {
+            NSLog("fremkit: admin window refused a navigation away from the admin")
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
     }
 
     /// Turns an attachment, or anything WebKit cannot display, into a download instead of a
@@ -184,11 +219,11 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         guard navigationResponse.isForMainFrame else { decisionHandler(.allow); return }
         if (navigationResponse.response as? HTTPURLResponse)?.statusCode == 401 {
-            // Refused: show the server's page, and try once more with the cookie written again.
+            // Refused: show the server's page, and try once more with a new session.
             decisionHandler(.allow)
             if !retriedAfterRefusal {
                 retriedAfterRefusal = true
-                reloadAdmin()
+                signInAndLoad()
             }
             return
         }

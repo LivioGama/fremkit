@@ -148,7 +148,106 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
 - **Tests before done**: `pnpm typecheck` and `pnpm test` green, the UI rebuilt if touched, a
   rescan if a manifest changed, and — for anything visible — a look at `/admin` or `/` in a
   browser. The widget catalogue test in `server/test/` reads the real `widgets/` folder, so a
-  broken manifest fails it.
+  broken manifest fails it. "A look" means you open the screenshot and read it: a capture taken
+  and never looked at verifies nothing. Headless Chromium works for the admin (see the Gotchas
+  for what it cannot show).
+- **Several agents at once**: branches written in parallel each pass on their own and still
+  break together — a union gains a member (`WidgetSource` got `dev`) while another branch adds an
+  exhaustive `Record` over it. After merging anything into `main`, run `pnpm typecheck` and
+  `pnpm test` on the merge result before calling it done, and fix the seam in its own commit.
+- **Security review findings are fixed, not filed.** The last full review is the reason for the
+  rules under *Security invariants*; a new feature that touches one of them says so in its commit
+  body and adds the test that proves the invariant still holds.
+
+## Security invariants
+
+Each line here was a real hole once. Break one only with the owner's explicit say-so.
+
+- **Diagnostics never carry identity.** Anything added to `GET /api/diagnostics` or the helper's
+  *Copy diagnostics* goes through `redact()` (`server/src/diagnostics/redact.ts`) and names
+  *kinds*, never instances: connection types, not connection names; widget ids, not titles;
+  counts, not device names. A new kind of value that could identify someone (a host, an account,
+  a path) gets a redaction rule and a test with documentation-range fixtures.
+- **The author's widget folder is a development tool.** `<dataDir>/widgets-dev` is read only
+  under `FREMKIT_WIDGET_DEV=1`, its widgets skip the consent dialog, and nothing shipped sets the
+  flag. Never read it, or watch files, without that flag, and never let it shadow a built-in or
+  an installed id.
+- **Editor-only channels live under `config:`.** `config:health` (`server/src/providers/health.ts`)
+  is kept from widgets by the manifest schema's reserved `config` family and from paired devices
+  because `HOST_CHANNELS` names only the literal `config`. A new channel for the editor's eyes goes
+  there too, and `HOST_CHANNELS` never grows a `config:*` entry.
+- **Every editor action goes through the admin store's `apply()`**, menus and shortcuts
+  included, so it is undoable and saved. Context menus are data built for
+  `ui/src/shared/ui/contextMenu.ts`; do not write a second menu component.
+
+
+- **The browser cookie holds a session id, never the access secret.** `/auth` opens a session
+  (`AccessGate.openSession`, in memory, expiring, revocable); a session cannot mint a code
+  (`POST /api/auth/code` takes the bearer only) and is never accepted as a bearer. Browsers send a
+  host's cookies to every port, so whatever the cookie carries, assume another loopback listener
+  reads it. The helper's web views sign in with a one-time link like a browser does.
+- **Nothing presents the secret to a listener that has not proved it is ours.** The helper asks
+  `GET /auth/proof?nonce=` (HMAC of the nonce under the secret, `AccessProof.swift` /
+  `accessProof()`) before sending the bearer or loading a page from the port, and a listener that
+  cannot answer is the `foreign` state, never "external". New native code that talks to the port
+  goes through `ServerAccess.authorize`/`signInURL`, which refuse until a probe said `.ours`.
+  Each spawned server gets a fresh secret; the token file is written after `listen` and removed
+  on exit.
+- **No secret on a command line, ever.** Any account on the Mac reads every process's argv with
+  `ps`. The keychain is written through `security -i` on stdin and read with `-g`
+  (`secrets/keychain.ts`); ffmpeg gets the Bambu URL from a 0600 list file and gets no preview
+  rather than argv. Before adding an `execFile`/`spawn` that carries a credential, check what
+  `ps -axww` would show while it runs.
+- **Keychain items are filed per data folder** (`instanceService`). Only the 4242 instance may
+  adopt items under the legacy `fremkit` service; nothing else reads or deletes them.
+- **Outbound fetches to a host a widget or a page named go through `publicFetch`**
+  (`net/pinned.ts`), whose connect-time lookup refuses private addresses, so the address checked
+  is the address connected to. A plain `fetch` after `resolvesToPrivate` is a DNS-rebinding hole.
+  Declared connections reach the LAN on purpose and are the one exception.
+- **The data folder is 0700 and its files 0600.** The server runs with umask 077 and
+  `tightenDataDir` fixes older files at start; write new runtime files with `mode: 0o600` anyway.
+- **A restore and `PUT /api/config` never import security settings.** A restore keeps this
+  Mac's `secrets`, `privacy` and `marketplace.installed`; PUT replays `connections`, `secrets`
+  and `marketplace.installed` (privacy stays editable there: it is the admin's switch). Consent
+  records change only through the marketplace routes.
+- **Deleting a connection deletes every secret stored under its id**, registered type or not
+  (`SecretStore.keysOf`), and a new connection purges its id first: never adopt a stale secret.
+- **System tools by absolute path** (`/usr/bin/open`, `/usr/bin/osascript`, `/usr/sbin/scutil`…),
+  and `PATH` with `/usr/bin:/bin:/usr/sbin:/sbin` first (`system-path.ts`, `ServerLaunch`).
+  A bare name resolves through Homebrew's folder, which is not ours to trust.
+- **The admin window and the kiosk pin their main frame to their own origin**
+  (`AdminOrigin`, `KioskOrigin`), and an origin is trusted for writes only on this server's own
+  port (`allowedOrigins`).
+- **Commands that act on the Mac take their target from a closed list**: `dock.activate` only
+  for an app in the current Dock snapshot; a URL handed to `open` is the parsed `href` that was
+  checked, never the raw string.
+
+
+- **No WebRTC in a widget.** `server/src/bridge/fremkit.js` starts by making the WebRTC
+  constructors `undefined` and unrecoverable, and the server injects it ahead of everything the
+  widget wrote (`injectBridge`: after the doctype, never "after `<head>`"). The only exception is
+  the `local` level — no ICE server, loopback/this-Mac candidates only — for **built-ins** listed
+  in `WEBRTC_LOCAL_BUILTINS` (`server/src/widgets/webrtc.ts`). Never let a manifest, a consent
+  record or an installed folder reach that list; never serve a widget document that runs script
+  without the bridge (other HTML/SVG/XML files get `script-src 'none'`).
+- **Host pages carry a CSP.** `hostCsp()` in `server/src/http/headers.ts` covers every HTML page
+  the server writes (loopback and the 4243 listener, built per request from the checked Host);
+  `ui/vite.config.ts` sends the same under `pnpm dev`. `frame-src` stays `<origin>/widgets/`,
+  `frame-ancestors 'none'`, `script-src 'self'` with no `unsafe-inline`. A new page, frame or
+  external resource changes that function, not a route.
+- **Frames hold widgets only.** The kiosk and admin web views cancel any subframe navigation that
+  `WidgetFrames.allows` (`native/Sources/FremkitCore/WidgetFrames.swift`) refuses; a new web view
+  that shows widgets uses it too.
+- **A settings `preview` is a granted command.** The manifest schema requires its channel in
+  `commands`, `grantedManifest` drops one its granted commands do not cover, and `SettingsForm`
+  sends one only on a channel `commands` covers. Never add preview channels to anything on their own.
+- **The host talks to a frame over its port, never its window.** `useWidgetBridge` answers only
+  the document that said hello, over the `MessagePort` it handed it, after the nonce came back;
+  nothing but that `fremkit:connect` is posted to a frame's window. A second hello for the same
+  src disowns the frame.
+- **Check it in browsers.** After touching the bridge, the widget or host CSP, the frames or
+  `useWidgetBridge`, run `scripts/check-widget-sandbox.ts` (Chromium and WebKit through
+  Playwright; not part of `pnpm test`, which has no browser) — see its header for the command.
 
 ## Gotchas learned the hard way
 
@@ -175,16 +274,18 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
 
 | I want to… | Start at |
 |---|---|
-| add a widget | `docs/writing-widgets.md`, then copy `widgets/clock` or `widgets/calendar`. A new one goes to the registry repository, not to `widgets/` — see the rule above for the one case that does not |
+| add a widget | `docs/writing-widgets.md`, then `pnpm widget:new <id>` (writes to the author's folder, `data/widgets-dev`, read and live-reloaded under `FREMKIT_WIDGET_DEV=1`) and `pnpm widget:check <folder>`; `widgets/clock` and `widgets/calendar` are the examples to read. A new one goes to the registry repository, not to `widgets/` — see the rule above for the one case that does not |
 | add a theme | `docs/themes.md`, then copy `themes/edge/theme.json`. A new one goes to the registry too: `fremkit` and `edge` are here so a fresh install has a choice with no network, and that is the whole reason either of them is |
 | change the marketplace | `server/src/marketplace/` (registry client, installer, consent), `ui/src/admin/marketplace.ts` and `MarketplacePanel.vue`, `docs/marketplace.md` |
 | add a connection type | **A coded type is the exception, and has to earn it.** One auth header on HTTP(S) is a `connection` the widget *declares* in its own manifest — no release of Fremkit per service; see `docs/writing-widgets.md`. Write code only for what a declaration cannot express: a session handshake, a protocol that is not HTTP, OAuth, a local binary. Nothing else counts — "it already has a provider" does not, and neither does "a picker would be nice" (a declared connection feeds no `pick`; the widget lists ids instead). Homey was coded and should not have been: two widgets on one Homey meant two connections, and a Homey invalidates the previous API key when a new one is issued, so the second key broke the first. If it does earn it: `server/src/connections/types/ics.ts` (simplest) or `github.ts` (fullest), register in `types/index.ts`, document in `docs/connections.md` |
 | add a provider | `server/src/providers/calendar.ts` (polling) or `shortcuts.ts` (commands only), register in `providers/index.ts` |
 | change the companion extension or Fremplay | `companion/`, `server/src/companion/`, `widgets/fremplay`, `docs/companion.md` |
-| change the admin | `ui/src/admin/store.ts` (state), `Canvas.vue`/`EditOverlay.vue` (editing), `SettingsForm.vue` (setting types), `ScreenInspector.vue`, `ConnectionsInspector.vue` |
+| change the admin | `ui/src/admin/store.ts` (state), `Canvas.vue`/`EditOverlay.vue` (editing), `SettingsForm.vue` (setting types), `ScreenInspector.vue`, `ConnectionsInspector.vue`; right-click menus in `ui/src/shared/ui/contextMenu.ts` + `ContextMenu.vue` and the menu builders beside the component that opens them |
 | change the dashboard | `ui/src/dashboard/App.vue`, `NavBar.vue`, `CompactWidgetFrame.vue`, `NavPopover.vue` |
 | change what widgets can do | `server/src/bridge/fremkit.js` and `ui/src/shared/useWidgetBridge.ts`, together |
 | touch or the kiosk window | `native/Sources/FremkitHelper/` |
 | the app, its signing, notarization or updates | `scripts/build-app.sh`, `scripts/release.sh`, `native/Sources/FremkitCore/ServerLaunch.swift` (checkout or bundled server), `server/src/paths.ts` (the bundle's layout), `docs/releasing.md` |
 | change the disk map | `server/src/providers/disk-map*.ts`, `native/Sources/FremkitCore/Disk*.swift`, `native/Sources/FremkitScan`, `widgets/disk-map` |
+| bug reports, diagnostics | `server/src/diagnostics/` (report, `redact.ts`, log tail), `ui/src/admin/DiagnosticsSection.vue`, the helper's `StatusMenu.swift` |
+| change what the editor says about a failing widget | `ui/src/admin/health.ts` (pure, tested), `useHealth.ts` (stores, socket, the fixes), `server/src/providers/health.ts` (the `config:health` channel) |
 | pair a device, the remote listener | `server/src/devices/`, `ui/src/admin/DevicesSection.vue` |

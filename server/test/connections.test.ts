@@ -218,7 +218,11 @@ describe('GET /api/connections', () => {
         consentedPermissions: { subscriptions: [], commands: [], network: [] },
       },
     } }
-    expect((await app.inject({ method: 'PUT', url: '/api/config', payload: config })).statusCode).toBe(200)
+    // Consent records are written by the marketplace routes, never through PUT /api/config, so
+    // the record is put on disk and the server started again on it.
+    await app.close()
+    await writeFile(join(dataDir, 'fremkit.json'), JSON.stringify(config), 'utf8')
+    app = await buildApp({ accessToken: null, dataDir, widgetsDir: join(process.cwd(), '..', 'widgets'), providers: [], connectionTypes: [fakeType, otherType], connCache })
 
     const body = (await app.inject({ method: 'GET', url: '/api/connections' })).json()
     expect(body.find((c: { id: string }) => c.id === 'homey-x1').sharedWith).toEqual(['homey-devices'])

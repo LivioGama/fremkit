@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Config, Page, Display, WidgetManifest } from '../shared/types'
-import { backgroundStyle } from '../shared/background'
+import { backgroundStyle, pageBackground } from '../shared/background'
 import { tileOf } from '../shared/screens'
 import WidgetFrame from './WidgetFrame.vue'
 
@@ -9,12 +9,14 @@ import WidgetFrame from './WidgetFrame.vue'
 const props = withDefaults(defineProps<{
   page: Page; config: Pick<Config, 'widgets'>; display: Display; manifests: Record<string, WidgetManifest>; edit?: boolean
   /**
-   * Whether the page paints the screen's background itself. The admin's previews do; the
+   * Whether the page paints its background — its own, else the screen's — itself. The admin's previews do; the
    * dashboard turns it off and paints it once behind the whole screen, bar included, so a
    * viewport larger than the grid shows no second, differently scaled copy.
    */
   paintBackground?: boolean
-}>(), { paintBackground: true })
+  /** The admin's "Reload widget": a tile whose count changes gets a fresh frame. */
+  reloads?: Record<string, number>
+}>(), { paintBackground: true, reloads: () => ({}) })
 
 /** Each placement joined with the shared widget it names: the tile shape every frame and the bridge speak. */
 const tiles = computed(() => props.page.items.map((p) => tileOf(props.config, p)))
@@ -23,7 +25,7 @@ const tiles = computed(() => props.page.items.map((p) => tileOf(props.config, p)
 // root instead, sized against the same grid area, so on the Edge the two still match exactly.
 const style = computed(() => ({
   height: props.display.rows * props.display.cell + 'px',
-  ...(props.paintBackground ? backgroundStyle(props.display.background) : {}),
+  ...(props.paintBackground ? backgroundStyle(pageBackground(props.display, props.page)) : {}),
 }))
 </script>
 
@@ -31,12 +33,13 @@ const style = computed(() => ({
   <!--
     The key is the instance id alone: settings go to the running widget over the bridge
     (fremkit:settings) and the appearance over fremkit:appearance, so neither typing in the
-    inspector nor recolouring a tile reloads the iframe.
+    inspector nor recolouring a tile reloads the iframe. Only the admin's "Reload widget"
+    does, on purpose, by bumping that tile's count in `reloads`.
   -->
   <div class="page" :style="style">
     <WidgetFrame
       v-for="w in tiles"
-      :key="w.instanceId"
+      :key="`${w.instanceId}:${reloads[w.instanceId] ?? 0}`"
       :instance="w"
       :manifest="manifests[w.widgetId]"
       :cell="display.cell"

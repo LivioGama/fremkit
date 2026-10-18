@@ -15,8 +15,10 @@ import BaseSegmented from '../shared/ui/BaseSegmented.vue'
 import BackgroundPicker from './BackgroundPicker.vue'
 import NavWidgetsEditor from './NavWidgetsEditor.vue'
 import DevicesSection from './DevicesSection.vue'
+import DiagnosticsSection from './DiagnosticsSection.vue'
 import { useDevices } from './devices'
 import ScreenBrightness from './ScreenBrightness.vue'
+import ThemeSchedule from './ThemeSchedule.vue'
 import { surfaceOpacity } from '../shared/background'
 import { pick, useI18n, type Locale } from '../shared/i18n'
 import { useConfirm } from '../shared/useConfirm'
@@ -157,6 +159,8 @@ const d = computed(() => s.screen.value!.display)
 /** The selected screen inside the config a mutation is handed. */
 const onScreen = (c: Config): Screen => c.screens.find((x) => x.id === s.screen.value!.id)!
 const bg = computed<Background>(() => d.value.background ?? {})
+/** This screen's pages that show a background of their own instead of the one edited here. */
+const overriding = computed(() => s.screen.value!.pages.filter((p) => p.background).map((p) => p.name).join(', '))
 const navHeight = computed(() => navHeightOf(d.value))
 /** "80 px" and "40 px" read the same in both languages, so the labels need no dictionary entry. */
 const NAV_OPTIONS = NAV_HEIGHTS.map((h) => ({ value: String(h), label: `${h} px` }))
@@ -268,6 +272,7 @@ function setBackground(patch: Partial<Background>): void {
   </BaseField>
   <p v-if="themeNote" class="ro note">{{ themeNote }}</p>
   <p v-for="e in themeErrors" :key="e.id" class="err">{{ e.id }} — {{ e.error }}</p>
+  <ThemeSchedule />
 
   <BaseSection id="screen.layout" :title="t('admin.inspector.screen.layout')">
   <BaseField :label="t('admin.inspector.screen.grid')"
@@ -330,6 +335,7 @@ function setBackground(patch: Partial<Background>): void {
   </BaseField>
 
   <BackgroundPicker :model-value="bg" @update="setBackground($event)" />
+  <p v-if="overriding" class="ro">{{ t('admin.inspector.screen.background.overridden', { pages: overriding }) }}</p>
   </BaseSection>
 
   <ScreenBrightness />
@@ -425,6 +431,7 @@ function setBackground(patch: Partial<Background>): void {
   </dl>
   <p class="ro">{{ t('admin.inspector.screen.about.registry') }}</p>
   <p class="ro">{{ t('admin.inspector.screen.about.icons') }}</p>
+  <DiagnosticsSection />
   </BaseSection>
 </template>
 

@@ -146,7 +146,7 @@ export function splitRuns(runs: AdoRun[]): { running: AdoRun[]; history: AdoRun[
 }
 
 const openUrl = (url: string): Promise<void> =>
-  new Promise((resolve, reject) => execFile('open', [url], (err) => (err ? reject(err) : resolve())))
+  new Promise((resolve, reject) => execFile('/usr/bin/open', [url], (err) => (err ? reject(err) : resolve())))
 
 export interface AdoProviderDeps {
   fetchFn?: typeof fetch
@@ -245,7 +245,9 @@ export function createAzureDevOpsProvider(ctx: ConnectionProviderContext, deps: 
         // `startsWith` would also accept `https://dev.azure.com.evil.com/…` or
         // `https://dev.azure.com@evil.com/…`; only the parsed origin is trustworthy.
         if (parsed.protocol !== 'https:' || parsed.origin !== 'https://dev.azure.com') throw new Error(tr(undefined, 'provider.refusedUrl'))
-        await open(raw)
+        // The parsed form, the one that was checked: the raw text is what a parser other than
+        // WHATWG (`open`'s) might read differently.
+        await open(parsed.href)
         return { opened: true }
       },
     },

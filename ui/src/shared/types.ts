@@ -29,13 +29,21 @@ export interface Widget {
   settings: Record<string, unknown>
 }
 /** Mirrors the server schema: where one widget sits on one page of one screen, in cells. */
-export interface Placement { instanceId: string; x: number; y: number; w: number; h: number }
+export interface Placement {
+  instanceId: string; x: number; y: number; w: number; h: number
+  /** The editor neither drags nor resizes a locked tile. Absent means unlocked. */
+  locked?: boolean
+}
 /**
  * A widget joined with one of its placements: what a frame draws and what the bridge hands the
  * widget. Never stored — built by `tileOf` (or `compactOf` for the bar) from the config.
  */
 export type WidgetInstance = Widget & Placement
-export interface Page { id: string; name: string; items: Placement[] }
+/**
+ * Mirrors the server schema. `background`, when present, is shown instead of the screen's while
+ * this page is on screen; absent, the page shows the screen's.
+ */
+export interface Page { id: string; name: string; items: Placement[]; background?: Background }
 /** Mirrors the server schema: which side of the centred dots a bar widget sits on. */
 export type NavSlot = 'left' | 'right'
 /** The two clusters, in the order the Screen tab offers them. */
@@ -142,6 +150,8 @@ export interface Config {
   version: 4
   /** Id of a theme in `themes/`, the same on every screen; an unknown id paints the built-in one. */
   theme?: string
+  /** A night theme and when it takes over; absent means one theme, day and night. */
+  themeSchedule?: ThemeSchedule
   connections: Connection[]
   secrets: { backend: SecretsBackend }
   locale?: Locale
@@ -454,8 +464,11 @@ export function fieldsInScope(
   return out
 }
 
-/** Where a widget came from: shipped with Fremkit, or installed from the marketplace. */
-export type WidgetSource = 'builtin' | 'installed'
+/**
+ * Where a widget came from: shipped with Fremkit, installed from the marketplace, or the folder
+ * a widget author works in (only under `FREMKIT_WIDGET_DEV=1`).
+ */
+export type WidgetSource = 'builtin' | 'installed' | 'dev'
 
 /** The three lists a widget asks for, as the registry index and a consent record spell them. */
 /**
@@ -625,7 +638,29 @@ export interface ThemeInfo {
   tokens: Record<string, string | number>
   variables: Record<string, string>
 }
-export interface ThemesResponse { themes: Record<string, ThemeInfo>; errors: { id: string; error: string }[] }
+/** Mirrors `ThemeScheduleSchema`: `theme` is the day's, `night` the night's. */
+export interface ThemeSchedule {
+  night: string
+  schedule: 'sun' | 'fixed'
+  latitude?: number
+  longitude?: number
+  dayAt: string
+  nightAt: string
+}
+/** Mirrors `ThemeInForce` in `server/src/themes/schedule.ts`: what the `theme` channel publishes. */
+export interface ThemeInForce {
+  id: string
+  phase: 'day' | 'night'
+  scheduled: boolean
+  next?: { at: string; to: 'day' | 'night' }
+  problem?: 'no-location'
+}
+export interface ThemesResponse {
+  themes: Record<string, ThemeInfo>
+  errors: { id: string; error: string }[]
+  /** The theme in force when the catalog was read, for a first paint that is already right. */
+  inForce?: ThemeInForce
+}
 export interface WidgetSize { w: number; h: number; px: { width: number; height: number } }
 
 export function mergeSettings(manifest: WidgetManifest | undefined, settings: Record<string, unknown>): Record<string, unknown> {

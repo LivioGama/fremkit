@@ -172,6 +172,8 @@ describe('companion routes', () => {
     expect(on.statusCode).toBe(200)
     const port = on.json().port as number
     const host = `example.local:${port}`
+    // A Host the listener answers to, so the 404 is the route's and not the Host check's 421.
+    app.pairing.setRemoteHosts(() => new Set([host]))
     const body = JSON.stringify({ name: 'Chrome', installId: INSTALL })
     const res = await remote(port, { method: 'POST', path: '/api/companion/pair', host, headers: { 'content-type': 'application/json', origin: ORIGIN }, body })
     expect(res.status).toBe(404)

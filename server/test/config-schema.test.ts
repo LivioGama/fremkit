@@ -89,6 +89,51 @@ describe('ScreenSchema', () => {
   })
 })
 
+describe('theme schedule', () => {
+  it('leaves a file written before it existed untouched: no key, one theme', () => {
+    expect(ConfigSchema.parse(v4())).not.toHaveProperty('themeSchedule')
+    expect(ConfigSchema.parse(DEFAULT_CONFIG)).not.toHaveProperty('themeSchedule')
+  })
+  it('fills the defaults once a night theme is named', () => {
+    expect(ConfigSchema.parse(v4({ themeSchedule: { night: 'edge' } })).themeSchedule)
+      .toEqual({ night: 'edge', schedule: 'sun', dayAt: '07:00', nightAt: '21:00' })
+  })
+  it('round-trips a filled-in schedule', () => {
+    const themeSchedule = { night: 'edge', schedule: 'fixed', latitude: 48.85, longitude: 2.35, dayAt: '06:30', nightAt: '22:15' }
+    const once = ConfigSchema.parse(v4({ theme: 'fremkit', themeSchedule }))
+    expect(ConfigSchema.parse(once)).toEqual(once)
+    expect(once.themeSchedule).toEqual(themeSchedule)
+  })
+  it('refuses a night theme that is not a slug, and times and coordinates out of range', () => {
+    const bad = [
+      {}, { night: 'Not A Slug' }, { night: 'edge', schedule: 'moon' }, { night: 'edge', dayAt: '24:00' },
+      { night: 'edge', nightAt: '7:00' }, { night: 'edge', latitude: 91 }, { night: 'edge', longitude: -181 },
+    ]
+    for (const themeSchedule of bad) expect(() => ConfigSchema.parse(v4({ themeSchedule })), JSON.stringify(themeSchedule)).toThrow()
+  })
+})
+
+describe('page background', () => {
+  const page = (background?: unknown) =>
+    ScreenSchema.parse({ id: 'edge', name: 'E', kind: 'edge', pages: [{ id: 'p', name: 'P', ...(background === undefined ? {} : { background }) }] }).pages[0]
+  it('is absent on a page written before it existed, which then shows the screen\'s', () => {
+    expect(page()).not.toHaveProperty('background')
+    expect(ConfigSchema.parse(v4()).screens[0].pages[0].background).toBeUndefined()
+  })
+  it('accepts a full or a partial background', () => {
+    expect(page({ color: '#101820', image: 'dunes.webp', fit: 'contain' }).background)
+      .toEqual({ color: '#101820', image: 'dunes.webp', fit: 'contain' })
+    expect(page({ color: '#101820' }).background).toEqual({ color: '#101820' })
+  })
+  it('puts the image name through the same gate as the screen background', () => {
+    for (const image of ['../secret.txt', 'a/b.png', '..', '.hidden.png', 'nom accentué.png']) {
+      expect(() => page({ image }), image).toThrow()
+    }
+    expect(() => page({ color: 'blue' })).toThrow()
+    expect(() => page({ fit: 'stretch' })).toThrow()
+  })
+})
+
 describe('screen brightness settings', () => {
   it('leaves a file written before brightness existed untouched: no key, both modes off', () => {
     // The whole migration story: an absent key means "nothing automatic", so no version bump.
@@ -127,6 +172,19 @@ describe('PlacementSchema', () => {
   it('keeps the geometry and nothing else', () => {
     expect(PlacementSchema.parse({ instanceId: 'a', x: 0, y: 1, w: 2, h: 3, widgetId: 'clock' }))
       .toEqual({ instanceId: 'a', x: 0, y: 1, w: 2, h: 3 })
+  })
+  it('keeps an optional lock, absent when the file has none', () => {
+    expect(PlacementSchema.parse({ instanceId: 'a', x: 0, y: 0, w: 1, h: 1 })).not.toHaveProperty('locked')
+    expect(PlacementSchema.parse({ instanceId: 'a', x: 0, y: 0, w: 1, h: 1, locked: true }).locked).toBe(true)
+    expect(PlacementSchema.parse({ instanceId: 'a', x: 0, y: 0, w: 1, h: 1, locked: false }).locked).toBe(false)
+    expect(() => PlacementSchema.parse({ instanceId: 'a', x: 0, y: 0, w: 1, h: 1, locked: 'yes' })).toThrow()
+  })
+  it('round-trips a config whose placement is locked', () => {
+    const cfg = v4({ widgets: { a: { widgetId: 'clock', showTitle: true, settings: {} } } },
+      { pages: [{ id: 'p', name: 'P', items: [{ instanceId: 'a', x: 0, y: 0, w: 8, h: 4, locked: true }] }] })
+    const parsed = ConfigSchema.parse(cfg)
+    expect(parsed.screens[0].pages[0].items[0]).toEqual({ instanceId: 'a', x: 0, y: 0, w: 8, h: 4, locked: true })
+    expect(ConfigSchema.parse(parsed)).toEqual(parsed)
   })
   it('refuses a negative position, an empty size and an over-long instanceId', () => {
     expect(() => PlacementSchema.parse({ instanceId: 'a', x: -1, y: 0, w: 1, h: 1 })).toThrow()

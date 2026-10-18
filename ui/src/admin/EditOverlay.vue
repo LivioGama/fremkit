@@ -10,6 +10,11 @@ import { pick, useI18n } from '../shared/i18n'
 import { screensShowing, tileOf } from '../shared/screens'
 import { DND_EXISTING_TYPE, DND_TYPE, useAdminStore } from './store'
 import { fitAround, fits, moveRect, resizeRect, snapPoint, type Handle, type Rect } from './layout'
+import { openContextMenu } from '../shared/ui/contextMenu'
+import { canvasMenu, widgetMenu } from './canvasMenu'
+import { editorFocus } from './editorFocus'
+import { describeProblem } from './health'
+import { useHealth } from './useHealth'
 
 const props = defineProps<{ scale: number }>()
 const s = useAdminStore()
@@ -23,6 +28,26 @@ const widgets = computed(() => (s.page.value?.items ?? []).map((p) => tileOf(s.s
 /** How many screens show each tile's widget; more than one and the tile wears the count. */
 const shownOn = (instanceId: string): number => screensShowing(s.state.config!, instanceId).length
 const boardH = computed(() => s.grid.value.rows * cell.value)
+
+const health = useHealth()
+/** The menus lead with the fix of a widget that is not well. */
+const menuUi = { ...editorFocus, fix: health.fix }
+/**
+ * The health badge is drawn inside the scaled board, so it is sized in the board's pixels from
+ * the size it should have on screen: a fixed 12 px here is 5 px once the Edge's 2560 px are fitted
+ * into the editor's column, which is how the lock icon ended up unreadable.
+ */
+const BADGE_SCREEN_PX = 20
+const badgeStyle = computed(() => {
+  const k = props.scale || 1
+  const size = BADGE_SCREEN_PX / k
+  return {
+    width: size + 'px', height: size + 'px', left: 6 / k + 'px', bottom: 6 / k + 'px',
+    fontSize: size * 0.68 + 'px', borderWidth: 2 / k + 'px',
+  }
+})
+/** The badge's tooltip: every problem, one per line. */
+const healthTitle = (instanceId: string): string => health.of(instanceId).problems.map(describeProblem).join('\n')
 
 interface Drag { kind: 'move' | 'resize' | 'create'; instanceId: string; widgetId: string; start: Rect; handle: Handle; min: [number, number]; ox: number; oy: number }
 const drag = ref<Drag | null>(null)
@@ -62,6 +87,9 @@ function begin(e: PointerEvent, instanceId: string, kind: 'move' | 'resize', han
   const inst = widgets.value.find((w) => w.instanceId === instanceId)
   if (!inst) return
   s.select(instanceId)
+  // A secondary press (right button, or Control-click on a Mac) is a context menu, not a drag;
+  // a locked tile is selected but never dragged nor resized.
+  if (e.button !== 0 || e.ctrlKey || inst.locked) { e.stopPropagation(); return }
   const p = cellAt(e)
   drag.value = {
     kind, instanceId, widgetId: inst.widgetId, handle,
@@ -101,6 +129,16 @@ function onPointerUp(): void {
 
 function onBackgroundDown(): void {
   s.select(null)
+}
+
+/** A right click on a tile selects it, as on the Mac's desktop, then opens its menu. */
+function onTileMenu(e: MouseEvent, instanceId: string): void {
+  s.select(instanceId)
+  openContextMenu(e, widgetMenu(s, instanceId, menuUi))
+}
+function onBackgroundMenu(e: MouseEvent): void {
+  s.select(null)
+  openContextMenu(e, canvasMenu(s, menuUi))
 }
 
 /**
@@ -171,11 +209,13 @@ function onDragLeave(): void { ghost.value = null }
     class="overlay" ref="root" :style="[{ height: boardH + 'px' }, gridStyle]"
     @pointerdown="onBackgroundDown" @pointermove="onPointerMove" @pointerup="onPointerUp" @pointercancel="onPointerUp"
     @dragover="onDragOver" @drop="onDrop" @dragleave="onDragLeave"
+    @contextmenu="onBackgroundMenu"
   >
     <div
       v-for="w in widgets" :key="w.instanceId" class="hit"
-      :class="{ selected: w.instanceId === s.state.selectedId }" :style="boxStyle(w)"
+      :class="{ selected: w.instanceId === s.state.selectedId, locked: w.locked }" :style="boxStyle(w)"
       @pointerdown="begin($event, w.instanceId, 'move', 'se')"
+      @contextmenu="onTileMenu($event, w.instanceId)"
     >
       <BaseChip v-if="w.instanceId === s.state.selectedId" tone="accent" class="tag">
         <BaseIcon :name="iconOf(w.instanceId)" :size="14" />{{ labelOf(w.instanceId) }}
@@ -183,8 +223,11 @@ function onDragLeave(): void { ghost.value = null }
       <BaseChip v-if="shownOn(w.instanceId) > 1" class="shared" :title="t('admin.overlay.sharedOn', { n: shownOn(w.instanceId) })">
         <BaseIcon name="monitor" :size="12" />{{ shownOn(w.instanceId) }}
       </BaseChip>
+      <span v-if="health.of(w.instanceId).level !== 'ok'" class="health" :class="health.of(w.instanceId).level"
+        :style="badgeStyle" :title="healthTitle(w.instanceId)" role="img" :aria-label="healthTitle(w.instanceId)" data-health-badge>!</span>
+      <span v-if="w.locked" class="lock" :title="t('admin.overlay.locked')"><BaseIcon name="lock" :size="12" /></span>
       <span
-        v-for="hnd in HANDLES" v-show="w.instanceId === s.state.selectedId" :key="hnd"
+        v-for="hnd in HANDLES" v-show="w.instanceId === s.state.selectedId && !w.locked" :key="hnd"
         class="handle" :class="hnd" @pointerdown="begin($event, w.instanceId, 'resize', hnd)"
       />
     </div>
@@ -202,6 +245,14 @@ function onDragLeave(): void { ghost.value = null }
 }
 .hit { position: absolute; box-sizing: border-box; cursor: move; border: 2px solid transparent; border-radius: var(--radius-md); }
 .hit.selected { border-color: var(--accent); }
+.hit.locked { cursor: default; }
+.lock { position: absolute; right: 6px; bottom: 6px; display: inline-flex; padding: 4px; pointer-events: none;
+  border-radius: var(--radius-sm); background: var(--surface-3); color: var(--text-muted); }
+.health { position: absolute; display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+  border-radius: 50%; border-style: solid; border-color: var(--bg); color: #fff; font-weight: 800; line-height: 1;
+  font-family: var(--font); box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); cursor: help; }
+.health.error { background: var(--danger); }
+.health.warning { background: var(--warn); }
 .shared { position: absolute; right: 6px; top: 6px; pointer-events: none; gap: 2px; }
 .tag { position: absolute; left: 6px; top: 6px; pointer-events: none; }
 .handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 3px;

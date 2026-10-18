@@ -9,6 +9,7 @@ import { SDK_GENERATIONS, SDK_VERSION } from '../src/bridge/sdk.js'
  * widget now relies on for escaping can be exercised without a DOM.
  */
 interface Bridge {
+  subscribe(channel: string, cb: (data: unknown) => void): () => void
   appIcon(bundleId: string): Promise<string>
   sdk: number
   screen: string | null
@@ -19,7 +20,10 @@ interface Bridge {
 
 /** What the loaded bridge did to its document, for the kiosk-behaviour tests. */
 interface LoadResult {
+  /** What the bridge sent the host over its port, after the handshake. */
   posted: Record<string, unknown>[]
+  /** What it posted to its parent window: the hello, and nothing else. */
+  windowPosts: Record<string, unknown>[]
   bridge: Bridge
   listeners: string[]
   styles: { attrs: Record<string, string>; textContent: string }[]
@@ -27,14 +31,17 @@ interface LoadResult {
   properties: Map<string, string>
   /** Hands the bridge a message from the host, the way the dashboard posts one. */
   send(message: Record<string, unknown>): void
+  /** The port the bridge answered on, as the host holds the other end of it. */
+  port: { onmessage: ((event: { data: unknown }) => void) | null }
 }
 
 async function loadBridge(): Promise<LoadResult> {
   const src = await readFile(fileURLToPath(new URL('../src/bridge/fremkit.js', import.meta.url)), 'utf8')
   let onMessage: ((event: { source: unknown; data: unknown }) => void) | null = null
   const posted: Record<string, unknown>[] = []
+  const windowPosts: Record<string, unknown>[] = []
   const window: Record<string, unknown> = {
-    parent: { postMessage: (message: Record<string, unknown>) => { posted.push(message) } },
+    parent: { postMessage: (message: Record<string, unknown>) => { windowPosts.push(message) } },
     addEventListener: (type: string, cb: (event: { source: unknown; data: unknown }) => void) => {
       if (type === 'message') onMessage = cb
     },
@@ -74,19 +81,49 @@ async function loadBridge(): Promise<LoadResult> {
     dispatchEvent: () => {},
   }
   new Function('window', 'document', 'console', src)(window, document, console)
+  // The host's answer to the hello: a port, the way useWidgetBridge hands one over.
+  const port = {
+    onmessage: null as ((event: { data: unknown }) => void) | null,
+    postMessage: (message: Record<string, unknown>) => { posted.push(message) },
+  }
+  const handler = onMessage as ((event: { source: unknown; data: unknown; ports?: unknown[] }) => void) | null
+  handler?.({ source: window.parent, data: { type: 'fremkit:connect' }, ports: [port] })
   return {
     posted,
+    windowPosts,
+    port,
     bridge: window.Fremkit as Bridge,
     listeners,
     styles,
     properties,
     // The bridge answers its own parent and nothing else, so the event says it came from there.
-    send: (message: Record<string, unknown>) => onMessage?.({ source: window.parent, data: message }),
+    send: (message: Record<string, unknown>) => port.onmessage?.({ data: message }),
   }
 }
 
 const loaded = await loadBridge()
 const F = loaded.bridge
+
+describe('the conversation with the host', () => {
+  it('says hello once on the window, with a nonce, and repeats it first on the port', async () => {
+    const fresh = await loadBridge()
+    expect(fresh.windowPosts).toHaveLength(1)
+    const hello = fresh.windowPosts[0]
+    expect(hello.type).toBe('fremkit:hello')
+    expect(String(hello.nonce)).toMatch(/^[0-9a-f]{32}$/)
+    expect(fresh.posted[0]).toEqual(hello)
+  })
+  it('relays what the widget asks over the port', async () => {
+    const fresh = await loadBridge()
+    fresh.bridge.subscribe('cpu', () => {})
+    expect(fresh.posted.at(-1)).toEqual({ type: 'fremkit:subscribe', channel: 'cpu' })
+  })
+  it('hears the host on the port only, never on the window', async () => {
+    const fresh = await loadBridge()
+    fresh.send({ type: 'fremkit:init', instanceId: 'w-1', settings: {}, screen: 'edge' })
+    expect(fresh.bridge.screen).toBe('edge')
+  })
+})
 
 describe('Fremkit.sdk', () => {
   it('is the generation the server says it speaks', () => {

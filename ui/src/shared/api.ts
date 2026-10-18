@@ -87,6 +87,12 @@ async function empty(res: Response): Promise<void> {
 
 export const api = {
   getConfig: () => fetch('/api/config').then((r) => json<Config>(r)),
+  /** The redacted report for a bug issue, as Markdown text (see `server/src/diagnostics`). */
+  getDiagnostics: async (): Promise<string> => {
+    const res = await fetch('/api/diagnostics', { cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.text()
+  },
   getStatus: () => fetch('/api/config/status').then((r) => json<{ degraded: boolean }>(r)),
   putConfig: (cfg: Config) => fetch('/api/config', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cfg) }).then((r) => json<Config>(r)),
   getWidgets: () => fetch('/api/widgets').then((r) => json<WidgetsResponse>(r)),

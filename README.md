@@ -46,7 +46,8 @@ The name is the Fremen survival kit from *Dune*.
 - **Backup and restore** of the whole dashboard, as a zip that never carries a secret.
 - **Themes** — the palette, the fonts and the text size, as a folder with one JSON file: two ship
   with it, four more are on the registry, and yours sits beside them. The dashboard, the editor
-  and the widgets all wear the one you pick.
+  and the widgets all wear the one you pick — or a second one at night, switching at sunset or
+  at the time you choose.
 - **Two languages** — the whole interface is French or English, switched in the admin.
 - **A widget SDK** that is a folder, a JSON file and an HTML page.
 - **Optional local operations** show Docker containers and Ollama/MLX models through registry widgets. See [docs/local-operations.md](docs/local-operations.md).
@@ -67,7 +68,7 @@ Touchscreen Gestures must not be running (the panel takes one owner).
 | Install the app | Build from source |
 |---|---|
 | For using Fremkit. One signed, notarized app that carries everything it needs, Node included, and updates itself. | For working on Fremkit. A checkout, the developer helper pointed at it, and your changes live on the Edge. |
-| [Download the DMG](https://github.com/fdussert/fremkit/releases/latest) and drag **Fremkit** to Applications — or `brew install --cask fdussert/fremkit/fremkit` | `git clone` + `pnpm setup`, below |
+| [Download the DMG](https://github.com/fdussert/fremkit/releases/latest) and drag **Fremkit** to Applications — or `brew install --cask fdussert/fremkit/fremkit` | `git clone` + `pnpm run setup`, below |
 | Data in `~/Library/Application Support/Fremkit` | Data in the checkout's `data/` |
 
 ### Install the app
@@ -113,12 +114,14 @@ Already running the developer helper from a checkout? Nothing changes until you 
    ```sh
    git clone https://github.com/fdussert/fremkit.git
    cd fremkit
-   pnpm setup
+   pnpm run setup
    ```
 
-   `pnpm setup` checks the prerequisites, installs dependencies, builds the UI and the server,
+   `pnpm run setup` checks the prerequisites, installs dependencies, builds the UI and the server,
    offers to create the code-signing identity, then builds and installs the helper into
-   `~/Applications` and points it at your checkout. `pnpm setup --check` runs the checks only.
+   `~/Applications` and points it at your checkout. `pnpm run setup --check` runs the checks only.
+   Type the `run`: `pnpm setup` on its own is pnpm's own command, which edits your shell's
+   profile and does not set Fremkit up.
 
 2. **Say yes to the signing identity** when it asks. The helper is signed ad hoc unless a stable
    code-signing identity exists, and macOS ties Input Monitoring and Accessibility grants to the
@@ -199,16 +202,29 @@ two screens is the same widget, with the same settings.
   handles to resize. In Test the overlay steps aside and the widgets are usable, and the preview
   behaves like the screen: a horizontal swipe on the navigation bar or on free board space changes
   page, wrapping around at either end.
+- **Right click** — on a widget: settings, show title, appearance (opacity presets, colours,
+  background image, reset), copy and paste its style, duplicate, copy and paste, move to another
+  page or screen, also show it on another screen, default or minimum size, lock its position (a
+  locked widget is neither dragged nor resized), open its connection, about, reload, remove. On
+  the empty canvas: paste, add a widget, new page, page background, screen settings. On a page in
+  the list: rename, duplicate, page background, copy to another screen, move, delete. On a library
+  card: add to a page or to the bar, and for a Sietch widget show it there, update or uninstall it.
+  On a bar widget: settings, move left or right, remove. On a screen above the canvas: rename,
+  screen settings, delete. The menus work from the
+  keyboard too (arrows, Enter, Escape, type-ahead).
 - **Keyboard** — arrows move the selection by one cell, Shift+arrows resize it from the south-east corner, Delete or Backspace removes it,
-  Cmd+D duplicates it, Escape deselects. Cmd+Z and Cmd+Shift+Z undo and redo anywhere, up to 50
-  steps.
-- **Left column** — the pages (rename, reorder, duplicate, delete) and the widget library, with a
+  Cmd+D duplicates it, Cmd+C and Cmd+V copy it and paste a new one with the same settings on the
+  page you are on (any page, any screen), Escape deselects. Cmd+Z and Cmd+Shift+Z undo and redo
+  anywhere, up to 50 steps.
+- **Left column** — the pages (drag to reorder, double-click to rename, the rest in their menu or
+  behind the "…" on hover) and the widget library, with a
   rescan button that re-reads the `widgets/` folder without restarting the server. Each card says
   in a line what that widget asks for, so a folder dropped into `widgets/` cannot ask for anything
   quietly.
 - **Right column** — *Widget*: title, whether the frame draws it, background, accent, the widget's
   own settings, position and size, and **what the widget asks for** — the channels it reads, the
-  ones it can command, the hosts it may reach. *Page*: name and order. *Screen*: language, grid
+  ones it can command, the hosts it may reach. With no widget selected, *Page*: its own background
+  (a colour or an image shown instead of the screen's, or the screen's). *Screen*: language, grid
   (read-only), navigation bar height and opacity, which gesture opens the admin, auto-rotation
   delay, the bar's compact widgets, the screen background, the kiosk URL, backup and restore, and
   privacy.
@@ -240,7 +256,8 @@ that lets the screen background show through (0 makes the tile, border included,
 see-through — the selection outline keeps it findable while editing), a background image with a
 dimming overlay, an accent colour, and an *accent mode* saying how much of the tile that accent
 paints: **none** leaves it to the widget's own highlights, **frame** colours the title bar and the
-border, **fill** colours the whole tile. The screen itself has a background colour and image too.
+border, **fill** colours the whole tile. The screen itself has a background colour and image too,
+and a page can have its own, shown instead of the screen's while that page is on screen.
 
 **The navigation bar.** The strip at the bottom of every page, 80 px or 40 px tall, as opaque as
 you like. Its middle shows page dots by default. In *Screen → Pages in the bar*, each screen can show scrolling names instead. The sides stay available for compact widgets. **Hold or double-tap
@@ -303,7 +320,7 @@ above state lines such as "Server: running" and "Touch: active".
 | Widget | Shows | Connection | Compact |
 |---|---|---|---|
 | `battery` | The Mac's battery and its Bluetooth peripherals | — | ● |
-| `brightness` | The brightness of the screen it is on: slider, − / +, and what drives it (day/night, follow the Mac) | — | ● |
+| `brightness` | The brightness of the screen it is on: a slider to slide, in the bar too, and what drives it (day/night, follow the Mac) | — | ● |
 | `calendar` | The next events of one or more published calendars | ICS calendar | ● |
 | `claude-sessions` | Live Claude Code sessions; a touch goes to the session's window, and it can chime when one starts waiting | — | — |
 | `claude-usage` | Claude 5 h / 7 day limits and today's tokens | — | ● |
@@ -346,7 +363,9 @@ screen whose widget is not installed offers the install where it stands.
 | `synology-system` | CPU, memory, network and uptime of a NAS | Synology | ● |
 
 Every setting of every widget is listed in **[docs/widgets.md](docs/widgets.md)**. To write your
-own, see **[docs/writing-widgets.md](docs/writing-widgets.md)**. To change how all of it looks,
+own, see **[docs/writing-widgets.md](docs/writing-widgets.md)**: `pnpm widget:new my-widget` starts
+one that works, `pnpm dev` reloads it on every save, and `pnpm widget:check` runs the registry's
+rules before you publish it. To change how all of it looks,
 see **[docs/themes.md](docs/themes.md)**.
 
 What the installer checks, what a consent record is and how an update asks again:
@@ -380,7 +399,9 @@ a restore keeps those ids, restoring onto the **same Mac** finds them and everyt
 once; on another Mac the admin lists the connections whose secret has to be entered again.
 
 A restore replaces the dashboard — pages, widgets, connections and backgrounds — and refuses to
-write at all while the configuration on disk cannot be read. Details in
+write at all while the configuration on disk cannot be read. It keeps this Mac's own security
+choices whatever the archive says: where secrets are kept, the privacy switches, and what each
+installed widget was granted. Details in
 **[docs/contributing.md](docs/contributing.md)**.
 
 ## What Fremkit reads on your Mac
@@ -464,6 +485,8 @@ A second checkout can run beside a live one by giving it another port: `FREMKIT_
 caches somewhere else — a from-scratch install on the live checkout, without moving anything
 aside. Your keychain secrets are keyed by connection id, so a fresh config never names them.
 
+Writing a widget for the registry: `pnpm widget:new <id>`, then `pnpm widget:check <folder>` —
+**[docs/writing-widgets.md](docs/writing-widgets.md#your-first-widget-in-five-minutes)**.
 Working on Fremkit itself — the helper build, the configuration files:
 **[docs/contributing.md](docs/contributing.md)**.
 Working on it with a coding agent — layout, conventions, the gotchas: **[AGENTS.md](AGENTS.md)**.

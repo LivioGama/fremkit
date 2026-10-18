@@ -12,6 +12,8 @@ import BaseSegmented from '../shared/ui/BaseSegmented.vue'
 import BackgroundPicker from './BackgroundPicker.vue'
 import CopySettingsFrom from './CopySettingsFrom.vue'
 import MissingWidget from './MissingWidget.vue'
+import HealthBanner from './HealthBanner.vue'
+import { useHealth } from './useHealth'
 import SettingsForm from './SettingsForm.vue'
 import WidgetPermissions from './WidgetPermissions.vue'
 import { pick, useI18n } from '../shared/i18n'
@@ -27,6 +29,12 @@ import { fieldsInScope, type AccentMode, type WidgetBackground } from '../shared
 const s = useAdminStore()
 const { t, locale } = useI18n()
 const inst = computed(() => s.selected.value)
+const health = useHealth()
+/** A missing widget has its own notice below, with the install button: the banner would repeat it. */
+const wellness = computed(() => {
+  const h = inst.value ? health.of(inst.value.instanceId) : null
+  return h && h.level !== 'ok' && h.problems[0]?.code !== 'missing' ? h : null
+})
 const manifest = computed(() => (inst.value ? s.state.manifests[inst.value.widgetId] : undefined))
 /**
  * What the widget's manifest asks for, beside what it may do.
@@ -155,6 +163,7 @@ function moveToPage(): void {
       <BaseIcon :name="manifest?.icon ?? 'layout-grid'" :size="20" />
       <strong>{{ manifest ? pick(manifest.name) : inst.widgetId }}</strong>
     </div>
+    <HealthBanner v-if="wellness" :health="wellness" @action="health.run(inst!.instanceId, $event)" />
     <p v-if="alsoOn" class="hint shared"><BaseIcon name="monitor" :size="14" />{{ t('admin.inspector.widget.alsoOn', { screens: alsoOn }) }}</p>
     <MissingWidget v-if="!manifest" :widget-id="inst.widgetId" />
 
@@ -201,19 +210,22 @@ function moveToPage(): void {
       <CopySettingsFrom :widget-id="inst.widgetId" :instance-id="inst.instanceId"
         @copy="s.updateInstance(inst!.instanceId, { settings: $event })" />
       <SettingsForm :schema="manifest.settingsSchema" scope="tile" :values="inst.settings"
-        :widget-id="inst.widgetId" @change="onSetting" />
+        :widget-id="inst.widgetId" :commands="manifest.commands" @change="onSetting" />
     </BaseSection>
 
     <WidgetPermissions :manifest="manifest" :asks="asks" />
 
     <BaseSection id="widget.geometry" :title="t('admin.inspector.widget.geometry')">
     <div class="grid4">
-      <BaseField :label="t('admin.inspector.widget.x')"><BaseInput type="number" :min="0" :invalid="!geomOk" :model-value="geom.x" @update:model-value="geom.x = Number($event); commitGeom()" /></BaseField>
-      <BaseField :label="t('admin.inspector.widget.y')"><BaseInput type="number" :min="0" :invalid="!geomOk" :model-value="geom.y" @update:model-value="geom.y = Number($event); commitGeom()" /></BaseField>
-      <BaseField :label="t('admin.inspector.widget.width')"><BaseInput type="number" :min="1" :invalid="!geomOk" :model-value="geom.w" @update:model-value="geom.w = Number($event); commitGeom()" /></BaseField>
-      <BaseField :label="t('admin.inspector.widget.height')"><BaseInput type="number" :min="1" :invalid="!geomOk" :model-value="geom.h" @update:model-value="geom.h = Number($event); commitGeom()" /></BaseField>
+      <BaseField :label="t('admin.inspector.widget.x')"><BaseInput type="number" :min="0" :invalid="!geomOk" :disabled="inst.locked" :model-value="geom.x" @update:model-value="geom.x = Number($event); commitGeom()" /></BaseField>
+      <BaseField :label="t('admin.inspector.widget.y')"><BaseInput type="number" :min="0" :invalid="!geomOk" :disabled="inst.locked" :model-value="geom.y" @update:model-value="geom.y = Number($event); commitGeom()" /></BaseField>
+      <BaseField :label="t('admin.inspector.widget.width')"><BaseInput type="number" :min="1" :invalid="!geomOk" :disabled="inst.locked" :model-value="geom.w" @update:model-value="geom.w = Number($event); commitGeom()" /></BaseField>
+      <BaseField :label="t('admin.inspector.widget.height')"><BaseInput type="number" :min="1" :invalid="!geomOk" :disabled="inst.locked" :model-value="geom.h" @update:model-value="geom.h = Number($event); commitGeom()" /></BaseField>
     </div>
     <p class="hint" v-if="manifest" :class="{ bad: tooSmall }">{{ t('admin.inspector.widget.minSize', { w: minSize[0], h: minSize[1] }) }}</p>
+    <BaseCheckbox :model-value="!!inst.locked" :label="t('admin.inspector.widget.lock')"
+      @update:model-value="s.setLocked(inst!.instanceId, $event)" />
+    <p v-if="inst.locked" class="hint">{{ t('admin.inspector.widget.lock.hint') }}</p>
 
     <!-- A single page leaves nowhere to go, so the whole row is disabled rather than hidden. -->
     <BaseField :label="t('admin.inspector.widget.moveToPage')">

@@ -76,7 +76,7 @@ final class KioskWindow: NSObject, WKNavigationDelegate {
     private let window: NSWindow
     private let webView: WKWebView
     private let url: URL
-    /// Puts the server's cookie in the web view's store before every load.
+    /// Signs the web view in (a one-time link, see `ServerAccess.signInURL`) before every load.
     private let access: ServerAccess
     /// Pending retry, so a burst of failures queues only one and a manual reload can cancel it.
     private var retryWork: DispatchWorkItem?
@@ -126,12 +126,16 @@ final class KioskWindow: NSObject, WKNavigationDelegate {
 
     // MARK: - Content
 
-    /// Loads the dashboard, with the server's current cookie written first: a server started by
-    /// someone else, or restarted with another secret, is caught up with on the next load.
+    /// Loads the dashboard through a fresh one-time sign-in link, so the web view holds a session
+    /// of the server that answers now: a server restarted since (sessions die with it) is caught
+    /// up with on the next load. Without a link — nothing proved it is our server on the port,
+    /// or it is not up yet — nothing is loaded: whatever holds the port is not shown on the Edge.
+    /// The current page stays, and the load is tried again shortly.
     private func load() {
-        access.installCookie(for: [url]) { [weak self] in
+        access.signInURL(for: url) { [weak self] signIn in
             guard let self else { return }
-            self.webView.load(URLRequest(url: self.url))
+            guard let signIn else { self.scheduleRetry(); return }
+            self.webView.load(URLRequest(url: signIn))
         }
     }
 
@@ -242,7 +246,14 @@ final class KioskWindow: NSObject, WKNavigationDelegate {
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard navigationAction.targetFrame?.isMainFrame != false else {
-            decisionHandler(.allow)
+            // A frame is a widget, and a widget may only ever be another widget document: a
+            // sandboxed frame can still navigate itself, and the request would carry its data.
+            if WidgetFrames.allows(navigationAction.request.url, on: url) {
+                decisionHandler(.allow)
+            } else {
+                NSLog("fremkit: kiosk refused a frame navigation outside /widgets/")
+                decisionHandler(.cancel)
+            }
             return
         }
         let target = navigationAction.request.url
@@ -257,9 +268,9 @@ final class KioskWindow: NSObject, WKNavigationDelegate {
     /**
      A dashboard the server refused (401) is retried like one that failed to load.
 
-     It happens when the server holds a secret the cookie does not match — a `pnpm dev` that was
-     restarted, or one whose token file the helper read before it was rewritten. The server's
-     refusal page is shown meanwhile, and the retry writes the cookie again from the token file.
+     It happens when the session the web view holds is not one the server knows — the server was
+     restarted (sessions live in its memory), or the session expired. The server's refusal page is
+     shown meanwhile, and the retry signs in again with a new one-time link.
      */
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationResponse: WKNavigationResponse,

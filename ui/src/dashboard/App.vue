@@ -6,8 +6,8 @@ import { useSocket } from '../shared/socket'
 import type { Config, NavItem, WidgetManifest } from '../shared/types'
 import { navHeightOf, navItemsOf } from '../shared/types'
 import { pickScreen } from '../shared/screens'
-import { rootBackgroundStyle } from '../shared/background'
-import { useConfigTheme } from '../shared/theme'
+import { pageBackground, rootBackgroundStyle } from '../shared/background'
+import { followThemeSchedule, useConfigTheme } from '../shared/theme'
 import PageView from './PageView.vue'
 import NavBar from './NavBar.vue'
 import NavPopover from './NavPopover.vue'
@@ -17,6 +17,7 @@ import { createRevealTracker, type CompanionReveal } from './companionReveal'
 import { useNavPopover } from './useNavPopover'
 import { isRemotePage, useDeviceScreen, type DeviceInfo } from './remote'
 import { SCREEN_ID } from '../shared/useWidgetBridge'
+import { onWidgetReload } from '../shared/widgetDev'
 
 const socket = useSocket()
 const { t } = useI18n()
@@ -49,18 +50,27 @@ provide(SCREEN_ID, () => screen.value?.id)
 const display = computed(() => screen.value?.display ?? null)
 const pageIndex = ref(0)
 const page = computed(() => screen.value?.pages[pageIndex.value] ?? null)
-// The theme the config names, repainted whenever the admin saves another one.
+// The theme the config names — its night theme at night — repainted whenever the admin saves
+// another one or the server says day has turned to night.
 useConfigTheme(config)
+onUnmounted(followThemeSchedule(socket))
 const direction = ref<1 | -1>(1)
 /**
- * The screen's background, painted on the root, behind the stage and the bar alike. The root
- * keeps the bar's height as bottom padding; `rootBackgroundStyle` sizes the image against the
- * area above the bar and paints a full-root `cover` under it, which a translucent bar shows.
+ * The background of the page shown — its own, else the screen's — painted behind the stage and
+ * the bar alike, on a layer as large as the root. The layer keeps the bar's height as bottom
+ * padding; `rootBackgroundStyle` sizes the image against the area above the bar and paints a
+ * full-root `cover` under it, which a translucent bar shows.
+ *
+ * The layer is keyed on what it paints, so a swipe onto a page with another background swaps
+ * layers and the two crossfade; pages sharing one keep the same layer and nothing moves.
  */
-const rootStyle = computed(() => display.value && {
-  ...rootBackgroundStyle(display.value.background),
+const background = computed(() => (display.value ? pageBackground(display.value, page.value) : undefined))
+const backgroundKey = computed(() => JSON.stringify(background.value ?? null))
+const backgroundLayerStyle = computed(() => display.value && {
+  ...rootBackgroundStyle(background.value),
   'padding-bottom': navHeightOf(display.value) + 'px',
 })
+const rootStyle = computed(() => display.value && { 'padding-bottom': navHeightOf(display.value) + 'px' })
 /** The grid's own size: the stage's, and the bar's width. */
 const gridWidth = computed(() => display.value ? display.value.cols * display.value.cell + 'px' : '0')
 let cycleTimer: number | undefined
@@ -69,6 +79,7 @@ let unsubCompanion: (() => void) | undefined
 /** The browser extension's pairing request, while one is pending (local dashboard only). */
 const companionPairing = ref<{ requestId: string; code: string; name: string; expiresAt: number } | null>(null)
 const reveal = createRevealTracker()
+let offReload: (() => void) | undefined
 
 function go(delta: number) {
   if (!screen.value) return
@@ -142,10 +153,14 @@ onMounted(async () => {
     watch(socket.status, (s) => { if (s !== 'open') reveal.reset() })
   }
   window.addEventListener('keydown', onKey)
+  // A widget's manifest was saved while it is being written: the frames wait for this catalogue.
+  offReload = onWidgetReload(async (reload) => {
+    if (reload.manifest) manifests.value = (await api.getWidgets()).widgets
+  })
 })
 // Another screen for the device: start it on its first page, which every screen has.
 if (remote) watch(() => screen.value?.id, () => { pageIndex.value = 0; popover.close() })
-onUnmounted(() => { unsub?.(); unsubCompanion?.(); window.removeEventListener('keydown', onKey); window.clearInterval(cycleTimer) })
+onUnmounted(() => { unsub?.(); unsubCompanion?.(); offReload?.(); window.removeEventListener('keydown', onKey); window.clearInterval(cycleTimer) })
 watch(() => display.value?.autoCycleSeconds, setupCycle)
 /** The manifest of the widget a bar item names, for the popover it opens. */
 function manifestOf(item: NavItem): WidgetManifest | undefined {
@@ -165,6 +180,9 @@ watch(() => config.value?.locale, (l) => setLocale(l))
     <p class="remote-title">{{ t('dashboard.remote.noScreen') }}</p>
   </div>
   <div class="root" :class="{ kiosk }" :style="rootStyle" v-else-if="config && screen && display && page">
+    <Transition name="bg-fade">
+      <div :key="backgroundKey" class="background" :style="backgroundLayerStyle" aria-hidden="true" />
+    </Transition>
     <div v-if="socket.status.value !== 'open'" class="banner">{{ t('dashboard.reconnecting') }}</div>
     <div
       class="stage"
@@ -206,7 +224,7 @@ watch(() => config.value?.locale, (l) => setLocale(l))
 /* The visible height, not the largest one: an iOS web view that keeps its safe-area insets makes
    100vh taller than what it shows, which would cut the bar pinned to the bottom. 100vh stays as
    the fallback for an engine without dvh. */
-.root { position: relative; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; box-sizing: border-box; }
+.root { position: relative; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; box-sizing: border-box; isolation: isolate; }
 /* Widget iframes carry their own document and keep their own cursor rules; this covers the
    dashboard document only, which is where the pointer actually sits. */
 .root.kiosk, .root.kiosk :deep(*) { cursor: none !important; }
@@ -218,6 +236,15 @@ watch(() => config.value?.locale, (l) => setLocale(l))
 /* Pinned to the bottom of the viewport, as wide as the stage and centred under it, so its widgets
    and dots line up with the grid the bar's room is counted against. */
 .bar { position: absolute; bottom: 0; left: 0; right: 0; margin: 0 auto; }
+/* Under everything the root draws (the root isolates, so a negative z-index stays inside it). A
+   layer is always opaque — the theme's --bg unless a colour is set — so during a change the new
+   one fades in above the old, which stays as it is until it is gone: a real crossfade, never a
+   dip to whatever is under both halfway. */
+.background { position: absolute; inset: 0; box-sizing: border-box; pointer-events: none; z-index: -2; background-color: var(--bg); }
+.bg-fade-enter-active { transition: opacity .3s ease; z-index: -1; }
+.bg-fade-leave-active { transition: opacity .3s step-end; }
+.bg-fade-enter-from { opacity: 0; }
+.bg-fade-leave-to { opacity: 0; }
 .edge { position: absolute; top: 0; bottom: 0; width: 24px; z-index: 5; touch-action: none; user-select: none; }
 .edge.left { left: 0; } .edge.right { right: 0; }
 /* The two messages a paired device can show instead of a screen, in the theme's colours. */

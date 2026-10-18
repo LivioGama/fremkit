@@ -19,6 +19,7 @@
     "mqtt": "^5.16.0",
     "systeminformation": "^5.33.10",
     "tsx": "^4.23.13",
+    "undici": "8.10.2",
     "zod": "^4.6.5"
   },
   "devDependencies": {

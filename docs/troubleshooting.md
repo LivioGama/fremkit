@@ -10,6 +10,30 @@ The helper's menu tells you which: it shows state lines such as "Server: running
 and "Notifications: active" above the toggles, and *Log…* opens the supervised server's output at
 `~/Library/Logs/Fremkit/server.log`.
 
+## Reporting a bug
+
+Use **Copy diagnostics**, then paste the result into the
+[bug form](https://github.com/fdussert/fremkit/issues/new?template=bug.yml). It is in two places:
+
+- the editor, **Screen → About → Diagnostics**: *Prepare diagnostics* shows the whole report
+  before *Copy diagnostics* puts it on the clipboard;
+- the helper's menu bar **F**: *Copy diagnostics* copies the same report with the helper's own
+  part added (touch driver, Input Monitoring and Accessibility, the kiosk display, DDC). When the
+  server does not answer, it copies the helper's part alone and says so.
+
+The report holds the Fremkit, Node and macOS versions, the install kind, how many screens, pages
+and widgets the dashboard has, each widget in use with its version and whether it is built in or
+from the Sietch, the connection *types* and their state, each provider's last error code, the
+theme, the number of paired devices and the last 200 lines of the server log.
+
+It never holds a widget's settings or a connection's name, address or credentials. Before it
+leaves the server, every line goes through one redaction pass: connection secrets and the access
+secret (wherever they appear), bearer tokens and `key=value` credentials, long random strings,
+e-mail addresses, IP addresses other than loopback, `.local`/`.lan`/`.home` host names and every
+host a connection is configured with, the names you gave connections and devices, the Mac's
+names, your account name, and your home folder (shown as `~`). Read it anyway before you post:
+the issue is public.
+
 ## Quick table
 
 | Symptom | Cause | Fix |
@@ -22,6 +46,7 @@ and "Notifications: active" above the toggles, and *Log…* opens the supervised
 | Input Monitoring and Accessibility asked again after moving to the app | The app's Developer ID signature is a new code identity | Expected once; see [The app asks for permissions again](#the-app-asks-for-permissions-again) |
 | Permissions reset after every rebuild | Ad-hoc signature: a new code identity each build | Run `scripts/create-signing-identity.sh`, rebuild, grant once more |
 | The helper is ticked in Privacy & Security and still has no permission | One stale grant per past ad-hoc identity, which macOS keeps in its cache and matches before the new one | `tccutil reset ListenEvent dev.fremkit.helper && tccutil reset Accessibility dev.fremkit.helper`, relaunch the helper, and accept the two prompts. Removing and re-adding the app in the list does not clear those entries |
+| A widget says "Loading…" or an error on the Edge | Its widget, its connection or its data source is failing | Open the editor: the tile wears a red or orange dot, its inspector says why and offers the fix, and the top bar's count lists every widget that needs attention. A widget whose page has not been shown since Fremkit started has nothing to report yet |
 | Printer unreachable (`EHOSTUNREACH`) while `ping` and `curl` work | Local Network not granted to the app that runs the server | Allow it under Privacy & Security → Local Network |
 | "Server: external" | Something already answers port 4242, so the helper steps aside | Expected under `pnpm dev`; otherwise stop the stray server, or turn *Manage the server* off |
 | Brightness: "not adjustable on this display (DDC)" | The display does not answer DDC/CI on this cable or this Mac | See [Brightness says not adjustable](#brightness-says-not-adjustable) |
@@ -91,7 +116,7 @@ the same way.
 | Dashboard, connections, backgrounds, installed widgets and themes | `~/Library/Application Support/Fremkit` | the checkout's `data/` |
 | Helper settings (`helper.json`) | `~/Library/Application Support/Fremkit` | the same |
 | Server log | `~/Library/Logs/Fremkit/server.log` | the same |
-| Connection secrets | the login keychain, service `fremkit` | the same |
+| Connection secrets | the login keychain, service `fremkit:<hash of the data folder>` | the same |
 
 The app never writes inside itself: its bundle is replaced by every update and its signature
 has to stay intact. What decides which server runs is `repoPath` in `helper.json`: present, the
@@ -121,7 +146,7 @@ switch:
 6. In `~/.claude/settings.json`, point the Claude Code hook and status line at the app (see
    [claude-code.md](claude-code.md)).
 
-Going back is the same in reverse: quit Fremkit, run `pnpm setup` in the checkout (it writes
+Going back is the same in reverse: quit Fremkit, run `pnpm run setup` in the checkout (it writes
 `repoPath` again and installs the developer helper).
 
 ## Removing everything
@@ -138,7 +163,8 @@ tccutil reset All dev.fremkit.helper
 ```
 
 The connection secrets stay in the login keychain until you delete them: open Keychain Access
-and search for `fremkit`, or `security delete-generic-password -s fremkit` once per secret. If you
+and search for `fremkit`, or `security delete-generic-password -s 'fremkit:<…>'` once per secret
+(the full service name is in Keychain Access). If you
 added the Claude Code hook, remove its lines from `~/.claude/settings.json`.
 
 ## The helper's icon is missing from the menu bar
@@ -322,6 +348,15 @@ for a new one the same way.
 
 A script getting **401** is missing the `Authorization: Bearer` header, or read the token file of
 another port: see [contributing](contributing.md#signing-in-the-access-secret).
+
+## The menu says "port 4242 is held by another program"
+
+Something answers on the port and could not prove it holds Fremkit's access secret, so the helper
+sends it nothing and shows nothing from it: neither the Edge nor the admin window load. It is
+another program that took the port — possibly while Fremkit was restarting — or a Fremkit server
+from an older checkout. Find it with `lsof -nP -iTCP:4242 -sTCP:LISTEN` and stop it; the helper
+starts its own server within seconds of the port coming free. If the program belongs to another
+account on this Mac and you did not start it, treat that as hostile.
 
 ## The menu says "Server: external"
 

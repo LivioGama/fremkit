@@ -41,6 +41,31 @@ export function groupByCategory<T extends { category?: string }>(
  * appear (screens in config order; on a screen, its pages before its bar). A screen shows a
  * widget at most once, so one already on this screen — on a page or in its bar — is not offered.
  */
+/** Lower case with the accents stripped, so "meteo" finds "Météo" and "Meteo" alike. */
+export function fold(text: string): string {
+  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+}
+
+/**
+ * Whether a search box matches a card: every word typed appears somewhere in what the card
+ * shows. The palette and the registry panel both search through here, so the same query finds
+ * the same widget before and after it is installed.
+ */
+export function matchesQuery(parts: readonly string[], query: string): boolean {
+  const words = fold(query).split(/\s+/).filter(Boolean)
+  if (!words.length) return true
+  const haystack = fold(parts.join(' '))
+  return words.every((word) => haystack.includes(word))
+}
+
+/** The kinds of widget (manifest ids) a screen already shows, on any of its pages or in its bar. */
+export function widgetKindsOnScreen(config: Config, screenId: string): Set<string> {
+  const screen = config.screens.find((s) => s.id === screenId)
+  if (!screen) return new Set()
+  const ids = [...screen.pages.flatMap((p) => p.items.map((i) => i.instanceId)), ...screen.nav.map((i) => i.instanceId)]
+  return new Set(ids.map((id) => config.widgets[id]?.widgetId).filter((w): w is string => !!w))
+}
+
 export function otherScreenWidgets(config: Config, screenId: string): string[] {
   const idsOf = (s: Config['screens'][number]): string[] =>
     [...s.pages.flatMap((p) => p.items.map((i) => i.instanceId)), ...s.nav.map((i) => i.instanceId)]

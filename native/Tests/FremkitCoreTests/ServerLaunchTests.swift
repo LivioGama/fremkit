@@ -55,11 +55,18 @@ final class ServerLaunchTests: XCTestCase {
         let env = ServerLaunch.checkout(repoPath: "/r").environment(
             inheriting: ["PATH": "/usr/bin:/bin", "NODE_OPTIONS": "--max-old-space-size=512"],
             port: 4242, dataDirectory: "/support", home: "/Users/u")
-        XCTAssertEqual(env["PATH"], "/r/server/node_modules/.bin:/opt/homebrew/bin:/usr/local/bin:/Users/u/Library/pnpm:/usr/bin:/bin")
+        XCTAssertEqual(env["PATH"], "/usr/bin:/bin:/usr/sbin:/sbin:/r/server/node_modules/.bin:/opt/homebrew/bin:/usr/local/bin:/Users/u/Library/pnpm")
         XCTAssertEqual(env["FREMKIT_PORT"], "4242")
         XCTAssertNil(env["FREMKIT_ROOT"])
         XCTAssertNil(env["FREMKIT_DATA_DIR"])
         XCTAssertEqual(env["NODE_OPTIONS"], "--max-old-space-size=512")
+    }
+
+    func testSystemFoldersComeFirstAndRelativeEntriesGo() {
+        let env = ServerLaunch.bundled(resourcesPath: resources).environment(
+            inheriting: ["PATH": "/evil/bin:.::/usr/bin:relative:/opt/x"],
+            port: 4242, dataDirectory: "/d", home: "/Users/u")
+        XCTAssertEqual(env["PATH"], "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:/evil/bin:/opt/x")
     }
 
     func testBundledEnvironmentNamesTheBundleAndTheData() {
@@ -69,7 +76,7 @@ final class ServerLaunchTests: XCTestCase {
         XCTAssertEqual(env["FREMKIT_ROOT"], resources)
         XCTAssertEqual(env["FREMKIT_DATA_DIR"], "/Users/u/Library/Application Support/Fremkit")
         XCTAssertEqual(env["FREMKIT_PORT"], "4301")
-        XCTAssertEqual(env["PATH"], "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+        XCTAssertEqual(env["PATH"], "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")
         XCTAssertNil(env["NODE_OPTIONS"])
         XCTAssertEqual(env["HOME"], "/Users/u")
         XCTAssertNil(env["FREMKIT_SCANNER"])
