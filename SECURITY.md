@@ -266,8 +266,10 @@ to the page's main video element; a page can make that element cover the whole t
 other sites included, but the picture only goes to your own dashboard. The extension asks for
 another site's frames only when you allow that site, after its popup has named it, and gives the
 grant back unless the share starts with a video in that site's frame. It drives the video from its
-isolated world (only YouTube's volume goes through the page's own), keeps its token where code it
-injects into a page cannot read it, and listens only to its own pages.
+isolated world (only YouTube's volume goes through the page's own), keeps its token in storage
+limited to its own pages and worker (`TRUSTED_CONTEXTS`, available on every browser it installs on,
+Chrome 116 and later), where code it injects into a page cannot read it, and listens only to its own
+pages.
 
 **What a local program can do.** A process running as you can read the access secret and anything
 else; it is out of scope, as under *Known limits*. One running as another account, or anything that

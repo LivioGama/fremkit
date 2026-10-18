@@ -47,7 +47,7 @@ const ready = (async () => {
   await Promise.all(['local', 'session'].map(async (area) => {
     try {
       await chrome.storage[area].setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })
-    } catch { /* a browser without it: no content script of this extension reads storage anyway */ }
+    } catch { /* there since Chrome 102, under the manifest's minimum 116: kept defensively */ }
   }))
   Object.assign(local, await chrome.storage.local.get(Object.keys(local)))
   Object.assign(session, await chrome.storage.session.get(Object.keys(session)))
