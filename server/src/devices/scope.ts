@@ -84,12 +84,17 @@ export function widgetInScope(config: Config, scope: ScreenScope, widgetId: stri
 /**
  * The config as a paired device reads it: what its dashboard page needs to draw its own screen
  * and nothing more. The theme and the language, that one screen, and the instances it shows.
+ * Of the night theme, only its id: the page paints it when the `theme` channel says it is night,
+ * and that phase is worked out on this Mac. The schedule's coordinates (where the Mac is) and its
+ * switch times stay here.
  *
  * Never the connections (their non-secret fields name hosts and accounts), the secrets backend,
  * the marketplace records, the privacy switches, or any other screen and its widgets' settings.
  * A device with no screen gets no screen at all, which is what its page needs to say so.
  */
-export type DeviceConfigView = Pick<Config, 'version' | 'theme' | 'locale' | 'widgets' | 'screens'>
+export type DeviceConfigView = Pick<Config, 'version' | 'theme' | 'locale' | 'widgets' | 'screens'> & {
+  themeSchedule?: { night: string }
+}
 
 export function deviceConfigView(config: Config, screenId: string | null): DeviceConfigView {
   const screen = screenId === null ? undefined : config.screens.find((s) => s.id === screenId)
@@ -102,6 +107,7 @@ export function deviceConfigView(config: Config, screenId: string | null): Devic
   return {
     version: config.version,
     theme: config.theme,
+    ...(config.themeSchedule ? { themeSchedule: { night: config.themeSchedule.night } } : {}),
     locale: config.locale,
     widgets,
     screens: screen ? [screen] : [],

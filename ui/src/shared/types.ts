@@ -150,7 +150,7 @@ export interface Config {
   version: 4
   /** Id of a theme in `themes/`, the same on every screen; an unknown id paints the built-in one. */
   theme?: string
-  /** A night theme and when it takes over; absent means one theme, day and night. */
+  /** A night theme and when it takes over; absent means one theme, day and night. A paired device gets only `night`. */
   themeSchedule?: ThemeSchedule
   connections: Connection[]
   secrets: { backend: SecretsBackend }

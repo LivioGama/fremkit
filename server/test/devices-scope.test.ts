@@ -136,6 +136,28 @@ describe('deviceConfigView', () => {
     expect(view.screens.map((s) => s.id)).toEqual(['tab-b'])
     expect(Object.keys(view.widgets).sort()).toEqual(['cal-b', 'clock-b', 'docky-b', 'sc-b', 'status-b'])
   })
+  it('carries the night theme id so the device follows the night theme, and no coordinates or times', () => {
+    const cfg = ConfigSchema.parse({
+      ...RAW_CONFIG,
+      themeSchedule: { night: 'edge', schedule: 'sun', latitude: 48.85, longitude: 2.35, dayAt: '06:30', nightAt: '22:15' },
+    })
+    const view = deviceConfigView(cfg, 'tab-b')
+    expect(view.themeSchedule).toEqual({ night: 'edge' })
+    const text = JSON.stringify(view)
+    for (const leak of ['latitude', 'longitude', '48.85', '2.35', 'dayAt', 'nightAt', '06:30', '22:15']) {
+      expect(text).not.toContain(leak)
+    }
+    // No night theme on the Mac: none on the device either.
+    expect(Object.hasOwn(deviceConfigView(config(), 'tab-b'), 'themeSchedule')).toBe(false)
+  })
+  it('projects or deliberately withholds every top-level config key', () => {
+    // A key main adds to the config is dropped from the device view without a word; this makes
+    // the next one a decision. Withheld: hosts and accounts, the secrets backend, the privacy
+    // switches and the marketplace records are the Mac's own business.
+    const projected = ['version', 'theme', 'themeSchedule', 'locale', 'widgets', 'screens']
+    const withheld = ['connections', 'secrets', 'privacy', 'marketplace']
+    expect(Object.keys(ConfigSchema.shape).sort()).toEqual([...projected, ...withheld].sort())
+  })
   it('has no screen and no instance for a device with none, or a screen that is gone', () => {
     for (const id of [null, 'gone']) {
       const view = deviceConfigView(config(), id)
