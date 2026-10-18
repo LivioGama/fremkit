@@ -44,6 +44,9 @@ public final class AppModel {
     @ObservationIgnored private var runningWork: Work?
     /// Periodic checks in a row that found nobody at the host in use. Reset by any answer.
     @ObservationIgnored private var unansweredChecks = 0
+    /// An address was announced while a check or a relocation ran on the dashboard: look again when
+    /// it ends rather than drop it.
+    @ObservationIgnored private var relocationPending = false
 
     private enum Work {
         case connect, check, periodicCheck, relocate
@@ -121,6 +124,8 @@ public final class AppModel {
         if case .dashboard = state { state = .connecting }
         let generation = generation
         let candidates = discovered()
+        // This attempt reads every address known now: one announced earlier needs no relocation.
+        relocationPending = false
         isConnecting = true
         let task = Task { [connector] in
             let result = await connector.connect(mac: mac, discovered: candidates)
@@ -245,19 +250,35 @@ public final class AppModel {
                 unansweredChecks += 1
                 if unansweredChecks >= Self.unansweredChecksBeforeRelocating {
                     relocate(from: host, mac: mac)
+                    return
                 }
             }
         }
+        runPendingRelocation()
+    }
+
+    /// Runs the relocation an address announced during the job that just ended asked for, if the
+    /// dashboard is still up and nothing else started.
+    private func runPendingRelocation() {
+        guard relocationPending else { return }
+        relocationPending = false
+        guard case let .dashboard(host, _) = state, let mac, running == nil else { return }
+        relocate(from: host, mac: mac)
     }
 
     /// Bonjour or the network monitor learned a new address. On the dashboard, looks for the Mac
     /// behind it, the host in use first: a page that still works stays where it is, and one whose
     /// Mac moved follows it without waiting for the periodic checks. Elsewhere, the caller's
     /// business (the unreachable and key-changed screens reconnect).
-    /// Nil when not on the dashboard or while another attempt or check runs.
+    /// Announced while a check or a relocation runs, it is remembered and acted on when that ends.
+    /// Nil when not on the dashboard or while another job runs.
     @discardableResult
     public func addressesChanged() -> Task<Void, Never>? {
-        guard case let .dashboard(host, _) = state, let mac, running == nil else { return nil }
+        guard case let .dashboard(host, _) = state, let mac else { return nil }
+        guard running == nil else {
+            relocationPending = true
+            return nil
+        }
         return relocate(from: host, mac: mac)
     }
 
@@ -270,6 +291,7 @@ public final class AppModel {
     private func relocate(from host: String, mac: PairedMac) -> Task<Void, Never> {
         let generation = generation
         let candidates = discovered()
+        relocationPending = false
         isConnecting = true
         let task = Task { [connector] in
             let result = await connector.relocate(mac: mac, discovered: candidates, current: host)
@@ -296,10 +318,12 @@ public final class AppModel {
         case .keyChanged: state = .keyChanged(name: mac.name)
         case .unreachable: break
         }
+        runPendingRelocation()
     }
 
     private func cancelRunning() {
         generation += 1
+        relocationPending = false
         running?.cancel()
         running = nil
         runningWork = nil

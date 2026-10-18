@@ -388,17 +388,29 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.state, .dashboard(host: "198.51.100.7", info: sampleInfo))
     }
 
-    func testANewAddressDoesNothingAwayFromTheDashboardOrDuringAnotherAttempt() async {
+    func testANewAddressDoesNothingAwayFromTheDashboard() async {
         let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo)])
         let (model, _) = await dashboardOnAnAddress(prober, discovered: { [] })
-        prober.hold("192.0.2.10")
-        let check = model.checkAuthorization()
-        XCTAssertNil(model.addressesChanged(), "never two at once")
-        while prober.holding == 0 { await Task.yield() }
-        prober.release()
-        await check?.value
         model.pageSaidUnauthorized()
         XCTAssertNil(model.addressesChanged())
+    }
+
+    func testAnAddressAnnouncedDuringACheckIsActedOnWhenTheCheckEnds() async {
+        let prober = ScriptedProber(["192.0.2.10": .ok(sampleInfo), "198.51.100.7": .ok(sampleInfo)])
+        let bonjour = Resolved()
+        let (model, _) = await dashboardOnAnAddress(prober, discovered: { bonjour.addresses })
+        prober.hold("192.0.2.10")
+        let check = model.checkAuthorization()
+        while prober.holding == 0 { await Task.yield() }
+        // The Mac moves while the check waits on its old address.
+        bonjour.addresses = ["198.51.100.7"]
+        XCTAssertNil(model.addressesChanged(), "never two at once: remembered instead")
+        prober.set("192.0.2.10", .unreachable)
+        prober.release()
+        await check?.value
+        await settle(model)
+        XCTAssertEqual(model.state, .dashboard(host: "198.51.100.7", info: sampleInfo),
+                       "followed after a single unanswered check, because an address was announced")
     }
 
     func testAStaleAddressWithAnotherKeyNeverReplacesTheDashboard() async {
