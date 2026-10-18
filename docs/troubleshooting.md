@@ -121,7 +121,7 @@ switch:
 6. In `~/.claude/settings.json`, point the Claude Code hook and status line at the app (see
    [claude-code.md](claude-code.md)).
 
-Going back is the same in reverse: quit Fremkit, run `pnpm setup` in the checkout (it writes
+Going back is the same in reverse: quit Fremkit, run `pnpm run setup` in the checkout (it writes
 `repoPath` again and installs the developer helper).
 
 ## Removing everything

@@ -3,7 +3,7 @@ import Foundation
 /// How the helper runs the dashboard server: from a checkout, or from inside the app bundle.
 ///
 /// A `repoPath` in `helper.json` always means the checkout, exactly as before the app existed:
-/// that is the developer setup (`pnpm setup` writes it), and it must not move when the same
+/// that is the developer setup (`pnpm run setup` writes it), and it must not move when the same
 /// helper code learns to run a bundled server. Without one, the server shipped in the bundle's
 /// `Contents/Resources/server` is used when it is there. Neither means the old fallback checkout,
 /// `~/fremkit`, which the spawn then reports as missing.

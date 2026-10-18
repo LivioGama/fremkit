@@ -191,7 +191,7 @@ run:
 
 | Key | Default | What it is |
 |---|---|---|
-| `repoPath` | `~/fremkit` | the checkout whose server the helper supervises (`pnpm setup` writes the real path) |
+| `repoPath` | `~/fremkit` | the checkout whose server the helper supervises (`pnpm run setup` writes the real path) |
 | `url` | `http://127.0.0.1:4242/?kiosk=1` | what the kiosk window loads |
 | `adminUrl` | `http://127.0.0.1:4242/admin` | what the admin window loads |
 | `port` | `4242` | port watched to decide whether a server is already up |
