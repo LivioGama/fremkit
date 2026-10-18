@@ -25,14 +25,15 @@ struct ManualPairView: View {
     }
 }
 
-/// The Macs advertising Fremkit, by name. A hint shows when none has turned up after 5 s.
+/// The Macs advertising Fremkit, by name, listed as soon as Bonjour sees them; one whose address
+/// is not known yet shows so and cannot be picked. A hint shows when none has turned up after 5 s.
 private struct MacList: View {
     let flow: PairingFlow
     let network: LocalNetwork
     @State private var waitedLong = false
 
-    private var macs: [MacService] {
-        network.services.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    private var macs: [DiscoveredMac] {
+        network.macs.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     var body: some View {
@@ -49,16 +50,7 @@ private struct MacList: View {
             } else {
                 VStack(spacing: 12) {
                     ForEach(macs, id: \.name) { mac in
-                        Button { flow.choose(mac) } label: {
-                            Label {
-                                Text(verbatim: mac.name)
-                            } icon: {
-                                Image(systemName: "desktopcomputer")
-                            }
-                            .font(.title3)
-                            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                        }
-                        .buttonStyle(.bordered)
+                        MacRow(mac: mac) { if let service = mac.service { flow.choose(service) } }
                     }
                 }
             }
@@ -72,6 +64,39 @@ private struct MacList: View {
             try? await Task.sleep(for: .seconds(5))
             waitedLong = true
         }
+        .task {
+            // A Mac whose address is still pending is checked again every few seconds.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                if Task.isCancelled { break }
+                if network.macs.values.contains(where: { $0.service == nil }) { network.refresh() }
+            }
+        }
+    }
+}
+
+private struct MacRow: View {
+    let mac: DiscoveredMac
+    let pick: () -> Void
+
+    var body: some View {
+        Button(action: pick) {
+            HStack(spacing: 12) {
+                Image(systemName: "desktopcomputer")
+                Text(verbatim: mac.name)
+                Spacer()
+                if mac.service == nil {
+                    Text("Looking for its address…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    ProgressView()
+                }
+            }
+            .font(.title3)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        }
+        .buttonStyle(.bordered)
+        .disabled(mac.service == nil)
     }
 }
 

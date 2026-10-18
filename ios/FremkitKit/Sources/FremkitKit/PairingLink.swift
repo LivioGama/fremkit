@@ -87,7 +87,7 @@ public func isIPLiteral(_ s: String) -> Bool {
     return inet_pton(AF_INET6, String(parts[0]), &v6) == 1
 }
 
-private func parsePort(_ s: String) -> Int? {
+func parsePort(_ s: String) -> Int? {
     guard !s.isEmpty, s.count <= 5, s.allSatisfy({ $0.isASCII && $0.isNumber }), let port = Int(s),
           (1...65535).contains(port) else { return nil }
     return port

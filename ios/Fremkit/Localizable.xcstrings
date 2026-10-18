@@ -111,6 +111,16 @@
         }
       }
     },
+    "Looking for its address…" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recherche de son adresse…"
+          }
+        }
+      }
+    },
     "No Mac found yet. In Fremkit on the Mac, turn on “Allow an iPad on the local network” (Screen tab)." : {
       "localizations" : {
         "fr" : {
