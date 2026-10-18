@@ -115,4 +115,7 @@ at any time in `chrome://extensions`. The extension asks for no access to every 
   answered on Fremkit's port and could not prove it is your Fremkit, so the extension kept its
   credential to itself. Quit whatever else uses port 4242 and start Fremkit; the extension
   keeps trying on its own.
+- *"The Edge refused the video connection"* (in the extension's popup) — the browser offered an
+  address that is not one of this Mac's (a network interface that changed during the share, for
+  instance), and Fremkit relays nothing else. The share ends; send it again.
 - *"Fremplay and Fremkit speak different versions: update Fremkit"*

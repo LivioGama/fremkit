@@ -144,6 +144,11 @@ export class CompanionSession {
       }
       case 'tab.offer': {
         if (!this.shareOf(deviceId, msg.sessionId)) return
+        // An offer naming anything beyond this Mac is never relayed: that share ends, said why.
+        if (!isLocalSdp(msg.sdp)) {
+          this.send(deviceId, { type: 'tab.refused', sessionId: msg.sessionId, reason: 'offer' })
+          return this.endShare()
+        }
         const receiver = this.receivers.get(msg.receiverId)
         if (!receiver) return
         receiver.offer = msg.sdp

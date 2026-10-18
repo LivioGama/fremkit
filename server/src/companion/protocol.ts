@@ -97,7 +97,12 @@ export const MetaSchema = z.strictObject({
 export type TabMeta = z.infer<typeof MetaSchema>
 
 const Id = z.uuid()
-const Sdp = z.string().max(MAX_SDP).refine((sdp) => isLocalSdp(sdp), 'not a local offer')
+/**
+ * An offer's text, bounded. Whether it names only this Mac is the session's call (`isLocalSdp`): a
+ * candidate it refuses ends that share with `tab.refused` (reason `offer`) rather than closing the
+ * socket, which the extension would reconnect and offer again.
+ */
+const Sdp = z.string().max(MAX_SDP)
 const Token = z.string().refine(isWellFormedToken, 'not a token')
 
 export const ExtensionMessageSchema = z.discriminatedUnion('type', [
@@ -135,7 +140,7 @@ export type ServerMessage =
   | { type: 'proof'; mac: string }
   | { type: 'ready'; protocol: number }
   | { type: 'tab.accepted'; sessionId: string }
-  | { type: 'tab.refused'; sessionId: string; reason: 'noWidget' | 'protocol' }
+  | { type: 'tab.refused'; sessionId: string; reason: 'noWidget' | 'protocol' | 'offer' }
   | { type: 'tab.view'; receiverId: string }
   | { type: 'tab.answer'; receiverId: string; sdp: string }
   | ({ type: 'tab.control' } & Control)

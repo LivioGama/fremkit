@@ -427,7 +427,9 @@ async function onServerMessage(msg) {
       return
     case 'tab.refused':
       if (share?.sessionId !== msg.sessionId) return
-      return endShare({ notify: false, error: msg.reason === 'noWidget' ? 'noWidget' : 'protocol' })
+      // `offer`: the server would not relay this share's video connection; the share ends, with no
+      // retry, and the popup says so (not "update needed": nothing is out of date).
+      return endShare({ notify: false, error: msg.reason === 'noWidget' ? 'noWidget' : msg.reason === 'offer' ? 'offerRefused' : 'protocol' })
     case 'tab.stop':
       return endShare({ notify: false })
     case 'revoked':

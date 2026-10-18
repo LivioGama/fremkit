@@ -335,6 +335,30 @@ describe('CompanionSession', () => {
   })
 })
 
+describe('CompanionSession refused offer', () => {
+  it('ends the share with tab.refused (offer) and relays nothing, when the offer names another host', () => {
+    const t = setup()
+    t.hello('a')
+    t.start('a', S1)
+    t.session.view(R(1), 'w1')
+    t.clear()
+    const lan = 'v=0\r\na=candidate:1 1 udp 2122260223 198.51.100.7 54321 typ host\r\n'
+    t.session.onMessage('a', { type: 'tab.offer', sessionId: S1, receiverId: R(1), sdp: lan })
+    expect(t.to('a')).toEqual([{ type: 'tab.refused', sessionId: S1, reason: 'offer' }])
+    expect(t.session.snapshot().tab).toMatchObject({ state: 'idle', offers: {} })
+  })
+
+  it('ignores a bad offer about a share that is not the current one', () => {
+    const t = setup()
+    t.hello('a')
+    t.start('a', S1)
+    t.clear()
+    t.session.onMessage('a', { type: 'tab.offer', sessionId: S2, receiverId: R(1), sdp: 'v=1' })
+    expect(t.to('a')).toEqual([])
+    expect(t.session.snapshot().tab.state).toBe('sharing')
+  })
+})
+
 describe('CompanionSession tab.meta throttle', () => {
   afterEach(() => { vi.useRealTimers() })
 

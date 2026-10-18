@@ -14,6 +14,7 @@ const ask = (type, extra = {}) => chrome.runtime.sendMessage({ target: 'worker',
 const ERRORS = {
   noVideo: () => t('noVideo'),
   noWidget: () => t('errNoWidget'),
+  offerRefused: () => t('errOfferRefused'),
   protocol: () => t('errProtocol'),
   unreachable: () => t('errUnreachable'),
   capture: () => t('errCapture'),

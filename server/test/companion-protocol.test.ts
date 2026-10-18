@@ -154,6 +154,8 @@ describe('parseExtensionMessage', () => {
     expect(parse({ type: 'tab.started', sessionId, meta })).toMatchObject({ type: 'tab.started', sessionId })
     expect(parse({ type: 'tab.meta', sessionId, meta })).not.toBeNull()
     expect(parse({ type: 'tab.offer', sessionId, receiverId, sdp: sdp(host('127.0.0.1')) })).not.toBeNull()
+    // Parsed even when it names another host: the session refuses it without closing the socket.
+    expect(parse({ type: 'tab.offer', sessionId, receiverId, sdp: sdp(host('198.51.100.7')) })).not.toBeNull()
     expect(parse({ type: 'tab.stopped', sessionId })).toEqual({ type: 'tab.stopped', sessionId })
   })
 
@@ -182,7 +184,6 @@ describe('parseExtensionMessage', () => {
     expect(parse({ type: 'hello', token: 'short', installId, protocol: PROTOCOL })).toBeNull()
     expect(parse({ type: 'hello', token, installId: 'x', protocol: PROTOCOL })).toBeNull()
     expect(parse({ type: 'hello', token, installId, protocol: 'one' })).toBeNull()
-    expect(parse({ type: 'tab.offer', sessionId, receiverId, sdp: sdp(host('198.51.100.7')) })).toBeNull()
     expect(parse({ type: 'tab.offer', sessionId, receiverId: 'x', sdp: sdp() })).toBeNull()
   })
 

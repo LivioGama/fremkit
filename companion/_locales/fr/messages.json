@@ -75,6 +75,9 @@
   "errNoWidget": {
     "message": "Ajoutez le widget Fremplay à l'Edge depuis l'admin"
   },
+  "errOfferRefused": {
+    "message": "L'Edge a refusé la connexion vidéo."
+  },
   "errProtocol": {
     "message": "Mettez à jour Fremkit ou l'extension"
   },

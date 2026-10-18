@@ -75,6 +75,9 @@
   "errNoWidget": {
     "message": "Add the Fremplay widget to the Edge from the admin"
   },
+  "errOfferRefused": {
+    "message": "The Edge refused the video connection."
+  },
   "errProtocol": {
     "message": "Update Fremkit or the extension"
   },

@@ -391,6 +391,22 @@ describe('companion socket', () => {
     expect(await client.next()).toEqual({ type: 'tab.control', action: 'toggle' })
   })
 
+  it('a refused offer ends the share with tab.refused and keeps the socket open', async () => {
+    const { token } = await paired()
+    const client = await hello(token)
+    client.send({ type: 'tab.started', sessionId: S1, meta: META })
+    expect(await client.next()).toEqual({ type: 'tab.accepted', sessionId: S1 })
+    const receiverId = '22222222-2222-4222-8222-222222222222'
+    expect(session.view(receiverId, 'w1')).toBe(true)
+    expect(await client.next()).toEqual({ type: 'tab.view', receiverId })
+    client.send({ type: 'tab.offer', sessionId: S1, receiverId, sdp: 'v=0\r\na=candidate:1 1 udp 1 198.51.100.7 5000 typ host\r\n' })
+    expect(await client.next()).toEqual({ type: 'tab.refused', sessionId: S1, reason: 'offer' })
+    expect(session.snapshot().tab.state).toBe('idle')
+    // Still connected: a new share goes through on the same socket.
+    client.send({ type: 'tab.started', sessionId: '33333333-3333-4333-8333-333333333333', meta: META })
+    expect(await client.next()).toEqual({ type: 'tab.accepted', sessionId: '33333333-3333-4333-8333-333333333333' })
+  })
+
   it('a second socket for the same record replaces the first', async () => {
     const { token } = await paired()
     const first = await hello(token)
