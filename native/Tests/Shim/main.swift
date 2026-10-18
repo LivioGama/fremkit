@@ -97,6 +97,11 @@ let suites: [(String, () -> XCTestCase, [TestMethod])] = [
         ("testReadsTheCodeOutOfTheServersAnswer", { ($0 as! AccessTokenTests).testReadsTheCodeOutOfTheServersAnswer() }),
         ("testSignInURLStaysOnTheTargetsOrigin", { ($0 as! AccessTokenTests).testSignInURLStaysOnTheTargetsOrigin() }),
     ]),
+    ("WidgetFramesTests", { WidgetFramesTests() }, [
+        ("testAllowsAWidgetDocumentOnTheSameOrigin", { ($0 as! WidgetFramesTests).testAllowsAWidgetDocumentOnTheSameOrigin() }),
+        ("testRefusesEverythingElse", { ($0 as! WidgetFramesTests).testRefusesEverythingElse() }),
+        ("testFollowsThePagesOwnOrigin", { ($0 as! WidgetFramesTests).testFollowsThePagesOwnOrigin() }),
+    ]),
     ("ServerProbeTests", { ServerProbeTests() }, [
         ("testA401WithOurChallengeIsOurs", { ($0 as! ServerProbeTests).testA401WithOurChallengeIsOurs() }),
         ("testRecognisesAFremkitConfig", { ($0 as! ServerProbeTests).testRecognisesAFremkitConfig() }),

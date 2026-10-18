@@ -87,6 +87,8 @@ tagged `vX.Y.Z`.
 - **A widget can no longer send data away by navigating its own frame.** The dashboard and the
   admin now carry a Content-Security-Policy that lets a frame load only a widget page, and that
   no other site can frame them in.
+- **The Edge and the admin window refuse it too.** The helper's web views cancel any frame
+  navigation that is not a widget page, whatever the page's own policy says.
 
 ## 0.4.1 — 2026-10-16
 
