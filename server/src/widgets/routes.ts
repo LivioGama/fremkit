@@ -9,6 +9,7 @@ import { grantedCatalog, permissionsOf, type Permissions } from '../marketplace/
 import { SDK_VERSION } from '../bridge/sdk.js'
 import { tr } from '../i18n.js'
 import { isRemoteRequest } from '../net/remote.js'
+import { requestScope, widgetInScope, type ScreenOfDevice } from '../devices/scope.js'
 
 
 /**
@@ -66,7 +67,11 @@ export function injectBridge(html: string): string {
 
 export async function widgetRoutes(
   app: FastifyInstance,
-  opts: { catalog: WidgetCatalog; store: ConfigStore; bridgePath: string; port?: number; dev?: boolean },
+  opts: {
+    catalog: WidgetCatalog; store: ConfigStore; bridgePath: string; port?: number; dev?: boolean
+    /** The device screen a paired device is attached to: what its catalogue is narrowed to. */
+    screenOfDevice?: ScreenOfDevice
+  },
 ): Promise<void> {
   const bridge = await readFile(opts.bridgePath, 'utf8')
   const csp = widgetCsp(opts.port, opts.dev)
@@ -107,9 +112,22 @@ export async function widgetRoutes(
 
   app.get('/api/widgets', async (req) => {
     const all = answer()
-    // A paired device draws widgets and nothing else: the scan's errors quote paths on this Mac,
-    // and the un-narrowed asks are the admin's alone (see above).
-    return isRemoteRequest(req) ? { ...all, asks: {}, errors: [] } : all
+    if (!isRemoteRequest(req)) return all
+    // A paired device draws the widgets of its own screen and nothing else. Its page looks a
+    // manifest up only through an instance of its config view (pages, bar and bar popover alike),
+    // which holds that screen's instances alone, so the rest of the catalogue — what else is
+    // installed on this Mac — is none of its business; a device with no screen gets none. The
+    // scan's errors quote paths on this Mac, and the un-narrowed asks are the admin's (see above).
+    const config = opts.store.get()
+    const scope = requestScope(req, opts.screenOfDevice ?? (() => null))
+    const shown = (id: string): boolean => widgetInScope(config, scope, id)
+    return {
+      ...all,
+      widgets: Object.fromEntries(Object.entries(all.widgets).filter(([id]) => shown(id))),
+      sources: Object.fromEntries(Object.entries(all.sources).filter(([id]) => shown(id))),
+      asks: {},
+      errors: [],
+    }
   })
 
   app.post('/api/widgets/rescan', async () => {

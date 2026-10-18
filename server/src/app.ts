@@ -369,6 +369,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     bridgePath: opts.bridgePath ?? shippedPaths().bridgePath,
     port: opts.port,
     dev: process.env.FREMKIT_DEV === '1',
+    screenOfDevice,
   })
   await app.register(themeRoutes, { catalog: themes })
   await app.register(proxyRoutes, { catalog, store, secrets, cache: connCache, screenOfDevice })
@@ -393,7 +394,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   })
   await app.register(faviconRoutes, { dir: join(opts.dataDir, 'icons', 'favicons') })
   await app.register(claudeRoutes, { tracker, usage })
-  await app.register(dockRoutes, { state: dock, appIcons })
+  await app.register(dockRoutes, { state: dock, appIcons, deviceMayListApps: (id) => deviceService.maySubscribe(id, 'dock') })
   await app.register(appsRoutes, { apps: installedApps, deviceMayListApps: (id) => deviceService.maySubscribe(id, 'dock') })
   await app.register(helperRoutes)
   await app.register(brightnessRoutes, { service: brightness, changed: brightnessChanged })

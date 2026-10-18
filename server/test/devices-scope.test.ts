@@ -208,11 +208,29 @@ describe.skipIf(!hasOpenssl)('a paired device acts on its own screen only', () =
     }
   })
 
-  it('reads the catalogue without its scan errors or its un-narrowed asks', async () => {
+  it('reads only the catalogue of its own screen, without scan errors or un-narrowed asks', async () => {
     const res = JSON.parse((await remote(port, { path: '/api/widgets', headers: cookie(tokenA) })).body)
     expect(res.errors).toEqual([])
     expect(res.asks).toEqual({})
-    expect(Object.keys(res.widgets)).toContain('clock')
+    expect(Object.keys(res.widgets).sort()).toEqual(['clock', 'service-status'])
+    expect(Object.keys(res.sources).sort()).toEqual(['clock', 'service-status'])
+    // Its bar counts: tablet B shows service-status only there.
+    const b = JSON.parse((await remote(port, { path: '/api/widgets', headers: cookie(tokenB) })).body)
+    expect(Object.keys(b.widgets).sort()).toEqual(['clock', 'docky', 'service-status'])
+    const none = JSON.parse((await remote(port, { path: '/api/widgets', headers: cookie(tokenNone) })).body)
+    expect(none.widgets).toEqual({})
+    expect(none.sources).toEqual({})
+    // This Mac still reads all of it.
+    expect(Object.keys((await app.inject({ url: '/api/widgets' })).json().widgets)).toContain('edgeonly')
+  })
+
+  it('is refused app icons on the same terms as the list', async () => {
+    const icon = (token: string) => remote(port, { path: '/api/apps/icon/com.example.none', headers: cookie(token) })
+    expect((await icon(tokenA)).status).toBe(403)
+    expect((await icon(tokenNone)).status).toBe(403)
+    // Past the rule: no such application here, so no icon.
+    expect((await icon(tokenB)).status).toBe(404)
+    expect((await app.inject({ url: '/api/apps/icon/com.example.none' })).statusCode).toBe(404)
   })
 
   it('is refused the installed applications unless its screen shows a widget that may read them', async () => {
