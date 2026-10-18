@@ -32,7 +32,7 @@ interface PairRequest {
  *
  * One request waits for an answer at a time: a new one replaces it. Once answered, a request is
  * kept until it expires, two minutes after it was made, so the extension can collect the answer —
- * the token of an approved one exactly once. A token nobody collected goes when the request does.
+ * the token of an approved one exactly once. A token nobody collected goes when the request does, and so does its device record.
  *
  * Requests are counted globally, like wrong pairing codes: an origin is only a name the asker
  * picks, so a per-origin count would limit nothing.
@@ -164,6 +164,10 @@ export class CompanionPairing {
       if (req.state !== 'approving' && now >= req.expiresAt) {
         this.requests.delete(id)
         if (this.waiting === id) this.waiting = null
+        // An approved answer nobody collected leaves a paired device whose token is lost for good.
+        if (req.state === 'approved' && req.token !== undefined && req.deviceId !== undefined) {
+          this.store.remove(req.deviceId).catch(() => { /* the list shows it; the user can remove it */ })
+        }
         dropped = true
       }
     }

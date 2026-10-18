@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -78,6 +78,25 @@ describe('CompanionPairing', () => {
     await pairing.approve(requestId)
     clock += REQUEST_TTL_MS + 1
     expect(pairing.collect(requestId, ORIGIN)).toEqual({ state: 'expired' })
+  })
+
+  it('removes the device of an approved request nobody collected once it expires', async () => {
+    const { requestId } = accepted(ask())
+    await pairing.approve(requestId)
+    expect(store.list()).toHaveLength(1)
+    clock += REQUEST_TTL_MS + 1
+    pairing.pending()
+    await vi.waitFor(() => expect(store.list()).toEqual([]))
+  })
+
+  it('keeps the device of an approved request that was collected', async () => {
+    const { requestId } = accepted(ask())
+    await pairing.approve(requestId)
+    pairing.collect(requestId, ORIGIN)
+    clock += REQUEST_TTL_MS + 1
+    pairing.pending()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(store.list()).toHaveLength(1)
   })
 
   it('approving an expired request fails and creates no device', async () => {
