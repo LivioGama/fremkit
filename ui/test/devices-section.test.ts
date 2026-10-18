@@ -7,16 +7,20 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import type { DeviceStatus, PublicDevice, PublicIpadDevice } from '../src/shared/api'
+import type { DeviceStatus, PublicDevice, PublicExtensionDevice, PublicIpadDevice } from '../src/shared/api'
 import type { Config } from '../src/shared/types'
 
 const device = (over: Partial<PublicIpadDevice> = {}): PublicDevice => ({
   id: 'dev-1', kind: 'ipad', name: 'Kitchen iPad', pairedAt: '2026-10-01T08:00:00.000Z', lastSeen: null,
   viewport: { width: 1376, height: 1032 }, screenId: null, ...over,
 })
+const extension = (over: Partial<PublicExtensionDevice> = {}): PublicDevice => ({
+  id: 'ext-1', kind: 'extension', name: 'Chrome', pairedAt: '2026-10-02T08:00:00.000Z', lastSeen: null,
+  origin: `chrome-extension://${'a'.repeat(32)}`, installId: '3a9c1d2e-5b6f-4a7b-8c9d-0e1f2a3b4c5d', connected: false, ...over,
+})
 const status = (over: Partial<DeviceStatus> = {}): DeviceStatus => ({
   enabled: false, listening: false, error: null, guessing: false, host: 'mac.example.local',
-  addresses: ['192.0.2.10'], port: 4243, keyHash: null, devices: [], ...over,
+  addresses: ['192.0.2.10'], port: 4243, keyHash: null, devices: [], companionRequest: null, ...over,
 })
 
 const deviceApi = vi.hoisted(() => ({
@@ -24,6 +28,8 @@ const deviceApi = vi.hoisted(() => ({
   setDevicesEnabled: vi.fn(),
   newPairingCode: vi.fn(),
   patchDevice: vi.fn(),
+  approveCompanion: vi.fn(),
+  refuseCompanion: vi.fn(),
   deleteDevice: vi.fn(),
   deleteAllDevices: vi.fn(),
   resetDeviceCertificate: vi.fn(),
@@ -92,6 +98,90 @@ describe('the devices section', () => {
     expect(wrapper.find('[data-test="pairing-code"]').text()).toBe('ABCD2345')
     expect(wrapper.find('.qr svg').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Someone is trying')
+    wrapper.unmount()
+  })
+
+  it('lists an extension with no screen picker, and removes it', async () => {
+    deviceApi.getDevices.mockResolvedValue(status({ devices: [extension({ connected: true })] }))
+    deviceApi.deleteDevice.mockResolvedValue(undefined)
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    const row = wrapper.find('[data-test="extension"]')
+    expect((row.find('[data-test="extension-name"]').element as HTMLInputElement).value).toBe('Chrome')
+    expect(row.find('[data-test="extension-connected"]').text()).toBe('connected')
+    expect(row.find('select').exists()).toBe(false)
+    expect(row.text()).toContain('Paired')
+    expect(wrapper.text()).not.toContain('No paired device')
+    await row.find('[data-test="extension-remove"]').trigger('click')
+    await row.find('[data-test="extension-remove"]').trigger('click')
+    await flushPromises()
+    expect(deviceApi.deleteDevice).toHaveBeenCalledWith('ext-1')
+    wrapper.unmount()
+  })
+
+  it('does not say connected for an extension whose socket is closed', async () => {
+    deviceApi.getDevices.mockResolvedValue(status({ devices: [extension()] }))
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="extension-connected"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows extensions and the request card while the network switch is off', async () => {
+    deviceApi.getDevices.mockResolvedValue(status({
+      enabled: false, listening: false, devices: [extension()],
+      companionRequest: { requestId: 'req-1', code: 'AB2C', name: 'Chrome on Mac', expiresAt: Date.now() + 60_000 },
+    }))
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="extension"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="request-code"]').text()).toBe('AB2C')
+    expect(wrapper.find('[data-test="request-name"]').text()).toBe('Chrome on Mac')
+    expect(wrapper.find('[data-test="pairing-code"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('answers the request with Allow or Refuse', async () => {
+    deviceApi.getDevices.mockResolvedValue(status({
+      companionRequest: { requestId: 'req-1', code: 'AB2C', name: 'Chrome', expiresAt: Date.now() + 60_000 },
+    }))
+    deviceApi.approveCompanion.mockResolvedValue(undefined)
+    deviceApi.refuseCompanion.mockResolvedValue(undefined)
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    await wrapper.find('[data-test="request-approve"]').trigger('click')
+    await flushPromises()
+    expect(deviceApi.approveCompanion).toHaveBeenCalledWith('req-1')
+    await wrapper.find('[data-test="request-refuse"]').trigger('click')
+    await flushPromises()
+    expect(deviceApi.refuseCompanion).toHaveBeenCalledWith('req-1')
+    wrapper.unmount()
+  })
+
+  it('hides a request that has expired', async () => {
+    deviceApi.getDevices.mockResolvedValue(status({
+      companionRequest: { requestId: 'req-1', code: 'AB2C', name: 'Chrome', expiresAt: Date.now() - 1 },
+    }))
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="companion-request"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('renames an extension with PATCH name, and ignores an emptied name', async () => {
+    deviceApi.getDevices.mockResolvedValue(status({ devices: [extension()] }))
+    deviceApi.patchDevice.mockResolvedValue(extension({ name: 'Work Chrome' }))
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    const input = wrapper.find('[data-test="extension-name"]')
+    await input.setValue('  ')
+    await input.trigger('change')
+    expect(deviceApi.patchDevice).not.toHaveBeenCalled()
+    expect((input.element as HTMLInputElement).value).toBe('Chrome')
+    await input.setValue('Work Chrome')
+    await input.trigger('change')
+    await flushPromises()
+    expect(deviceApi.patchDevice).toHaveBeenCalledWith('ext-1', { name: 'Work Chrome' })
     wrapper.unmount()
   })
 

@@ -13,7 +13,7 @@ import { api, type DeviceStatus, type PairingOffer, type PublicDevice, type Publ
 export const DEVICES_POLL_MS = 3000
 
 export type DevicesApi = Pick<typeof api,
-  'getDevices' | 'setDevicesEnabled' | 'newPairingCode' | 'patchDevice' | 'deleteDevice' | 'deleteAllDevices' | 'resetDeviceCertificate'>
+  'getDevices' | 'setDevicesEnabled' | 'newPairingCode' | 'patchDevice' | 'approveCompanion' | 'refuseCompanion' | 'deleteDevice' | 'deleteAllDevices' | 'resetDeviceCertificate'>
 
 export interface Devices {
   /** The last status read; null until the first answer. */
@@ -33,6 +33,10 @@ export interface Devices {
   /** Asks for a fresh code. One request at a time: a second call while one runs joins it. */
   newCode(): Promise<void>
   attach(id: string, screenId: string | null): Promise<void>
+  /** Renames a device, an iPad or an extension. */
+  rename(id: string, name: string): Promise<void>
+  /** Answers the browser extension's pairing request waiting on the Edge and here. */
+  answerCompanion(requestId: string, allow: boolean): Promise<void>
   remove(id: string): Promise<void>
   removeAll(): Promise<void>
   resetCertificate(): Promise<void>
@@ -96,6 +100,14 @@ export function createDevices(deviceApi: DevicesApi, pollMs = DEVICES_POLL_MS): 
     },
     async attach(id, screenId) {
       await run(async () => { await deviceApi.patchDevice(id, { screenId }) })
+      await refresh()
+    },
+    async rename(id, name) {
+      await run(async () => { await deviceApi.patchDevice(id, { name }) })
+      await refresh()
+    },
+    async answerCompanion(requestId, allow) {
+      await run(() => (allow ? deviceApi.approveCompanion(requestId) : deviceApi.refuseCompanion(requestId)))
       await refresh()
     },
     async remove(id) {

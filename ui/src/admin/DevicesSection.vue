@@ -15,7 +15,7 @@ import BaseCheckbox from '../shared/ui/BaseCheckbox.vue'
 import BaseIcon from '../shared/ui/BaseIcon.vue'
 import { useI18n } from '../shared/i18n'
 import { useConfirm } from '../shared/useConfirm'
-import type { PublicIpadDevice } from '../shared/api'
+import type { PublicExtensionDevice, PublicIpadDevice } from '../shared/api'
 import type { Screen } from '../shared/types'
 import AddScreenDialog from './AddScreenDialog.vue'
 import { useDevices } from './devices'
@@ -62,6 +62,20 @@ const countdown = computed(() => {
 
 const deviceScreens = computed<Screen[]>(() => (s.state.config?.screens ?? []).filter((x) => x.kind === 'device'))
 const list = computed<PublicIpadDevice[]>(() => (status.value?.devices ?? []).filter((d): d is PublicIpadDevice => d.kind === 'ipad'))
+const extensions = computed<PublicExtensionDevice[]>(() => (status.value?.devices ?? []).filter((d): d is PublicExtensionDevice => d.kind === 'extension'))
+/** The extension's request, until its expiry even if the next poll is still to come. */
+const request = computed(() => {
+  const r = status.value?.companionRequest ?? null
+  return r && now.value < r.expiresAt ? r : null
+})
+
+/** Keeps the name when it is emptied or unchanged: the server refuses an empty one anyway. */
+function rename(device: PublicExtensionDevice, event: Event): void {
+  const input = event.target as HTMLInputElement
+  const name = input.value.trim()
+  if (name === '' || name === device.name) { input.value = device.name; return }
+  void devices.rename(device.id, name)
+}
 
 function when(iso: string | null): string {
   if (!iso) return t('admin.devices.neverSeen')
@@ -119,7 +133,30 @@ async function onCreated(screenId: string): Promise<void> {
     </p>
     <p v-if="pollError" class="bad" data-test="poll-error">{{ pollError }}</p>
 
-    <ul v-if="list.length" class="list">
+    <div v-if="request" class="request" role="alertdialog" data-test="companion-request">
+      <p class="ask">{{ t('admin.devices.extension.request') }}</p>
+      <p class="rname" data-test="request-name">{{ request.name }}</p>
+      <p class="value mono" data-test="request-code">{{ request.code }}</p>
+      <div class="row">
+        <BaseButton data-test="request-refuse" @click="devices.answerCompanion(request.requestId, false)">{{ t('admin.devices.extension.refuse') }}</BaseButton>
+        <BaseButton variant="primary" data-test="request-approve" @click="devices.answerCompanion(request.requestId, true)">{{ t('admin.devices.extension.approve') }}</BaseButton>
+      </div>
+    </div>
+
+    <ul v-if="list.length || extensions.length" class="list">
+      <li v-for="d in extensions" :key="d.id" class="device" data-test="extension">
+        <div class="head">
+          <BaseIcon name="globe" :size="16" />
+          <input class="rename" :value="d.name" maxlength="60" :aria-label="t('admin.devices.extension.name')"
+            data-test="extension-name" @change="rename(d, $event)" @keydown.enter="($event.target as HTMLInputElement).blur()" />
+          <span v-if="d.connected" class="ro size on" data-test="extension-connected">{{ t('admin.devices.extension.connected') }}</span>
+        </div>
+        <p class="ro">{{ t('admin.devices.extension.kind') }} · {{ t('admin.devices.pairedAt', { date: when(d.pairedAt) }) }} · {{ t('admin.devices.lastSeen', { date: when(d.lastSeen) }) }}</p>
+        <BaseButton variant="danger" data-test="extension-remove" @click="confirm.ask(`device:${d.id}`, () => devices.remove(d.id))">
+          <template v-if="confirm.armed(`device:${d.id}`)">{{ t('common.confirm') }}</template>
+          <template v-else><BaseIcon name="trash-2" :size="16" />{{ t('admin.devices.remove') }}</template>
+        </BaseButton>
+      </li>
       <li v-for="d in list" :key="d.id" class="device" data-test="device">
         <div class="head">
           <BaseIcon name="tablet" :size="16" />
@@ -148,7 +185,7 @@ async function onCreated(screenId: string): Promise<void> {
     <p v-else class="ro">{{ t('admin.devices.none') }}</p>
 
     <div class="row">
-      <BaseButton variant="danger" :disabled="!list.length" @click="confirm.ask('devices:all', () => devices.removeAll())">
+      <BaseButton variant="danger" :disabled="!list.length && !extensions.length" @click="confirm.ask('devices:all', () => devices.removeAll())">
         {{ confirm.armed('devices:all') ? t('common.confirm') : t('admin.devices.removeAll') }}
       </BaseButton>
       <BaseButton variant="danger" @click="confirm.ask('devices:cert', () => devices.resetCertificate())">
@@ -173,12 +210,20 @@ async function onCreated(screenId: string): Promise<void> {
 .qr :deep(svg) { display: block; width: 100%; height: 100%; }
 .code { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
 .value { margin: 0 0 var(--space-1); font-size: 1.6em; letter-spacing: .12em; color: var(--text); }
-.code :deep(button), .row :deep(button), .device :deep(button) { min-height: 44px; }
+.code :deep(button), .row :deep(button), .device :deep(button), .request :deep(button) { min-height: 44px; }
 .list { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .device { padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
 .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .size { margin: 0 0 0 auto; }
+.on { color: var(--accent); }
+.rename { flex: 1; min-width: 0; min-height: 44px; box-sizing: border-box; font: inherit; font-weight: 600; color: var(--text);
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm); padding: 6px 8px; }
+.rename:hover, .rename:focus { background: var(--surface); border-color: var(--border-strong); }
+.request { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); margin-bottom: var(--space-3); padding: var(--space-3);
+  border: 1px solid var(--accent); border-radius: var(--radius-sm); }
+.request p { margin: 0; }
+.rname { color: var(--accent); font-weight: 600; }
 .field { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
 .field .ro { margin: 0; }
 .field select { flex: 1; min-width: 0; min-height: 44px; box-sizing: border-box; font: inherit; font-size: var(--fs-sm); color: var(--text);

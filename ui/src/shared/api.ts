@@ -45,6 +45,8 @@ export interface PublicExtensionDevice extends PublicDeviceBase {
   kind: 'extension'
   origin: string
   installId: string
+  /** Whether the extension's socket is open right now. */
+  connected: boolean
 }
 /** A paired device as `GET /api/devices` lists it. */
 export type PublicDevice = PublicIpadDevice | PublicExtensionDevice
@@ -60,7 +62,10 @@ export interface DeviceStatus {
   port: number
   keyHash: string | null
   devices: PublicDevice[]
+  /** A browser extension waiting for an answer (the Edge shows it too); never carries a token. */
+  companionRequest: CompanionRequest | null
 }
+export interface CompanionRequest { requestId: string; code: string; name: string; expiresAt: number }
 /** A pairing code, its expiry (epoch ms) and the QR payload carrying it. */
 export interface PairingOffer { code: string; expiresAt: number; url: string }
 
