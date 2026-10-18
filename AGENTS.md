@@ -163,6 +163,13 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   *kinds*, never instances: connection types, not connection names; widget ids, not titles;
   counts, not device names. A new kind of value that could identify someone (a host, an account,
   a path) gets a redaction rule and a test with documentation-range fixtures.
+- **A shared layout is built, never sliced.** `server/src/share/export.ts` writes a
+  `.fremkit-layout.json` from an allow-list of keys (`format.ts`), so a config key added later
+  stays home by default; adding one to the file is a decision, with a test in `share.test.ts`.
+  Settings travel by their manifest type (`share/settings.ts`): connection-typed ones never, free
+  text only when ticked; every name, title and value goes through `redact()`, and the finished file
+  is checked again. On import the file is a stranger's: re-check settings against local manifests
+  and never keep a value naming one of the user's connection ids.
 - **The author's widget folder is a development tool.** `<dataDir>/widgets-dev` is read only
   under `FREMKIT_WIDGET_DEV=1`, its widgets skip the consent dialog, and nothing shipped sets the
   flag. Never read it, or watch files, without that flag, and never let it shadow a built-in or
@@ -209,3 +216,4 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
 | change the disk map | `server/src/providers/disk-map*.ts`, `native/Sources/FremkitCore/Disk*.swift`, `native/Sources/FremkitScan`, `widgets/disk-map` |
 | bug reports, diagnostics | `server/src/diagnostics/` (report, `redact.ts`, log tail), `ui/src/admin/DiagnosticsSection.vue`, the helper's `StatusMenu.swift` |
 | pair a device, the remote listener | `server/src/devices/`, `ui/src/admin/DevicesSection.vue` |
+| export or import a layout | `server/src/share/` (file format, export, import), `ui/src/admin/share.ts`, `shareApply.ts`, `Share*Dialog.vue`, `docs/sharing.md` |
