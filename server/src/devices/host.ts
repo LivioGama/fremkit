@@ -24,6 +24,25 @@ export async function localHostName(exec: Exec = execFileAsync): Promise<string 
   }
 }
 
+/** The name a Bonjour service instance may carry: 63 bytes of UTF-8 at most. */
+const SERVICE_NAME_MAX_BYTES = 63
+
+/**
+ * The Mac's name as its owner sees it (`scutil --get ComputerName`), which is what the device app
+ * lists. Trimmed and cut to 63 bytes on a character boundary; `Fremkit` when the command fails or
+ * prints nothing.
+ */
+export async function computerName(exec: Exec = execFileAsync): Promise<string> {
+  try {
+    const { stdout } = await exec('scutil', ['--get', 'ComputerName'])
+    let name = stdout.trim()
+    while (Buffer.byteLength(name) > SERVICE_NAME_MAX_BYTES) name = Array.from(name).slice(0, -1).join('')
+    return name === '' ? 'Fremkit' : name
+  } catch {
+    return 'Fremkit'
+  }
+}
+
 function octets(address: string): number[] {
   return address.split('.').map(Number)
 }

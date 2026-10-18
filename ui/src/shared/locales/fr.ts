@@ -343,6 +343,8 @@ export const fr: Record<string, string> = {
   'admin.devices.qr': 'QR code d’appairage',
   'admin.devices.scan': 'Scannez ce QR code avec l’iPad, ou saisissez ce code :',
   'admin.devices.expires': 'Expire dans {time}',
+  'admin.devices.fingerprint': 'Empreinte : {words}',
+  'admin.devices.fingerprintHelp': 'Si l\'iPad affiche ces mots, c\'est bien ce Mac.',
   'admin.devices.newCode': 'Nouveau code',
   'admin.devices.guessing': 'Quelqu’un essaie des codes au hasard : le code est bloqué une minute.',
   'admin.devices.none': 'Aucun appareil appairé.',

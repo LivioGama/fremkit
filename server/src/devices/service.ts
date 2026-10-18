@@ -14,11 +14,12 @@ import { execFileAsync, type Exec } from '../secrets/keychain.js'
 import type { SecretStore } from '../secrets/types.js'
 import type { WidgetCatalog } from '../widgets/catalog.js'
 import type { Hub } from '../ws/hub.js'
+import { fingerprintWords } from './fingerprint.js'
 import { advertise as bonjourAdvertise, type Advertisement, type Advertiser } from './bonjour.js'
 import { ensureKey, issueCertificate, readKey, resetKey, spkiHash } from './certificate.js'
 import { screenChannels, type ChannelManifest, type ScreenChannels } from './channels.js'
 import type { PairingCodes } from './codes.js'
-import { lanAddresses as readLanAddresses, localHostName, preferredAddress } from './host.js'
+import { lanAddresses as readLanAddresses, computerName, localHostName, preferredAddress } from './host.js'
 import { REMOTE_PORT, RemoteListener } from './listener.js'
 import type { DeviceStore, PublicDevice, Viewport } from './store.js'
 
@@ -36,6 +37,8 @@ export type DeviceStatus = {
   port: number
   /** Base64url SHA-256 of the key's SPKI: what a device pins. Never the key itself. */
   keyHash: string | null
+  /** Four words from the key's hash, for a person to compare with the device's screen. */
+  fingerprint: string[] | null
   devices: PublicDevice[]
 }
 
@@ -165,6 +168,7 @@ export class DeviceService {
       addresses: this.readAddresses(),
       port: this.listener.port,
       keyHash: this.keyHash,
+      fingerprint: this.keyHash === null ? null : fingerprintWords(this.keyHash),
       devices: this.store.list(),
     }
   }
@@ -297,7 +301,7 @@ export class DeviceService {
     }
     this.error = null
     this.updateHosts()
-    this.bonjour = this.advertiser(this.listener.port)
+    this.bonjour = this.advertiser(this.listener.port, await computerName(this.exec))
     this.timer = setInterval(() => { void this.checkAddresses() }, ADDRESS_CHECK_MS)
     this.timer.unref()
     await this.store.setEnabled(true)

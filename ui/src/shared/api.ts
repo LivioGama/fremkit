@@ -49,6 +49,8 @@ export interface DeviceStatus {
   addresses: string[]
   port: number
   keyHash: string | null
+  /** Four words from the key's hash, null before a key exists. */
+  fingerprint: string[] | null
   devices: PublicDevice[]
 }
 /** A pairing code, its expiry (epoch ms) and the QR payload carrying it. */

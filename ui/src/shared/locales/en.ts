@@ -343,6 +343,8 @@ export const en: Record<string, string> = {
   'admin.devices.qr': 'Pairing QR code',
   'admin.devices.scan': 'Scan this QR code with the iPad, or type this code:',
   'admin.devices.expires': 'Expires in {time}',
+  'admin.devices.fingerprint': 'Fingerprint: {words}',
+  'admin.devices.fingerprintHelp': 'If the iPad shows these words, it is this Mac.',
   'admin.devices.newCode': 'New code',
   'admin.devices.guessing': 'Someone is trying random codes: the code is blocked for a minute.',
   'admin.devices.none': 'No paired device.',

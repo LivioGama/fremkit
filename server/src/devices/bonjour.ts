@@ -5,7 +5,8 @@ export interface Advertisement {
   stop(): void
 }
 
-export type Advertiser = (port: number) => Advertisement
+/** `name` is the service instance name the Mac is listed under; `Fremkit` when omitted. */
+export type Advertiser = (port: number, name?: string) => Advertisement
 
 const DNS_SD = '/usr/bin/dns-sd'
 const PGREP = '/usr/bin/pgrep'
@@ -30,8 +31,8 @@ export interface AdvertiserDeps {
 }
 
 /** The exact argument list `dns-sd` is run with, so a stale one can be recognised by it. */
-function dnsSdArgs(port: number): string[] {
-  return ['-R', 'Fremkit', '_fremkit._tcp', 'local', String(port)]
+function dnsSdArgs(port: number, name: string): string[] {
+  return ['-R', name, '_fremkit._tcp', 'local', String(port)]
 }
 
 const realDeps: Required<AdvertiserDeps> = {
@@ -66,9 +67,10 @@ const realDeps: Required<AdvertiserDeps> = {
  * Only a process whose command line is exactly ours, for this very port, is touched — and the
  * port is bound by this server by now, so no live Fremkit can own that advertisement.
  */
-function killStale(port: number, deps: Required<AdvertiserDeps>): void {
-  const wanted = [DNS_SD, ...dnsSdArgs(port)].join(' ')
-  const output = deps.listProcesses('dns-sd -R Fremkit _fremkit._tcp')
+function killStale(port: number, name: string, deps: Required<AdvertiserDeps>): void {
+  const wanted = [DNS_SD, ...dnsSdArgs(port, name)].join(' ')
+  // A regular expression to pgrep; the exact comparison below is what decides.
+  const output = deps.listProcesses('dns-sd -R .* _fremkit._tcp local')
   for (const line of output.split('\n')) {
     const m = /^\s*(\d+) (.*)$/.exec(line)
     if (!m) continue
@@ -89,10 +91,10 @@ function killStale(port: number, deps: Required<AdvertiserDeps>): void {
  */
 export function createAdvertiser(deps: AdvertiserDeps = {}): Advertiser {
   const d: Required<AdvertiserDeps> = { ...realDeps, ...deps }
-  return (port) => {
+  return (port, name = 'Fremkit') => {
     if (d.platform !== 'darwin') return { stop: () => undefined }
-    killStale(port, d)
-    const child = d.spawn(DNS_SD, dnsSdArgs(port))
+    killStale(port, name, d)
+    const child = d.spawn(DNS_SD, dnsSdArgs(port, name))
     // A missing or failing dns-sd only costs discovery; the QR code still carries the address.
     child.on('error', () => undefined)
     const kill = (): void => {

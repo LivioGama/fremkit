@@ -10,6 +10,7 @@ import { buildApp } from '../src/app.js'
 import { CONFIG_VERSION } from '../src/config/schema.js'
 import { noAdvertise } from '../src/devices/bonjour.js'
 import { RemoteListener } from '../src/devices/listener.js'
+import { fingerprintWords } from '../src/devices/fingerprint.js'
 import { execFileAsync, type Exec } from '../src/secrets/keychain.js'
 import { Hub } from '../src/ws/hub.js'
 import { readZip } from '../src/backup/zip.js'
@@ -104,6 +105,8 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     const status = (await app.inject({ url: '/api/devices' })).json()
     expect(offer.url).toBe(`fremkit://pair?h=example.local&a=${ADDRESS}&p=${port}&c=${offer.code}&k=${status.keyHash}`)
     expect(status.keyHash).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(status.fingerprint).toEqual(fingerprintWords(status.keyHash))
+    expect(status.fingerprint).toHaveLength(4)
   })
 
   it('pairs a device and tells it its screen', async () => {
