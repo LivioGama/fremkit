@@ -28,6 +28,7 @@ import { ADMIN_GESTURES, DEFAULT_ADMIN_GESTURE, DEFAULT_NAV_STYLE, NAV_HEIGHTS, 
   type AdminGesture, type Background, type Config, type NavHeight, type NavStyle, type Screen } from '../shared/types'
 import { pickScreen, screensShowing } from '../shared/screens'
 import { useAdminStore } from './store'
+import { openExport, pickLayoutFile } from './share'
 
 const s = useAdminStore()
 const { t, locale } = useI18n()
@@ -352,6 +353,21 @@ function setBackground(patch: Partial<Background>): void {
     <DevicesSection />
   </BaseSection>
 
+  <BaseSection id="screen.share" :title="t('admin.share.section')">
+  <div class="row">
+    <BaseButton @click="openExport(s, { scope: 'setup' })">
+      <BaseIcon name="download" :size="16" />{{ t('admin.share.exportSetup') }}
+    </BaseButton>
+    <BaseButton @click="openExport(s, { scope: 'screen', screen: s.screen.value?.id })">
+      <BaseIcon name="download" :size="16" />{{ t('admin.share.exportScreen') }}
+    </BaseButton>
+    <BaseButton @click="pickLayoutFile(s)">
+      <BaseIcon name="upload" :size="16" />{{ t('admin.share.import') }}
+    </BaseButton>
+  </div>
+  <p class="ro">{{ t('admin.share.hint') }}</p>
+  </BaseSection>
+
   <BaseSection id="screen.backup" :title="t('admin.inspector.screen.backup')">
   <div class="row">
     <BaseButton @click="api.downloadBackup()">
@@ -441,7 +457,7 @@ function setBackground(patch: Partial<Background>): void {
 .codex-sources { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-1); margin-bottom: var(--space-3); }
 .codex-subagent-sources { margin-bottom: var(--space-3); }
 .codex-subagent-sources summary { cursor: pointer; margin-bottom: var(--space-2); }
-.row { display: flex; gap: var(--space-2); margin-bottom: var(--space-2); }
+.row { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-2); }
 .hidden { display: none; }
 .bad { margin: 0 0 var(--space-2); font-size: var(--fs-sm); color: var(--danger); white-space: pre-wrap; }
 .ok { margin: 0 0 var(--space-2); font-size: var(--fs-sm); color: var(--ok); }

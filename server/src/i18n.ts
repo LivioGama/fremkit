@@ -267,6 +267,16 @@ const fr = {
   'backgrounds.emptyImage': 'image vide',
   'backgrounds.unknownImage': 'image inconnue',
 
+  // share/ — layouts exported and imported as .fremkit-layout.json
+  'share.pageName': 'Page {n}',
+  'share.screenName': 'Écran {n}',
+  'share.unknownScreen': 'écran inconnu',
+  'share.unknownPage': 'page inconnue',
+  'share.badRequest': 'demande d’export invalide',
+  'share.notALayout': 'ce fichier n’est pas une disposition Fremkit',
+  'share.tooNew': 'ce fichier vient d’un Fremkit plus récent ({version}) : mettez Fremkit à jour pour l’ouvrir',
+  'share.invalid': 'fichier de disposition invalide (à {where})',
+
   // widgets/routes.ts, proxy/routes.ts, bambu/routes.ts
   'widgets.unknown': 'widget inconnu',
   'bambu.unknownConnection': 'connexion inconnue',
@@ -524,6 +534,16 @@ const en: Record<MessageKey, string> = {
   'backgrounds.unsupportedFormat': 'unsupported format (PNG, JPEG or WebP)',
   'backgrounds.emptyImage': 'empty image',
   'backgrounds.unknownImage': 'unknown image',
+
+  // share/ — layouts exported and imported as .fremkit-layout.json
+  'share.pageName': 'Page {n}',
+  'share.screenName': 'Screen {n}',
+  'share.unknownScreen': 'unknown screen',
+  'share.unknownPage': 'unknown page',
+  'share.badRequest': 'invalid export request',
+  'share.notALayout': 'this file is not a Fremkit layout',
+  'share.tooNew': 'this file comes from a newer Fremkit ({version}): update Fremkit to open it',
+  'share.invalid': 'invalid layout file (at {where})',
 
   'widgets.unknown': 'unknown widget',
   'bambu.unknownConnection': 'unknown connection',

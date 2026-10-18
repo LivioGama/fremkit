@@ -24,6 +24,16 @@ tagged `vX.Y.Z`.
   version is available beside an **Update** button, and its menu offers **Update to vX**; the
   Sietch button counts updates. It follows the dashboard live; a widget whose page has not been
   on screen since Fremkit started has nothing to report yet.
+- **Share a page, a screen or your whole setup.** **Export page…** in a page's right-click menu,
+  **Export screen…** and **Export the whole setup…** in a screen's, or **Screen → Share your setup**
+  write a `.fremkit-layout.json` holding the pages, the bar, the tiles' look and settings, the
+  theme and the background images. The export shows what is in the file before you download or
+  copy it: connections, secrets, host names, e-mail addresses, device names, privacy choices and
+  brightness schedules never are, and settings typed as free text (a label, a link) go in only
+  if you tick them. **Import a layout…** — or dropping the file onto the editor — shows what it
+  adds, offers to install the widgets you do not have from the Sietch (asking what they may do,
+  as always), asks which of your connections a widget should use, and adds the pages or screens
+  beside yours unless you choose to replace them. One ⌘Z takes the whole import back.
 - **A theme for the night.** Under the theme list, pick another theme for the night and when it
   takes over: at sunrise and sunset where you are, or at fixed times — the same choice as the
   screen brightness's day and night, and its place is offered when it has one. The dashboard,

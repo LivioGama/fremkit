@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createAdminStore } from '../src/admin/store'
 import { libraryMenu, navSettingsOpen, navWidgetMenu, pageMenu, screenMenu, type PageMenuUi } from '../src/admin/menus'
 import { dropIndex } from '../src/admin/pageDrag'
+import { share } from '../src/admin/share'
 import type { MarketplaceStore } from '../src/admin/marketplace'
 import { setLocale } from '../src/shared/i18n'
 import { isSeparator, type MenuEntry, type MenuItem } from '../src/shared/ui/contextMenu'
@@ -73,10 +74,17 @@ describe('pageMenu', () => {
   it('offers the page commands, Move up greyed on the first page', async () => {
     const s = await make()
     const menu = pageMenu(s, 0, pageUi())
-    expect(labels(menu)).toEqual(['Rename', 'Duplicate', 'Page background…', 'Copy to screen', 'Move up', 'Move down', 'Delete page'])
+    expect(labels(menu)).toEqual(['Rename', 'Duplicate', 'Page background…', 'Copy to screen', 'Export page…', 'Move up', 'Move down', 'Delete page'])
     expect(find(menu, 'Move up').disabled).toBe(true)
     expect(find(menu, 'Move down').disabled).toBeFalsy()
     expect(labels(find(menu, 'Copy to screen').children!)).toEqual(['iPad'])
+  })
+
+  it('opens the export dialog on that page', async () => {
+    const s = await make()
+    find(pageMenu(s, 1, pageUi()), 'Export page').run!()
+    expect(s.state.modal).toBe('export')
+    expect(share.exporting).toEqual({ scope: 'page', screen: 'edge', page: 'b' })
   })
 
   it('renames through the list, and opens the page background on that page', async () => {
@@ -233,7 +241,7 @@ describe('screenMenu', () => {
     const s = await make()
     const rename = vi.fn()
     const menu = screenMenu(s, 'pad', { rename }, ['Kitchen iPad'])
-    expect(labels(menu)).toEqual(['Rename', 'Screen settings…', 'Delete this screen'])
+    expect(labels(menu)).toEqual(['Rename', 'Screen settings…', 'Export screen…', 'Export the whole setup…', 'Import a layout…', 'Delete this screen'])
     find(menu, 'Rename').run!()
     expect(rename).toHaveBeenCalledWith('pad')
     find(menu, 'Screen settings').run!()
@@ -245,5 +253,14 @@ describe('screenMenu', () => {
     find(confirm, 'Delete “iPad”').run!()
     expect(s.state.config!.screens.map((x) => x.id)).toEqual(['edge'])
     expect(find(screenMenu(s, 'edge', { rename }), 'Delete this screen').disabled).toBe(true)
+  })
+
+  it('exports that screen, or the whole setup', async () => {
+    const s = await make()
+    find(screenMenu(s, 'pad', { rename: vi.fn() }), 'Export screen').run!()
+    expect(share.exporting).toEqual({ scope: 'screen', screen: 'pad' })
+    find(screenMenu(s, 'pad', { rename: vi.fn() }), 'Export the whole setup').run!()
+    expect(share.exporting).toEqual({ scope: 'setup' })
+    expect(s.state.modal).toBe('export')
   })
 })
