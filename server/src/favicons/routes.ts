@@ -17,7 +17,9 @@ import { isCrossSiteFetch } from '../http/guard.js'
  *
  * `GET /api/favicon?image=…` is the exception that keeps the whole address: one image the user
  * typed into a widget's settings, for a site whose pages declare no icon of their own. The host
- * page only asks for an address it found in that widget's settings (`useWidgetBridge`).
+ * page only asks for an address it found in that widget's settings (`useWidgetBridge`); for
+ * `?url=` it forwards the origin of any http(s) link a widget hands it. On this Mac that is all;
+ * for a paired device the route itself holds both to its own screen's settings (`iconInScope`).
  */
 export async function faviconRoutes(
   app: FastifyInstance,
