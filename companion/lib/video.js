@@ -3,12 +3,14 @@
 // each is self-contained: no imports, no reference to anything in this module's scope.
 
 /**
- * Runs in every frame. Reports the frame's largest visible video (in that frame's px) and, in the
- * top frame, where each iframe sits, so a player embedded from another origin can be located.
+ * Runs in every frame. Reports the frame's largest video that could play (it has a source) and
+ * shows (non-zero size, in the viewport), in that frame's px, and, in the top frame, where each
+ * iframe sits, so a player embedded from another origin can be located.
  * SELF-CONTAINED: it is serialised into the page.
  */
 export function survey() {
   const visible = (v) => {
+    if (!v.currentSrc && !v.srcObject) return false
     const r = v.getBoundingClientRect()
     return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth
   }
@@ -154,11 +156,30 @@ export function cropRect(rect, videoWidth, videoHeight, max = { w: 1920, h: 1080
 }
 
 /**
+ * The frame of `origin` holding the largest video the survey found, as `{ frameId }`, or null when
+ * no frame of that origin holds one. Run after the user granted `origin`: a frame that turns out
+ * to hold no video (a webmail page sized like a player) does not keep the grant.
+ */
+export function videoFrameOf(frames, origin) {
+  let best = null
+  for (const f of frames) {
+    const video = f.result?.video
+    if (!video || originOf(f.result.href) !== origin) continue
+    if (!best || video.w * video.h > best.area) best = { frameId: f.frameId, area: video.w * video.h }
+  }
+  return best ? { frameId: best.frameId } : null
+}
+
+/**
  * The origin of an embedded player the extension cannot see into yet: the largest cross-origin
  * iframe of the top frame that may go full screen, covers at least a quarter of the viewport each
  * way, and is bigger than the video already found (`picked`, fractions of the viewport, or null).
  * Null when there is none, or when a frame of that origin already answered the survey (its
  * permission is there). `frames` are the survey results, as for `pickVideo`.
+ *
+ * Only a candidate: nothing inside a frame of another origin can be seen before its grant. So the
+ * popup names the origin before the browser asks, and `videoFrameOf` takes the grant back when the
+ * frame turns out to hold no video.
  */
 export function embeddedPlayer(frames, picked) {
   const topResult = frames.find((f) => f.result?.top)?.result

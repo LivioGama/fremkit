@@ -58,8 +58,8 @@
   "noVideo": {
     "message": "Aucune vidéo dans cet onglet"
   },
-  "askPlayer": {
-    "message": "Fremplay vous demandera l'accès à $value$ pour trouver la vidéo du lecteur",
+  "askAccess": {
+    "message": "Fremplay doit accéder à $value$ pour trouver la vidéo.",
     "placeholders": {
       "value": {
         "content": "$1"

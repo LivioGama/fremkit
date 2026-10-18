@@ -11,7 +11,7 @@ import { handshake } from './lib/handshake.js'
 import { closeOutcome } from './lib/link.js'
 import { idleDelay } from './lib/presence.js'
 import * as protocol from './lib/protocol.js'
-import { control, embeddedPlayer, pickVideo, survey } from './lib/video.js'
+import { control, embeddedPlayer, pickVideo, survey, videoFrameOf } from './lib/video.js'
 
 /** Fremkit's local server. The extension never talks to anything else. */
 const PORT = 4242
@@ -519,14 +519,19 @@ function metaOf(previous, state, tab, frames) {
 
 /**
  * Starts sharing a tab's main video, replacing any running share. From the popup or the shortcut,
- * both of which gave the extension this tab's grant. Resolves `{ ok }` or `{ ok: false, error }`.
+ * both of which gave the extension this tab's grant. `grantedOrigin` is a player's origin the user
+ * has just allowed from the popup. Resolves `{ ok }` or `{ ok: false, error }`.
  */
-async function start(tabId, { fromShortcut = false } = {}) {
+async function start(tabId, { fromShortcut = false, grantedOrigin = null } = {}) {
   await ready
   if (!local.token || local.revoked) return { ok: false, error: 'unpaired' }
   if (!validId(tabId)) return { ok: false, error: 'failed' }
   const frames = await surveyTab(tabId)
   if (!frames) return { ok: false, error: 'capture' }
+  // The page chose which frame looked like a player; only one that holds a video keeps the grant.
+  if (grantedOrigin && !videoFrameOf(frames, grantedOrigin)) {
+    await chrome.permissions.remove({ origins: [`${grantedOrigin}/*`] }).catch(() => undefined)
+  }
   const picked = pickVideo(frames)
   // A player in another site's iframe needs that site's permission, which only the popup can ask for.
   if (fromShortcut && embeddedPlayer(frames, picked)) return { ok: false, error: 'needsPermission' }
@@ -678,7 +683,7 @@ chrome.permissions.onAdded.addListener(async (permissions) => {
   if (!pending || Date.now() > pending.until) return
   if (!(permissions.origins ?? []).includes(`${pending.origin}/*`)) return
   awaitingGrant = null
-  await start(pending.tabId).then(async (res) => {
+  await start(pending.tabId, { grantedOrigin: pending.origin }).then(async (res) => {
     if (!res.ok) await saveSession({ lastError: res.error })
   })
 })
@@ -705,7 +710,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     case 'stop':
       return reply(ready.then(() => endShare({ notify: true })).then(() => ({ ok: true })))
     case 'expectGrant':
-      if (validId(msg.tabId) && typeof msg.origin === 'string') {
+      if (validId(msg.tabId) && typeof msg.origin === 'string' && /^https?:\/\/[^/]+$/.test(msg.origin)) {
         awaitingGrant = { tabId: msg.tabId, origin: msg.origin, until: Date.now() + 60_000 }
       }
       return

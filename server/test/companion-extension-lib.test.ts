@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 // @ts-expect-error plain JS modules outside server/, no declarations
-import { control, cropRect, embeddedPlayer, pickVideo, placeFrame, survey } from '../../companion/lib/video.js'
+import { control, cropRect, embeddedPlayer, pickVideo, placeFrame, survey, videoFrameOf } from '../../companion/lib/video.js'
 // @ts-expect-error plain JS module
 import { browserName } from '../../companion/lib/browser.js'
 // @ts-expect-error plain JS module
@@ -402,7 +402,7 @@ describe('protocol builders', () => {
 // Minimal fakes: survey and control only touch these members.
 const box = (x: number, y: number, w: number, h: number) => ({ x, y, width: w, height: h, top: y, left: x, bottom: y + h, right: x + w })
 function fakeVideo(w: number, h: number, extra: Record<string, unknown> = {}) {
-  const el: any = { clientWidth: w, clientHeight: h, paused: true, currentTime: 50, duration: 100, volume: 0.5, muted: false,
+  const el: any = { clientWidth: w, clientHeight: h, paused: true, currentTime: 50, duration: 100, volume: 0.5, muted: false, currentSrc: 'blob:https://example.com/1',
     getBoundingClientRect: () => box(10, 20, w, h), play() { el.paused = false }, pause() { el.paused = true }, ...extra }
   return el
 }
@@ -434,6 +434,12 @@ describe('survey (in-page)', () => {
       { src: 'https://q.example.org/e', fs: true, x: 0, y: 0, w: 50, h: 50 },
       { src: 'https://r.example.org/e', fs: true, x: 0, y: 0, w: 60, h: 60 },
     ])
+  })
+  it('skips a video that has no source to play, however large', () => {
+    install([fakeVideo(100, 50), fakeVideo(1000, 500, { currentSrc: '' })])
+    expect(survey().video).toEqual({ x: 10, y: 20, w: 100, h: 50 })
+    install([fakeVideo(1000, 500, { currentSrc: '', srcObject: {} })])
+    expect(survey().video).toEqual({ x: 10, y: 20, w: 1000, h: 500 })
   })
   it('gives no iframes from a child frame and null without a video', () => {
     install([], [{ src: 'https://p.example.org/e', getBoundingClientRect: () => box(5, 6, 300, 200) }], null, false)
@@ -499,6 +505,26 @@ describe('embeddedPlayer', () => {
     expect(embeddedPlayer([page([player('https://p.example.org/e', 0, 800, 400)])], picked)).toBeNull()
     expect(embeddedPlayer([page([player('about:blank', 0, 800, 400)])], null)).toBeNull()
     expect(embeddedPlayer([], null)).toBeNull()
+  })
+})
+
+describe('videoFrameOf (which granted frame keeps its grant)', () => {
+  const child = (href: string, video: Rect | null) => ({ href, top: false, vw: 800, vh: 400, title: '', video, iframes: [] })
+  const ORIGIN = 'https://player.example.org'
+  const cases: [string, unknown[], { frameId: number } | null][] = [
+    ['an iframe without a video is never chosen', [frame(0, top(null)), frame(3, child(`${ORIGIN}/mail`, null))], null],
+    ['a full-page iframe without a video is never chosen, even beside a video elsewhere',
+      [frame(0, top({ x: 0, y: 0, w: 900, h: 450 })), frame(3, child(`${ORIGIN}/inbox`, null))], null],
+    ['a video in a frame of another origin does not count',
+      [frame(0, top(null)), frame(4, child('https://other.example.net/e', { x: 0, y: 0, w: 800, h: 400 }))], null],
+    ['the frame holding the largest visible video is chosen',
+      [frame(0, top(null)), frame(3, child(`${ORIGIN}/a`, { x: 0, y: 0, w: 100, h: 50 })),
+        frame(5, child(`${ORIGIN}/b`, { x: 0, y: 0, w: 640, h: 360 })), frame(6, child(`${ORIGIN}/c`, null))], { frameId: 5 }],
+    ['a frame that did not answer is skipped', [frame(0, top(null)), { frameId: 7 }], null],
+    ['no frames at all', [], null],
+  ]
+  it.each(cases)('%s', (_, frames, expected) => {
+    expect(videoFrameOf(frames, ORIGIN)).toEqual(expected)
   })
 })
 

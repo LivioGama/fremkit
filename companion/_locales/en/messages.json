@@ -58,8 +58,8 @@
   "noVideo": {
     "message": "No video in this tab"
   },
-  "askPlayer": {
-    "message": "Fremplay will ask you for access to $value$ to find the player's video",
+  "askAccess": {
+    "message": "Fremplay needs access to $value$ to find the video.",
     "placeholders": {
       "value": {
         "content": "$1"

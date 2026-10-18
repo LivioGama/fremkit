@@ -147,9 +147,11 @@ function renderFremplay() {
   $('stop').hidden = !share
   $('stop').disabled = busy
 
-  const askHost = video.askOrigin && !here ? hostOf(video.askOrigin) : null
-  $('ask').hidden = !askHost
-  $('ask').textContent = askHost ? t('askPlayer', askHost) : ''
+  // The exact origin the browser will be asked for, before the click that asks: the page decided
+  // which frame looked like a player, so the user judges whether that site should be let in.
+  const askOrigin = video.askOrigin && !here ? video.askOrigin : null
+  $('ask').hidden = !askOrigin
+  $('ask').textContent = askOrigin ? t('askAccess', askOrigin) : ''
 
   const error = shownError ? (ERRORS[shownError] ?? ERRORS.failed)() : video.restricted && !here ? t('errCapture') : null
   $('error').hidden = !error
