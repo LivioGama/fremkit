@@ -122,7 +122,12 @@ export interface AppOptions {
    * Test seam for the device service: a fixed host name and addresses, and an advertiser that
    * does not run `dns-sd`.
    */
-  devices?: { exec?: Exec; advertise?: Advertiser; lanAddresses?: () => string[] }
+  devices?: {
+    exec?: Exec
+    advertise?: Advertiser
+    lanAddresses?: () => string[]
+    preferredAddress?: (addresses: string[]) => Promise<string | null>
+  }
 }
 
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {

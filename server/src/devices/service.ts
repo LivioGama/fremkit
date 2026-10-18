@@ -18,7 +18,7 @@ import { advertise as bonjourAdvertise, type Advertisement, type Advertiser } fr
 import { ensureKey, issueCertificate, readKey, resetKey, spkiHash } from './certificate.js'
 import { screenChannels, type ChannelManifest, type ScreenChannels } from './channels.js'
 import type { PairingCodes } from './codes.js'
-import { lanAddresses as readLanAddresses, localHostName } from './host.js'
+import { lanAddresses as readLanAddresses, localHostName, preferredAddress } from './host.js'
 import { REMOTE_PORT, RemoteListener } from './listener.js'
 import type { DeviceStore, PublicDevice, Viewport } from './store.js'
 
@@ -61,6 +61,8 @@ export interface DeviceServiceOptions {
   /** Bonjour; tests pass `noAdvertise` so `dns-sd` never runs there. */
   advertise?: Advertiser
   lanAddresses?: () => string[]
+  /** Which of the addresses the QR code carries; the default asks the Mac's default route. */
+  preferredAddress?: (addresses: string[]) => Promise<string | null>
 }
 
 /** Whether a device screen was made for this viewport, in either orientation. */
@@ -86,6 +88,7 @@ export class DeviceService {
   private readonly exec: Exec
   private readonly advertiser: Advertiser
   private readonly readAddresses: () => string[]
+  private readonly pickAddress: (addresses: string[]) => Promise<string | null>
   private readonly listener: RemoteListener
 
   /**
@@ -116,6 +119,7 @@ export class DeviceService {
     this.exec = opts.exec ?? execFileAsync
     this.advertiser = opts.advertise ?? bonjourAdvertise
     this.readAddresses = opts.lanAddresses ?? readLanAddresses
+    this.pickAddress = opts.preferredAddress ?? ((addresses) => preferredAddress(addresses, this.exec))
     this.listener = new RemoteListener(opts.app, opts.listenerPort ?? REMOTE_PORT)
   }
 
@@ -184,8 +188,8 @@ export class DeviceService {
     const { code, expiresAt } = this.codes.issue()
     const params: string[] = []
     if (this.hostName !== null) params.push(`h=${encodeURIComponent(`${this.hostName}.local`)}`)
-    const address = this.readAddresses()[0]
-    if (address !== undefined) params.push(`a=${encodeURIComponent(address)}`)
+    const address = await this.pickAddress(this.readAddresses())
+    if (address !== null) params.push(`a=${encodeURIComponent(address)}`)
     params.push(`p=${this.listener.port}`, `c=${code}`, `k=${this.keyHash}`)
     return { code, expiresAt, url: `fremkit://pair?${params.join('&')}` }
   }
