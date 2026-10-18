@@ -65,7 +65,7 @@ export function upgrade(
   port: number,
   headers: Record<string, string>,
   host = `127.0.0.1:${port}`,
-): Promise<{ status: 101; socket: Socket } | { status: number; body: string }> {
+): Promise<{ status: 101; socket: Socket; head: Buffer } | { status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const r = httpsRequest({
       host: '127.0.0.1',
@@ -82,7 +82,7 @@ export function upgrade(
       rejectUnauthorized: false,
       agent: false,
     })
-    r.on('upgrade', (_res, socket) => resolve({ status: 101, socket }))
+    r.on('upgrade', (_res, socket, head) => resolve({ status: 101, socket, head }))
     r.on('response', (res) => {
       let body = ''
       res.setEncoding('utf8')

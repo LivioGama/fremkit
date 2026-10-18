@@ -42,6 +42,12 @@ export async function wsRoutes(app: FastifyInstance, opts: { hub: Hub }): Promis
         socket.close(4401, 'unpaired')
         return
       }
+      // Asked again: the gate checked the token before the handshake finished, and a device
+      // revoked in between would otherwise attach under an id `revoke()` already closed.
+      if (!app.pairing.store.has(req.deviceId)) {
+        socket.close(4401, 'unpaired')
+        return
+      }
       opts.hub.attach(socket, { loopback: false, paired: true, deviceId: req.deviceId })
       return
     }

@@ -127,6 +127,11 @@ export class DeviceStore {
     return this.state.devices.map(toPublic)
   }
 
+  /** Whether a device with this id is paired right now. */
+  has(id: string): boolean {
+    return this.state.devices.some((d) => d.id === id)
+  }
+
   /** Pairs a device. The token is returned once, here, and only its hash is ever stored. */
   async create(
     name: string,
