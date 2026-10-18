@@ -67,7 +67,7 @@ describe('channelAllowed', () => {
     expect(channelAllowed([], 'config')).toBe(false)
   })
 
-  it('names config and the widget-reload channel as the only host channels', () => {
-    expect(HOST_CHANNELS).toEqual(['config', WIDGET_DEV_CHANNEL])
+  it('names config, the widget-reload channel and the theme in force as the only host channels', () => {
+    expect(HOST_CHANNELS).toEqual(['config', WIDGET_DEV_CHANNEL, 'theme'])
   })
 })

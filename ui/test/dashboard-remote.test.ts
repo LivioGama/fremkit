@@ -34,7 +34,7 @@ vi.mock('../src/shared/api', () => ({
     getConfig: async () => fake.config,
   },
 }))
-vi.mock('../src/shared/theme', () => ({ useConfigTheme: () => {} }))
+vi.mock('../src/shared/theme', () => ({ useConfigTheme: () => {}, followThemeSchedule: () => () => {} }))
 
 function push(channel: string, data: unknown): void {
   fake.subs.get(channel)?.forEach((cb) => cb(data))

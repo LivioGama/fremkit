@@ -11,6 +11,13 @@ import type { BrightnessSettings } from '../config/schema.js'
 
 type DayNight = BrightnessSettings['dayNight']
 
+/**
+ * What the schedule needs to know: where, or at what times. The brightness's `dayNight` settings
+ * are one; the theme's day / night switch (`themeSchedule` in the config) is another, read with
+ * no ramp.
+ */
+export type SunSchedule = Pick<DayNight, 'schedule' | 'latitude' | 'longitude' | 'dayAt' | 'nightAt'>
+
 /** A switch from one level to the other: the ramp starts at `at`. */
 export interface Transition { at: number; to: 'day' | 'night' }
 
@@ -55,7 +62,7 @@ function minutesOf(clock: string): number {
  * Fixed times are read in the Mac's own time zone, through `Date`'s local setters, so a daylight
  * saving change moves them with the clock on the wall.
  */
-export function transitionsAround(now: number, settings: DayNight): Transition[] | 'day' | 'night' | 'no-location' {
+export function transitionsAround(now: number, settings: SunSchedule): Transition[] | 'day' | 'night' | 'no-location' {
   const out: Transition[] = []
   if (settings.schedule === 'fixed') {
     const dayAt = minutesOf(settings.dayAt)
@@ -94,7 +101,7 @@ export interface Phase {
   last?: Transition
 }
 
-export function phaseAt(now: number, settings: DayNight): Phase | 'no-location' {
+export function phaseAt(now: number, settings: SunSchedule & Pick<DayNight, 'rampMinutes'>): Phase | 'no-location' {
   const events = transitionsAround(now, settings)
   if (events === 'no-location') return events
   if (typeof events === 'string') return { night: events === 'night' ? 1 : 0, state: events }

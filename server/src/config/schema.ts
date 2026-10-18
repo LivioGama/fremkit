@@ -245,6 +245,26 @@ export const BrightnessSettingsSchema = z.object({
 })
 export type BrightnessSettings = z.infer<typeof BrightnessSettingsSchema>
 
+/** A theme id: the name of a folder in `themes/` (or in the installed themes). */
+export const ThemeIdSchema = z.string().regex(/^[a-z0-9_-]+$/)
+
+/**
+ * A second theme for the night. `theme` stays the day's; this names the night's and when the
+ * switch happens — at sunrise and sunset computed on this Mac from `latitude`/`longitude`, or at
+ * fixed times — read exactly like a screen's brightness day / night (`brightness/schedule.ts`),
+ * without the ramp: a theme changes at once. Absent: one theme, day and night.
+ */
+export const ThemeScheduleSchema = z.object({
+  /** An unknown id falls back to the built-in theme, like `theme` does. */
+  night: ThemeIdSchema,
+  schedule: z.enum(['sun', 'fixed']).default('sun'),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  dayAt: ClockTimeSchema.default('07:00'),
+  nightAt: ClockTimeSchema.default('21:00'),
+})
+export type ThemeSchedule = z.infer<typeof ThemeScheduleSchema>
+
 /** A screen id is a slug: it is stable, it goes in the dashboard's `?screen=` and in device records. */
 export const SCREEN_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
 
@@ -402,7 +422,9 @@ export const CONFIG_VERSION = 4
 export const ConfigSchema = z.object({
   version: z.literal(CONFIG_VERSION),
   /** Id of a theme in `themes/`, the same on every screen. An unknown id falls back to the built-in one. */
-  theme: z.string().regex(/^[a-z0-9_-]+$/).default(BUILTIN_THEME),
+  theme: ThemeIdSchema.default(BUILTIN_THEME),
+  /** A night theme and when it takes over. Absent in every file written before it existed: one theme. */
+  themeSchedule: ThemeScheduleSchema.optional(),
   connections: z.array(ConnectionSchema).default([]),
   secrets: SecretsSchema.prefault({}),
   /** Language of the admin and of the screen. Absent in every file written before it existed. */

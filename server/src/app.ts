@@ -25,6 +25,7 @@ import { recoverStaging } from './marketplace/install.js'
 import { ThemeCatalog } from './themes/catalog.js'
 import { installedThemesDir } from './themes/installed.js'
 import { themeRoutes } from './themes/routes.js'
+import { createThemeProvider } from './themes/schedule.js'
 import { widgetRoutes } from './widgets/routes.js'
 import { ProviderRegistry } from './providers/registry.js'
 import type { Provider } from './providers/types.js'
@@ -251,6 +252,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // A paired device may set only its own screen's brightness: see mayCommandBrightness. Read
   // at command time, so a device moved to another screen (or unpaired) is judged as it is now.
   registry.register(createBrightnessProvider(brightness, brightnessChanged, (id) => deviceService.me(id)?.screenId ?? null))
+  // The theme in force, day or night: see themes/schedule.ts.
+  registry.register(createThemeProvider(() => store.get()))
   const secrets = createSecretStore(store.get().secrets.backend, opts.dataDir)
   // v2 → v3 moved the Homey connection to the type its widget declares, and the declaration
   // calls the key `token` where the coded type called it `apiKey`. The config half of that is in
@@ -302,6 +305,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     syncDeclared()
     hub.broadcast('config', cfg)
     brightnessChanged()
+    registry.refresh('theme')
     // Fire and forget: a failed sync must not break the save that triggered it.
     void connections.sync(cfg.connections)
       .then(() => retainCameras(cfg))
@@ -375,7 +379,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     port: opts.port,
     dev: process.env.FREMKIT_DEV === '1',
   })
-  await app.register(themeRoutes, { catalog: themes })
+  await app.register(themeRoutes, { catalog: themes, config: () => store.get() })
   await app.register(proxyRoutes, { catalog, store, secrets, cache: connCache })
   const marketplaceRegistry = new Registry({
     ...(opts.registryUrl ? { url: opts.registryUrl } : {}),

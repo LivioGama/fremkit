@@ -15,7 +15,8 @@ import MarketplacePanel from './MarketplacePanel.vue'
 import WidgetAbout from './WidgetAbout.vue'
 import ContextMenu from '../shared/ui/ContextMenu.vue'
 import { fits, moveRect, resizeRect } from './layout'
-import { useConfigTheme } from '../shared/theme'
+import { followThemeSchedule, useConfigTheme } from '../shared/theme'
+import { useSocket } from '../shared/socket'
 import { SCREEN_ID } from '../shared/useWidgetBridge'
 import { onWidgetReload } from '../shared/widgetDev'
 
@@ -24,7 +25,9 @@ const { t } = useI18n()
 // Previews are told the screen being edited, as the dashboard tells its tiles (`Fremkit.screen`).
 provide(SCREEN_ID, () => s.screen.value?.id)
 // The editor wears the theme it edits, so a tile looks here like it does on the screen.
+// At night that is the night theme, when the config has one: the server says which it is.
 useConfigTheme(computed(() => s.state.config))
+onUnmounted(followThemeSchedule(useSocket()))
 
 /** True while the user is typing: shortcuts must not steal those keys. */
 function inField(target: EventTarget | null): boolean {

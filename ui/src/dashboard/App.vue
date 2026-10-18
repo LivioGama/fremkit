@@ -7,7 +7,7 @@ import type { Config, NavItem, WidgetManifest } from '../shared/types'
 import { navHeightOf, navItemsOf } from '../shared/types'
 import { pickScreen } from '../shared/screens'
 import { rootBackgroundStyle } from '../shared/background'
-import { useConfigTheme } from '../shared/theme'
+import { followThemeSchedule, useConfigTheme } from '../shared/theme'
 import PageView from './PageView.vue'
 import NavBar from './NavBar.vue'
 import NavPopover from './NavPopover.vue'
@@ -48,8 +48,10 @@ provide(SCREEN_ID, () => screen.value?.id)
 const display = computed(() => screen.value?.display ?? null)
 const pageIndex = ref(0)
 const page = computed(() => screen.value?.pages[pageIndex.value] ?? null)
-// The theme the config names, repainted whenever the admin saves another one.
+// The theme the config names — its night theme at night — repainted whenever the admin saves
+// another one or the server says day has turned to night.
 useConfigTheme(config)
+onUnmounted(followThemeSchedule(socket))
 const direction = ref<1 | -1>(1)
 /**
  * The screen's background, painted on the root, behind the stage and the bar alike. The root
