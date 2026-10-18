@@ -27,6 +27,8 @@ import { DEVICE_CLOSE_CODE } from '../src/ws/hub.js'
 const ID = '3f2b8c1e-5a4d-4e6f-9a7b-1c2d3e4f5a6b'
 const RID = '9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d'
 const TOKEN = 'A'.repeat(43)
+/** This Mac's addresses, as the server would list them, for the SDP checks. */
+const OWN = ['127.0.0.1', '::1', '192.168.1.20', 'fe80::1']
 
 type Rect = { x: number; y: number; w: number; h: number }
 const frame = (frameId: number, result: unknown) => ({ frameId, result })
@@ -110,11 +112,14 @@ describe('localCandidatesOnly', () => {
     expect(out).not.toContain('2001:db8')
     expect(out).not.toContain('relay')
     expect(out).toContain('\r\n')
-    expect(isLocalSdp(out)).toBe(true)
+    expect(isLocalSdp(out, OWN)).toBe(true)
   })
 })
 
 describe('localCandidatesOnly agrees with the server isLocalSdp', () => {
+  // The extension cannot list this Mac's addresses, so it keeps the private ranges; the server
+  // narrows them to this Mac's own. A host candidate is its machine's own address, so what the
+  // extension keeps passes.
   const addresses = [
     '127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.254', '192.168.1.20', '169.254.9.9',
     '::1', 'fe80::1', 'febf::1', 'fc00::1', 'fd12:3456::1', 'fe80::1%en0',
@@ -127,7 +132,11 @@ describe('localCandidatesOnly agrees with the server isLocalSdp', () => {
   it.each(addresses)('%s', (address) => {
     const line = `a=candidate:1 1 udp 2122260223 ${address} 54321 typ host generation 0`
     const offer = ['v=0', 'm=video 9 UDP/TLS/RTP/SAVPF 96', line, ''].join('\r\n')
-    expect(localCandidatesOnly(offer).includes(line), address).toBe(isLocalSdp(offer))
+    const kept = localCandidatesOnly(offer).includes(line)
+    // Kept: the server takes it as long as it is this Mac's (a host candidate always is).
+    if (kept) expect(isLocalSdp(offer, [address.split('%')[0]]), address).toBe(true)
+    // Dropped: the server would have refused it too.
+    else expect(isLocalSdp(offer, OWN), address).toBe(false)
   })
 })
 
@@ -141,7 +150,7 @@ describe('loopbackForMdns', () => {
     const out = loopbackForMdns(offer(MDNS, real))
     expect(out).toBe(offer(
       'a=candidate:680590759 1 udp 2113937151 127.0.0.1 60466 typ host generation 0 network-cost 999', real))
-    expect(isLocalSdp(out)).toBe(true)
+    expect(isLocalSdp(out, OWN)).toBe(true)
     expect(loopbackForMdns(out)).toBe(out)
   })
 
@@ -195,7 +204,9 @@ describe('offerSdp (what the offscreen document sends)', () => {
     const srflx = 'a=candidate:3 1 udp 1677729535 203.0.113.9 50002 typ srflx raddr 0.0.0.0 rport 0'
     const out = offerSdp(offer(mdns, lan, srflx))
     expect(out).toBe(offer('a=candidate:1 1 udp 2113937151 127.0.0.1 60466 typ host generation 0', lan))
-    expect(isLocalSdp(out)).toBe(true)
+    expect(isLocalSdp(out, OWN)).toBe(true)
+    // The extension keeps the private ranges; the server takes only this Mac's own addresses.
+    expect(isLocalSdp(out, ['127.0.0.1'])).toBe(false)
   })
 })
 
@@ -376,7 +387,7 @@ describe('protocol builders', () => {
   const meta = { title: 'x'.repeat(400), host: 'example.com', currentTime: 3, duration: Infinity, paused: false, muted: false, volume: 0.5 }
   it('produce messages the server parseExtensionMessage accepts', () => {
     expect(ext.PROTOCOL).toBe(PROTOCOL)
-    const sdp = 'v=0\r\na=candidate:1 1 udp 1 192.168.1.4 50000 typ host\r\n'
+    const sdp = 'v=0\r\na=candidate:1 1 udp 1 127.0.0.1 50000 typ host\r\n'
     const msgs = [
       ext.hello(TOKEN, ID),
       ext.hello(TOKEN, ID, { sessionId: RID, meta }),

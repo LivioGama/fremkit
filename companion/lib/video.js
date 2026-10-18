@@ -202,8 +202,9 @@ export function pickVideo(frames) {
 
 /**
  * The source rectangle (in captured-frame px) and the even output size for a video rectangle given
- * as fractions of the viewport. Null for no rectangle or an implausible one: video only, never the
- * whole tab, so the caller keeps its last frame instead.
+ * as fractions of the viewport. Null for no rectangle or an implausible one, so the caller keeps
+ * its last frame rather than sending the tab around a video that is gone. (The page places the
+ * video element, so a page can make this rectangle the whole tab.)
  */
 export function cropRect(rect, videoWidth, videoHeight, max = { w: 1920, h: 1080 }) {
   if (!rect || !videoWidth || !videoHeight || rect.w < 0.05 || rect.h < 0.05) return null

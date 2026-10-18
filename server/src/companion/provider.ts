@@ -58,7 +58,7 @@ const ViewSchema = z.strictObject({ receiverId: ReceiverId, instanceId: Instance
 const AnswerSchema = z.strictObject({
   receiverId: ReceiverId,
   instanceId: InstanceId,
-  sdp: z.string().max(MAX_SDP).refine(isLocalSdp, 'not a local answer'),
+  sdp: z.string().max(MAX_SDP).refine((sdp) => isLocalSdp(sdp), 'not a local answer'),
 })
 const LeaveSchema = ViewSchema
 const ControlCommandSchema = z.looseObject({ instanceId: InstanceId })

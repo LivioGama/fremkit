@@ -68,30 +68,37 @@ Play a video, then either click the Fremkit icon and press **Envoyer sur l'Edge*
 Edge*), or press **⌥⇧E**. Press it again to stop. The shortcut can be changed at
 `chrome://extensions/shortcuts`, or from the extension's options page.
 
-- **Only the video is sent**, never the whole tab. The page's other content never leaves your
-  browser.
+- **The picture is cropped to the page's main video**: the largest video playing in the tab,
+  without its sound. The page decides where that video sits, so a page that makes it cover the
+  whole tab sends the whole tab's picture, frames from other sites included. Whatever it shows,
+  the picture only goes to your own dashboard on this Mac.
 - **The sound stays in the browser.** The Edge shows the picture; volume and mute act on the
   video in your browser.
 - The Edge **switches to the page holding the Fremplay widget**. If the Edge's screen has no
   Fremplay widget, the popup tells you so and nothing is sent.
 - The browser can be in the background, on another tab or another desktop. Quitting it, or
   closing the tab, ends the share.
-- The video travels directly between the browser and the Edge over WebRTC, using local-network
-  addresses only. It does not go through the Fremkit server and it does not leave your machine.
+- The video travels directly between the browser and the Edge over WebRTC, between addresses of
+  this Mac only: loopback, or the Mac's own (the Fremplay widget dials nothing else, and the
+  server refuses to relay any other). It does not go through the Fremkit server and it does not
+  leave your machine.
   A share with no sign of life for ten seconds (the tab moved on to a page without a video) is
   cleared.
 
 ### Players from another site
 
 Some videos play in a frame from another site (Dailymotion embeds, for instance). The first time
-you share one, the browser asks you to allow the extension on **that site**. Allowing it is a
-per-site grant that you can revoke at any time in `chrome://extensions`. The extension asks for no
-access to every site at install.
+you share one, the popup names **that site** (*Fremplay needs access to … to find the video*),
+and pressing the button lets the browser ask you to allow it. The extension cannot look inside the
+frame before you do, so check the name: if the frame turns out to hold no video, the extension
+gives the permission back at once. A grant is per site, and you can revoke it at any time in
+`chrome://extensions`. The extension asks for no access to every site at install.
 
 ## Limits
 
 - Chromium browsers only.
-- Video only: never a whole tab, never audio alone.
+- Video only, never audio: the picture of the page's main video, which a page can make as large
+  as the whole tab.
 - Video protected by DRM (some streaming services) is not promised to work: the browser may hand
   over a black picture.
 - If the server restarts during a share the video keeps playing, and the controls come back when

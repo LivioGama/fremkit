@@ -3,7 +3,7 @@ import { CompanionSession, META_PUBLISH_MS } from '../src/companion/session.js'
 import type { ServerMessage, TabMeta } from '../src/companion/protocol.js'
 
 const META: TabMeta = { title: 'A video', host: 'video.example.com', currentTime: 12, duration: 300, paused: false, muted: false, volume: 1 }
-const SDP = 'v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\na=candidate:1 1 udp 2122260223 192.168.1.10 54321 typ host\r\n'
+const SDP = 'v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\na=candidate:1 1 udp 2122260223 127.0.0.1 54321 typ host\r\n'
 const S1 = '11111111-1111-4111-8111-111111111111'
 const S2 = '22222222-2222-4222-8222-222222222222'
 const R = (n: number) => `00000000-0000-4000-8000-00000000000${n}`

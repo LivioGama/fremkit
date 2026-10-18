@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
+import { hostAddresses } from '../src/widgets/webrtc.js'
 import {
   ControlSchema,
   EXTENSION_ORIGIN_RE,
@@ -35,13 +36,27 @@ describe('constants', () => {
 })
 
 describe('isLocalSdp', () => {
-  it('accepts host candidates on private, link-local, loopback and .local addresses', () => {
+  /** This Mac's addresses, as the server would read them from its interfaces. */
+  const OWN = ['127.0.0.1', '::1', '192.168.1.20', 'fe80::1', 'fd12:3456::1']
+
+  it("accepts host candidates on loopback, .local names and this Mac's own addresses", () => {
     const addresses = [
-      '127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.254', '192.168.1.20', '169.254.9.9',
-      '::1', 'fe80::1', 'febf::1', 'fc00::1', 'fd12:3456::1', 'fe80::1%en0',
+      '127.0.0.1', '127.8.9.10', '::1', '192.168.1.20', 'fe80::1', 'FE80::1', 'fe80::1%en0', 'fd12:3456::1',
       'f3a1c2d4-0000-4000-8000-123456789abc.local',
     ]
-    for (const address of addresses) expect(isLocalSdp(sdp(host(address))), address).toBe(true)
+    for (const address of addresses) expect(isLocalSdp(sdp(host(address)), OWN), address).toBe(true)
+  })
+
+  it('refuses another host on the local network: the kiosk is never sent to probe it', () => {
+    const lan = ['192.168.1.21', '10.1.2.3', '172.16.0.1', '169.254.9.9', 'fe80::2', 'fc00::1', 'fd12:3456::2']
+    for (const address of lan) expect(isLocalSdp(sdp(host(address)), OWN), address).toBe(false)
+    // Loopback and .local need no interface list.
+    expect(isLocalSdp(sdp(host('127.0.0.1'), host('abcd.local')), [])).toBe(true)
+  })
+
+  it("reads this Mac's addresses from its interfaces by default", () => {
+    for (const address of hostAddresses()) expect(isLocalSdp(sdp(host(address))), address).toBe(true)
+    expect(isLocalSdp(sdp(host('198.51.100.7')))).toBe(false)
   })
 
   it('accepts an offer with no candidate at all', () => {
@@ -49,18 +64,18 @@ describe('isLocalSdp', () => {
   })
 
   it('refuses srflx, relay and public host candidates', () => {
-    expect(isLocalSdp(sdp(host('192.168.1.20', 'srflx')))).toBe(false)
-    expect(isLocalSdp(sdp(host('192.168.1.20', 'relay')))).toBe(false)
+    expect(isLocalSdp(sdp(host('192.168.1.20', 'srflx')), OWN)).toBe(false)
+    expect(isLocalSdp(sdp(host('192.168.1.20', 'relay')), OWN)).toBe(false)
     const outside = [
       '198.51.100.7', '172.15.0.1', '172.32.0.1', '192.169.0.1', '11.0.0.1', '169.253.0.1', '128.0.0.1',
       '2001:db8::1', 'fec0::1', 'fe00::1', 'fe::1', '::', '::ffff:10.0.0.1', 'example.com', 'local',
       '10.0.0', '10.0.0.256', '010.0.0.1',
     ]
-    for (const address of outside) expect(isLocalSdp(sdp(host(address))), address).toBe(false)
+    for (const address of outside) expect(isLocalSdp(sdp(host(address)), OWN), address).toBe(false)
   })
 
   it('refuses the whole offer when one candidate is not local', () => {
-    expect(isLocalSdp(sdp(host('192.168.1.20'), host('198.51.100.7')))).toBe(false)
+    expect(isLocalSdp(sdp(host('192.168.1.20'), host('198.51.100.7')), OWN)).toBe(false)
   })
 
   it('refuses a candidate line it cannot read', () => {
@@ -138,7 +153,7 @@ describe('parseExtensionMessage', () => {
     expect(parse({ type: 'hello', token, installId, protocol: PROTOCOL, session: { sessionId, meta } })).not.toBeNull()
     expect(parse({ type: 'tab.started', sessionId, meta })).toMatchObject({ type: 'tab.started', sessionId })
     expect(parse({ type: 'tab.meta', sessionId, meta })).not.toBeNull()
-    expect(parse({ type: 'tab.offer', sessionId, receiverId, sdp: sdp(host('192.168.1.20')) })).not.toBeNull()
+    expect(parse({ type: 'tab.offer', sessionId, receiverId, sdp: sdp(host('127.0.0.1')) })).not.toBeNull()
     expect(parse({ type: 'tab.stopped', sessionId })).toEqual({ type: 'tab.stopped', sessionId })
   })
 

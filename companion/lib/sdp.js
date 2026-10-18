@@ -1,5 +1,7 @@
-// The extension's own offer, filtered before it leaves the browser. The accepted ranges are those of
-// `isLocalSdp` in server/src/companion/protocol.ts: keep the two in step.
+// The extension's own offer, filtered before it leaves the browser. The extension cannot list this
+// Mac's addresses, so it keeps loopback, the private and link-local ranges and `.local` names;
+// `isLocalSdp` in server/src/companion/protocol.ts then takes only loopback, `.local` and the Mac's
+// own addresses, which a host candidate always is. Keep the extension's set the wider one.
 
 // Strict dotted quad: four decimal octets in 0..255, no leading zeros (what net.isIP accepts).
 function isIPv4(s) {

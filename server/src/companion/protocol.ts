@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto'
 import { isIP } from 'node:net'
 import { z } from 'zod'
 import { isWellFormedToken } from '../http/access.js'
+import { hostAddresses } from '../widgets/webrtc.js'
 
 /**
  * 2: the socket opens with `challenge`/`proof` before `hello` (the server proves it holds the
@@ -36,40 +37,39 @@ const MAX_TITLE = 300
 /** A week: longer than any video, short enough to keep a bogus value off the screen. */
 const MAX_SECONDS = 604_800
 
-function isLocalAddress(address: string): boolean {
-  // mDNS names are what browsers put in a host candidate to hide the real address.
+/**
+ * Loopback, a `.local` name, or one of `own`, this Mac's addresses. A host candidate is one of its
+ * machine's own addresses by construction, and both ends of a share are on this Mac, so an address
+ * of another host on the network is never a candidate either side should be given.
+ */
+function isLocalAddress(address: string, own: ReadonlySet<string>): boolean {
+  // mDNS names are what browsers put in a host candidate to hide the real address; the kiosk's
+  // answer carries one.
   if (address.endsWith('.local') && address.length > '.local'.length) return /^[a-z0-9.-]+$/i.test(address)
   // A link-local IPv6 address may name its interface: fe80::1%en0.
-  const family = isIP(address.split('%')[0])
-  if (family === 4) {
-    const [a, b] = address.split('.').map(Number)
-    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)
-  }
-  if (family === 6) {
-    const bare = address.split('%')[0].toLowerCase()
-    if (bare === '::1') return true
-    // Only the leading group matters for the two prefixes; `::` forms have an empty one.
-    const first = bare.split(':')[0]
-    if (first === '' || first.length !== 4) return false
-    const value = parseInt(first, 16)
-    return (value >= 0xfe80 && value <= 0xfebf) || (value >= 0xfc00 && value <= 0xfdff)
-  }
+  const bare = address.split('%')[0].toLowerCase()
+  const family = isIP(bare)
+  if (family === 4) return bare.startsWith('127.') || own.has(bare)
+  if (family === 6) return bare === '::1' || own.has(bare)
   return false
 }
 
 /**
- * True when an offer reveals nothing beyond the local network: it starts with `v=0`, fits
- * `MAX_SDP`, and every candidate is of type `host` on a loopback, private, link-local or `.local`
- * address. The offer is the only thing that tells the iPad or the Mac where to connect, so a
- * server-reflexive or relay candidate (or a public address) is refused rather than relayed.
+ * True when an SDP names nothing beyond this Mac: it starts with `v=0`, fits `MAX_SDP`, and every
+ * candidate is of type `host` on loopback, on a `.local` name or on one of this Mac's own addresses
+ * (`own`, read from its interfaces at each call: a DHCP lease or a VPN moves them). The offer is the
+ * only thing that tells the kiosk where to connect, so a server-reflexive or relay candidate, or
+ * another machine's address, is refused rather than relayed: a linked extension cannot make the
+ * kiosk probe the network.
  */
-export function isLocalSdp(sdp: string): boolean {
+export function isLocalSdp(sdp: string, own: Iterable<string> = hostAddresses()): boolean {
   if (sdp.length > MAX_SDP || !sdp.startsWith('v=0')) return false
+  const mine = new Set([...own].map((a) => a.toLowerCase()))
   for (const line of sdp.split(/\r?\n/)) {
     if (!line.startsWith('a=candidate:')) continue
     // a=candidate:<foundation> <component> <transport> <priority> <address> <port> typ <type> ...
     const fields = line.split(/\s+/)
-    if (fields[6] !== 'typ' || fields[7] !== 'host' || !isLocalAddress(fields[4] ?? '')) return false
+    if (fields[6] !== 'typ' || fields[7] !== 'host' || !isLocalAddress(fields[4] ?? '', mine)) return false
   }
   return true
 }
@@ -97,7 +97,7 @@ export const MetaSchema = z.strictObject({
 export type TabMeta = z.infer<typeof MetaSchema>
 
 const Id = z.uuid()
-const Sdp = z.string().max(MAX_SDP).refine(isLocalSdp, 'not a local offer')
+const Sdp = z.string().max(MAX_SDP).refine((sdp) => isLocalSdp(sdp), 'not a local offer')
 const Token = z.string().refine(isWellFormedToken, 'not a token')
 
 export const ExtensionMessageSchema = z.discriminatedUnion('type', [
