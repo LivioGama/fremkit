@@ -124,6 +124,16 @@ BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info
 node scripts/lib/appcast.mjs appcast "$VERSION" "$BUILD" \
     "$REPO_URL/releases/download/$TAG/Fremkit-$VERSION.zip" "$length" "$signature" "$NOTES" \
     > "$DIST/appcast.xml"
+# The feed is signed too, with the same key: the app requires it (SURequireSignedFeed), and refuses
+# an unsigned or altered one. sign_update embeds the signature in the XML; nothing may touch the
+# file afterwards. The zip's check above already tied this key to the one the app carries.
+if [ -n "${FREMKIT_SPARKLE_KEY_FILE:-}" ]; then
+    "$SIGN_UPDATE" --ed-key-file "$FREMKIT_SPARKLE_KEY_FILE" "$DIST/appcast.xml" >/dev/null
+    "$SIGN_UPDATE" --verify --ed-key-file "$FREMKIT_SPARKLE_KEY_FILE" "$DIST/appcast.xml"
+else
+    "$SIGN_UPDATE" "$DIST/appcast.xml" >/dev/null
+    "$SIGN_UPDATE" --verify "$DIST/appcast.xml"
+fi
 
 # --- Homebrew -----------------------------------------------------------------------------------
 DMG_SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"

@@ -117,6 +117,9 @@ tagged `vX.Y.Z`.
 - **Deleting a connection deletes its secret, always.** A connection whose widget had been
   uninstalled kept its password or token in the keychain after being deleted, and a new
   connection given the same name could pick it up. Both are fixed.
+- **Updates are checked before they are unpacked, and the update feed must be signed.** The app
+  now verifies an update's signature before extracting it, and refuses an update feed that does
+  not carry Fremkit's signature.
 
 ## 0.4.1 — 2026-10-16
 
