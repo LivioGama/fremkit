@@ -24,6 +24,7 @@ export const DEMO_SETTINGS: Record<string, Record<string, unknown>> = {
     ],
   },
   notifications: { apps: DEMO_APPS.map((a) => a.bundleId) },
+  processes: { count: 10 },
   'service-status': {
     services: [
       { name: 'Website', kind: 'http', url: 'https://example.com' },

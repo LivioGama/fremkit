@@ -68,7 +68,9 @@ function forecast(url: URL, t: number): unknown {
     const code = DAY_CODES[day % DAY_CODES.length]
     hourly.time.push(localIso(ms))
     hourly.temperature_2m.push(temp(at(ms)))
-    hourly.weather_code.push(hour < 6 || hour > 21 ? (code === 61 ? 61 : 0) : code)
+    // A mix through the day rather than one code: the clear glyph is a sun, which looks wrong
+    // on a row of night hours, so a capture taken at night gets clouds in it too.
+    hourly.weather_code.push(code === 61 ? 61 : [2, 3, 2, 1][Math.floor(hour / 3) % 4])
     hourly.precipitation_probability.push(code === 61 ? 60 + (hour % 4) * 5 : hour > 15 && hour < 19 ? 20 : 0)
   }
   const daily = { time: [] as string[], weather_code: [] as number[], temperature_2m_max: [] as number[], temperature_2m_min: [] as number[] }
