@@ -41,7 +41,8 @@ describe('the scaffold', () => {
       expect(manifest.compact).toEqual({ width: 4 })
       const result = await checkWidgetFolder(await write(files))
       expect(result.errors).toEqual([])
-      expect(result.warnings).toEqual([])
+      // A preview is made once the widget draws something: `pnpm widget:preview`.
+      expect(result.warnings).toEqual([expect.stringMatching(/^no preview/)])
       // CHANGELOG.md is documented, never packed.
       expect(result.files).toBe(2)
     })

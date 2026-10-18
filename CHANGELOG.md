@@ -13,6 +13,10 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **Widget previews in the manifest.** A widget may name a `preview` image (`preview.webp` or
+  `.png`, at most 200 KB, twice its default size in pixels). The installer refuses a package whose
+  preview is missing or is not the image it claims to be, and `pnpm widget:check` checks its
+  dimensions and warns when a widget has none.
 - **Demo mode.** `pnpm demo` (or `FREMKIT_DEMO=1`) starts a server that shows a full, moving
   dashboard of invented data — calendar, CPU, music, weather, Claude sessions, GitHub and Azure
   DevOps runs, Dock badges — without reading anything off the Mac or any account, in a data folder
