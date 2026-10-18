@@ -57,6 +57,15 @@ async function demoApp(): Promise<FastifyInstance> {
   return buildApp({ accessToken: null, dataDir, widgetsDir: WIDGETS, demo: true, devicesPort: 0 })
 }
 
+/**
+ * The built-in widgets' folders. Not a bare readdir: the Finder drops a `.DS_Store` into any
+ * folder a person opens, and the main checkout is one.
+ */
+async function widgetFolders(readdir: typeof import('node:fs/promises').readdir): Promise<string[]> {
+  const entries = await readdir(WIDGETS, { withFileTypes: true })
+  return entries.filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name)
+}
+
 describe('demo mode', () => {
   it('builds without constructing a single real provider', async () => {
     app = await demoApp()
@@ -89,7 +98,7 @@ describe('demo mode', () => {
     const providers = createDemoProviders({ config: () => config })
     const channels = new Set(providers.map((p) => p.channel))
     const { readdir } = await import('node:fs/promises')
-    for (const id of await readdir(WIDGETS)) {
+    for (const id of await widgetFolders(readdir)) {
       const manifest = JSON.parse(await readFile(join(WIDGETS, id, 'manifest.json'), 'utf8')) as { subscriptions?: string[]; commands?: string[] }
       for (const channel of [...(manifest.subscriptions ?? []), ...(manifest.commands ?? [])]) {
         // `calendar:*` is the calendar connections', answered by the demo connection types.
@@ -125,7 +134,7 @@ describe('demo mode', () => {
     const config = ConfigSchema.parse(demoConfig())
     const { readdir } = await import('node:fs/promises')
     const shown = new Set(Object.values(config.widgets).map((w) => w.widgetId))
-    for (const id of await readdir(WIDGETS)) expect(shown, id).toContain(id)
+    for (const id of await widgetFolders(readdir)) expect(shown, id).toContain(id)
     expect(config.secrets.backend).toBe('file')
   })
 })
