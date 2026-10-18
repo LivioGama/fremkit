@@ -24,6 +24,7 @@ and "Notifications: active" above the toggles, and *Log…* opens the supervised
 | The helper is ticked in Privacy & Security and still has no permission | One stale grant per past ad-hoc identity, which macOS keeps in its cache and matches before the new one | `tccutil reset ListenEvent dev.fremkit.helper && tccutil reset Accessibility dev.fremkit.helper`, relaunch the helper, and accept the two prompts. Removing and re-adding the app in the list does not clear those entries |
 | Printer unreachable (`EHOSTUNREACH`) while `ping` and `curl` work | Local Network not granted to the app that runs the server | Allow it under Privacy & Security → Local Network |
 | "Server: external" | Something already answers port 4242, so the helper steps aside | Expected under `pnpm dev`; otherwise stop the stray server, or turn *Manage the server* off |
+| Brightness: "not adjustable on this display (DDC)" | The display does not answer DDC/CI on this cable or this Mac | See [Brightness says not adjustable](#brightness-says-not-adjustable) |
 | The disk map says folders could not be read | macOS privacy protection (TCC) refuses the scan some folders | Give Fremkit (or Fremkit Helper, from a source install) **Full Disk Access**, then scan again — [details](#the-disk-map-says-folders-could-not-be-read) |
 | The disk map is slow and shows no files, "du (no helper)" | The server runs without the helper, or the helper predates the disk map | Rebuild and reinstall the helper — [details](#the-disk-map-uses-du) |
 
@@ -350,3 +351,31 @@ and reload the other.
 
 `DELETE /api/connections/<id>` answers 409 and names the widgets that still point at the
 connection. Remove them, or change their `connection` setting first.
+
+## Brightness says not adjustable
+
+Fremkit sets the brightness of the display the kiosk is on with DDC/CI, the monitor control
+protocol carried by the display cable, the way MonitorControl and m1ddc do. The helper's **F**
+menu, the `brightness` widget and *Screen → Brightness* all say why when it cannot:
+
+- **"not adjustable on this display (DDC)"** — the display did not answer. In order of likelihood:
+  - DDC/CI is switched off in the monitor's own menu. Turn it on.
+  - The cable or port does not carry it: the built-in HDMI port of some Macs (M1 and the
+    M2 Pro/Max Mac mini and MacBook Pro among them) does not pass DDC. Use USB-C / DisplayPort.
+  - A dock or adapter in between drops it. Try the display on a direct cable.
+  - The Mac is an Intel Mac: Fremkit's DDC path is the Apple silicon one.
+- **"display not identified for sure"** — the helper found the display but could not tell which
+  DDC line is its own (two identical monitors, and macOS did not say which port each is on).
+  Nothing is changed rather than risking the wrong monitor. Reconnecting the displays usually
+  clears it; say so in an issue if it does not.
+- **"no display"** — the kiosk's display is not connected.
+- **"Fremkit Helper is not running"** (widget, admin) — brightness needs the helper; a browser
+  alone cannot reach the display.
+- **"not adjustable on a paired device yet"** — a device screen's settings are kept, and apply
+  once the device's app can set its own brightness.
+
+*Follow the Mac* needs a built-in display to follow: a Mac mini or Mac Studio has none, and a
+MacBook with its lid closed has none in use. The admin says so under the option.
+
+The level may take a moment to settle: monitors drop commands that arrive too close together, so
+the helper sends at most ten a second, the last one winning, and reads each one back.

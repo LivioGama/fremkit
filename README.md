@@ -273,15 +273,26 @@ Several widgets can share one, and one service can have several. Non-secret fiel
 (or, with the `file` backend, to a mode-600 `data/secrets.json`) and are never returned by the
 API, logged, written to the config or sent on the WebSocket.
 
+**Brightness.** *Screen → Brightness* sets the level of the selected screen and how it changes
+on its own, per screen: a **day / night** pair of levels switched at sunrise and sunset (computed
+on the Mac from a latitude and longitude you type, no network) or at fixed times, with a gradual
+change of a few minutes; and **follow the Mac**, where the screen follows the Mac's built-in display
+and its light sensor, through a scale and an offset. With both on, the screen follows the Mac and
+day / night is a ceiling at night. A change by hand — the `brightness` widget, this panel, or the
+slider in the helper's **F** menu — holds until the next day / night switch or until the Mac's
+brightness moves noticeably; *Back to automatic* ends it at once. It works over DDC/CI on Apple
+silicon, needs the helper, and only drives the display the kiosk is on; a display that does not
+answer says so (see [troubleshooting](docs/troubleshooting.md#brightness-says-not-adjustable)).
+
 **Language.** French or English, switched in the admin's Screen panel. It changes the interface,
 the widget library and the widgets themselves, live, without a reload.
 
 **The helper, or a browser.** The dashboard is a web page: any browser can show it. The native
 helper adds what a browser cannot — its own HID driver for the Edge's touch panel, a fence that
 keeps the mouse cursor on your other displays, a kiosk window with no chrome and no cursor, the
-Dock's notification badges, and supervision of the server. Its menu bar **F** shows what is
+Dock's notification badges, the brightness of the Edge (DDC/CI), and supervision of the server. Its menu bar **F** shows what is
 running: *Open the admin*, *Admin in the browser*, *Hide the dashboard* / *Show the dashboard*,
-*Reload the dashboard*, the *Touch* / *Mouse fence* / *Notifications* / *Manage the server* /
+*Reload the dashboard*, a brightness slider for the kiosk's display, the *Touch* / *Mouse fence* / *Notifications* / *Manage the server* /
 *Launch at login* toggles, *Log…* and *Quit*,
 above state lines such as "Server: running" and "Touch: active".
 
@@ -290,6 +301,7 @@ above state lines such as "Server: running" and "Touch: active".
 | Widget | Shows | Connection | Compact |
 |---|---|---|---|
 | `battery` | The Mac's battery and its Bluetooth peripherals | — | ● |
+| `brightness` | The brightness of the screen it is on: slider, − / +, and what drives it (day/night, follow the Mac) | — | ● |
 | `calendar` | The next events of one or more published calendars | ICS calendar | ● |
 | `claude-sessions` | Live Claude Code sessions; a touch goes to the session's window, and it can chime when one starts waiting | — | — |
 | `claude-usage` | Claude 5 h / 7 day limits and today's tokens | — | ● |
@@ -381,6 +393,7 @@ The list is short and it is all of it.
 | Where a Claude Code session lives — its terminal application, pane and tty, read by the hook inside the session | the `claude-sessions` widget's ↗, to raise that window again | whenever the Claude Code hooks are installed. It stays on the server: the dashboard is told which kind of application it is and what to call it, never the pane key or the tty |
 | The clipboard, through `pbpaste` | the `clipboard` widget | whenever that widget is on the dashboard |
 | The Dock's badge counts and the icons of installed applications | the `notifications` and `shortcuts` widgets, through the helper | whenever one of those widgets is on the dashboard |
+| The brightness of the kiosk's display (DDC/CI over its cable) and of the Mac's built-in display | the helper, for the `brightness` widget and *Screen → Brightness*; it changes only the display the kiosk is on | while the helper runs |
 | The volume, the battery, the disks, the processes, the network | those widgets, through `pmset`, `df`, `ps` and friends | whenever one of them is on the dashboard |
 | The names and sizes of the folders and files under your home folder or a volume — never their contents | the `disk-map` widget, through `fremkit-scan` or `du`; the last scan is kept in `data/disk-map/` | only when you tap **Scan** (the first time) or ↻ on that widget — never on its own, never on a timer |
 
