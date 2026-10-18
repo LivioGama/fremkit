@@ -50,6 +50,34 @@ final class ServerAccess {
     }
 
     /**
+     The server's diagnostics report (`GET /api/diagnostics`), already redacted by the server, or
+     why there is none. `done` runs on the main thread.
+     */
+    func diagnostics(done: @escaping (HelperDiagnostics.ServerPart) -> Void) {
+        guard let endpoint = URL(string: "http://127.0.0.1:\(port)/api/diagnostics") else {
+            done(.unavailable(reason: "no address"))
+            return
+        }
+        var request = URLRequest(url: endpoint)
+        // The report reads the keychain and runs sw_vers and scutil: a few seconds at worst.
+        request.timeoutInterval = 10
+        authorize(&request)
+        let session = URLSession(configuration: .ephemeral)
+        session.dataTask(with: request) { data, response, error in
+            let status = (response as? HTTPURLResponse)?.statusCode
+            let text = data.flatMap { String(data: $0, encoding: .utf8) }
+            let part: HelperDiagnostics.ServerPart
+            if status == 200, let text, !text.isEmpty {
+                part = .report(text)
+            } else {
+                part = .unavailable(reason: HelperDiagnostics.reason(status: status, error: error))
+            }
+            session.finishTasksAndInvalidate()
+            DispatchQueue.main.async { done(part) }
+        }.resume()
+    }
+
+    /**
      A one-time link that signs the default browser in and lands on `target`, or nil when the
      server would not mint one. `done` runs on the main thread.
 

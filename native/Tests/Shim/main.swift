@@ -122,6 +122,12 @@ let suites: [(String, () -> XCTestCase, [TestMethod])] = [
         ("testAnotherSchemeIsIgnored", { ($0 as! HelperURLTests).testAnotherSchemeIsIgnored() }),
         ("testUnknownTargetIsIgnored", { ($0 as! HelperURLTests).testUnknownTargetIsIgnored() }),
     ]),
+    ("HelperDiagnosticsTests", { HelperDiagnosticsTests() }, [
+        ("testSectionListsEveryFact", { ($0 as! HelperDiagnosticsTests).testSectionListsEveryFact() }),
+        ("testServerReportComesFirstThenTheHelper", { ($0 as! HelperDiagnosticsTests).testServerReportComesFirstThenTheHelper() }),
+        ("testServerDownStillGivesTheHelperPartAndSaysSo", { ($0 as! HelperDiagnosticsTests).testServerDownStillGivesTheHelperPartAndSaysSo() }),
+        ("testReasonNeverQuotesTheRequest", { ($0 as! HelperDiagnosticsTests).testReasonNeverQuotesTheRequest() }),
+    ]),
     ("DashboardVisibilityTests", { DashboardVisibilityTests() }, [
         ("testUserHideSurvivesDisplayReconfiguration", { ($0 as! DashboardVisibilityTests).testUserHideSurvivesDisplayReconfiguration() }),
         ("testShowingWithoutDisplayKeepsWindowAbsent", { ($0 as! DashboardVisibilityTests).testShowingWithoutDisplayKeepsWindowAbsent() }),

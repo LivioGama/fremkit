@@ -55,6 +55,8 @@ public enum L10nKey: String, CaseIterable {
     case toggleManageServer
     case toggleLaunchAtLogin
     case openLog
+    case copyDiagnostics
+    case diagnosticsCopied
     /// Only in the app, which updates itself through Sparkle.
     case checkForUpdates
     case quit
@@ -121,6 +123,8 @@ public enum L10n {
         .toggleManageServer: "Gérer le serveur",
         .toggleLaunchAtLogin: "Lancer au login",
         .openLog: "Journal…",
+        .copyDiagnostics: "Copier le diagnostic",
+        .diagnosticsCopied: "Diagnostic copié",
         .checkForUpdates: "Rechercher les mises à jour…",
         .quit: "Quitter",
 
@@ -181,6 +185,8 @@ public enum L10n {
         .toggleManageServer: "Manage the server",
         .toggleLaunchAtLogin: "Launch at login",
         .openLog: "Log…",
+        .copyDiagnostics: "Copy diagnostics",
+        .diagnosticsCopied: "Diagnostics copied",
         .checkForUpdates: "Check for Updates…",
         .quit: "Quit",
 

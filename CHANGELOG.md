@@ -55,7 +55,9 @@ tagged `vX.Y.Z`.
 - **Copy diagnostics for a bug report.** **Screen → About** prepares a report to paste into a
   GitHub issue: the versions, the widgets and connection types in use with their state, and the
   recent server log. Secrets, IP addresses, e-mails, host names and the names you gave things are
-  removed, and the report is shown before you copy it. A link opens the bug form.
+  removed, and the report is shown before you copy it. A link opens the bug form. The menu bar
+  **F** has **Copy diagnostics** too, which adds the helper's side (touch, permissions, the
+  kiosk display, DDC) and still copies that part when the server is down.
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer
