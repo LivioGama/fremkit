@@ -11,8 +11,9 @@ public enum ConnectResult: Equatable, Sendable {
 }
 
 /// Finds the paired Mac when it may have moved: its `.local` name, then the last address that
-/// worked, then whatever Bonjour resolved. A wrong key is "not this one, next" (remembered: if nothing else answers, the key changed); a 401 from the
-/// right key ends the search, since another address would only say the same.
+/// worked, then whatever Bonjour resolved. A wrong key is "not this one, next" (remembered: if
+/// nothing else answers, the key changed); a 401 from the right key ends the search, since
+/// another address would only say the same.
 public struct Connector: Sendable {
     public let prober: any Prober
 

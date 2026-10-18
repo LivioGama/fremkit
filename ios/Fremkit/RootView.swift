@@ -2,8 +2,8 @@ import FremkitKit
 import SwiftUI
 
 /// One screen per `AppState`, or the pairing screen while pairing runs, and the app-wide
-/// reactions: back from the background, the unreachable and key-changed screens' retries, a link that would
-/// replace the pairing.
+/// reactions: back from the background, the unreachable and key-changed screens'
+/// retries, a link that would replace the pairing.
 ///
 /// Every screen is laid out in the same region: the safe area with the status bar and the home
 /// indicator hidden, the dashboard's web view included. That region is what pairing reports as

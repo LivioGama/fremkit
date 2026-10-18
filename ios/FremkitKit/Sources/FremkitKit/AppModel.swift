@@ -27,7 +27,7 @@ public final class AppModel {
     /// The pairing in use, nil when there is none.
     public private(set) var mac: PairedMac?
     /// True while a connection attempt or a check is running, so a screen that stays up during
-    /// a retry (unreachable, unauthorized) can say so.
+    /// a retry (unreachable, key changed, unauthorized) can say so.
     public private(set) var isConnecting = false
     /// True when the keychain held something it could not give back at launch. The welcome screen
     /// shows, the stored pairing is left alone (a keychain failure is not "not paired"), and
@@ -99,8 +99,8 @@ public final class AppModel {
     }
 
     /// Finds the Mac again: its name, its last address, then whatever Bonjour resolved. The
-    /// unreachable, key-changed and unauthorized screens stay up while it tries; the dashboard gives way to
-    /// `.connecting`. One attempt at a time: a call during an attempt joins it.
+    /// unreachable, key-changed and unauthorized screens stay up while it tries; the dashboard
+    /// gives way to `.connecting`. One attempt at a time: a call during an attempt joins it.
     @discardableResult
     public func reconnect() -> Task<Void, Never> {
         if let running {
@@ -183,8 +183,9 @@ public final class AppModel {
     public static let authorizationCheckInterval: Duration = .seconds(30)
 
     /// The dashboard's safety net: asks the Mac whether it still knows this iPad, so a revocation
-    /// shows the app's screen even when the page does not say so. Only `unauthorized` changes
-    /// anything; a Mac that does not answer is the page's to wait for, as it reconnects by itself.
+    /// shows the app's screen even when the page does not say so. Only `unauthorized`,
+    /// or a wrong key (which reconnects), changes anything; a Mac that does not answer is the page's
+    /// to wait for, as it reconnects by itself.
     /// Nil when not on the dashboard or while another attempt or check runs (never two at once).
     @discardableResult
     public func checkAuthorization() -> Task<Void, Never>? {
@@ -193,7 +194,7 @@ public final class AppModel {
     }
 
     /// Probes `/api/devices/me` on the host in use. A resume reconnects when the Mac does not
-    /// answer there; a periodic check leaves that to the page.
+    /// answer there; a periodic check leaves that to the page. A wrong key reconnects in both.
     private func check(host: String, mac: PairedMac, periodic: Bool) -> Task<Void, Never> {
         let generation = generation
         isConnecting = true
