@@ -214,6 +214,11 @@ two screens is the same widget, with the same settings.
   On a bar widget: settings, move left or right, remove. On a screen above the canvas: rename,
   screen settings, delete. The menus work from the
   keyboard too (arrows, Enter, Escape, type-ahead).
+- **Command palette** — Cmd+K (Ctrl+K, or *Commands* in the top bar) searches everything the
+  editor can do and runs it from the keyboard: add a widget, go to a page or a screen, select a
+  widget, open a connection, jump to a setting, fix a widget that needs attention, and every item
+  of the right-click menus — the selected widget's included, submenus and all. Its commands are
+  the menus' own, so a new menu item is in the palette too. The last commands run come first.
 - **Keyboard** — Tab and Shift+Tab select the next or previous widget of the page, arrows move the
   selection by one cell (a held arrow is one undo step), Shift+arrows resize it from the south-east
   corner — never through another widget, never a locked one — Delete or Backspace removes it,

@@ -17,6 +17,7 @@ import ShareExportDialog from './ShareExportDialog.vue'
 import ShareImportDialog from './ShareImportDialog.vue'
 import { carriesFiles, openImportFile, share } from './share'
 import ContextMenu from '../shared/ui/ContextMenu.vue'
+import CommandPalette, { paletteOpen } from './CommandPalette.vue'
 import { ARROW_DELTAS, matchShortcut } from './shortcuts'
 import { followThemeSchedule, useConfigTheme } from '../shared/theme'
 import { useSocket } from '../shared/socket'
@@ -56,6 +57,7 @@ function onKeyDown(e: KeyboardEvent): void {
   switch (shortcut.id) {
     case 'undo': e.preventDefault(); s.undo(); return
     case 'redo': e.preventDefault(); s.redo(); return
+    case 'palette': e.preventDefault(); paletteOpen.value = !paletteOpen.value; return
   }
   const inst = s.selected.value
   const editing = s.state.mode === 'edit'
@@ -200,6 +202,7 @@ onUnmounted(() => {
       <ShareImportDialog />
     </BaseModal>
     <ContextMenu />
+    <CommandPalette />
     <BaseToast v-if="s.state.toast" :message="s.state.toast" @close="s.dismissToast()" />
   </div>
   <p v-else class="loading">{{ t('common.loading') }}</p>

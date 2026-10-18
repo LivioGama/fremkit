@@ -408,7 +408,7 @@ const itemText = (item: Record<string, unknown>, key: string, field: ListItemFie
 
 <template>
   <template v-for="(f, k) in fields" :key="k">
-    <BaseCheckbox v-if="f.type === 'boolean'" :model-value="Boolean(val(k))" :label="pick(f.label)"
+    <BaseCheckbox v-if="f.type === 'boolean'" :data-setting="k" :model-value="Boolean(val(k))" :label="pick(f.label)"
       @update:model-value="emit('change', k, $event)" />
 
     <!-- Not a <BaseField>: its <label> must not wrap the "manage connections" button. -->
@@ -444,7 +444,7 @@ const itemText = (item: Record<string, unknown>, key: string, field: ListItemFie
     </div>
 
     <!-- Not a <BaseField>: its <label> must not wrap the per-choice checkbox labels. -->
-    <div v-else-if="f.type === 'pick'" class="field">
+    <div v-else-if="f.type === 'pick'" class="field" :data-setting="k">
       <span class="lbl">{{ pick(f.label) }}</span>
       <p v-if="!pickConnection(f)" class="hint">{{ t('admin.settings.pick.chooseConnection') }}</p>
       <p v-else-if="pickState(k).loading" class="hint">{{ t('common.loading') }}</p>
@@ -473,7 +473,7 @@ const itemText = (item: Record<string, unknown>, key: string, field: ListItemFie
     </div>
 
     <!-- Not a <BaseField> either: its <label> must not wrap the per-app checkbox labels. -->
-    <div v-else-if="f.type === 'apps'" class="field">
+    <div v-else-if="f.type === 'apps'" class="field" :data-setting="k">
       <span class="lbl">{{ pick(f.label) }}</span>
       <p v-if="!dockAvailable || !dockApps.length" class="hint">{{ t('admin.settings.apps.helper') }}</p>
       <ul v-if="dockApps.length" class="apps">
@@ -491,7 +491,7 @@ const itemText = (item: Record<string, unknown>, key: string, field: ListItemFie
     </div>
 
     <!-- Not a <BaseField>: its <label> must not wrap the per-item fields and buttons. -->
-    <div v-else-if="f.type === 'list'" class="field">
+    <div v-else-if="f.type === 'list'" class="field" :data-setting="k">
       <span class="lbl">{{ pick(f.label) }}</span>
       <p v-if="!items(k).length" class="hint">{{ t('admin.settings.list.empty') }}</p>
       <ul v-else class="list">
@@ -532,7 +532,7 @@ const itemText = (item: Record<string, unknown>, key: string, field: ListItemFie
       </BaseButton>
     </div>
 
-    <BaseField v-else :label="pick(f.label)">
+    <BaseField v-else :label="pick(f.label)" :data-setting="k">
       <BaseInput v-if="f.type === 'number'" type="number" lazy :model-value="Number(val(k) ?? 0)"
         @update:model-value="onNumber(k, $event)" />
       <input v-else-if="f.type === 'color'" class="color" type="color" :value="String(val(k) ?? '#000000')"

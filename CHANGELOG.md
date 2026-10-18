@@ -13,6 +13,14 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **Command palette.** ⌘K (or Ctrl+K, or **Commands** in the top bar) opens a search field over
+  the editor that reaches everything it can do: add a widget to the page, go to a page or a
+  screen, select a widget by its name, open a connection, jump to a widget's setting by its label,
+  run the fix of a widget that needs attention, and every command of the menus — the selected
+  widget's right-click menu with its submenus (type "move work" to send it to the page Work), the
+  page's and the screen's, undo, redo, Edit/Test, the theme, the history, export and import,
+  diagnostics. Accents and case do not matter; ↑ ↓ choose, Enter runs, → opens a submenu, Escape
+  closes. With nothing typed it starts with the last commands you ran.
 - **Tab through the page's widgets.** In the editor, Tab and Shift+Tab select the next and the
   previous widget of the page, top to bottom; the arrows then move it a cell at a time and
   Shift+arrows resize it. Holding an arrow down is one step to undo, not one per cell.

@@ -10,7 +10,7 @@ import BaseButton from '../shared/ui/BaseButton.vue'
 import BaseIcon from '../shared/ui/BaseIcon.vue'
 import { useI18n } from '../shared/i18n'
 import { openContextMenu } from '../shared/ui/contextMenu'
-import { editorFocus } from './editorFocus'
+import { editorFocus, renameRequest } from './editorFocus'
 import { pageMenu, type PageMenuUi } from './menus'
 import { dropIndex } from './pageDrag'
 import { useAdminStore } from './store'
@@ -137,6 +137,13 @@ function dropClass(i: number): Record<string, boolean> {
   if (!d || d.to === d.from) return {}
   return { 'drop-before': i === d.to && d.to < d.from, 'drop-after': i === d.to && d.to > d.from }
 }
+
+/** A rename asked for by the command palette. */
+watch(renameRequest, (req) => {
+  if (req?.kind !== 'page') return
+  renameRequest.value = null
+  if (s.screen.value?.pages.some((p) => p.id === req.id)) startEdit(req.id)
+}, { immediate: true })
 
 /** A rename started from the menu or the keyboard puts the cursor in the field, text selected. */
 watch(editing, async (id) => {

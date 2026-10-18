@@ -13,6 +13,7 @@
  */
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import BaseIcon from './BaseIcon.vue'
+import './menu.css'
 import {
   closeContextMenu, findByPrefix, isActionable, isSeparator, placeMenu, placeSubmenu, step, useContextMenu,
   type MenuEntry, type MenuItem, type Point,
@@ -237,17 +238,17 @@ const setPanel = (depth: number) => (el: unknown) => { if (el) panels.value[dept
     <template v-for="(level, depth) in levels" :key="depth">
       <div
         :ref="setPanel(depth)"
-        class="ctx-menu" role="menu" tabindex="-1" data-overlay
+        class="ctx-menu fk-menu" role="menu" tabindex="-1" data-overlay
         :class="{ checks: hasChecks(level.items) }"
         :style="level.pos ? { left: level.pos.x + 'px', top: level.pos.y + 'px' } : { left: '0px', top: '0px', visibility: 'hidden' }"
         @contextmenu.prevent
         @pointerenter="onPanelEnter(depth)" @pointerleave="onPanelLeave(depth)"
       >
         <template v-for="(entry, i) in level.items" :key="i">
-          <div v-if="isSeparator(entry)" class="sep" role="separator" />
+          <div v-if="isSeparator(entry)" class="sep fk-menu-sep" role="separator" />
           <div
             v-else
-            class="item" :data-index="i" :role="role(entry)"
+            class="item fk-menu-item" :data-index="i" :role="role(entry)"
             :aria-checked="entry.checked"
             :aria-disabled="entry.disabled ? 'true' : undefined"
             :aria-haspopup="entry.children ? 'menu' : undefined"
@@ -261,8 +262,8 @@ const setPanel = (depth: number) => (el: unknown) => { if (el) panels.value[dept
               <BaseIcon v-else-if="entry.checked" name="check" :size="13" />
             </span>
             <span class="label">{{ entry.label }}</span>
-            <span v-if="entry.children" class="tail"><BaseIcon name="chevron-right" :size="13" /></span>
-            <span v-else-if="entry.shortcut" class="tail key">{{ entry.shortcut }}</span>
+            <span v-if="entry.children" class="fk-menu-tail"><BaseIcon name="chevron-right" :size="13" /></span>
+            <span v-else-if="entry.shortcut" class="fk-menu-tail fk-menu-key">{{ entry.shortcut }}</span>
           </div>
         </template>
       </div>
@@ -271,39 +272,15 @@ const setPanel = (depth: number) => (el: unknown) => { if (el) panels.value[dept
 </template>
 
 <style scoped>
-/*
- * The panel is the theme's raised surface, made translucent and blurred, so it reads as a macOS
- * menu on a dark theme and on a light one alike: every colour comes from the theme's tokens.
- */
+/* The panel's and the rows' look is shared with the command palette: `./menu.css`. */
 .ctx-menu {
-  position: fixed; z-index: 1000; box-sizing: border-box;
+  position: fixed; z-index: 1000;
   min-width: 200px; max-width: min(360px, calc(100vw - 8px)); max-height: calc(100vh - 8px); overflow-y: auto;
   padding: 5px;
-  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
-  border-radius: 10px;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, .32), 0 0 0 .5px rgba(0, 0, 0, .25);
-  color: var(--text); font-family: var(--font); font-size: var(--fs-sm); line-height: 1.2;
   user-select: none; -webkit-user-select: none; cursor: default;
-}
-.ctx-menu:focus { outline: none; }
-.item {
-  display: flex; align-items: center; gap: 6px; min-height: 24px; box-sizing: border-box;
-  padding: 3px 10px 3px 8px; border-radius: 5px; white-space: nowrap;
 }
 .mark { display: none; width: 14px; flex: 0 0 14px; align-items: center; justify-content: center; }
 .checks .mark { display: inline-flex; }
 .swatch { width: 11px; height: 11px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(127, 127, 127, .45); }
 .label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.tail { flex: 0 0 auto; margin-left: 24px; display: inline-flex; align-items: center; color: var(--text-muted); }
-.key { font-size: var(--fs-xs); letter-spacing: .04em; }
-.item.danger { color: var(--danger); }
-.item.active { background: var(--accent); color: var(--on-accent); }
-.item.active .tail { color: inherit; opacity: .85; }
-.item.danger.active { background: var(--danger); color: #fff; }
-.item.disabled { color: var(--text-dim); }
-.item.disabled .tail { color: var(--text-dim); }
-.sep { height: 1px; margin: 5px 8px; background: color-mix(in srgb, var(--border-strong) 80%, transparent); }
 </style>

@@ -12,6 +12,7 @@ import AddScreenDialog from './AddScreenDialog.vue'
 import { useAdminStore } from './store'
 import { openContextMenu } from '../shared/ui/contextMenu'
 import { screenMenu } from './menus'
+import { renameRequest } from './editorFocus'
 import { useDevices } from './devices'
 import HealthDot from './HealthDot.vue'
 import { screenLevel } from './health'
@@ -67,6 +68,13 @@ function cancelRename(): void {
   cancelling = true
   renaming.value = ''
 }
+
+/** A rename asked for by the command palette. */
+watch(renameRequest, (req) => {
+  if (req?.kind !== 'screen') return
+  renameRequest.value = null
+  startRename(req.id)
+}, { immediate: true })
 
 /** The paired devices, so deleting a screen can name those it would leave with nothing. */
 const devices = useDevices()
