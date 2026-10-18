@@ -161,8 +161,10 @@ tagged `vX.Y.Z`.
   only while the admin shows a code; the iPad says so when the code has run out, so make a new one.
   Wrong codes are counted per address (per network prefix for most IPv6 addresses), and when the
   Mac answers "too many tries" on one of its addresses the iPad tries the others, so a single machine
-  guessing no longer keeps your iPad from pairing. A machine guessing from many addresses at once can
-  still hold pairing until it stops.
+  guessing no longer keeps your iPad from pairing. Scanning the QR code can no longer be blocked at
+  all: it carries a long one-time secret that pairs even while the Mac is refusing codes. A machine
+  guessing from many addresses at once can still hold the typed code until it stops; scan the QR code
+  instead.
 - **A browser holds a session, not the key.** Signing a browser in now gives it a session of its
   own that ends after a day unused, after a week at most, or when Fremkit restarts, instead of
   the key itself. Another program listening on your Mac can no longer pick the key up from the

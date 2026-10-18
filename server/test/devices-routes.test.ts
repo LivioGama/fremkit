@@ -54,10 +54,15 @@ const host = () => `example.local:${port}`
 const cookie = (t: string) => ({ cookie: `fremkit_device=${t}` })
 const json = { 'content-type': 'application/json' }
 
-async function issueCode(): Promise<string> {
+async function issueOffer(): Promise<{ code: string; secret: string; url: string }> {
   const res = await app.inject({ method: 'POST', url: '/api/devices/code' })
   expect(res.statusCode).toBe(200)
-  return res.json().code as string
+  const offer = res.json()
+  return { ...offer, secret: new URL(offer.url).searchParams.get('s') as string }
+}
+
+async function issueCode(): Promise<string> {
+  return (await issueOffer()).code
 }
 
 function pair(body: unknown) {
@@ -107,7 +112,15 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     const offer = res.json()
     expect(offer.code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/)
     const status = (await app.inject({ url: '/api/devices' })).json()
-    expect(offer.url).toBe(`fremkit://pair?h=example.local&a=${ADDRESS}&p=${port}&c=${offer.code}&k=${status.keyHash}`)
+    const secret = new URL(offer.url).searchParams.get('s')
+    expect(secret).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(offer.url).toBe(`fremkit://pair?h=example.local&a=${ADDRESS}&p=${port}&c=${offer.code}&s=${secret}&k=${status.keyHash}`)
+    // The secret is in the link and nowhere else: no field of its own, not in the status.
+    expect(Object.keys(offer).sort()).toEqual(['code', 'expiresAt', 'url'])
+    expect(res.headers['cache-control']).toBe('no-store')
+    expect(JSON.stringify(status)).not.toContain(secret)
+    const settings = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
+    expect(settings.body).not.toContain(secret)
     expect(status.keyHash).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(status.fingerprint).toEqual(fingerprintWords(status.keyHash))
     expect(status.fingerprint).toHaveLength(4)
@@ -135,6 +148,13 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     expect((await pair({ code: 'AAAA', name: '', viewport: { width: 1, height: 1 } })).status).toBe(400)
     expect((await pair({ code: 'AAAA', name: 'x'.repeat(61), viewport: { width: 1, height: 1 } })).status).toBe(400)
     expect((await pair({ code: 'AAAA', name: 'x', viewport: { width: 0, height: 1 } })).status).toBe(400)
+    const viewport = { width: 640, height: 480 }
+    // Neither, both, or a secret of the wrong shape.
+    expect((await pair({ name: 'x', viewport })).status).toBe(400)
+    expect((await pair({ code: 'AAAA', secret: 'A'.repeat(43), name: 'x', viewport })).status).toBe(400)
+    expect((await pair({ secret: 'A'.repeat(42), name: 'x', viewport })).status).toBe(400)
+    expect((await pair({ secret: 'A'.repeat(44), name: 'x', viewport })).status).toBe(400)
+    expect((await pair({ secret: `${'A'.repeat(42)}=`, name: 'x', viewport })).status).toBe(400)
   })
 
   it('answers /api/pair 404, as a route that does not exist, while no code is live', async () => {
@@ -347,19 +367,61 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     }
   })
 
-  it('refuses every code after five wrong ones in a minute', async () => {
+  it('pairs with the QR secret, once', async () => {
+    const { secret } = await issueOffer()
+    const viewport = { width: 1180, height: 820 }
+    const res = await pair({ secret, name: 'iPad', viewport })
+    expect(res.status).toBe(200)
+    expect(res.headers['cache-control']).toBe('no-store')
+    const { token } = JSON.parse(res.body)
+    expect((await me(token)).status).toBe(200)
+    // Spent with its code: nothing is live, so the route is not there at all.
+    expect((await pair({ secret, name: 'iPad', viewport })).status).toBe(404)
+  })
+
+  it('refuses every code after five wrong ones in a minute, a wrong secret counted as one', async () => {
+    const stale = (await issueOffer()).secret
     const code = await issueCode()
     const wrong = code === 'AAAAAAAA' ? 'BBBBBBBB' : 'AAAAAAAA'
     const viewport = { width: 640, height: 480 }
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 4; i++) {
       const res = await pair({ code: wrong, name: 'x', viewport })
       expect(res.status).toBe(403)
       expect(JSON.parse(res.body).error).toBe('wrong pairing code')
     }
+    // The secret of a code replaced since: dead, and failing exactly as a wrong code does.
+    const res = await pair({ secret: stale, name: 'x', viewport })
+    expect(res.status).toBe(403)
+    expect(res.body).toBe(JSON.stringify({ error: 'wrong pairing code' }))
+    expect(res.body).not.toContain(stale)
     const limited = await pair({ code, name: 'x', viewport })
     expect(limited.status).toBe(429)
     expect(JSON.parse(limited.body).error).toBe('too many wrong codes: try again in a minute')
     expect((await app.inject({ url: '/api/devices' })).json().guessing).toBe(true)
+  })
+
+  it('pairs with the QR secret while this peer is refused codes', async () => {
+    // The peer spent its allowance in the test above, and a new code does not give it back.
+    const { code, secret } = await issueOffer()
+    const viewport = { width: 640, height: 480 }
+    expect((await pair({ code, name: 'x', viewport })).status).toBe(429)
+    const wrong = await pair({ secret: secret.startsWith('A') ? 'B'.repeat(43) : 'A'.repeat(43), name: 'x', viewport })
+    expect(wrong.status).toBe(429)
+    expect(JSON.parse(wrong.body).error).toBe('too many wrong codes: try again in a minute')
+    const res = await pair({ secret, name: 'QR', viewport })
+    expect(res.status).toBe(200)
+    expect((await me(JSON.parse(res.body).token)).status).toBe(200)
+  })
+
+  it('kills a live secret when pairing is switched off', async () => {
+    const { secret } = await issueOffer()
+    const off = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: false } })
+    expect(off.statusCode).toBe(200)
+    const on = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
+    expect(on.statusCode).toBe(200)
+    port = on.json().port
+    // Back on, no code is live: the route is not there, and the old secret pairs nothing.
+    expect((await pair({ secret, name: 'x', viewport: { width: 640, height: 480 } })).status).toBe(404)
   })
 
   // Last: it turns remote access off.

@@ -6,6 +6,7 @@ import {
   MAX_WRONG_PER_MINUTE,
   MAX_WRONG_PER_MINUTE_TOTAL,
   PairingCodes,
+  SECRET_PATTERN,
   peerKey,
 } from '../src/devices/codes.js'
 
@@ -191,5 +192,89 @@ describe('PairingCodes', () => {
     const { code } = codes.issue()
     codes.clear()
     expect(codes.consume(code)).toBe('wrong')
+  })
+  describe('the QR secret', () => {
+    /** A secret of the right shape that is not `secret`. */
+    const otherSecret = (secret: string) => (secret.startsWith('A') ? 'B' : 'A').repeat(43)
+
+    /** Spends the per-peer allowance of `address` and the total, from addresses in 10.0.0.0/16. */
+    function exhaust(codes: PairingCodes, code: string, address: string): void {
+      for (let i = 0; i < MAX_WRONG_PER_MINUTE; i++) expect(codes.consume(other(code), address)).toBe('wrong')
+      for (let i = 0; i < MAX_WRONG_PER_MINUTE_TOTAL - MAX_WRONG_PER_MINUTE; i++) {
+        expect(codes.consume(other(code), `10.0.${Math.floor(i / 4)}.${i % 4}`)).toBe('wrong')
+      }
+    }
+
+    it('is 256 random bits in base64url, new with every code', () => {
+      const codes = new PairingCodes(clock().now)
+      const seen = new Set<string>()
+      for (let i = 0; i < 20; i++) {
+        const { secret } = codes.issue()
+        expect(secret).toMatch(SECRET_PATTERN)
+        expect(Buffer.from(secret, 'base64url')).toHaveLength(32)
+        seen.add(secret)
+      }
+      expect(seen.size).toBe(20)
+    })
+
+    it('pairs while the code allowance is spent, from that peer and from everyone', () => {
+      const codes = new PairingCodes(clock().now)
+      const { code, secret } = codes.issue()
+      exhaust(codes, code, '192.168.1.66')
+      expect(codes.consume(code, '192.168.1.66')).toBe('limited')
+      expect(codes.consume(code, '192.168.1.20')).toBe('limited')
+      expect(codes.consumeSecret(secret, '192.168.1.66')).toBe('ok')
+    })
+
+    it('fails a wrong secret as a wrong code: counted while allowed, refused once limited', () => {
+      const codes = new PairingCodes(clock().now)
+      const { code, secret } = codes.issue()
+      for (let i = 0; i < MAX_WRONG_PER_MINUTE; i++) {
+        expect(codes.consumeSecret(otherSecret(secret), '192.168.1.66')).toBe('wrong')
+      }
+      expect(codes.consumeSecret(otherSecret(secret), '192.168.1.66')).toBe('limited')
+      expect(codes.consume(code, '192.168.1.66')).toBe('limited')
+      expect(codes.guessing()).toBe(true)
+      // The live code is untouched: another peer still pairs with it.
+      expect(codes.consume(code, '192.168.1.20')).toBe('ok')
+    })
+
+    it('is single use, and spends the code with it', () => {
+      const codes = new PairingCodes(clock().now)
+      const { code, secret } = codes.issue()
+      expect(codes.consumeSecret(secret)).toBe('ok')
+      expect(codes.hasLive()).toBe(false)
+      expect(codes.consumeSecret(secret)).toBe('wrong')
+      expect(codes.consume(code)).toBe('wrong')
+    })
+
+    it('is spent when its code is', () => {
+      const codes = new PairingCodes(clock().now)
+      const { code, secret } = codes.issue()
+      expect(codes.consume(code)).toBe('ok')
+      expect(codes.consumeSecret(secret)).toBe('wrong')
+    })
+
+    it('dies with its code: a new code, clear(), expiry', () => {
+      const c = clock()
+      const codes = new PairingCodes(c.now)
+      const first = codes.issue().secret
+      const second = codes.issue().secret
+      expect(codes.consumeSecret(first)).toBe('wrong')
+      codes.clear()
+      expect(codes.consumeSecret(second)).toBe('wrong')
+      const third = codes.issue().secret
+      c.t += CODE_TTL_MS + 1
+      expect(codes.hasLive()).toBe(false)
+      expect(codes.consumeSecret(third)).toBe('expired')
+    })
+
+    it('does not take the code for the secret, nor the secret for the code', () => {
+      const codes = new PairingCodes(clock().now)
+      const { code, secret } = codes.issue()
+      expect(codes.consumeSecret(code)).toBe('wrong')
+      expect(codes.consume(secret)).toBe('wrong')
+      expect(codes.consumeSecret(secret)).toBe('ok')
+    })
   })
 })

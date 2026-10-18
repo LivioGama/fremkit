@@ -225,6 +225,15 @@ addresses, ULA prefixes) can spend the total and hold pairing for everyone for a
 guessing; a new code resets the total, but a guesser watching for it spends the new one as fast.
 The code itself stays out of reach either way: at most 300 guesses against 32^8 values.
 
+That lock-out reaches the typed code only. With every code the Mac also draws a 256-bit random
+secret, bound to it (same five minutes, single use, gone with a new code, a pairing, the switch
+turned off or a certificate reset), and puts it in the QR code's link, and only there: it is in the
+answer to `POST /api/devices/code` (no-store) and in no other route, status, log or error. The iPad
+sends it instead of the code. `/api/pair` compares it in constant time *before* looking at the
+guess counters, so the right secret pairs while codes are at 429; a wrong one takes the wrong-code
+path, refused while the peer is limited and counted otherwise, with the same answer. Pairing by hand
+(the Bonjour list, the typed code and the four words) still uses the code, and still can be held.
+
 The remote listener is an **allow-list**, decided by the socket a request arrived on rather than
 by a header: the dashboard's page and its code, the routes a dashboard reads, `/ws`, the widget
 proxy, and the device's own `GET /api/devices/me` and `POST /api/devices/me/brightness`. Everything

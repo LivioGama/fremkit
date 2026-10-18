@@ -50,6 +50,8 @@ export type DeviceBrightness = { target: number | null; seq: number }
 
 export type DeviceInfo = { id: string; name: string; screenId: string | null; brightness: DeviceBrightness | null }
 
+export type PairCredential = { code: string } | { secret: string }
+
 export type PairResult =
   | { token: string; device: PublicDevice }
   | { error: 'wrong' | 'expired' | 'limited' }
@@ -221,26 +223,33 @@ export class DeviceService {
     this.keyHashKnown = true
   }
 
-  /** A fresh code and the QR payload carrying it. Only while listening: the caller checks. */
+  /**
+   * A fresh code and the QR payload carrying it and its secret (`s=`). Only while listening: the
+   * caller checks. The secret is in the link and nowhere else: not a field of its own, not in the
+   * status, not in a log.
+   */
   async pairingCode(): Promise<PairingOffer> {
     const key = await ensureKey(this.secrets, { exec: this.exec })
     this.keyHash = spkiHash(key)
     this.keyHashKnown = true
-    const { code, expiresAt } = this.codes.issue()
+    const { code, secret, expiresAt } = this.codes.issue()
     const params: string[] = []
     if (this.hostName !== null) params.push(`h=${encodeURIComponent(`${this.hostName}.local`)}`)
     const address = await this.pickAddress(this.readAddresses())
     if (address !== null) params.push(`a=${encodeURIComponent(address)}`)
-    params.push(`p=${this.listener.port}`, `c=${code}`, `k=${this.keyHash}`)
+    params.push(`p=${this.listener.port}`, `c=${code}`, `s=${secret}`, `k=${this.keyHash}`)
     return { code, expiresAt, url: `fremkit://pair?${params.join('&')}` }
   }
 
   /**
-   * Pairs a device with the live code. It is attached to the one device screen made for its
-   * viewport; none, or more than one, leaves it unattached for the user to choose.
+   * Pairs a device with the live code, typed, or with its secret, read off the QR code. It is
+   * attached to the one device screen made for its viewport; none, or more than one, leaves it
+   * unattached for the user to choose.
    */
-  async pair(code: string, name: string, viewport: Viewport, peer = ''): Promise<PairResult> {
-    const result = this.codes.consume(code, peer)
+  async pair(credential: PairCredential, name: string, viewport: Viewport, peer = ''): Promise<PairResult> {
+    const result = 'secret' in credential
+      ? this.codes.consumeSecret(credential.secret, peer)
+      : this.codes.consume(credential.code, peer)
     if (result !== 'ok') return { error: result }
     const matches = this.config.get().screens.filter((s) => s.kind === 'device' && fits(s, viewport))
     const screenId = matches.length === 1 ? matches[0].id : null

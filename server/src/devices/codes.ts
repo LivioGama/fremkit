@@ -1,10 +1,18 @@
-import { randomInt, timingSafeEqual } from 'node:crypto'
+import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
 import { expandIpv6 } from '../net/private.js'
 
 /** No I, O, 0 or 1: a code is read off a screen and may be typed by hand. */
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 export const CODE_LENGTH = 8
 export const CODE_TTL_MS = 300_000
+/**
+ * The pairing secret: 256 random bits, base64url without padding, so 43 characters. It rides in the
+ * QR code beside the code and pairs like it, but past the wrong-code limit (`consumeSecret`): a
+ * guesser can hold the typed code at 429, never the QR. 2^256 values leave nothing to guess.
+ */
+export const SECRET_BYTES = 32
+export const SECRET_LENGTH = 43
+export const SECRET_PATTERN = /^[A-Za-z0-9_-]{43}$/
 /**
  * Wrong codes allowed per minute from one peer (`peerKey`). Five is a typing mistake or two with
  * room to spare; counted per peer so that one guesser does not, by itself, lock the real iPad out.
@@ -59,7 +67,7 @@ const WINDOW_MS = 60_000
 
 export type ConsumeResult = 'ok' | 'wrong' | 'expired' | 'limited'
 
-function sameCode(a: string, b: string): boolean {
+function same(a: string, b: string): boolean {
   const x = Buffer.from(a, 'utf8')
   const y = Buffer.from(b, 'utf8')
   return x.length === y.length && timingSafeEqual(x, y)
@@ -79,15 +87,17 @@ class Window {
 }
 
 /**
- * The pairing code shown on the Mac: one live code at a time, single use, five minutes long.
+ * The pairing code shown on the Mac: one live code at a time, single use, five minutes long, with
+ * the secret its QR code carries bound to it: issued with it, spent with it, dropped with it.
  *
  * Wrong guesses are counted per peer (`peerKey`) and in total. Once a peer's allowance is spent,
  * every attempt from it is refused — the right code included, or the limit would mean nothing —
  * until its minute is over; other peers go on. Once the total is spent, every attempt from
- * anyone is refused until that minute is over, or until a new code is issued.
+ * anyone is refused until that minute is over, or until a new code is issued. The QR code's secret
+ * is the one exception (`consumeSecret`): the right one pairs whatever the counters say.
  */
 export class PairingCodes {
-  private live: { code: string; expiresAt: number } | null = null
+  private live: { code: string; secret: string; expiresAt: number } | null = null
   private readonly total = new Window()
   /**
    * Per peer. Bounded without a cap of its own: an entry is only made by a wrong guess the total
@@ -101,11 +111,12 @@ export class PairingCodes {
    * Issues a fresh code, replacing any live one. The total is reset with it (a new secret, a new
    * per-code bound); the per-peer windows are kept, so a guesser is not handed a fresh allowance.
    */
-  issue(): { code: string; expiresAt: number } {
+  issue(): { code: string; secret: string; expiresAt: number } {
     this.total.wrong = 0
     let code = ''
     for (let i = 0; i < CODE_LENGTH; i++) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]
-    this.live = { code, expiresAt: this.now() + CODE_TTL_MS }
+    const secret = randomBytes(SECRET_BYTES).toString('base64url')
+    this.live = { code, secret, expiresAt: this.now() + CODE_TTL_MS }
     return { ...this.live }
   }
 
@@ -119,19 +130,23 @@ export class PairingCodes {
     const peer = peerKey(address)
     const now = this.now()
     this.roll(now)
-    const own = this.peers.get(peer)
-    if (this.total.wrong >= MAX_WRONG_PER_MINUTE_TOTAL) return 'limited'
-    if (own && own.wrong >= MAX_WRONG_PER_MINUTE) return 'limited'
-    const live = this.live
-    if (live && sameCode(code, live.code)) {
-      this.live = null
-      return now > live.expiresAt ? 'expired' : 'ok'
-    }
-    this.total.add(now)
-    let window = own
-    if (!window) this.peers.set(peer, (window = new Window()))
-    window.add(now)
-    return 'wrong'
+    if (this.limited(peer)) return 'limited'
+    if (this.live && same(code, this.live.code)) return this.spend(now)
+    return this.count(peer, now)
+  }
+
+  /**
+   * Pairs with the QR code's secret. The right secret is taken before the limit is looked at, so a
+   * guesser holding codes at 429 does not keep the QR from pairing; a wrong one takes exactly the
+   * wrong-code path (refused while limited, counted otherwise), so there is one way to fail.
+   */
+  consumeSecret(secret: string, address = ''): ConsumeResult {
+    const now = this.now()
+    this.roll(now)
+    if (this.live && same(secret, this.live.secret)) return this.spend(now)
+    const peer = peerKey(address)
+    if (this.limited(peer)) return 'limited'
+    return this.count(peer, now)
   }
 
   /** True while someone is being refused for guessing: one peer or everyone. */
@@ -142,9 +157,29 @@ export class PairingCodes {
     return false
   }
 
-  /** Drops the live code. The guess counters are kept, so clearing is no way around the limit. */
+  /** Drops the live code and its secret. The guess counters are kept, so clearing is no way around the limit. */
   clear(): void {
     this.live = null
+  }
+
+  private limited(peer: string): boolean {
+    const own = this.peers.get(peer)
+    return this.total.wrong >= MAX_WRONG_PER_MINUTE_TOTAL || (own !== undefined && own.wrong >= MAX_WRONG_PER_MINUTE)
+  }
+
+  /** Uses up the live code, and its secret with it: either one pairs once. */
+  private spend(now: number): ConsumeResult {
+    const live = this.live!
+    this.live = null
+    return now > live.expiresAt ? 'expired' : 'ok'
+  }
+
+  private count(peer: string, now: number): ConsumeResult {
+    this.total.add(now)
+    let window = this.peers.get(peer)
+    if (!window) this.peers.set(peer, (window = new Window()))
+    window.add(now)
+    return 'wrong'
   }
 
   private roll(now: number): void {

@@ -28,7 +28,9 @@ showing.
    your Mac; see [Prompts](#prompts-on-the-ipad-and-the-mac)).
 2. Scan the QR code. This is the normal path: the code carries the Mac's address and the hash of
    its key, so it needs no discovery and no typing. Opening the `fremkit://` link from the iPad's
-   Camera app does the same.
+   Camera app does the same. It also carries a long one-time secret that pairs even while the Mac
+   is refusing codes because something on the network is guessing them: the QR code always works
+   while it is showing.
 3. The iPad measures the size its dashboard really gets (1408 × 950 on a 13-inch iPad Pro, for
    instance) and reports it. The device appears in the Devices section; pick the screen it shows,
    or **Create a screen its size**, and lay that screen out like any other.
