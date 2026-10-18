@@ -146,7 +146,7 @@ export function splitRuns(runs: AdoRun[]): { running: AdoRun[]; history: AdoRun[
 }
 
 const openUrl = (url: string): Promise<void> =>
-  new Promise((resolve, reject) => execFile('open', [url], (err) => (err ? reject(err) : resolve())))
+  new Promise((resolve, reject) => execFile('/usr/bin/open', [url], (err) => (err ? reject(err) : resolve())))
 
 export interface AdoProviderDeps {
   fetchFn?: typeof fetch

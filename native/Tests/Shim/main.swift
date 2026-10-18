@@ -140,6 +140,7 @@ let suites: [(String, () -> XCTestCase, [TestMethod])] = [
         ("testCheckoutGuardNeedsBothTheRepoAndTheEntryPoint", { ($0 as! ServerLaunchTests).testCheckoutGuardNeedsBothTheRepoAndTheEntryPoint() }),
         ("testBundledGuardNeedsTheBundleExecutableItself", { ($0 as! ServerLaunchTests).testBundledGuardNeedsTheBundleExecutableItself() }),
         ("testCheckoutEnvironmentKeepsTheDeveloperPath", { ($0 as! ServerLaunchTests).testCheckoutEnvironmentKeepsTheDeveloperPath() }),
+        ("testSystemFoldersComeFirstAndRelativeEntriesGo", { ($0 as! ServerLaunchTests).testSystemFoldersComeFirstAndRelativeEntriesGo() }),
         ("testBundledEnvironmentNamesTheBundleAndTheData", { ($0 as! ServerLaunchTests).testBundledEnvironmentNamesTheBundleAndTheData() }),
         ("testBothLaunchesNameTheDiskScannerWhenThereIsOne", { ($0 as! ServerLaunchTests).testBothLaunchesNameTheDiskScannerWhenThereIsOne() }),
         ("testPassesTheHelpersAccessSecretAndNoOther", { ($0 as! ServerLaunchTests).testPassesTheHelpersAccessSecretAndNoOther() }),

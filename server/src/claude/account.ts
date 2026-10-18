@@ -76,7 +76,7 @@ export function parseKeychainJson(raw: string): string | null {
 
 /** Reads the token from the macOS keychain. Never logs or stores it. */
 export async function readClaudeOAuthToken(): Promise<string | null> {
-  try { return parseKeychainJson(await run('security', ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'])) } catch { return null }
+  try { return parseKeychainJson(await run('/usr/bin/security', ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'])) } catch { return null }
 }
 
 function epoch(iso: unknown): number | null {

@@ -3,7 +3,11 @@ import { buildApp } from './app.js'
 import { providers } from './providers/index.js'
 import { shippedPaths } from './paths.js'
 import { DEFAULT_BACKGROUND } from './backgrounds/seed.js'
+import { safePath } from './system-path.js'
 import { accessTokenPath, removeAccessToken, resolveAccessToken, writeAccessToken } from './http/access-file.js'
+
+// System folders first on PATH, for every child this process runs: see system-path.ts.
+process.env.PATH = safePath(process.env.PATH)
 
 // A checkout's own folders, or the app bundle's when the helper sets `FREMKIT_ROOT`: see paths.ts.
 let shipped: ReturnType<typeof shippedPaths>

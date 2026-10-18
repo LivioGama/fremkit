@@ -35,7 +35,7 @@ describe('cleanshot allow-list', () => {
     const { run, p } = provider()
     for (const action of EXPECTED) {
       expect(await p.commands!.run({ action }, LOCAL)).toEqual({ ok: true })
-      expect(run).toHaveBeenLastCalledWith('open', ['-b', CLEANSHOT_BUNDLE_ID, `cleanshot://${action}`])
+      expect(run).toHaveBeenLastCalledWith('/usr/bin/open', ['-b', CLEANSHOT_BUNDLE_ID, `cleanshot://${action}`])
     }
     // One `lsappinfo` lookup and one `open` per action.
     expect(run).toHaveBeenCalledTimes(EXPECTED.length * 2)
@@ -95,7 +95,7 @@ describe('cleanshot run', () => {
     const { run, p } = provider()
     await p.commands!.run({ action: 'capture-area', params: { action: 'copy' } }, LOCAL)
     const [file, args] = run.mock.calls.at(-1) as unknown as [string, string[]]
-    expect(file).toBe('open')
+    expect(file).toBe('/usr/bin/open')
     expect(Array.isArray(args)).toBe(true)
     expect(args).toEqual(['-b', CLEANSHOT_BUNDLE_ID, 'cleanshot://capture-area?action=copy'])
     expect(file).not.toMatch(/sh$/)
@@ -103,9 +103,9 @@ describe('cleanshot run', () => {
   })
   it('sends the URL to the running copy of CleanShot by path when there is one', async () => {
     // An older copy on another volume also claims the scheme; `open <url>` alone may pick it.
-    const run = vi.fn(async (file: string) => (file === 'lsappinfo' ? '"LSBundlePath"="/Applications/CleanShot X.app"\n' : ''))
+    const run = vi.fn(async (file: string) => (file === '/usr/bin/lsappinfo' ? '"LSBundlePath"="/Applications/CleanShot X.app"\n' : ''))
     expect(await openArgs('cleanshot://open-history', run)).toEqual(['-a', '/Applications/CleanShot X.app', 'cleanshot://open-history'])
-    expect(run).toHaveBeenCalledWith('lsappinfo', ['info', '-only', 'bundlepath', CLEANSHOT_BUNDLE_ID])
+    expect(run).toHaveBeenCalledWith('/usr/bin/lsappinfo', ['info', '-only', 'bundlepath', CLEANSHOT_BUNDLE_ID])
   })
   it('falls back to the bundle id when CleanShot is not running or lsappinfo fails', async () => {
     expect(await openArgs('cleanshot://pin', vi.fn(async () => ''))).toEqual(['-b', CLEANSHOT_BUNDLE_ID, 'cleanshot://pin'])
@@ -119,7 +119,7 @@ describe('cleanshot run', () => {
     expect(run).not.toHaveBeenCalled()
   })
   it('turns a failure into { ok: false, error }', async () => {
-    const run = vi.fn(async (file: string) => { if (file === 'open') throw new Error('No application knows how to open this URL'); return '' })
+    const run = vi.fn(async (file: string) => { if (file === '/usr/bin/open') throw new Error('No application knows how to open this URL'); return '' })
     const p = createCleanshotProvider(run)
     expect(await p.commands!.run({ action: 'capture-area' }, LOCAL)).toEqual({ ok: false, error: 'No application knows how to open this URL' })
   })

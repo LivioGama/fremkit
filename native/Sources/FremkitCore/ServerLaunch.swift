@@ -56,8 +56,9 @@ public enum ServerLaunch: Equatable {
     /**
      The child's environment, built from the helper's own.
 
-     A login item inherits a bare `PATH`, so the usual Homebrew places are added in front: the
-     server runs tools such as `ffmpeg` from there. The checkout also gets its `node_modules/.bin`.
+     A login item inherits a bare `PATH`, so the usual Homebrew places are added: the server runs
+     tools such as `ffmpeg` from there. They come *after* the system's folders, which always lead.
+     The checkout also gets its `node_modules/.bin`.
 
      The bundled server is told where it is (`FREMKIT_ROOT`) and where the user's data lives
      (`FREMKIT_DATA_DIR`), since it has no checkout to find a `data/` folder in. `NODE_OPTIONS` is
@@ -83,7 +84,14 @@ public enum ServerLaunch: Equatable {
         if let accessToken, AccessToken.isWellFormed(accessToken) {
             environment[AccessToken.environmentKey] = accessToken
         }
-        let inherited = base["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        // The system's folders first, so a bare-name tool is always Apple's: whoever can write the
+        // Homebrew prefix must not be able to plant an `open` or an `osascript` that then runs
+        // with the helper's privacy grants. The server orders its own PATH the same way.
+        let system = "/usr/bin:/bin:/usr/sbin:/sbin"
+        let inherited = (base["PATH"] ?? "").split(separator: ":").map(String.init)
+            .filter { $0.hasPrefix("/") && !system.split(separator: ":").map(String.init).contains($0) }
+            .joined(separator: ":")
+        let tail = inherited.isEmpty ? "" : ":\(inherited)"
         let homebrew = "/opt/homebrew/bin:/usr/local/bin"
         environment["FREMKIT_PORT"] = String(port)
         if let scanner, !scanner.isEmpty {
@@ -91,9 +99,9 @@ public enum ServerLaunch: Equatable {
         }
         switch self {
         case let .checkout(repoPath):
-            environment["PATH"] = "\(repoPath)/server/node_modules/.bin:\(homebrew):\(home)/Library/pnpm:\(inherited)"
+            environment["PATH"] = "\(system):\(repoPath)/server/node_modules/.bin:\(homebrew):\(home)/Library/pnpm\(tail)"
         case let .bundled(resourcesPath):
-            environment["PATH"] = "\(homebrew):\(inherited)"
+            environment["PATH"] = "\(system):\(homebrew)\(tail)"
             environment["FREMKIT_ROOT"] = resourcesPath
             environment["FREMKIT_DATA_DIR"] = dataDirectory
             environment.removeValue(forKey: "NODE_OPTIONS")

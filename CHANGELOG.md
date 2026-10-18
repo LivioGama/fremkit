@@ -103,6 +103,9 @@ tagged `vX.Y.Z`.
 - **A Bambu printer's access code stays off the command line.** When the printer was off, the
   camera preview of an X1 or H2 could retry with the access code visible to other accounts on the
   Mac; it no longer does, whatever the printer's state.
+- **Fremkit runs macOS's own tools.** The helper and the server now call system tools by their
+  full path and put the system folders first, so a program dropped into a Homebrew folder can no
+  longer stand in for one of them.
 
 ## 0.4.1 — 2026-10-16
 
