@@ -52,6 +52,10 @@ tagged `vX.Y.Z`.
   search ignores accents too now.
 - **Tidy the widget list.** Two buttons beside the Widgets title open or fold every shelf at once,
   and a box hides the widgets the selected screen already shows, on a page or in its bar.
+- **Copy diagnostics for a bug report.** **Screen → About** prepares a report to paste into a
+  GitHub issue: the versions, the widgets and connection types in use with their state, and the
+  recent server log. Secrets, IP addresses, e-mails, host names and the names you gave things are
+  removed, and the report is shown before you copy it. A link opens the bug form.
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer

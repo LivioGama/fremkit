@@ -15,6 +15,7 @@ import BaseSegmented from '../shared/ui/BaseSegmented.vue'
 import BackgroundPicker from './BackgroundPicker.vue'
 import NavWidgetsEditor from './NavWidgetsEditor.vue'
 import DevicesSection from './DevicesSection.vue'
+import DiagnosticsSection from './DiagnosticsSection.vue'
 import { useDevices } from './devices'
 import ScreenBrightness from './ScreenBrightness.vue'
 import { surfaceOpacity } from '../shared/background'
@@ -425,6 +426,7 @@ function setBackground(patch: Partial<Background>): void {
   </dl>
   <p class="ro">{{ t('admin.inspector.screen.about.registry') }}</p>
   <p class="ro">{{ t('admin.inspector.screen.about.icons') }}</p>
+  <DiagnosticsSection />
   </BaseSection>
 </template>
 
