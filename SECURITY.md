@@ -163,9 +163,12 @@ on, a second listener answers on port 4243, **TLS only**, with a self-signed key
 (the hash of its public key travels in the pairing QR code, and the app shows four words from it
 to compare when you pair without the camera). A device holds a random token that the Mac stores as
 a hash; revoking the device, or resetting the certificate, ends it at once, open WebSocket
-included. The listener drops any peer outside the local networks — RFC 1918 and link-local IPv4,
-unique-local and link-local IPv6, and the Mac itself — before the TLS handshake, so a VPN peer or a
-host on a global IPv6 address gets nothing. Pairing needs a single-use code, valid five minutes;
+included. The listener drops any peer outside the private ranges — RFC 1918 and link-local IPv4,
+unique-local and link-local IPv6, and the Mac itself — before the TLS handshake, so a host on a
+public IPv4 or IPv6 address gets nothing, and neither does Tailscale (100.64/10 and
+fd7a:115c:a1e0::/48 are refused by name). A VPN that uses the same private ranges as a home network
+(WireGuard or OpenVPN on 10/8 or 172.16/12, ZeroTier) cannot be told apart from it and is let in;
+it still needs a live code or a device token. Pairing needs a single-use code, valid five minutes;
 `/api/pair` answers 404 unless a code is live, and wrong guesses are limited per address (5 a
 minute) under a total ceiling (60 a minute), so one guesser cannot lock another iPad out.
 

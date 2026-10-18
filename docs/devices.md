@@ -11,8 +11,10 @@ yourself see [Building the app](#building-the-app).
 
 In the admin, open **Screen → Devices** and switch on **Allow an iPad on the local network**.
 Fremkit generates a key the first time and starts a second listener on port **4243**, over TLS,
-with a self-signed certificate. It answers only the local network (private and link-local
-addresses, IPv4 or IPv6) and the Mac itself: a VPN peer or a public address gets no answer. macOS may ask whether to accept incoming connections for Fremkit:
+with a self-signed certificate. It answers only private and link-local addresses, IPv4 or
+IPv6, and the Mac itself: a public address and Tailscale get no answer. A VPN that uses the same
+private addresses as your home network cannot be told apart from it and does reach the Mac, but
+needs a pairing code or a paired iPad's key to do anything. macOS may ask whether to accept incoming connections for Fremkit:
 accept. If another application holds port 4243 the admin says so and the switch goes back off.
 
 The section then shows a QR code, the same pairing code in clear text, and a **fingerprint** of

@@ -19,8 +19,13 @@ import { expandIpv6 } from './private.js'
  *
  * Nothing else carries an IPv4 here: a 6to4 or NAT64 address that *embeds* a private IPv4 still
  * arrives from the internet, so unlike `isPrivateAddress` (which asks where a request would go),
- * this asks where it came from and reads only the mapped form. CGNAT (100.64/10) is refused too:
- * it is a carrier's network, not the user's — and the address a VPN like Tailscale hands out.
+ * this asks where it came from and reads only the mapped form.
+ *
+ * Two ranges inside those are refused by name because a VPN is known to hand them out:
+ * Tailscale's 100.64/10 (CGNAT, a carrier's network anyway) and its IPv6 ULA fd7a:115c:a1e0::/48.
+ * What this cannot do is tell a home network from a VPN that uses the same private ranges — a
+ * WireGuard or OpenVPN tunnel on 10/8 or 172.16/12, ZeroTier on its own fc/fd prefix: a peer there
+ * is let in like any LAN peer, and still needs a live code or a device token to get anywhere.
  *
  * Pure: the address in, a yes or no out. Anything that does not parse is refused.
  */
@@ -40,6 +45,8 @@ export function isLanPeer(address: string | undefined | null): boolean {
   }
   if (groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1) return true // ::1
   const first = groups[0]
+  // Tailscale's ULA, fd7a:115c:a1e0::/48: a tailnet, not the local network.
+  if (first === 0xfd7a && groups[1] === 0x115c && groups[2] === 0xa1e0) return false
   if ((first & 0xfe00) === 0xfc00) return true // fc00::/7, unique local
   if ((first & 0xffc0) === 0xfe80) return true // fe80::/10, link-local
   return false
@@ -49,6 +56,7 @@ function isLanIpv4(ip: string): boolean {
   const parts = ip.split('.')
   if (parts.length !== 4 || parts.some((p) => !/^\d{1,3}$/.test(p) || Number(p) > 255)) return false
   const [a, b] = parts.map(Number)
+  // 100.64/10, CGNAT and Tailscale's IPv4 range: refused, as everything not listed below is.
   if (a === 10) return true // 10/8
   if (a === 172 && b >= 16 && b <= 31) return true // 172.16/12
   if (a === 192 && b === 168) return true // 192.168/16
