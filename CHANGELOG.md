@@ -13,6 +13,8 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **Every built-in widget has a preview**, taken with `pnpm widget:preview` against the demo
+  server, so none of it shows anybody's real data.
 - **Pictures in the Sietch.** A registry widget that publishes a preview shows it as a thumbnail on
   its row of the Sietch, before you install it.
 - **`pnpm widget:preview`.** Takes a widget's preview image for you: it renders the widget alone at
