@@ -276,6 +276,12 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   browser automation never reach the widget. Real touches do.
 - The bar's swipe handler captures the pointer on `pointerdown`; anything in the bar that wants
   the release must listen on `window`, not on itself.
+- Never `import … from 'undici'` at module level. Loaded as CommonJS before the first `fetch`,
+  the package takes the process-wide dispatcher slot Node's built-in `fetch` reads too, and Node
+  26's `fetch` then hands back HTTP/2 gzip bodies undecoded — every provider's `res.json()`
+  fails at once (`invalid-json`, `offline`) while every unit test, which injects `fetch`, stays
+  green. Go through `loadUndici()` in `server/src/net/pinned.ts`; `net-pinned.test.ts` replays
+  the server's load order in a fresh process.
 
 ## Where to look first
 
