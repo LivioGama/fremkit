@@ -15,18 +15,15 @@ tagged `vX.Y.Z`.
 ### Added
 
 - **The iPad follows the brightness set for its screen.** What you set in the admin or with the
-  brightness widget, the day/night schedule included, is applied on the iPad, which reports its own
-  level back, so a change in Control Center shows in the admin. Closing the app shows the screen as
-  gone within 30 seconds.
+  Brightness widget, the day/night schedule included, is applied on the iPad, which reports its own
+  level back, so a change in Control Center shows in the admin. When the app is closed or not open
+  on that screen, the controls say so within 30 seconds.
 - **The Fremkit iPad app pairs on its own.** Scan the QR code the admin shows, or open its
   `fremkit://` link from the Camera app; without the camera, pick the Mac in the list, check that it
   shows the same four words as the iPad, and type the code. Opening a link while the iPad is paired
   asks before replacing the pairing. The iPad reports the size its dashboard really gets, so it lands
   on the matching screen. After **Reset the certificate**, the iPad says the Mac's key has changed
   and offers **Pair again**.
-- **The iPad sets its own brightness.** A paired iPad now reports its screen's brightness and applies
-  the level chosen for it, including the day/night schedule, from the admin or the Brightness
-  widget. When the app is not open on that screen, the controls say so.
 - **A fingerprint for your Mac's key.** Under the pairing code, the Devices section shows four words
   derived from the Mac's key; a device that shows the same four words is talking to this Mac. The Mac
   is also announced on the network under its computer name rather than "Fremkit", with its address,
