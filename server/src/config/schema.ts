@@ -112,18 +112,25 @@ export const PlacementSchema = z.object({
   locked: z.boolean().optional(),
 })
 
-export const PageSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  items: z.array(PlacementSchema).default([]),
-})
-
 export const BackgroundSchema = z.object({
   color: z.string().regex(HEX_COLOR_RE).optional(),
   image: BackgroundImageName.optional(),
   fit: BackgroundFitSchema.optional(),
 })
 export type Background = z.infer<typeof BackgroundSchema>
+
+export const PageSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  items: z.array(PlacementSchema).default([]),
+  /**
+   * This page's own background, shown instead of the screen's while the page is on screen. Absent
+   * means the screen's (`display.background`), which is every page written before this existed,
+   * so no file needs a migration. It replaces the screen's as a whole rather than merging with it:
+   * a page with only a colour shows no image, whatever the screen has.
+   */
+  background: BackgroundSchema.optional(),
+})
 
 /**
  * Height of the dashboard navigation bar, in pixels. The Edge panel is 720 px tall and the bar

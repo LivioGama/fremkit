@@ -89,6 +89,27 @@ describe('ScreenSchema', () => {
   })
 })
 
+describe('page background', () => {
+  const page = (background?: unknown) =>
+    ScreenSchema.parse({ id: 'edge', name: 'E', kind: 'edge', pages: [{ id: 'p', name: 'P', ...(background === undefined ? {} : { background }) }] }).pages[0]
+  it('is absent on a page written before it existed, which then shows the screen\'s', () => {
+    expect(page()).not.toHaveProperty('background')
+    expect(ConfigSchema.parse(v4()).screens[0].pages[0].background).toBeUndefined()
+  })
+  it('accepts a full or a partial background', () => {
+    expect(page({ color: '#101820', image: 'dunes.webp', fit: 'contain' }).background)
+      .toEqual({ color: '#101820', image: 'dunes.webp', fit: 'contain' })
+    expect(page({ color: '#101820' }).background).toEqual({ color: '#101820' })
+  })
+  it('puts the image name through the same gate as the screen background', () => {
+    for (const image of ['../secret.txt', 'a/b.png', '..', '.hidden.png', 'nom accentué.png']) {
+      expect(() => page({ image }), image).toThrow()
+    }
+    expect(() => page({ color: 'blue' })).toThrow()
+    expect(() => page({ fit: 'stretch' })).toThrow()
+  })
+})
+
 describe('screen brightness settings', () => {
   it('leaves a file written before brightness existed untouched: no key, both modes off', () => {
     // The whole migration story: an absent key means "nothing automatic", so no version bump.
