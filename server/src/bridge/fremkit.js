@@ -177,6 +177,9 @@
 
 ;(function () {
   'use strict'
+  // A widget that loads the bridge a second time gets the first one: a second copy would say a
+  // second hello, which the host reads as a new document and stops answering.
+  if (window.Fremkit) return
   var subs = new Map()        // channel -> Set<cb>
   var pending = new Map()     // id -> { resolve, reject }
   var resizeCbs = new Set()
@@ -185,7 +188,27 @@
   var readyCbs = []
   var seq = 0
 
-  function post(msg) { window.parent.postMessage(msg, '*') }
+  /**
+   * The host answers this document over a `MessagePort` it hands over in reply to the hello, and
+   * only once the port has carried the same nonce back: a port is bound to the document that
+   * received it, so a frame that navigates leaves the conversation behind. What the widget sends
+   * before the port arrives waits here.
+   */
+  var port = null
+  var outbox = []
+  var nonce = makeNonce()
+
+  function makeNonce() {
+    var bytes = new Uint8Array(16)
+    var c = window.crypto || (typeof crypto !== 'undefined' ? crypto : null)
+    if (c && c.getRandomValues) c.getRandomValues(bytes)
+    else for (var i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+    var hex = ''
+    for (var j = 0; j < bytes.length; j++) hex += (bytes[j] < 16 ? '0' : '') + bytes[j].toString(16)
+    return hex
+  }
+
+  function post(msg) { if (port) port.postMessage(msg); else outbox.push(msg) }
 
   /**
    * The host frame paints the tile; a widget follows it through these classes and variables.
@@ -491,8 +514,16 @@
   }
 
   window.addEventListener('message', function (ev) {
-    if (ev.source !== window.parent) return
+    if (ev.source !== window.parent || port) return
     var m = ev.data
+    if (!m || m.type !== 'fremkit:connect' || !ev.ports || !ev.ports[0]) return
+    port = ev.ports[0]
+    port.onmessage = function (e) { onHostMessage(e.data) }
+    port.postMessage({ type: 'fremkit:hello', nonce: nonce })
+    outbox.splice(0).forEach(function (msg) { port.postMessage(msg) })
+  })
+
+  function onHostMessage(m) {
     if (!m || typeof m.type !== 'string') return
     if (m.type === 'fremkit:init') {
       F.instanceId = m.instanceId
@@ -533,7 +564,7 @@
       pending.delete(m.id)
       if (m.error) p.reject(new Error(m.error)); else p.resolve(m.result)
     }
-  })
+  }
 
   /**
    * Makes a widget document stop behaving like a web page.
@@ -569,6 +600,6 @@
 
   applyKioskBehaviour()
 
-  window.Fremkit = F
-  post({ type: 'fremkit:hello' })
+  Object.defineProperty(window, 'Fremkit', { value: F, writable: false, configurable: false, enumerable: true })
+  window.parent.postMessage({ type: 'fremkit:hello', nonce: nonce }, '*')
 })()

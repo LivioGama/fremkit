@@ -89,6 +89,8 @@ tagged `vX.Y.Z`.
   no other site can frame them in.
 - **The Edge and the admin window refuse it too.** The helper's web views cancel any frame
   navigation that is not a widget page, whatever the page's own policy says.
+- **What the dashboard tells a widget stays with that widget's page.** If a widget's frame ever
+  holds a different page, that page hears nothing the first one was told.
 
 ## 0.4.1 — 2026-10-16
 
