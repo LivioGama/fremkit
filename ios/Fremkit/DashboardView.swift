@@ -117,6 +117,13 @@ struct DashboardView: UIViewRepresentable {
             }
         }
 
+        /// A frame inside the page (a widget) loads only the Mac's `/widgets/…`; the page itself is
+        /// left as it was. A request for a new window (no target frame) is not a frame of the page.
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+            guard let frame = navigationAction.targetFrame, !frame.isMainFrame else { return .allow }
+            return Dashboard.allowsSubframe(navigationAction.request.url, host: parent.host, port: parent.port) ? .allow : .cancel
+        }
+
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
             failed(error)
         }

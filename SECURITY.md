@@ -180,7 +180,8 @@ device with no screen acts on none. The configuration it reads, over HTTP and on
 is its own screen's — the theme, the language, that screen and the widgets on it — never your
 connections, the marketplace records, the privacy switches or any other screen; the widget
 catalogue comes without the scan's errors, and the list of installed applications only to a screen
-that shows a widget allowed to read it. See
+that shows a widget allowed to read it. In the iPad app, a frame inside the dashboard may load only
+the Mac's `/widgets/…`, the same rule as the Edge's kiosk. See
 [docs/devices.md](docs/devices.md).
 
 ## What Fremkit reads on your Mac
