@@ -34,9 +34,10 @@ one yours is that you allowed it on the Edge.
 3. Check the codes match and press **Allow** on the Edge (or in the admin). **Refuse** drops the
    request.
 
-The code is valid for two minutes, and a browser can ask five times a minute. When you allow the
-request the extension collects its own credential; you do not type anything anywhere. See
-[SECURITY.md](../SECURITY.md#a-browser-extension) for what that credential is.
+The code is valid for two minutes, and Fremkit takes at most five pairing requests a minute, from
+all extensions together. When you allow the request the extension collects its own credential;
+you do not type anything anywhere. See [SECURITY.md](../SECURITY.md#a-browser-extension) for what
+that credential is.
 
 Linked extensions are listed in **Screen → Devices**, where you can rename or remove them.
 Removing one closes its connection at once, and the extension goes back to showing the **Connect**
@@ -83,5 +84,5 @@ access to every site at install.
   as above.
 - *"Browser closed or extension inactive"* — the linked extension is not connected. Open the
   browser; if it is open, click the icon, which wakes the extension.
-- *"The video is not coming through: stop the share and start it again"* — stop the share and start it again.
-- *"Fremplay and Fremkit speak different versions: update Fremkit"* — update Fremkit.
+- *"The video is not coming through: stop the share and start it again"*
+- *"Fremplay and Fremkit speak different versions: update Fremkit"*
