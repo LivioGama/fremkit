@@ -177,10 +177,10 @@ const ChannelSchema = z.string().min(1).refine((channel) => {
  * disk-map". `clipboard` publishes a preview of every entry copied — secrets are masked, the
  * rest is whatever the user copied — and `copy` writes the pasteboard: the same reading, of
  * something more personal still. `companion` carries what a browser tab is playing — its title,
-its site — and the offers that would let a widget watch it. These are refused in an installed manifest — at install and when the catalogue
- * reads `data/widgets` — and stay open to `widgets/`, which ships with the server and is reviewed
- * with it. Unlike `RESERVED_CHANNELS`, the schema alone cannot say: it does not know where a
- * manifest came from.
+ * its site — and the offers that would let a widget watch it. These are refused in an installed
+ * manifest — at install and when the catalogue reads `data/widgets` — and stay open to
+ * `widgets/`, which ships with the server and is reviewed with it. Unlike `RESERVED_CHANNELS`, the
+ * schema alone cannot say: it does not know where a manifest came from.
  */
 export const BUILTIN_ONLY_CHANNELS: ReadonlySet<string> = new Set(['disk-map', 'clipboard', 'companion'])
 
