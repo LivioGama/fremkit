@@ -19,6 +19,7 @@ import { handshake, PROOF_TIMEOUT_MS } from '../../companion/lib/handshake.js'
 import * as ext from '../../companion/lib/protocol.js'
 import { isLocalSdp, parseExtensionMessage, PROOF_LABEL as SERVER_PROOF_LABEL, PROTOCOL } from '../src/companion/protocol.js'
 import { HELLO_TIMEOUT_MS } from '../src/companion/socket.js'
+import { COMPANION_NAMES } from '../src/companion/routes.js'
 import { DEVICE_CLOSE_CODE } from '../src/ws/hub.js'
 
 const ID = '3f2b8c1e-5a4d-4e6f-9a7b-1c2d3e4f5a6b'
@@ -509,6 +510,17 @@ describe('browserName', () => {
     expect(browserName(brands('Brave', 'Chromium', 'Not.A/Brand'))).toBe('Brave')
     expect(browserName(brands('Chromium', 'Not.A/Brand'))).toBe('Chromium')
     expect(browserName(undefined)).toBe('Chromium')
+  })
+
+  it('only ever gives a name the server takes', () => {
+    const brands = (...names: string[]) => names.map((brand) => ({ brand, version: '130' }))
+    const seen = new Set<string>()
+    for (const list of [['Google Chrome'], ['Microsoft Edge'], ['Brave'], ['Arc'], ['Opera'], ['Opera GX'], ['Vivaldi'],
+      ['Chromium'], ['Yandex'], ['Approve this, it is safe'], []]) {
+      seen.add(browserName(brands(...list)))
+    }
+    for (const name of seen) expect(COMPANION_NAMES).toContain(name)
+    expect([...seen].sort()).toEqual([...COMPANION_NAMES].sort())
   })
 })
 

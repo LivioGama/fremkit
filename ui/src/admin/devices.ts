@@ -36,7 +36,7 @@ export interface Devices {
   /** Renames a device, an iPad or an extension. */
   rename(id: string, name: string): Promise<void>
   /** Answers the browser extension's pairing request waiting on the Edge and here. */
-  answerCompanion(requestId: string, allow: boolean): Promise<void>
+  answerCompanion(request: { requestId: string; code: string }, allow: boolean): Promise<void>
   remove(id: string): Promise<void>
   removeAll(): Promise<void>
   resetCertificate(): Promise<void>
@@ -106,8 +106,8 @@ export function createDevices(deviceApi: DevicesApi, pollMs = DEVICES_POLL_MS): 
       await run(async () => { await deviceApi.patchDevice(id, { name }) })
       await refresh()
     },
-    async answerCompanion(requestId, allow) {
-      await run(() => (allow ? deviceApi.approveCompanion(requestId) : deviceApi.refuseCompanion(requestId)))
+    async answerCompanion({ requestId, code }, allow) {
+      await run(() => (allow ? deviceApi.approveCompanion(requestId, code) : deviceApi.refuseCompanion(requestId, code)))
       await refresh()
     },
     async remove(id) {

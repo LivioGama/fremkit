@@ -7,17 +7,22 @@ import { useI18n } from '../shared/i18n'
  * A browser extension asked to pair: the code it shows and the name it gave, to be matched by eye
  * on this screen before the Mac says yes. Drawn over everything; it hides at `expiresAt` even
  * before the server's next snapshot says the request is gone.
+ *
+ * The answer carries the code on show, which the server checks against the waiting request.
  */
 const props = defineProps<{ pairing: { requestId: string; code: string; name: string; expiresAt: number } }>()
 const { t } = useI18n()
 const expired = ref(false)
 const failed = ref(false)
 const busy = ref(false)
+/** The failure the server gave, when it said why (a changed request); otherwise the generic one. */
+const reason = ref('')
 let timer: number | undefined
 
 watch(() => [props.pairing.requestId, props.pairing.expiresAt], ([id], previous) => {
   window.clearTimeout(timer)
   failed.value = false
+  reason.value = ''
   // An answered request stays answered: a new one is the only thing that frees the buttons.
   if (previous === undefined || id !== previous[0]) busy.value = false
   const left = props.pairing.expiresAt - Date.now()
@@ -31,12 +36,14 @@ onUnmounted(() => window.clearTimeout(timer))
  * away: a second tap would find the request gone (404) and flash "failed" over a pairing that
  * worked. Only a failure frees them again, to try once more.
  */
-async function answer(call: (id: string) => Promise<unknown>) {
+async function answer(call: (id: string, code: string) => Promise<unknown>) {
   if (busy.value) return
-  busy.value = true; failed.value = false
+  busy.value = true; failed.value = false; reason.value = ''
   try {
-    await call(props.pairing.requestId)
-  } catch {
+    await call(props.pairing.requestId, props.pairing.code)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : ''
+    reason.value = /^HTTP \d+$/.test(message) ? '' : message
     failed.value = true
     busy.value = false
   }
@@ -49,7 +56,7 @@ async function answer(call: (id: string) => Promise<unknown>) {
       <p class="ask">{{ t('dashboard.companion.request') }}</p>
       <p class="name">{{ pairing.name }}</p>
       <p class="code">{{ pairing.code }}</p>
-      <p v-if="failed" class="error" role="alert">{{ t('dashboard.companion.failed') }}</p>
+      <p v-if="failed" class="error" role="alert">{{ reason || t('dashboard.companion.failed') }}</p>
       <div class="actions">
         <button type="button" class="refuse" :disabled="busy" @click="answer(api.refuseCompanion)">{{ t('dashboard.companion.refuse') }}</button>
         <button type="button" class="approve" :disabled="busy" @click="answer(api.approveCompanion)">{{ t('dashboard.companion.approve') }}</button>

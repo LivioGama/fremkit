@@ -205,11 +205,18 @@ export const api = {
   testConnection: (id: string, body: Partial<ConnectionInput>) =>
     fetch(`/api/connections/${encodeURIComponent(id)}/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => json<ConnectionTestResult>(r)),
 
-  /** Answer the browser extension's pairing request the Edge is showing. */
-  approveCompanion: (requestId: string) =>
-    fetch(`/api/companion/requests/${encodeURIComponent(requestId)}/approve`, { method: 'POST' }).then(empty),
-  refuseCompanion: (requestId: string) =>
-    fetch(`/api/companion/requests/${encodeURIComponent(requestId)}/refuse`, { method: 'POST' }).then(empty),
+  /**
+   * Answer the browser extension's pairing request the Edge is showing, with the code on show: the
+   * server answers 409 when that is no longer the waiting request's code.
+   */
+  approveCompanion: (requestId: string, code: string) =>
+    fetch(`/api/companion/requests/${encodeURIComponent(requestId)}/approve`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }),
+    }).then(empty),
+  refuseCompanion: (requestId: string, code: string) =>
+    fetch(`/api/companion/requests/${encodeURIComponent(requestId)}/refuse`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }),
+    }).then(empty),
   getDevices: () => fetch('/api/devices').then((r) => json<DeviceStatus>(r)),
   /** Answers the status after the switch; on `portInUse` the switch stays off and `message` says why. */
   setDevicesEnabled: (enabled: boolean) =>

@@ -12,8 +12,8 @@ import { createRevealTracker } from '../src/dashboard/companionReveal'
 const fake = vi.hoisted(() => ({
   subs: new Map<string, Set<(data: unknown) => void>>(),
   config: null as unknown,
-  approve: vi.fn(async (_id: string) => {}),
-  refuse: vi.fn(async (_id: string) => {}),
+  approve: vi.fn(async (_id: string, _code: string) => {}),
+  refuse: vi.fn(async (_id: string, _code: string) => {}),
 }))
 
 vi.mock('../src/shared/socket', async () => {
@@ -34,8 +34,8 @@ vi.mock('../src/shared/api', () => ({
   api: {
     getWidgets: async () => ({ widgets: {} }),
     getConfig: async () => fake.config,
-    approveCompanion: (id: string) => fake.approve(id),
-    refuseCompanion: (id: string) => fake.refuse(id),
+    approveCompanion: (id: string, code: string) => fake.approve(id, code),
+    refuseCompanion: (id: string, code: string) => fake.refuse(id, code),
   },
 }))
 vi.mock('../src/shared/theme', () => ({ useConfigTheme: () => {}, followThemeSchedule: () => () => {} }))
@@ -57,19 +57,19 @@ describe('the pairing prompt', () => {
     return mount(CompanionPrompt, { props: { pairing: p as never } })
   }
 
-  it('shows the code and name and calls approve on Autoriser', async () => {
+  it('shows the code and name and calls approve on Autoriser, with the code on show', async () => {
     const w = await mountPrompt(pairing())
     expect(w.text()).toContain('K7M2')
     expect(w.text()).toContain('Companion on Chrome')
     await w.find('button.approve').trigger('click')
-    expect(fake.approve).toHaveBeenCalledWith('r1')
+    expect(fake.approve).toHaveBeenCalledWith('r1', 'K7M2')
     expect(fake.refuse).not.toHaveBeenCalled()
   })
 
-  it('calls refuse on Refuser', async () => {
+  it('calls refuse on Refuser, with the code on show', async () => {
     const w = await mountPrompt(pairing())
     await w.find('button.refuse').trigger('click')
-    expect(fake.refuse).toHaveBeenCalledWith('r1')
+    expect(fake.refuse).toHaveBeenCalledWith('r1', 'K7M2')
   })
 
   it('shows a short error in the prompt when the answer fails', async () => {
@@ -78,6 +78,14 @@ describe('the pairing prompt', () => {
     await w.find('button.approve').trigger('click')
     await flushPromises()
     expect(w.find('.error').exists()).toBe(true)
+  })
+
+  it('shows the server\'s reason when it gives one', async () => {
+    fake.approve.mockRejectedValueOnce(new Error('The request changed; check the code.'))
+    const w = await mountPrompt(pairing())
+    await w.find('button.approve').trigger('click')
+    await flushPromises()
+    expect(w.find('.error').text()).toBe('The request changed; check the code.')
   })
 
   it('keeps the buttons disabled after an answer went through, until another request comes', async () => {

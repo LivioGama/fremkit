@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -33,12 +34,21 @@ let app: FastifyInstance
 
 const auth = { authorization: `Bearer ${SECRET}` }
 
-function pair(origin: string | undefined, body: unknown = { name: 'Chrome', installId: INSTALL }) {
+/** A new install by default: one install may ask three times a minute, and is held back after a refusal. */
+function pair(origin: string | undefined, body: unknown = { name: 'Chrome', installId: randomUUID() }) {
   return app.inject({
     method: 'POST',
     url: '/api/companion/pair',
     headers: { host: HOST, 'content-type': 'application/json', ...(origin ? { origin } : {}) },
     payload: JSON.stringify(body),
+  })
+}
+
+function answer(requestId: string, verb: 'approve' | 'refuse', body?: unknown) {
+  return app.inject({
+    method: 'POST', url: `/api/companion/requests/${requestId}/${verb}`,
+    headers: { host: HOST, ...auth, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+    ...(body === undefined ? {} : { payload: JSON.stringify(body) }),
   })
 }
 
@@ -76,7 +86,14 @@ describe('companion routes', () => {
       devices: { exec, advertise: noAdvertise, lanAddresses: () => ['192.0.2.10'] },
     })
   })
+  // Each test starts a minute later, on Date alone: the per-minute counts and a refusal's cooldown
+  // start afresh, so no test depends on what the ones before it spent.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.now() + 61_000)
+  })
   afterAll(async () => {
+    vi.useRealTimers()
     await app?.close()
     await app?.pairing.store.settled()
     await rm(dir, { recursive: true, force: true })
@@ -105,13 +122,20 @@ describe('companion routes', () => {
     expect((await pair(ORIGIN, { name: 'Chrome', installId: INSTALL, extra: 1 })).statusCode).toBe(400)
   })
 
+  it('pair takes only a browser name from the closed list', async () => {
+    for (const name of ['Approve this, it is safe', 'chrome', 'Firefox', 'Chrome ', 'Safari']) {
+      expect((await pair(ORIGIN, { name, installId: INSTALL })).statusCode).toBe(400)
+    }
+  })
+
   it('approve without the access secret is 401', async () => {
-    const { requestId } = (await pair(ORIGIN)).json()
-    const res = await app.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/approve`, headers: { host: HOST } })
+    const { requestId, code } = (await pair(ORIGIN)).json()
+    const res = await app.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/approve`, headers: { host: HOST }, payload: { code } })
     expect(res.statusCode).toBe(401)
     const refuse = await app.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/refuse`, headers: { host: HOST } })
     expect(refuse.statusCode).toBe(401)
     expect((await collect(requestId)).json()).toEqual({ state: 'pending' })
+    expect((await answer(requestId, 'refuse', { code })).statusCode).toBe(200)
   })
 
   it('pair needs no access secret, and the approved token is handed out once', async () => {
@@ -126,7 +150,7 @@ describe('companion routes', () => {
     expect((await collect(requestId, OTHER)).statusCode).toBe(403)
     expect((await collect(requestId, null)).statusCode).toBe(403)
 
-    const approved = await app.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/approve`, headers: { host: HOST, ...auth } })
+    const approved = await answer(requestId, 'approve', { code })
     expect(approved.statusCode).toBe(200)
     const got = await collect(requestId)
     expect(got.statusCode).toBe(200)
@@ -138,8 +162,8 @@ describe('companion routes', () => {
   })
 
   it('a GET on the collect route never hands out the token', async () => {
-    const { requestId } = (await pair(ORIGIN)).json()
-    const approved = await app.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/approve`, headers: { host: HOST, ...auth } })
+    const { requestId, code } = (await pair(ORIGIN)).json()
+    const approved = await answer(requestId, 'approve', { code })
     expect(approved.statusCode).toBe(200)
     for (const headers of [{ host: HOST, origin: ORIGIN }, { host: HOST, origin: ORIGIN, ...auth }]) {
       const res = await app.inject({ method: 'GET', url: `/api/companion/pair/${requestId}`, headers })
@@ -151,20 +175,65 @@ describe('companion routes', () => {
   })
 
   it('refuse answers refused, and an unknown request is 404 to approve', async () => {
-    const { requestId } = (await pair(ORIGIN)).json()
-    const refused = await app.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/refuse`, headers: { host: HOST, ...auth } })
+    const { requestId, code } = (await pair(ORIGIN)).json()
+    const refused = await answer(requestId, 'refuse', { code })
     expect(refused.statusCode).toBe(200)
     expect((await collect(requestId)).json()).toEqual({ state: 'refused' })
-    const again = await app.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/approve`, headers: { host: HOST, ...auth } })
+    const again = await answer(requestId, 'approve', { code })
     expect(again.statusCode).toBe(404)
     expect((await collect('not-a-uuid')).json()).toEqual({ state: 'expired' })
   })
 
+  it('approve and refuse with a missing or other code are 409, and change nothing', async () => {
+    const { requestId, code } = (await pair(ORIGIN)).json()
+    const other = code === 'ZZZZ' ? 'YYYY' : 'ZZZZ'
+    for (const body of [undefined, {}, { code: other }, { code: 7 }]) {
+      const res = await answer(requestId, 'approve', body)
+      expect(res.statusCode).toBe(409)
+      expect(res.json()).toEqual({ error: 'The request changed; check the code.' })
+      expect((await answer(requestId, 'refuse', body)).statusCode).toBe(409)
+    }
+    expect((await collect(requestId)).json()).toEqual({ state: 'pending' })
+    expect((await answer(requestId, 'refuse', { code })).statusCode).toBe(200)
+  })
+
+  it('an answer for a request its install replaced since is 409', async () => {
+    const installId = randomUUID()
+    const old = (await pair(ORIGIN, { name: 'Chrome', installId })).json()
+    const now = (await pair(ORIGIN, { name: 'Chrome', installId })).json()
+    expect(now.requestId).not.toBe(old.requestId)
+    expect((await answer(old.requestId, 'approve', { code: old.code })).statusCode).toBe(409)
+    expect((await collect(now.requestId)).json()).toEqual({ state: 'pending' })
+    expect((await answer(now.requestId, 'refuse', { code: now.code })).statusCode).toBe(200)
+  })
+
+  it('another install asking while a request waits is 409 busy', async () => {
+    const waiting = (await pair(ORIGIN)).json()
+    const res = await pair(OTHER)
+    expect(res.statusCode).toBe(409)
+    expect(res.json()).toEqual({ error: 'Another pairing request is already waiting on the Edge.', reason: 'busy' })
+    expect((await answer(waiting.requestId, 'refuse', { code: waiting.code })).statusCode).toBe(200)
+  })
+
+  it('an install refused a moment ago is 429 cooldown', async () => {
+    const installId = randomUUID()
+    const r = (await pair(ORIGIN, { name: 'Edge', installId })).json()
+    expect((await answer(r.requestId, 'refuse', { code: r.code })).statusCode).toBe(200)
+    const res = await pair(ORIGIN, { name: 'Edge', installId })
+    expect(res.statusCode).toBe(429)
+    expect(res.json()).toEqual({ error: 'Request refused; try again in a minute.', reason: 'cooldown' })
+  })
+
   it('a sixth request within a minute is 429', async () => {
-    // Earlier tests already spent part of the minute; whatever is left runs out here.
+    // Each one answered, so none is turned away as busy.
     let last = 200
-    for (let i = 0; i < 6 && last === 200; i++) last = (await pair(ORIGIN)).statusCode
+    for (let i = 0; i < 6 && last === 200; i++) {
+      const res = await pair(ORIGIN)
+      last = res.statusCode
+      if (last === 200) await answer(res.json().requestId, 'refuse', { code: res.json().code })
+    }
     expect(last).toBe(429)
+    expect((await pair(ORIGIN)).json()).toMatchObject({ reason: 'limited' })
   })
 
   it.skipIf(!hasOpenssl)('pair on the remote listener is 404', async () => {

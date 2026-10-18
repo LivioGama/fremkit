@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from 'node:crypto'
+import { randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import { CODE_ALPHABET } from '../devices/codes.js'
 import type { DeviceStore } from '../devices/store.js'
 
@@ -7,8 +7,27 @@ export const MATCH_CODE_LENGTH = 4
 export const REQUEST_TTL_MS = 120_000
 /** Requests accepted per minute, from every extension together. */
 export const MAX_REQUESTS_PER_MINUTE = 5
+/** Requests accepted per minute from one install, on top of the global count. */
+export const MAX_REQUESTS_PER_INSTALL_PER_MINUTE = 3
+/** How long an install whose request was refused is turned away. */
+export const REFUSED_COOLDOWN_MS = 60_000
 
 const WINDOW_MS = 60_000
+
+type Answerable = { result: 'notFound' | 'changed' } | { req: PairRequest }
+
+/** Compares two codes in a time that does not depend on where they differ. */
+function sameCode(a: string, b: string): boolean {
+  const x = Buffer.from(a)
+  const y = Buffer.from(b)
+  return x.length === y.length && timingSafeEqual(x, y)
+}
+
+/** Why a request was not taken. */
+export type RequestRefusal = 'limited' | 'busy' | 'cooldown'
+
+/** `changed`: the request on show is not the one answered, or the code given is not its code. */
+export type AnswerResult = 'ok' | 'notFound' | 'changed'
 
 export type CollectResult =
   | { state: 'pending' | 'refused' | 'expired' }
@@ -30,12 +49,17 @@ interface PairRequest {
 /**
  * A browser extension asking to pair, and the user's answer.
  *
- * One request waits for an answer at a time: a new one replaces it. Once answered, a request is
- * kept until it expires, two minutes after it was made, so the extension can collect the answer —
+ * One request waits for an answer at a time, and nothing else takes its place: a new request from
+ * the same install replaces it (the extension asking again after its popup reopened), one from
+ * any other install is turned away as `busy` until the waiting one is answered or expires. The
+ * answer names the code it was given for, so a request swapped in after the user read the code is
+ * never the one approved. Once answered, a request is kept until it expires, two minutes after it was made, so the extension can collect the answer —
  * the token of an approved one exactly once. A token nobody collected goes when the request does, and so does its device record.
  *
  * Requests are counted globally, like wrong pairing codes: an origin is only a name the asker
- * picks, so a per-origin count would limit nothing.
+ * picks, so a per-origin count would limit nothing. The per-install count and the cooldown after a
+ * refusal only keep one honest extension from hammering; a local process can pick any install id,
+ * and what protects the user is comparing the code in the popup with the one on the Edge.
  *
  * Nothing here logs: the code and the token are secrets, and the routes log the events.
  */
@@ -43,6 +67,9 @@ export class CompanionPairing {
   private readonly requests = new Map<string, PairRequest>()
   private waiting: string | null = null
   private accepted: number[] = []
+  private readonly acceptedByInstall = new Map<string, number[]>()
+  /** installId → when its request was refused. */
+  private readonly refusedAt = new Map<string, number>()
   private readonly listeners = new Set<() => void>()
   private timer: NodeJS.Timeout | null = null
 
@@ -51,14 +78,23 @@ export class CompanionPairing {
     private readonly now: () => number = () => Date.now(),
   ) {}
 
-  request(input: { origin: string; name: string; installId: string }): { requestId: string; code: string; expiresAt: number } | 'limited' {
+  request(input: { origin: string; name: string; installId: string }): { requestId: string; code: string; expiresAt: number } | RequestRefusal {
     const now = this.now()
     this.sweep(now)
+    const refused = this.refusedAt.get(input.installId)
+    if (refused !== undefined && now - refused < REFUSED_COOLDOWN_MS) return 'cooldown'
+    const waiting = this.waiting === null ? undefined : this.requests.get(this.waiting)
+    if (waiting && (waiting.installId !== input.installId || waiting.origin !== input.origin)) return 'busy'
     this.accepted = this.accepted.filter((t) => now - t < WINDOW_MS)
     if (this.accepted.length >= MAX_REQUESTS_PER_MINUTE) return 'limited'
+    const mine = (this.acceptedByInstall.get(input.installId) ?? []).filter((t) => now - t < WINDOW_MS)
+    if (mine.length >= MAX_REQUESTS_PER_INSTALL_PER_MINUTE) return 'limited'
     this.accepted.push(now)
+    mine.push(now)
+    this.acceptedByInstall.set(input.installId, mine)
 
-    if (this.waiting !== null) this.requests.delete(this.waiting)
+    // Only ever the same install's own request: another install's was turned away above.
+    if (waiting) this.requests.delete(waiting.requestId)
     let code = ''
     for (let i = 0; i < MATCH_CODE_LENGTH; i++) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]
     const req: PairRequest = {
@@ -84,10 +120,15 @@ export class CompanionPairing {
     return req ? { requestId: req.requestId, code: req.code, name: req.name, expiresAt: req.expiresAt } : null
   }
 
-  /** Pairs the waiting request's extension. False when it is not the waiting one, or has expired. */
-  async approve(requestId: string): Promise<boolean> {
-    const req = this.answerable(requestId)
-    if (!req) return false
+  /**
+   * Pairs the waiting request's extension, if `code` is the one it shows. `notFound` when nothing
+   * waits; `changed` when another request waits now, or the code is not this request's — the user
+   * read the code of a request that is no longer the one on show.
+   */
+  async approve(requestId: string, code: unknown): Promise<AnswerResult> {
+    const found = this.answerable(requestId, code)
+    if ('result' in found) return found.result
+    const req = found.req
     // Taken off the waiting slot first, so a second approve or a refuse cannot race this one.
     req.state = 'approving'
     this.waiting = null
@@ -102,16 +143,18 @@ export class CompanionPairing {
       throw err
     }
     this.changed()
-    return true
+    return 'ok'
   }
 
-  refuse(requestId: string): boolean {
-    const req = this.answerable(requestId)
-    if (!req) return false
-    req.state = 'refused'
+  /** Refuses the waiting request, on the same terms as `approve`; its install waits a minute to ask again. */
+  refuse(requestId: string, code: unknown): AnswerResult {
+    const found = this.answerable(requestId, code)
+    if ('result' in found) return found.result
+    found.req.state = 'refused'
     this.waiting = null
+    this.refusedAt.set(found.req.installId, this.now())
     this.changed()
-    return true
+    return 'ok'
   }
 
   /** False when the request exists and was made from another origin. */
@@ -149,11 +192,12 @@ export class CompanionPairing {
     this.timer = null
   }
 
-  private answerable(requestId: string): PairRequest | null {
+  private answerable(requestId: string, code: unknown): Answerable {
     this.sweep(this.now())
-    if (requestId !== this.waiting) return null
-    const req = this.requests.get(requestId)
-    return req && req.state === 'pending' ? req : null
+    const waiting = this.waiting === null ? undefined : this.requests.get(this.waiting)
+    if (!waiting || waiting.state !== 'pending') return { result: 'notFound' }
+    if (waiting.requestId !== requestId || typeof code !== 'string' || !sameCode(code, waiting.code)) return { result: 'changed' }
+    return { req: waiting }
   }
 
   /** Drops every expired request, and says so once when there was any. */
@@ -170,6 +214,10 @@ export class CompanionPairing {
         }
         dropped = true
       }
+    }
+    for (const [installId, at] of this.refusedAt) if (now - at >= REFUSED_COOLDOWN_MS) this.refusedAt.delete(installId)
+    for (const [installId, times] of this.acceptedByInstall) {
+      if (times.every((t) => now - t >= WINDOW_MS)) this.acceptedByInstall.delete(installId)
     }
     if (dropped) this.changed()
   }

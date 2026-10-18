@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:net'
@@ -404,16 +405,17 @@ describe('browser extensions in the device list', () => {
   let edir: string
   let eapp: FastifyInstance
 
-  async function pairExtension(): Promise<{ requestId: string; deviceId: string }> {
+  /** A new install by default: one install may ask only three times a minute. */
+  async function pairExtension(installId: string = randomUUID()): Promise<{ requestId: string; deviceId: string }> {
     const asked = await eapp.inject({
       method: 'POST', url: '/api/companion/pair',
       headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' },
-      payload: JSON.stringify({ name: 'Chrome', installId: INSTALL }),
+      payload: JSON.stringify({ name: 'Chrome', installId }),
     })
-    const { requestId } = asked.json()
+    const { requestId, code } = asked.json()
     const status = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
     expect(status.companionRequest).toMatchObject({ requestId, name: 'Chrome' })
-    expect((await eapp.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/approve`, headers: { host: HOST } })).statusCode).toBe(200)
+    expect((await eapp.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/approve`, headers: { host: HOST }, payload: { code } })).statusCode).toBe(200)
     const collected = (await eapp.inject({ method: 'POST', url: `/api/companion/pair/${requestId}`, headers: { host: HOST, origin: ORIGIN } })).json()
     return { requestId, deviceId: collected.deviceId }
   }
@@ -448,7 +450,8 @@ describe('browser extensions in the device list', () => {
     const waiting = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
     expect(waiting.companionRequest).toEqual({ requestId, code, name: 'Chrome', expiresAt: expect.any(Number) })
 
-    const { deviceId } = await pairExtension()
+    // The same install asking again replaces its waiting request; another install would be busy.
+    const { deviceId } = await pairExtension(INSTALL)
     const done = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
     expect(done.devices).toEqual([expect.objectContaining({ id: deviceId, kind: 'extension', name: 'Chrome', origin: ORIGIN, connected: false })])
     expect(JSON.stringify(done)).not.toMatch(/token/i)

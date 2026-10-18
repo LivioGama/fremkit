@@ -147,15 +147,20 @@ describe('the devices section', () => {
     }))
     deviceApi.approveCompanion.mockResolvedValue(undefined)
     deviceApi.refuseCompanion.mockResolvedValue(undefined)
-    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
-    await flushPromises()
-    await wrapper.find('[data-test="request-approve"]').trigger('click')
-    await flushPromises()
-    expect(deviceApi.approveCompanion).toHaveBeenCalledWith('req-1')
-    await wrapper.find('[data-test="request-refuse"]').trigger('click')
-    await flushPromises()
-    expect(deviceApi.refuseCompanion).toHaveBeenCalledWith('req-1')
-    wrapper.unmount()
+    vi.useFakeTimers()
+    try {
+      const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+      await flushPromises()
+      await wrapper.find('[data-test="request-approve"]').trigger('click')
+      await flushPromises()
+      expect(deviceApi.approveCompanion).toHaveBeenCalledWith('req-1', 'AB2C')
+      await wrapper.find('[data-test="request-refuse"]').trigger('click')
+      await flushPromises()
+      expect(deviceApi.refuseCompanion).toHaveBeenCalledWith('req-1', 'AB2C')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('hides a request that has expired', async () => {

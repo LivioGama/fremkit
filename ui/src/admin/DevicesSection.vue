@@ -138,8 +138,8 @@ async function onCreated(screenId: string): Promise<void> {
       <p class="rname" data-test="request-name">{{ request.name }}</p>
       <p class="value mono" data-test="request-code">{{ request.code }}</p>
       <div class="row">
-        <BaseButton data-test="request-refuse" @click="devices.answerCompanion(request.requestId, false)">{{ t('admin.devices.extension.refuse') }}</BaseButton>
-        <BaseButton variant="primary" data-test="request-approve" @click="devices.answerCompanion(request.requestId, true)">{{ t('admin.devices.extension.approve') }}</BaseButton>
+        <BaseButton data-test="request-refuse" @click="devices.answerCompanion(request, false)">{{ t('admin.devices.extension.refuse') }}</BaseButton>
+        <BaseButton variant="primary" data-test="request-approve" @click="devices.answerCompanion(request, true)">{{ t('admin.devices.extension.approve') }}</BaseButton>
       </div>
     </div>
 
