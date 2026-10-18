@@ -88,7 +88,7 @@ public struct PairClient: Sendable {
             case let .response(200, data):
                 guard let paired = try? JSONDecoder().decode(Paired.self, from: data) else { throw PairError.unreachable }
                 return PairedMac(host: hosts.first(where: isLocalName) ?? host,
-                                 address: isIPLiteral(host) ? host : hosts.first(where: isIPLiteral) ?? host,
+                                 address: isIPv4Literal(host) ? host : hosts.first(where: isIPv4Literal) ?? host,
                                  port: port, keyHash: keyHash, token: paired.token, deviceId: paired.deviceId, name: macName)
             case let .response(403, data): throw PairError.rejected(Self.message(data))
             case let .response(429, data):

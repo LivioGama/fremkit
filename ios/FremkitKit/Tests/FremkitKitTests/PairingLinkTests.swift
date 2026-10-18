@@ -45,9 +45,10 @@ final class PairingLinkTests: XCTestCase {
         }
     }
 
-    func testAcceptsAnIPv6Address() throws {
-        let parsed = try XCTUnwrap(link("h=studio.local&a=2001:db8::1&p=4243&c=ABCDEFGH&k=\(Self.key)"))
-        XCTAssertEqual(parsed.address, "2001:db8::1")
+    func testRefusesAnIPv6AddressTheMacWouldAnswer421To() {
+        for address in ["2001:db8::1", "fe80::1%25en0", "%5B2001:db8::1%5D"] {
+            XCTAssertNil(link("h=studio.local&a=\(address)&p=4243&c=ABCDEFGH&k=\(Self.key)"), address)
+        }
     }
 
     func testNormalisesALowercaseCodeWithADash() throws {

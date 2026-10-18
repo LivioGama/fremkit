@@ -51,7 +51,9 @@ public struct PairingLink: Equatable, Sendable {
             fields[item.name] = value
         }
         guard let host = fields["h"].map(trimmingTrailingDot), isLocalName(host),
-              let address = fields["a"], isIPLiteral(address),
+              // IPv4 only: the Mac answers on its IPv4 addresses and its `.local` name, never on an
+              // IPv6 literal (`isConnectableHost`), and it never puts one in a link.
+              let address = fields["a"], isIPv4Literal(address),
               let portText = fields["p"], let port = parsePort(portText),
               let codeText = fields["c"], let code = normaliseCode(codeText),
               let keyHash = fields["k"], isKeyHash(keyHash) else { return nil }
