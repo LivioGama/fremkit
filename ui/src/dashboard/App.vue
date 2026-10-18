@@ -12,6 +12,8 @@ import PageView from './PageView.vue'
 import NavBar from './NavBar.vue'
 import NavPopover from './NavPopover.vue'
 import { useSwipe } from './useSwipe'
+import CompanionPrompt from './CompanionPrompt.vue'
+import { createRevealTracker, type CompanionReveal } from './companionReveal'
 import { useNavPopover } from './useNavPopover'
 import { isRemotePage, useDeviceScreen, type DeviceInfo } from './remote'
 import { SCREEN_ID } from '../shared/useWidgetBridge'
@@ -63,6 +65,10 @@ const rootStyle = computed(() => display.value && {
 const gridWidth = computed(() => display.value ? display.value.cols * display.value.cell + 'px' : '0')
 let cycleTimer: number | undefined
 let unsub: (() => void) | undefined
+let unsubCompanion: (() => void) | undefined
+/** The browser extension's pairing request, while one is pending (local dashboard only). */
+const companionPairing = ref<{ requestId: string; code: string; name: string; expiresAt: number } | null>(null)
+const reveal = createRevealTracker()
 
 function go(delta: number) {
   if (!screen.value) return
@@ -125,11 +131,21 @@ onMounted(async () => {
     config.value = c as Config
     if (pageIndex.value >= (screen.value?.pages.length ?? 0)) pageIndex.value = 0
   })
+  if (!remote) {
+    unsubCompanion = socket.subscribe('companion', (data) => {
+      const snap = data as { pairing?: typeof companionPairing.value; reveal?: CompanionReveal | null }
+      companionPairing.value = snap.pairing ?? null
+      const target = reveal.observe(snap, screen.value?.id)
+      if (target !== null && target !== pageIndex.value && target < (screen.value?.pages.length ?? 0)) select(target)
+    })
+    // A reconnect replays a snapshot that must not move the page on its own.
+    watch(socket.status, (s) => { if (s !== 'open') reveal.reset() })
+  }
   window.addEventListener('keydown', onKey)
 })
 // Another screen for the device: start it on its first page, which every screen has.
 if (remote) watch(() => screen.value?.id, () => { pageIndex.value = 0; popover.close() })
-onUnmounted(() => { unsub?.(); window.removeEventListener('keydown', onKey); window.clearInterval(cycleTimer) })
+onUnmounted(() => { unsub?.(); unsubCompanion?.(); window.removeEventListener('keydown', onKey); window.clearInterval(cycleTimer) })
 watch(() => display.value?.autoCycleSeconds, setupCycle)
 /** The manifest of the widget a bar item names, for the popover it opens. */
 function manifestOf(item: NavItem): WidgetManifest | undefined {
@@ -181,6 +197,7 @@ watch(() => config.value?.locale, (l) => setLocale(l))
       :anchor="popover.open.value.anchor"
       :screen="popover.open.value.screen"
       @root="popover.setPopoverEl" />
+    <CompanionPrompt v-if="companionPairing" :pairing="companionPairing" />
   </div>
 </template>
 

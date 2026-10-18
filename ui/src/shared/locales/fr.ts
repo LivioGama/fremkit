@@ -380,6 +380,10 @@ export const fr: Record<string, string> = {
   'dashboard.widget.notInstalled': 'non installé',
   'dashboard.remote.noScreen': 'Choisissez un écran pour cet iPad dans l’admin du Mac',
   'dashboard.remote.unauthorized': 'Cet iPad n’est plus autorisé',
+  'dashboard.companion.request': 'Une extension de navigateur veut se connecter',
+  'dashboard.companion.approve': 'Autoriser',
+  'dashboard.companion.refuse': 'Refuser',
+  'dashboard.companion.failed': 'Réponse impossible, réessayez',
 
   // Brightness (admin → Screen)
   'brightness.admin.title': 'Luminosité',

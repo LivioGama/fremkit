@@ -194,6 +194,11 @@ export const api = {
   testConnection: (id: string, body: Partial<ConnectionInput>) =>
     fetch(`/api/connections/${encodeURIComponent(id)}/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => json<ConnectionTestResult>(r)),
 
+  /** Answer the browser extension's pairing request the Edge is showing. */
+  approveCompanion: (requestId: string) =>
+    fetch(`/api/companion/requests/${encodeURIComponent(requestId)}/approve`, { method: 'POST' }).then(empty),
+  refuseCompanion: (requestId: string) =>
+    fetch(`/api/companion/requests/${encodeURIComponent(requestId)}/refuse`, { method: 'POST' }).then(empty),
   getDevices: () => fetch('/api/devices').then((r) => json<DeviceStatus>(r)),
   /** Answers the status after the switch; on `portInUse` the switch stays off and `message` says why. */
   setDevicesEnabled: (enabled: boolean) =>

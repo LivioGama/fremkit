@@ -13,6 +13,7 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **Pairing a browser extension is confirmed on the Edge.** The dashboard shows the code and name the extension gave, with Allow and Refuse buttons, and brings up the page holding the Fremplay widget when a share starts.
 - **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another
   one, and give each its own layout. A pre-fill is shown as a preview first, naming the widgets
   that do not fit the new screen, and the Screen panel gives each screen its own address. A
