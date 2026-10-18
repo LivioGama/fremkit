@@ -14,6 +14,11 @@ tagged `vX.Y.Z`.
 
 ### Added
 
+- **The Fremkit iPad app pairs on its own.** Scan the QR code the admin shows, or open its
+  `fremkit://` link from the Camera app; without the camera, pick the Mac in the list, check that it
+  shows the same four words as the iPad, and type the code. Opening a link while the iPad is paired
+  asks before replacing the pairing. The iPad reports the size its dashboard really gets, so it lands
+  on the matching screen.
 - **The iPad sets its own brightness.** A paired iPad now reports its screen's brightness and applies
   the level chosen for it, including the day/night schedule, from the admin or the Brightness
   widget. When the app is not open on that screen, the controls say so.

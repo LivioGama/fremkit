@@ -1,3 +1,4 @@
+import FremkitKit
 import Network
 import Observation
 
@@ -5,11 +6,11 @@ import Observation
 /// answered from, and whether the network is up.
 @Observable @MainActor
 final class LocalNetwork {
-    /// Resolved addresses by Bonjour service name (the Mac's computer name).
-    private(set) var services: [String: String] = [:]
+    /// The resolved Macs by Bonjour service name (the Mac's computer name).
+    private(set) var services: [String: MacService] = [:]
 
     /// Every resolved address, in a stable order: the `discovered` candidates of `Connector`.
-    var addresses: [String] { services.keys.sorted().compactMap { services[$0] } }
+    var addresses: [String] { services.keys.sorted().compactMap { services[$0]?.address } }
 
     /// Called when an address is newly resolved or the network becomes usable again.
     @ObservationIgnored var onChange: (@MainActor () -> Void)?
@@ -80,10 +81,10 @@ final class LocalNetwork {
                 guard let self, let connection else { return }
                 switch state {
                 case .ready:
-                    let address = connection.currentPath?.remoteEndpoint.flatMap(Self.host(of:))
-                    self.finishResolving(name, connection, address: address)
+                    let resolved = connection.currentPath?.remoteEndpoint.flatMap(Self.hostPort(of:))
+                    self.finishResolving(name, connection, resolved.map { MacService(name: name, address: $0.host, port: $0.port) })
                 case .failed, .waiting, .cancelled:
-                    self.finishResolving(name, connection, address: nil)
+                    self.finishResolving(name, connection, nil)
                 default:
                     break
                 }
@@ -92,29 +93,32 @@ final class LocalNetwork {
         connection.start(queue: .main)
     }
 
-    private func finishResolving(_ name: String, _ connection: NWConnection, address: String?) {
+    private func finishResolving(_ name: String, _ connection: NWConnection, _ service: MacService?) {
         connection.stateUpdateHandler = nil
         connection.cancel()
         guard resolving[name] === connection else { return }
         resolving[name] = nil
-        guard let address else {
+        guard let service else {
             // Not answering at the moment: its last address is no longer worth trying.
             services[name] = nil
             return
         }
-        guard results[name] != nil, services[name] != address else { return }
-        services[name] = address
+        guard results[name] != nil, services[name] != service else { return }
+        services[name] = service
         onChange?()
     }
 
-    /// An address as `Connector` takes it: an IP literal (IPv6 with its zone) or a name.
-    nonisolated static func host(of endpoint: NWEndpoint) -> String? {
-        guard case let .hostPort(host, _) = endpoint else { return nil }
+    /// An address as `Connector` takes it (an IP literal, IPv6 with its zone, or a name) and the
+    /// port the service answered on.
+    nonisolated static func hostPort(of endpoint: NWEndpoint) -> (host: String, port: Int)? {
+        guard case let .hostPort(host, port) = endpoint else { return nil }
+        let text: String
         switch host {
-        case let .ipv4(address): return "\(address)"
-        case let .ipv6(address): return "\(address)"
-        case let .name(name, _): return name
+        case let .ipv4(address): text = "\(address)"
+        case let .ipv6(address): text = "\(address)"
+        case let .name(name, _): text = name
         @unknown default: return nil
         }
+        return (text, Int(port.rawValue))
     }
 }

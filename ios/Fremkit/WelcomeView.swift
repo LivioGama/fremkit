@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Not paired yet. Scanning and typing the code arrive with pairing; the buttons are here so
-/// the screen has its final shape.
+/// Not paired yet: scan the Mac's QR code, or pick the Mac and type its code.
 struct WelcomeView: View {
     let credentialsUnreadable: Bool
+    let scan: () -> Void
+    let enterCode: () -> Void
 
     var body: some View {
         VStack(spacing: 28) {
@@ -14,19 +15,18 @@ struct WelcomeView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             HStack(spacing: 16) {
-                Button {} label: {
+                Button(action: scan) {
                     Label("Scan the code", systemImage: "qrcode.viewfinder")
                         .frame(minWidth: 200, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
-                Button {} label: {
+                Button(action: enterCode) {
                     Label("Enter the code", systemImage: "keyboard")
                         .frame(minWidth: 200, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
             }
             .controlSize(.large)
-            .disabled(true)
             if credentialsUnreadable {
                 Text("The saved pairing could not be read. Pairing again replaces it.")
                     .font(.footnote)

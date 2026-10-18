@@ -5,21 +5,30 @@ import SwiftUI
 struct FremkitApp: App {
     @State private var network: LocalNetwork
     @State private var model: AppModel
+    @State private var flow: PairingFlow
     @State private var launched = false
+    private let meter: ScreenMeter
 
     init() {
         let network = LocalNetwork()
-        _network = State(initialValue: network)
-        _model = State(initialValue: AppModel(store: KeychainCredentialStore(), discovered: {
+        let meter = ScreenMeter()
+        let model = AppModel(store: KeychainCredentialStore(), discovered: {
             network.refresh()
             return network.addresses
-        }))
+        })
+        _network = State(initialValue: network)
+        _model = State(initialValue: model)
+        _flow = State(initialValue: PairingFlow.live(model: model, meter: meter))
+        self.meter = meter
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView(model: model)
+            RootView(model: model, flow: flow, network: network, meter: meter)
                 .task { launch() }
+                // `fremkit://pair?…` from the Camera app or anywhere else. Anything that is not a
+                // valid pairing link is ignored.
+                .onOpenURL { url in flow.handle(url: url) }
         }
     }
 
@@ -36,7 +45,7 @@ struct FremkitApp: App {
         network.start()
         model.start()
         #if DEBUG
-        Task { await model.seedFromLaunchArgument() }
+        flow.seedFromLaunchArgument()
         #endif
     }
 }
