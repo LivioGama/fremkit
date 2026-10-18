@@ -4,7 +4,7 @@ import { t, useI18n } from './i18n'
 import { isHexColor, tileText } from './color'
 import { useAppliedTheme, useThemeColors } from './theme'
 import { channelAllowed, mergeSettings, type AccentMode, type NavSlot, type WidgetInstance, type WidgetManifest, type WidgetSize } from './types'
-import { FrameTrust, appIconTarget, connRequest, faviconTarget, fetchTarget, imageTarget, mayListApps, nonEmptyString, stampInstance } from './widgetMessages'
+import { FrameTrust, HOLD_SWIPE_EVENT, appIconTarget, connRequest, faviconTarget, fetchTarget, imageTarget, mayListApps, nonEmptyString, stampInstance } from './widgetMessages'
 
 export type BridgeState = 'loading' | 'ready' | 'error'
 
@@ -142,6 +142,10 @@ export function useWidgetBridge(
         unsubs.set(channel, socket.subscribe(channel, (data) => post({ type: 'fremkit:data', channel, data })))
         break
       }
+      case 'fremkit:hold-swipe':
+        // useSwipe listens on the host window; the admin has no swipe and ignores it.
+        window.dispatchEvent(new Event(HOLD_SWIPE_EVENT))
+        break
       case 'fremkit:unsubscribe': {
         // A widget whose settings now point at another connection drops the old channel.
         const channel = str(m.channel)

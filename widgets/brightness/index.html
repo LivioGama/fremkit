@@ -143,6 +143,7 @@
 
     function clamp(v) { return Math.max(0, Math.min(100, Math.round(v))) }
     function set(v, force) { level = v; show(v); send(v, force) }
+    function hold() { if (Fremkit.holdSwipe) Fremkit.holdSwipe() }
 
     /**
      * One finger on a surface sets the level. The tile's slider is absolute: where the finger is
@@ -158,12 +159,13 @@
       }
       surface.addEventListener('pointerdown', function (e) {
         if (!cur || !cur.available) return
-        dragging = true; moved = false; surface.setPointerCapture(e.pointerId)
+        dragging = true; moved = false; surface.setPointerCapture(e.pointerId); hold()
         startX = e.clientX; startLevel = level === null ? 50 : level
         if (!relative) set(at(e.clientX))
       })
       surface.addEventListener('pointermove', function (e) {
         if (!dragging) return
+        hold()
         if (relative && !moved && Math.abs(e.clientX - startX) < 4) return
         moved = true; set(at(e.clientX))
       })
@@ -180,6 +182,7 @@
       surface.addEventListener('wheel', function (e) {
         e.preventDefault()
         if (!cur || !cur.available) return
+        hold()
         var base = level === null ? 50 : level, v
         if (wheelX !== null && Math.abs(e.clientX - wheelX) > 0.5) {
           var r = track.getBoundingClientRect()
