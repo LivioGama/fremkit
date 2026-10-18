@@ -311,6 +311,16 @@ final class ViewportMeterTests: XCTestCase {
         XCTAssertEqual(reported, Viewport(width: 1408, height: 950), "the size after the rotation, not before")
     }
 
+    func testACancelledWaitEnds() async {
+        let meter = ViewportMeter(settle: .zero, cap: .zero)
+        let waiting = Task { await meter.viewport() }
+        for _ in 0..<5 { await Task.yield() }
+        waiting.cancel()
+        _ = await waiting.value
+        // A later measure finds no one left waiting.
+        meter.measured(CGSize(width: 1408, height: 950))
+    }
+
     func testGivesUpWaitingAfterTheCapWithTheLatestMeasure() async {
         let meter = ViewportMeter(settle: .seconds(60), cap: .milliseconds(50))
         meter.measured(CGSize(width: 1408, height: 950))

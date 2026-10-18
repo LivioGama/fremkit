@@ -25,7 +25,7 @@ extension Viewport {
 public final class ViewportMeter {
     public private(set) var size: CGSize?
     private var changedAt = ContinuousClock.now
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     private let settle: Duration
     private let cap: Duration
 
@@ -34,23 +34,37 @@ public final class ViewportMeter {
         self.cap = cap
     }
 
+    private func stopWaiting(_ id: UUID) {
+        waiters.removeValue(forKey: id)?.resume()
+    }
+
     /// A new size of the container.
     public func measured(_ size: CGSize) {
         guard size != self.size else { return }
         self.size = size
         changedAt = .now
-        let waiting = waiters
-        waiters = []
+        let waiting = waiters.values
+        waiters = [:]
         waiting.forEach { $0.resume() }
     }
 
-    /// The size to report: waits for the first measure, then for it to settle (see above).
+    /// The size to report: waits for the first measure, then for it to settle (see above). A
+    /// cancelled caller stops waiting (and gets whatever is known, which it will drop).
     public func viewport() async -> Viewport {
         if size == nil {
-            await withCheckedContinuation { waiters.append($0) }
+            let id = UUID()
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    waiters[id] = continuation
+                }
+            } onCancel: {
+                // Runs after the continuation is stored: both are on the main actor, and this hop
+                // is queued behind the body, which stores it synchronously.
+                Task { @MainActor in self.stopWaiting(id) }
+            }
         }
         let start = ContinuousClock.now
-        while ContinuousClock.now - changedAt < settle, ContinuousClock.now - start < cap {
+        while !Task.isCancelled, ContinuousClock.now - changedAt < settle, ContinuousClock.now - start < cap {
             try? await Task.sleep(for: .milliseconds(20))
         }
         return Viewport(points: size ?? .zero)

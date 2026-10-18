@@ -35,6 +35,11 @@ public final class AppModel {
     @ObservationIgnored private let connector: Connector
     @ObservationIgnored private let discovered: @MainActor () -> [String]
     @ObservationIgnored private var running: Task<Void, Never>?
+    /// What `running` is. A periodic check gives way to anything else rather than being joined:
+    /// it ignores a Mac that does not answer, which a reconnect or a resume must not.
+    @ObservationIgnored private var runningWork: Work?
+
+    private enum Work { case connect, check, periodicCheck }
     /// Bumped by `pair(with:)` and `forget()`, so the result of an attempt started for another
     /// pairing is dropped.
     @ObservationIgnored private var generation = 0
@@ -95,7 +100,10 @@ public final class AppModel {
     /// `.connecting`. One attempt at a time: a call during an attempt joins it.
     @discardableResult
     public func reconnect() -> Task<Void, Never> {
-        if let running { return running }
+        if let running {
+            guard runningWork == .periodicCheck else { return running }
+            cancelRunning()
+        }
         guard let mac else {
             state = .welcome
             return Task {}
@@ -109,6 +117,7 @@ public final class AppModel {
             self.finish(result, for: mac, generation: generation)
         }
         running = task
+        runningWork = .connect
         return task
     }
 
@@ -137,20 +146,17 @@ public final class AppModel {
             return credentialsUnreadable ? start() : nil
         }
         guard case let .dashboard(host, _) = state, let mac else { return reconnect() }
-        if let running { return running }
-        let generation = generation
-        isConnecting = true
-        let task = Task { [connector] in
-            let outcome = await connector.prober.probe(host: host, port: mac.port, mac: mac)
-            self.finishCheck(outcome, host: host, generation: generation)
+        if let running {
+            guard runningWork == .periodicCheck else { return running }
+            cancelRunning()
         }
-        running = task
-        return task
+        return check(host: host, mac: mac, periodic: false)
     }
 
     private func finish(_ result: ConnectResult, for mac: PairedMac, generation: Int) {
         guard generation == self.generation else { return }
         running = nil
+        runningWork = nil
         isConnecting = false
         switch result {
         case let .connected(host, info):
@@ -178,19 +184,27 @@ public final class AppModel {
     @discardableResult
     public func checkAuthorization() -> Task<Void, Never>? {
         guard case let .dashboard(host, _) = state, let mac, running == nil else { return nil }
+        return check(host: host, mac: mac, periodic: true)
+    }
+
+    /// Probes `/api/devices/me` on the host in use. A resume reconnects when the Mac does not
+    /// answer there; a periodic check leaves that to the page.
+    private func check(host: String, mac: PairedMac, periodic: Bool) -> Task<Void, Never> {
         let generation = generation
         isConnecting = true
         let task = Task { [connector] in
             let outcome = await connector.prober.probe(host: host, port: mac.port, mac: mac)
-            self.finishCheck(outcome, host: host, generation: generation, reconnectOnFailure: false)
+            self.finishCheck(outcome, host: host, generation: generation, reconnectOnFailure: !periodic)
         }
         running = task
+        runningWork = periodic ? .periodicCheck : .check
         return task
     }
 
-    private func finishCheck(_ outcome: ProbeOutcome, host: String, generation: Int, reconnectOnFailure: Bool = true) {
+    private func finishCheck(_ outcome: ProbeOutcome, host: String, generation: Int, reconnectOnFailure: Bool) {
         guard generation == self.generation else { return }
         running = nil
+        runningWork = nil
         isConnecting = false
         guard case .dashboard(host, _) = state else { return }
         switch outcome {
@@ -204,6 +218,7 @@ public final class AppModel {
         generation += 1
         running?.cancel()
         running = nil
+        runningWork = nil
         isConnecting = false
     }
 }

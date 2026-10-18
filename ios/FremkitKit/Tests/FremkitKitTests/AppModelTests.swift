@@ -279,6 +279,38 @@ final class AppModelTests: XCTestCase {
         XCTAssertNotNil(model.checkAuthorization())
     }
 
+    func testAReconnectDoesNotJoinAPeriodicCheck() async {
+        let prober = ScriptedProber(["studio.local": .ok(sampleInfo)])
+        let model = AppModel(store: MemoryCredentialStore(sampleMac), connector: Connector(prober: prober))
+        await model.start()?.value
+        prober.hold("studio.local")
+        let periodic = model.checkAuthorization()
+        while prober.holding == 0 { await Task.yield() }
+        prober.set("studio.local", .unreachable)
+        let attempt = model.reconnect()
+        prober.release()
+        await periodic?.value
+        await attempt.value
+        XCTAssertEqual(model.state, .unreachable(name: "studio"), "a joined periodic check would have ignored it")
+    }
+
+    func testAResumeDoesNotJoinAPeriodicCheck() async {
+        let prober = ScriptedProber(["studio.local": .ok(sampleInfo)])
+        let model = AppModel(store: MemoryCredentialStore(sampleMac), connector: Connector(prober: prober))
+        await model.start()?.value
+        prober.hold("studio.local")
+        let periodic = model.checkAuthorization()
+        while prober.holding == 0 { await Task.yield() }
+        prober.set("studio.local", .unreachable)
+        let resumed = model.resume()
+        prober.release()
+        await periodic?.value
+        await resumed?.value
+        // The resume's own check found nothing at the host in use and reconnected.
+        while model.isConnecting { await model.reconnect().value }
+        XCTAssertEqual(model.state, .unreachable(name: "studio"))
+    }
+
     func testPairingReplacesThePairingAndConnects() async {
         let other = PairedMac(host: "other.local", address: "198.51.100.20", port: 4243, keyHash: SPKIFixture.keyHash,
                               token: "other-token", deviceId: "d2", name: "other")

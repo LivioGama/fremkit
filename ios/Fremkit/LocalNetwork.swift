@@ -22,6 +22,8 @@ final class LocalNetwork {
     @ObservationIgnored private var endpoints: [String: NWEndpoint] = [:]
     /// The checks in flight, by Mac name and kind, so one of each runs at a time.
     @ObservationIgnored private var checking: [Check: NWConnection] = [:]
+    /// Each in-flight check's give-up timer.
+    @ObservationIgnored private var timeouts: [Check: Task<Void, Never>] = [:]
     @ObservationIgnored private var online = true
 
     static let serviceType = "_fremkit._tcp"
@@ -70,9 +72,7 @@ final class LocalNetwork {
         for name in macs.keys where current[name] == nil {
             macs[name] = nil
             endpoints[name] = nil
-            for kind in [Check.Kind.advertised, .endpoint] {
-                checking.removeValue(forKey: Check(name: name, kind: kind))?.cancel()
-            }
+            for kind in [Check.Kind.advertised, .endpoint] { drop(Check(name: name, kind: kind)) }
         }
         for (name, (endpoint, txt)) in current {
             var mac = macs[name] ?? DiscoveredMac(name: name)
@@ -80,7 +80,7 @@ final class LocalNetwork {
             if mac.advertised != txt {
                 mac.advertised = txt
                 mac.advertisedAnswers = false
-                checking.removeValue(forKey: Check(name: name, kind: .advertised))?.cancel()
+                drop(Check(name: name, kind: .advertised))
             }
             macs[name] = mac
             endpoints[name] = endpoint
@@ -91,7 +91,9 @@ final class LocalNetwork {
     private func pathChanged(satisfied: Bool) {
         defer { online = satisfied }
         guard satisfied, !online else { return }
-        // Back on a network, perhaps another one: what answered before may not any more.
+        // Back on a network, perhaps another one: what answered before may not any more, and a
+        // check still waiting on the old network would hold up a new one.
+        for check in Array(checking.keys) { drop(check) }
         for name in macs.keys {
             macs[name]?.advertisedAnswers = false
             macs[name]?.resolved = nil
@@ -134,11 +136,20 @@ final class LocalNetwork {
             }
         }
         connection.start(queue: .main)
-        Task { [weak self, weak connection] in
+        timeouts[check] = Task { [weak self, weak connection] in
             try? await Task.sleep(for: Self.checkTimeout)
-            guard let self, let connection, self.checking[check] === connection else { return }
+            guard !Task.isCancelled, let self, let connection, self.checking[check] === connection else { return }
             self.finish(check, connection, .gaveUp)
         }
+    }
+
+    /// Stops a check without an outcome.
+    private func drop(_ check: Check) {
+        if let connection = checking.removeValue(forKey: check) {
+            connection.stateUpdateHandler = nil
+            connection.cancel()
+        }
+        timeouts.removeValue(forKey: check)?.cancel()
     }
 
     private enum Outcome {
@@ -152,6 +163,7 @@ final class LocalNetwork {
         connection.cancel()
         guard checking[check] === connection else { return }
         checking[check] = nil
+        timeouts.removeValue(forKey: check)?.cancel()
         guard var mac = macs[check.name] else { return }
         let before = mac.candidates
         switch (check.kind, outcome) {
