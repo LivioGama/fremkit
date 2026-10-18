@@ -78,10 +78,7 @@ import { DeviceService } from './devices/service.js'
 import { deviceRoutes } from './devices/routes.js'
 import { REMOTE_PORT } from './devices/listener.js'
 import type { Advertiser } from './devices/bonjour.js'
-import { CompanionPairing } from './companion/pairing.js'
-import { companionRoutes } from './companion/routes.js'
-import { CompanionSession } from './companion/session.js'
-import { CompanionSockets, companionSocket } from './companion/socket.js'
+import { createCompanion } from './companion/index.js'
 import type { Exec } from './secrets/keychain.js'
 
 export interface AppOptions {
@@ -405,21 +402,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await app.register(deviceRoutes, { service: deviceService, config: store })
   app.addHook('onClose', async () => { await deviceService.close() })
 
-  // The browser extension asks to pair; the user answers on the Edge or in the admin.
-  const companionPairing = new CompanionPairing(devices)
-  await app.register(companionRoutes, { pairing: companionPairing, config: store })
-  app.addHook('onClose', async () => { companionPairing.dispose() })
-
-  // The paired extension's socket and the share it carries. Until the provider (Task 6) says
-  // where a share can be shown, none can: every `tab.started` is refused with `noWidget`.
-  const companionSockets = new CompanionSockets()
-  const companionSession = new CompanionSession({
-    send: (deviceId, msg) => companionSockets.send(deviceId, msg),
-    changed: () => undefined,
-    canShare: () => false,
-    pairedCount: () => devices.list().filter((d) => d.kind === 'extension').length,
-  })
-  await app.register(companionSocket, { store: devices, session: companionSession, sockets: companionSockets })
+  // The browser extension: pairing by approval on the Edge, its socket, the share it carries and
+  // the `companion` channel the dashboard watches. Closed with the app.
+  await createCompanion({ app, store: devices, config: store, registry })
 
   if (opts.uiDist && (await access(opts.uiDist).then(() => true, () => false))) {
     await app.register(fastifyStatic, { root: opts.uiDist, prefix: '/', serve: true, decorateReply: false })

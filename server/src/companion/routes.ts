@@ -21,7 +21,7 @@ import { EXTENSION_ORIGIN_RE } from './protocol.js'
 
 export interface CompanionRoutesOptions {
   pairing: CompanionPairing
-  config: ConfigStore
+  config: Pick<ConfigStore, 'get'>
 }
 
 const PairSchema = z.strictObject({
