@@ -70,8 +70,13 @@ function when(iso: string | null): string {
     : new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 
-function pickScreen(device: PublicDevice, value: string): void {
-  void devices.attach(device.id, value === '' ? null : value)
+/**
+ * Waits for a pending config save first, as `onCreated` does: a device screen made or turned into
+ * one a moment ago exists on the server only once that save lands.
+ */
+async function pickScreen(device: PublicDevice, value: string): Promise<void> {
+  await s.flush()
+  await devices.attach(device.id, value === '' ? null : value)
 }
 
 /** The device a screen is being made for, while its dialog is open. */

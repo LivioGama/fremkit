@@ -126,6 +126,27 @@ describe('the devices section', () => {
     wrapper.unmount()
   })
 
+  it('attaches a picked screen only once a pending config save has landed', async () => {
+    deviceApi.getDevices.mockResolvedValue(status({ devices: [device()] }))
+    let land!: () => void
+    const saved = new Promise<void>((resolve) => { land = resolve })
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/config' && init?.method === 'PUT') await saved
+      return new Response(init?.body ?? '{}', { headers: { 'content-type': 'application/json' } })
+    }))
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    // An edit still waiting for its debounced save.
+    useAdminStore().renameScreen('kitchen', 'Kitchen wall')
+    await wrapper.find('[data-test="device"] select').setValue('kitchen')
+    await flushPromises()
+    expect(deviceApi.patchDevice).not.toHaveBeenCalled()
+    land()
+    await flushPromises()
+    expect(deviceApi.patchDevice).toHaveBeenCalledWith('dev-1', { screenId: 'kitchen' })
+    wrapper.unmount()
+  })
+
   it('makes a screen at a device’s size and attaches the device to it', async () => {
     deviceApi.getDevices.mockResolvedValue(status({ devices: [device()] }))
     const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
