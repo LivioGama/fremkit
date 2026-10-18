@@ -5,10 +5,11 @@
 // `cleanState` check it before anything else reads it.
 
 /**
- * Runs in every frame. Reports the frame's largest visible video (non-zero size, in the viewport),
- * in that frame's px, whether or not it has a source yet: an embed the user has not started has
- * none until play. In the top frame it also reports where each iframe sits, so a player embedded
- * from another origin can be located.
+ * Runs in every frame. Reports the frame's main visible video (non-zero size, in the viewport), in
+ * that frame's px: the largest one with a source, or else the largest without one, marked `empty`
+ * (an embed the user has not started has none until play; a poster placeholder never does). In
+ * the top frame it also reports where each iframe sits, so a player embedded from another origin
+ * can be located.
  * SELF-CONTAINED: it is serialised into the page.
  */
 export function survey() {
@@ -20,9 +21,10 @@ export function survey() {
     const r = el.getBoundingClientRect()
     return { x: r.x, y: r.y, w: r.width, h: r.height }
   }
+  const empty = (el) => !el.currentSrc && !el.src && !el.srcObject && !(el.readyState > 0)
   const v = [...document.querySelectorAll('video')]
     .filter(visible)
-    .sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0]
+    .sort((a, b) => empty(a) - empty(b) || b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0]
   const isTop = window === window.top
   return {
     href: location.href,
@@ -30,7 +32,7 @@ export function survey() {
     vw: innerWidth,
     vh: innerHeight,
     title: document.title,
-    video: v ? box(v) : null,
+    video: v ? { ...box(v), ...(empty(v) ? { empty: true } : {}) } : null,
     iframes: isTop
       ? [...document.querySelectorAll('iframe')]
           // `fs`: the frame may go full screen, which a video player asks for and an ad rarely does.
@@ -49,8 +51,10 @@ export function survey() {
  * SELF-CONTAINED: it is serialised into the page.
  */
 export function control(action, args) {
+  // The same choice as `survey`: one with a source first, then the largest.
+  const empty = (el) => !el.currentSrc && !el.src && !el.srcObject && !(el.readyState > 0)
   const v = [...document.querySelectorAll('video')].sort(
-    (a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight,
+    (a, b) => empty(a) - empty(b) || b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight,
   )[0]
   if (!v) return null
   const duration = Number.isFinite(v.duration) ? v.duration : 0
@@ -110,6 +114,12 @@ function cleanBox(b) {
   return finite(x) && finite(y) && finite(w) && finite(h) && w > 0 && h > 0 ? { x, y, w, h } : null
 }
 
+/** A reported video: its box, and `empty: true` only when the page said it has no source. */
+function cleanVideo(v) {
+  const at = cleanBox(v)
+  return at && v.empty === true ? { ...at, empty: true } : at
+}
+
 /**
  * One frame's `survey` result, type-checked and bounded: what a page reports is untrusted, and the
  * worker reads it every second. Null when it is not a usable report.
@@ -123,7 +133,7 @@ export function cleanSurvey(r) {
     vw: r.vw,
     vh: r.vh,
     title: typeof r.title === 'string' ? r.title.slice(0, MAX_TITLE) : '',
-    video: cleanBox(r.video),
+    video: cleanVideo(r.video),
     iframes: top && Array.isArray(r.iframes)
       ? r.iframes.slice(0, MAX_IFRAMES).flatMap((f) => {
           const at = cleanBox(f)
@@ -173,9 +183,11 @@ export function placeFrame(frame, iframes) {
 }
 
 /**
- * The biggest video of a tab, from the `executeScript` results of `survey` over all frames
- * (`{ frameId, result }`). The rectangle is a fraction of the top viewport. A frame that cannot be
- * placed in the top page is skipped rather than guessed.
+ * The main video of a tab, from the `executeScript` results of `survey` over all frames
+ * (`{ frameId, result }`): the biggest one with a source, or else the biggest empty one (an embed
+ * not started yet), so a large poster placeholder never wins over the video actually playing. The
+ * rectangle is a fraction of the top viewport. A frame that cannot be placed in the top page is
+ * skipped rather than guessed.
  */
 export function pickVideo(frames) {
   const topResult = frames.find((f) => f.result?.top)?.result
@@ -193,7 +205,10 @@ export function pickVideo(frames) {
       const sy = at.h / r.vh
       rect = { x: at.x + r.video.x * sx, y: at.y + r.video.y * sy, w: r.video.w * sx, h: r.video.h * sy }
     }
-    if (!best || rect.w * rect.h > best.rect.w * best.rect.h) best = { frameId: f.frameId, rect }
+    const empty = r.video.empty === true
+    if (!best || (best.empty && !empty) || (best.empty === empty && rect.w * rect.h > best.rect.w * best.rect.h)) {
+      best = { frameId: f.frameId, rect, empty }
+    }
   }
   if (!best) return null
   const { x, y, w, h } = best.rect

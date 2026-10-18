@@ -80,7 +80,8 @@ Edge*), or press **⌥⇧E**. Press it again to stop. The shortcut can be change
 `chrome://extensions/shortcuts`, or from the extension's options page.
 
 - **The picture is cropped to the page's main video**: the largest video element visible in the
-  tab, playing or not, without its sound. The page decides where that video sits, so a page that
+  tab, playing or not, without its sound; one that has something to play comes before an empty
+  placeholder, whatever their sizes. The page decides where that video sits, so a page that
   makes it cover the whole tab sends the whole tab's picture, frames from other sites included.
   Whatever it shows, the picture only goes to your own dashboard on this Mac.
 - **The sound stays in the browser.** The Edge shows the picture; volume and mute act on the

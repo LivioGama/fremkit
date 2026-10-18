@@ -50,6 +50,17 @@ describe('pickVideo', () => {
     expect(pickVideo(frames)).toEqual({ frameId: 7, rect: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 } })
   })
 
+  it('prefers a video with a source over a larger empty one, in any frame', () => {
+    const iframe = { src: 'https://player.example.org/embed/1', x: 0, y: 0, w: 1000, h: 500 }
+    const child = (video: unknown) => frame(7, { href: iframe.src, top: false, vw: 1000, vh: 500, title: '', video, iframes: [] })
+    // A big poster placeholder in the top frame, the playing video small in an embed.
+    const frames = [frame(0, top({ x: 0, y: 0, w: 1000, h: 500, empty: true } as Rect, [iframe])), child({ x: 0, y: 0, w: 200, h: 100 })]
+    expect(pickVideo(frames)).toEqual({ frameId: 7, rect: { x: 0, y: 0, w: 0.2, h: 0.2 } })
+    // With nothing but empty ones, the largest still wins: an embed the user has not started.
+    const unstarted = [frame(0, top({ x: 0, y: 0, w: 100, h: 50, empty: true } as Rect, [iframe])), child({ x: 0, y: 0, w: 500, h: 250, empty: true })]
+    expect(pickVideo(unstarted)).toEqual({ frameId: 7, rect: { x: 0, y: 0, w: 0.5, h: 0.5 } })
+  })
+
   it('returns null when no frame has a visible video', () => {
     expect(pickVideo([frame(0, top(null))])).toBeNull()
     expect(pickVideo([])).toBeNull()
@@ -420,6 +431,7 @@ describe('protocol builders', () => {
 const box = (x: number, y: number, w: number, h: number) => ({ x, y, width: w, height: h, top: y, left: x, bottom: y + h, right: x + w })
 function fakeVideo(w: number, h: number, extra: Record<string, unknown> = {}) {
   const el: any = { clientWidth: w, clientHeight: h, paused: true, currentTime: 50, duration: 100, volume: 0.5, muted: false,
+    currentSrc: 'https://example.com/v.mp4', readyState: 4,
     getBoundingClientRect: () => box(10, 20, w, h), play() { el.paused = false }, pause() { el.paused = true }, ...extra }
   return el
 }
@@ -452,9 +464,19 @@ describe('survey (in-page)', () => {
       { src: 'https://r.example.org/e', fs: true, x: 0, y: 0, w: 60, h: 60 },
     ])
   })
-  it('counts a visible video that has no source yet (an embed not started)', () => {
-    install([fakeVideo(100, 50), fakeVideo(1000, 500, { currentSrc: '' })])
-    expect(survey().video).toEqual({ x: 10, y: 20, w: 1000, h: 500 })
+  it('counts a visible video that has no source yet (an embed not started), marked empty', () => {
+    const none = { currentSrc: '', readyState: 0 }
+    install([fakeVideo(100, 50, none), fakeVideo(1000, 500, none)])
+    expect(survey().video).toEqual({ x: 10, y: 20, w: 1000, h: 500, empty: true })
+  })
+  it('prefers a smaller video with a source over a large empty placeholder', () => {
+    install([fakeVideo(1000, 500, { currentSrc: '', readyState: 0 }), fakeVideo(100, 50, { paused: false })])
+    expect(survey().video).toEqual({ x: 10, y: 20, w: 100, h: 50 })
+    // A stream (srcObject) or a src set without a load yet count as a source too.
+    install([fakeVideo(1000, 500, { currentSrc: '', readyState: 0 }), fakeVideo(100, 50, { currentSrc: '', readyState: 0, srcObject: {} })])
+    expect(survey().video).toEqual({ x: 10, y: 20, w: 100, h: 50 })
+    install([fakeVideo(1000, 500, { currentSrc: '', readyState: 0 }), fakeVideo(100, 50, { currentSrc: '', readyState: 0, src: 'https://example.com/v.mp4' })])
+    expect(survey().video).toEqual({ x: 10, y: 20, w: 100, h: 50 })
   })
   it('gives no iframes from a child frame and null without a video', () => {
     install([], [{ src: 'https://p.example.org/e', getBoundingClientRect: () => box(5, 6, 300, 200) }], null, false)
@@ -479,6 +501,12 @@ describe('control (in-page)', () => {
     expect(control('mute')).toMatchObject({ muted: true })
     expect(control('mute')).toMatchObject({ muted: false })
     expect(control(null)).toMatchObject({ paused: false, duration: 100 })
+  })
+  it('acts on the same video survey picks: one with a source before a larger empty one', () => {
+    const playing = fakeVideo(100, 50)
+    install([fakeVideo(1000, 500, { currentSrc: '', readyState: 0 }), playing])
+    control('toggle')
+    expect(playing.paused).toBe(false)
   })
   it('acts on the element only, whatever YouTube player the page has', () => {
     const yt = { setVolume: () => { throw new Error('not from the isolated world') } }
@@ -540,6 +568,9 @@ describe('what the page reports is cleaned before use', () => {
     })!
     expect(t.title).toBe('')
     expect(t.video).toEqual({ x: 1, y: 2, w: 3, h: 4 })
+    // `empty` is kept only as `true`; any other value is dropped.
+    expect(cleanSurvey({ ...t, video: { x: 1, y: 2, w: 3, h: 4, empty: true } })!.video).toEqual({ x: 1, y: 2, w: 3, h: 4, empty: true })
+    expect(cleanSurvey({ ...t, video: { x: 1, y: 2, w: 3, h: 4, empty: 'yes' } })!.video).toEqual({ x: 1, y: 2, w: 3, h: 4 })
     expect(t.iframes[0]).toEqual({ src: 'https://p.example.org/e', fs: false, x: 0, y: 0, w: 10, h: 10 })
     expect(t.iframes.length).toBeLessThanOrEqual(100)
     expect(t.iframes.every((f: { src: string }) => typeof f.src === 'string')).toBe(true)
