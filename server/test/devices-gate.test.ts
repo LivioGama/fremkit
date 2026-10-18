@@ -6,7 +6,7 @@ import type { FastifyInstance, RouteOptions } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { RemoteListener } from '../src/devices/listener.js'
 import { remoteAccess } from '../src/devices/allowlist.js'
-import { readCookie } from '../src/devices/gate.js'
+import { readCookie } from '../src/http/cookies.js'
 import { generateToken } from '../src/http/access.js'
 import { hasOpenssl, remote, tlsMaterial, upgrade } from './helpers/remote.js'
 
@@ -84,9 +84,10 @@ describe('remoteAccess', () => {
 describe('readCookie', () => {
   it('finds one cookie among several and ignores look-alikes', () => {
     expect(readCookie('a=1; fremkit_device=tok; b=2', 'fremkit_device')).toBe('tok')
-    expect(readCookie('xfremkit_device=tok', 'fremkit_device')).toBeNull()
-    expect(readCookie('fremkit_device=', 'fremkit_device')).toBeNull()
-    expect(readCookie(undefined, 'fremkit_device')).toBeNull()
+    expect(readCookie(['a=1', 'fremkit_device= tok '], 'fremkit_device')).toBe('tok')
+    expect(readCookie('xfremkit_device=tok', 'fremkit_device')).toBeUndefined()
+    expect(readCookie('fremkit_device=', 'fremkit_device')).toBe('')
+    expect(readCookie(undefined, 'fremkit_device')).toBeUndefined()
   })
 })
 
@@ -190,6 +191,7 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
     expect(none.status).toBe(401)
     expect(typeof JSON.parse(none.body).error).toBe('string')
     expect((await remote(port, { path: '/api/config', headers: cookie('not-a-token') })).status).toBe(401)
+    expect((await remote(port, { path: '/api/config', headers: { cookie: 'fremkit_device=' } })).status).toBe(401)
     const ok = await remote(port, { path: '/api/config', headers: cookie(token) })
     expect(ok.status).toBe(200)
     expect(JSON.parse(ok.body).screens).toBeDefined()

@@ -20,6 +20,7 @@
  */
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
+import { readCookie } from './cookies.js'
 
 /** Bytes of randomness in a secret and in a one-time code. */
 export const TOKEN_BYTES = 32
@@ -64,17 +65,7 @@ export function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(x, y)
 }
 
-/** One cookie's value out of a `Cookie` header, or undefined. */
-export function readCookie(header: string | string[] | undefined, name: string): string | undefined {
-  const raw = Array.isArray(header) ? header.join('; ') : header
-  if (typeof raw !== 'string') return undefined
-  for (const part of raw.split(';')) {
-    const eq = part.indexOf('=')
-    if (eq < 0) continue
-    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim()
-  }
-  return undefined
-}
+export { readCookie }
 
 /** The token of an `Authorization: Bearer …` header, or undefined. */
 export function readBearer(header: string | string[] | undefined): string | undefined {

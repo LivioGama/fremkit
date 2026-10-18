@@ -15,6 +15,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { isRemoteRequest } from '../net/remote.js'
+import { readCookie } from '../http/cookies.js'
 import { isReadMethod } from '../http/guard.js'
 import { stripQuery } from '../http/logging.js'
 import { serverLocale, tr } from '../i18n.js'
@@ -49,20 +50,6 @@ export interface RemoteGateOptions {
   remoteHosts: () => Set<string>
 }
 
-/** The value of one cookie in a `Cookie` header, or null. Parsed by hand: no cookie plugin here. */
-export function readCookie(header: string | string[] | undefined, name: string): string | null {
-  const value = Array.isArray(header) ? header.join('; ') : header
-  if (typeof value !== 'string') return null
-  for (const part of value.split(';')) {
-    const eq = part.indexOf('=')
-    if (eq < 0) continue
-    if (part.slice(0, eq).trim() !== name) continue
-    const v = part.slice(eq + 1).trim()
-    return v.length > 0 ? v : null
-  }
-  return null
-}
-
 function refuse(reply: FastifyReply, code: 403 | 421 | 401, key: 'http.originNotAllowed' | 'http.hostNotAllowed' | 'devices.unauthorized'): FastifyReply {
   return reply.code(code).header('cache-control', 'no-store').send({ error: tr(serverLocale(), key) })
 }
@@ -91,7 +78,8 @@ export function registerRemoteGate(app: FastifyInstance, opts: RemoteGateOptions
     }
 
     if (access === 'public') return
-    const token = readCookie(req.headers.cookie, DEVICE_COOKIE)
+    // An empty cookie is no cookie.
+    const token = readCookie(req.headers.cookie, DEVICE_COOKIE) || null
     const device = token !== null && token.length <= MAX_TOKEN_LENGTH ? opts.devices.findByToken(token) : null
     if (!device) return refuse(reply, 401, 'devices.unauthorized')
     req.deviceId = device.id
