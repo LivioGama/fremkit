@@ -15,7 +15,7 @@ tagged `vX.Y.Z`.
 ### Added
 - **Fremplay: show the video of a browser tab on the Edge, with touch controls** (needs the Fremkit Companion extension).
 - **Fremkit Companion, a browser extension for Chrome and other Chromium browsers** (in `companion/`, loaded unpacked for now). Link it once by allowing it on the Edge, then send the video of any tab to the Fremplay widget from its toolbar menu or with ⌥⇧E; a player embedded from another site asks for that site's permission the first time.
-- **Paired browser extensions are listed with your devices.** Screen → Devices shows each extension with its name (editable), when it paired and was last seen, whether it is connected now, and a Remove button, plus the pairing request waiting for an answer, which can be allowed or refused there as well as on the Edge. An extension that was allowed but never collected its pairing no longer lingers in the list.
+- **Paired browser extensions are listed with your devices.** Screen → Devices shows each extension with its name (editable), when it paired and was last seen, whether it is connected now, and a Remove button, plus the pairing request waiting for an answer, which can be allowed or refused there as well as on the Edge.
 - **Pairing a browser extension is confirmed on the Edge.** The dashboard shows the code and name the extension gave, with Allow and Refuse buttons, and brings up the page holding the Fremplay widget when a share starts.
 - **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another
   one, and give each its own layout. A pre-fill is shown as a preview first, naming the widgets
