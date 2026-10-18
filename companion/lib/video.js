@@ -242,18 +242,16 @@ export function cropRect(rect, videoWidth, videoHeight, max = { w: 1920, h: 1080
 }
 
 /**
- * The frame of `origin` holding the largest video the survey found, as `{ frameId }`, or null when
- * no frame of that origin holds one. Run after the user granted `origin`: a frame that turns out
- * to hold no video (a webmail page sized like a player) does not keep the grant.
+ * The origin of the frame holding the video `pickVideo` picks, or null when it picks none. Run
+ * after the user granted an origin: the grant stays only when the share plays a video in a frame
+ * of that origin, not when that frame merely holds a placeholder `<video>` (or none at all, like
+ * a webmail page sized like a player) while the video shared is somewhere else.
  */
-export function videoFrameOf(frames, origin) {
-  let best = null
-  for (const f of frames) {
-    const video = f.result?.video
-    if (!video || originOf(f.result.href) !== origin) continue
-    if (!best || video.w * video.h > best.area) best = { frameId: f.frameId, area: video.w * video.h }
-  }
-  return best ? { frameId: best.frameId } : null
+export function pickedOrigin(frames) {
+  const picked = pickVideo(frames)
+  if (!picked) return null
+  const at = frames.find((f) => f.frameId === picked.frameId)?.result
+  return at ? originOf(at.href) : null
 }
 
 /**
@@ -264,8 +262,8 @@ export function videoFrameOf(frames, origin) {
  * permission is there). `frames` are the survey results, as for `pickVideo`.
  *
  * Only a candidate: nothing inside a frame of another origin can be seen before its grant. So the
- * popup names the origin before the browser asks, and `videoFrameOf` takes the grant back when the
- * frame turns out to hold no video.
+ * popup names the origin before the browser asks, and the grant goes back unless the share plays
+ * a video in that frame (`pickedOrigin`).
  */
 export function embeddedPlayer(frames, picked) {
   const topResult = frames.find((f) => f.result?.top)?.result

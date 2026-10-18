@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 // @ts-expect-error plain JS modules outside server/, no declarations
-import { cleanFrames, cleanState, cleanSurvey, control, cropRect, embeddedPlayer, pickVideo, placeFrame, survey, videoFrameOf, youtubeVolume } from '../../companion/lib/video.js'
+import { cleanFrames, cleanState, cleanSurvey, control, cropRect, embeddedPlayer, pickVideo, pickedOrigin, placeFrame, survey, youtubeVolume } from '../../companion/lib/video.js'
 // @ts-expect-error plain JS module
 import { browserName } from '../../companion/lib/browser.js'
 // @ts-expect-error plain JS module
@@ -622,23 +622,25 @@ describe('embeddedPlayer', () => {
   })
 })
 
-describe('videoFrameOf (which granted frame keeps its grant)', () => {
-  const child = (href: string, video: Rect | null) => ({ href, top: false, vw: 800, vh: 400, title: '', video, iframes: [] })
+describe('pickedOrigin (which granted frame keeps its grant)', () => {
   const ORIGIN = 'https://player.example.org'
-  const cases: [string, unknown[], { frameId: number } | null][] = [
-    ['an iframe without a video is never chosen', [frame(0, top(null)), frame(3, child(`${ORIGIN}/mail`, null))], null],
-    ['a full-page iframe without a video is never chosen, even beside a video elsewhere',
-      [frame(0, top({ x: 0, y: 0, w: 900, h: 450 })), frame(3, child(`${ORIGIN}/inbox`, null))], null],
-    ['a video in a frame of another origin does not count',
-      [frame(0, top(null)), frame(4, child('https://other.example.net/e', { x: 0, y: 0, w: 800, h: 400 }))], null],
-    ['the frame holding the largest visible video is chosen',
-      [frame(0, top(null)), frame(3, child(`${ORIGIN}/a`, { x: 0, y: 0, w: 100, h: 50 })),
-        frame(5, child(`${ORIGIN}/b`, { x: 0, y: 0, w: 640, h: 360 })), frame(6, child(`${ORIGIN}/c`, null))], { frameId: 5 }],
-    ['a frame that did not answer is skipped', [frame(0, top(null)), { frameId: 7 }], null],
+  const slots = [`${ORIGIN}/a`, `${ORIGIN}/b`, 'https://other.example.net/e'].map((src, i) => ({ src, x: 0, y: i * 100, w: 800, h: 400 }))
+  const page = (video: unknown = null) => frame(0, top(video as Rect | null, slots))
+  const child = (id: number, href: string, video: unknown) => frame(id, { href, top: false, vw: 800, vh: 400, title: '', video, iframes: [] })
+  const big = { x: 0, y: 0, w: 640, h: 360 }
+  const cases: [string, unknown[], string | null][] = [
+    ['the frame holding the shared video', [page(), child(5, `${ORIGIN}/b`, big)], ORIGIN],
+    ['an empty video there, when it is the only one (an embed not started)', [page(), child(5, `${ORIGIN}/b`, { ...big, empty: true })], ORIGIN],
+    ['a granted frame without a video', [page({ x: 0, y: 0, w: 900, h: 450 }), child(3, `${ORIGIN}/a`, null)], 'https://example.com'],
+    ['a placeholder in the granted frame while the top frame plays',
+      [page({ x: 0, y: 0, w: 100, h: 50 }), child(3, `${ORIGIN}/a`, { ...big, empty: true })], 'https://example.com'],
+    ['a video in a frame of another origin', [page(), child(4, 'https://other.example.net/e', big)], 'https://other.example.net'],
+    ['no video anywhere', [page(), child(3, `${ORIGIN}/a`, null)], null],
+    ['a frame that did not answer', [page(), { frameId: 7, result: null }], null],
     ['no frames at all', [], null],
   ]
   it.each(cases)('%s', (_, frames, expected) => {
-    expect(videoFrameOf(frames, ORIGIN)).toEqual(expected)
+    expect(pickedOrigin(frames)).toBe(expected)
   })
 })
 
@@ -766,13 +768,17 @@ describe('isOwnContext (who the worker and the offscreen document listen to)', (
 
 describe('grantToReturn (the grant a start gives back)', () => {
   const ORIGIN = 'https://player.example.org'
-  const child = (video: Rect | null) => frame(3, { href: `${ORIGIN}/e`, top: false, vw: 800, vh: 400, title: '', video, iframes: [] })
-  const withVideo = [frame(0, top(null)), child({ x: 0, y: 0, w: 640, h: 360 })]
-  const withoutVideo = [frame(0, top({ x: 0, y: 0, w: 500, h: 250 })), child(null)]
+  const slot = [{ src: `${ORIGIN}/e`, x: 0, y: 0, w: 800, h: 400 }]
+  const child = (video: unknown) => frame(3, { href: `${ORIGIN}/e`, top: false, vw: 800, vh: 400, title: '', video, iframes: [] })
+  const withVideo = [frame(0, top(null, slot)), child({ x: 0, y: 0, w: 640, h: 360 })]
+  const withoutVideo = [frame(0, top({ x: 0, y: 0, w: 500, h: 250 }, slot)), child(null)]
+  // The share plays the top frame's video; the granted frame only holds an empty placeholder.
+  const placeholder = [frame(0, top({ x: 0, y: 0, w: 100, h: 50 }, slot)), child({ x: 0, y: 0, w: 640, h: 360, empty: true })]
   const cases: [string, string | null, { ok: boolean; frames: unknown[] | null }, string | null][] = [
     ['nothing was granted', null, { ok: false, frames: null }, null],
     ['a share that started on a frame holding a video keeps it', ORIGIN, { ok: true, frames: withVideo }, null],
     ['a share that started from another video, the granted frame empty', ORIGIN, { ok: true, frames: withoutVideo }, ORIGIN],
+    ['a share that started from another video, the granted frame holding a placeholder', ORIGIN, { ok: true, frames: placeholder }, ORIGIN],
     ['not paired, or the tab gone, before any survey', ORIGIN, { ok: false, frames: null }, ORIGIN],
     ['the survey failed', ORIGIN, { ok: false, frames: null }, ORIGIN],
     ['the capture or the server failed after a survey that found the video', ORIGIN, { ok: false, frames: withVideo }, ORIGIN],
