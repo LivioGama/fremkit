@@ -415,7 +415,7 @@ describe('protocol builders', () => {
 // Minimal fakes: survey and control only touch these members.
 const box = (x: number, y: number, w: number, h: number) => ({ x, y, width: w, height: h, top: y, left: x, bottom: y + h, right: x + w })
 function fakeVideo(w: number, h: number, extra: Record<string, unknown> = {}) {
-  const el: any = { clientWidth: w, clientHeight: h, paused: true, currentTime: 50, duration: 100, volume: 0.5, muted: false, currentSrc: 'blob:https://example.com/1',
+  const el: any = { clientWidth: w, clientHeight: h, paused: true, currentTime: 50, duration: 100, volume: 0.5, muted: false,
     getBoundingClientRect: () => box(10, 20, w, h), play() { el.paused = false }, pause() { el.paused = true }, ...extra }
   return el
 }
@@ -448,10 +448,8 @@ describe('survey (in-page)', () => {
       { src: 'https://r.example.org/e', fs: true, x: 0, y: 0, w: 60, h: 60 },
     ])
   })
-  it('skips a video that has no source to play, however large', () => {
+  it('counts a visible video that has no source yet (an embed not started)', () => {
     install([fakeVideo(100, 50), fakeVideo(1000, 500, { currentSrc: '' })])
-    expect(survey().video).toEqual({ x: 10, y: 20, w: 100, h: 50 })
-    install([fakeVideo(1000, 500, { currentSrc: '', srcObject: {} })])
     expect(survey().video).toEqual({ x: 10, y: 20, w: 1000, h: 500 })
   })
   it('gives no iframes from a child frame and null without a video', () => {

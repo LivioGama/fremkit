@@ -68,10 +68,10 @@ Play a video, then either click the Fremkit icon and press **Envoyer sur l'Edge*
 Edge*), or press **⌥⇧E**. Press it again to stop. The shortcut can be changed at
 `chrome://extensions/shortcuts`, or from the extension's options page.
 
-- **The picture is cropped to the page's main video**: the largest video playing in the tab,
-  without its sound. The page decides where that video sits, so a page that makes it cover the
-  whole tab sends the whole tab's picture, frames from other sites included. Whatever it shows,
-  the picture only goes to your own dashboard on this Mac.
+- **The picture is cropped to the page's main video**: the largest video element visible in the
+  tab, playing or not, without its sound. The page decides where that video sits, so a page that
+  makes it cover the whole tab sends the whole tab's picture, frames from other sites included.
+  Whatever it shows, the picture only goes to your own dashboard on this Mac.
 - **The sound stays in the browser.** The Edge shows the picture; volume and mute act on the
   video in your browser.
 - The Edge **switches to the page holding the Fremplay widget**. If the Edge's screen has no

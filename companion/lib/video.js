@@ -5,14 +5,14 @@
 // `cleanState` check it before anything else reads it.
 
 /**
- * Runs in every frame. Reports the frame's largest video that could play (it has a source) and
- * shows (non-zero size, in the viewport), in that frame's px, and, in the top frame, where each
- * iframe sits, so a player embedded from another origin can be located.
+ * Runs in every frame. Reports the frame's largest visible video (non-zero size, in the viewport),
+ * in that frame's px, whether or not it has a source yet: an embed the user has not started has
+ * none until play. In the top frame it also reports where each iframe sits, so a player embedded
+ * from another origin can be located.
  * SELF-CONTAINED: it is serialised into the page.
  */
 export function survey() {
   const visible = (v) => {
-    if (!v.currentSrc && !v.srcObject) return false
     const r = v.getBoundingClientRect()
     return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth
   }
