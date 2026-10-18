@@ -63,6 +63,12 @@ final class ConnectorTests: XCTestCase {
                        ["studio.local", "192.0.2.10", "198.51.100.7"])
     }
 
+    func testCandidatesAreLocalNamesAndIPv4Only() {
+        XCTAssertEqual(Connector.candidates(mac: sampleMac, discovered: ["fe80::1%en0", "2001:db8::1", "198.51.100.7"],
+                                            preferring: "fe80::2%en0"),
+                       ["studio.local", "192.0.2.10", "198.51.100.7"])
+    }
+
     func testAPreferredHostIsTriedFirst() {
         XCTAssertEqual(Connector.candidates(mac: sampleMac, discovered: ["198.51.100.7"], preferring: "198.51.100.7"),
                        ["198.51.100.7", "studio.local", "192.0.2.10"])

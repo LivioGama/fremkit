@@ -412,7 +412,13 @@ export class DeviceService {
     this.hub.closeRemote()
   }
 
-  /** The `host:port` authorities the gate lets in, lowercased as it compares them. */
+  /**
+   * The `host:port` authorities the gate lets in, lowercased as it compares them: the `.local`
+   * name and the IPv4 addresses, deliberately no IPv6 literal. A zoned one (`fe80::1%en0`) would
+   * reach the cookie domain, the CSP host sources and the Origin check in forms none of them
+   * accept, so the iPad app connects by name or IPv4 only (`isConnectableHost`). A peer can still
+   * be IPv6 under the `.local` Host; `codes.ts` keys it by /64 for that.
+   */
   private updateHosts(): void {
     const port = this.listener.port
     const names = [

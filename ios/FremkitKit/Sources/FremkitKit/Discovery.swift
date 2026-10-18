@@ -10,10 +10,10 @@ public struct FremkitTXT: Equatable, Sendable {
     /// The port when the record has none: the Mac's remote listener's.
     public static let defaultPort = 4243
 
-    /// Nil unless `a` is an IP literal; a missing `p` is the default port, an invalid one refuses
-    /// the record.
+    /// Nil unless `a` is an IPv4 literal (`isConnectableHost`); a missing `p` is the default port,
+    /// an invalid one refuses the record.
     public init?(_ record: [String: String]) {
-        guard let address = record["a"], isIPLiteral(address) else { return nil }
+        guard let address = record["a"], isIPv4Literal(address) else { return nil }
         let port: Int
         if let text = record["p"] {
             guard let parsed = parsePort(text) else { return nil }
@@ -43,13 +43,14 @@ public struct DiscoveredMac: Equatable, Sendable {
     }
 
     /// Where to connect, in order: the advertised address once it answered, then the resolved
-    /// endpoint. Empty while the address is pending.
+    /// endpoint when it is one the Mac answers on (`isConnectableHost`: an IPv6 one is not).
+    /// Empty while the address is pending.
     public var candidates: [MacService] {
         var list: [MacService] = []
         if advertisedAnswers, let advertised {
             list.append(MacService(name: name, address: advertised.address, port: advertised.port))
         }
-        if let resolved, !list.contains(where: { $0.address == resolved.address && $0.port == resolved.port }) {
+        if let resolved, isConnectableHost(resolved.address), !list.contains(where: { $0.address == resolved.address && $0.port == resolved.port }) {
             list.append(resolved)
         }
         return list

@@ -116,7 +116,13 @@ final class LocalNetwork {
     /// closes it. A connection still waiting after `checkTimeout` is given up.
     private func connect(_ check: Check, to endpoint: NWEndpoint) {
         guard checking[check] == nil else { return }
-        let connection = NWConnection(to: endpoint, using: .tcp)
+        // IPv4 only: the address this records is a candidate the Mac must accept as a Host, and it
+        // accepts its IPv4 addresses and its `.local` name, never an IPv6 literal (`isConnectableHost`).
+        let parameters = NWParameters.tcp
+        if let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
+            ip.version = .v4
+        }
+        let connection = NWConnection(to: endpoint, using: parameters)
         checking[check] = connection
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             MainActor.assumeIsolated {
@@ -184,14 +190,14 @@ final class LocalNetwork {
         if mac.candidates != before, !mac.candidates.isEmpty { onChange?() }
     }
 
-    /// An address as `Connector` takes it (an IP literal, IPv6 with its zone, or a name) and the
-    /// port the service answered on.
+    /// An address as `Connector` takes it (an IPv4 literal or a name) and the port the service
+    /// answered on. Nil for an IPv6 one, which the Mac would refuse as a Host.
     nonisolated static func hostPort(of endpoint: NWEndpoint) -> (host: String, port: Int)? {
         guard case let .hostPort(host, port) = endpoint else { return nil }
         let text: String
         switch host {
         case let .ipv4(address): text = "\(address)"
-        case let .ipv6(address): text = "\(address)"
+        case .ipv6: return nil
         case let .name(name, _): text = name
         @unknown default: return nil
         }

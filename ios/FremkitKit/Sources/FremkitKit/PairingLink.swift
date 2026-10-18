@@ -86,6 +86,20 @@ func isLocalName(_ s: String) -> Bool {
     }
 }
 
+/// An IPv4 literal.
+public func isIPv4Literal(_ s: String) -> Bool {
+    var v4 = in_addr()
+    return inet_pton(AF_INET, s, &v4) == 1
+}
+
+/// A host the app connects to: a `.local` name or an IPv4 literal. The Mac answers on those only
+/// (its remote listener's Host set is its `.local` name and its IPv4 addresses, and anything else
+/// gets 421), and an IPv6 literal would also carry its zone into the cookie domain, the CSP and
+/// the Origin check. A connection made by name may still run over IPv6.
+public func isConnectableHost(_ s: String) -> Bool {
+    isIPv4Literal(s) || isLocalName(s)
+}
+
 /// An IPv4 or IPv6 literal (an IPv6 one may carry a `%zone`).
 public func isIPLiteral(_ s: String) -> Bool {
     var v4 = in_addr()

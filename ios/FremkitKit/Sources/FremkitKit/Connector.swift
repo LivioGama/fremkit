@@ -36,11 +36,12 @@ public struct Connector: Sendable {
         return sawWrongKey ? .keyChanged : .unreachable
     }
 
-    /// `preferring`, `mac.host`, `mac.address`, then `discovered`, each once (compared without case).
+    /// `preferring`, `mac.host`, `mac.address`, then `discovered`, each once (compared without case),
+    /// keeping only the `.local` names and IPv4 literals the Mac answers on (`isConnectableHost`).
     static func candidates(mac: PairedMac, discovered: [String], preferring: String? = nil) -> [String] {
         var seen = Set<String>()
         return ([preferring ?? ""] + [mac.host, mac.address] + discovered).filter { host in
-            !host.isEmpty && seen.insert(PinnedSession.normalise(host)).inserted
+            isConnectableHost(host) && seen.insert(PinnedSession.normalise(host)).inserted
         }
     }
 }
