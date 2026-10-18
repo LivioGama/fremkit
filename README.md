@@ -345,7 +345,9 @@ screen whose widget is not installed offers the install where it stands.
 | `synology-system` | CPU, memory, network and uptime of a NAS | Synology | ● |
 
 Every setting of every widget is listed in **[docs/widgets.md](docs/widgets.md)**. To write your
-own, see **[docs/writing-widgets.md](docs/writing-widgets.md)**. To change how all of it looks,
+own, see **[docs/writing-widgets.md](docs/writing-widgets.md)**: `pnpm widget:new my-widget` starts
+one that works, `pnpm dev` reloads it on every save, and `pnpm widget:check` runs the registry's
+rules before you publish it. To change how all of it looks,
 see **[docs/themes.md](docs/themes.md)**.
 
 What the installer checks, what a consent record is and how an update asks again:
@@ -463,6 +465,8 @@ A second checkout can run beside a live one by giving it another port: `FREMKIT_
 caches somewhere else — a from-scratch install on the live checkout, without moving anything
 aside. Your keychain secrets are keyed by connection id, so a fresh config never names them.
 
+Writing a widget for the registry: `pnpm widget:new <id>`, then `pnpm widget:check <folder>` —
+**[docs/writing-widgets.md](docs/writing-widgets.md#your-first-widget-in-five-minutes)**.
 Working on Fremkit itself — the helper build, the configuration files:
 **[docs/contributing.md](docs/contributing.md)**.
 Working on it with a coding agent — layout, conventions, the gotchas: **[AGENTS.md](AGENTS.md)**.
