@@ -208,12 +208,15 @@ function moveToPage(): void {
 
     <BaseSection id="widget.geometry" :title="t('admin.inspector.widget.geometry')">
     <div class="grid4">
-      <BaseField :label="t('admin.inspector.widget.x')"><BaseInput type="number" :min="0" :invalid="!geomOk" :model-value="geom.x" @update:model-value="geom.x = Number($event); commitGeom()" /></BaseField>
-      <BaseField :label="t('admin.inspector.widget.y')"><BaseInput type="number" :min="0" :invalid="!geomOk" :model-value="geom.y" @update:model-value="geom.y = Number($event); commitGeom()" /></BaseField>
-      <BaseField :label="t('admin.inspector.widget.width')"><BaseInput type="number" :min="1" :invalid="!geomOk" :model-value="geom.w" @update:model-value="geom.w = Number($event); commitGeom()" /></BaseField>
-      <BaseField :label="t('admin.inspector.widget.height')"><BaseInput type="number" :min="1" :invalid="!geomOk" :model-value="geom.h" @update:model-value="geom.h = Number($event); commitGeom()" /></BaseField>
+      <BaseField :label="t('admin.inspector.widget.x')"><BaseInput type="number" :min="0" :invalid="!geomOk" :disabled="inst.locked" :model-value="geom.x" @update:model-value="geom.x = Number($event); commitGeom()" /></BaseField>
+      <BaseField :label="t('admin.inspector.widget.y')"><BaseInput type="number" :min="0" :invalid="!geomOk" :disabled="inst.locked" :model-value="geom.y" @update:model-value="geom.y = Number($event); commitGeom()" /></BaseField>
+      <BaseField :label="t('admin.inspector.widget.width')"><BaseInput type="number" :min="1" :invalid="!geomOk" :disabled="inst.locked" :model-value="geom.w" @update:model-value="geom.w = Number($event); commitGeom()" /></BaseField>
+      <BaseField :label="t('admin.inspector.widget.height')"><BaseInput type="number" :min="1" :invalid="!geomOk" :disabled="inst.locked" :model-value="geom.h" @update:model-value="geom.h = Number($event); commitGeom()" /></BaseField>
     </div>
     <p class="hint" v-if="manifest" :class="{ bad: tooSmall }">{{ t('admin.inspector.widget.minSize', { w: minSize[0], h: minSize[1] }) }}</p>
+    <BaseCheckbox :model-value="!!inst.locked" :label="t('admin.inspector.widget.lock')"
+      @update:model-value="s.setLocked(inst!.instanceId, $event)" />
+    <p v-if="inst.locked" class="hint">{{ t('admin.inspector.widget.lock.hint') }}</p>
 
     <!-- A single page leaves nowhere to go, so the whole row is disabled rather than hidden. -->
     <BaseField :label="t('admin.inspector.widget.moveToPage')">
