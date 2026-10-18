@@ -128,6 +128,19 @@ describe('PlacementSchema', () => {
     expect(PlacementSchema.parse({ instanceId: 'a', x: 0, y: 1, w: 2, h: 3, widgetId: 'clock' }))
       .toEqual({ instanceId: 'a', x: 0, y: 1, w: 2, h: 3 })
   })
+  it('keeps an optional lock, absent when the file has none', () => {
+    expect(PlacementSchema.parse({ instanceId: 'a', x: 0, y: 0, w: 1, h: 1 })).not.toHaveProperty('locked')
+    expect(PlacementSchema.parse({ instanceId: 'a', x: 0, y: 0, w: 1, h: 1, locked: true }).locked).toBe(true)
+    expect(PlacementSchema.parse({ instanceId: 'a', x: 0, y: 0, w: 1, h: 1, locked: false }).locked).toBe(false)
+    expect(() => PlacementSchema.parse({ instanceId: 'a', x: 0, y: 0, w: 1, h: 1, locked: 'yes' })).toThrow()
+  })
+  it('round-trips a config whose placement is locked', () => {
+    const cfg = v4({ widgets: { a: { widgetId: 'clock', showTitle: true, settings: {} } } },
+      { pages: [{ id: 'p', name: 'P', items: [{ instanceId: 'a', x: 0, y: 0, w: 8, h: 4, locked: true }] }] })
+    const parsed = ConfigSchema.parse(cfg)
+    expect(parsed.screens[0].pages[0].items[0]).toEqual({ instanceId: 'a', x: 0, y: 0, w: 8, h: 4, locked: true })
+    expect(ConfigSchema.parse(parsed)).toEqual(parsed)
+  })
   it('refuses a negative position, an empty size and an over-long instanceId', () => {
     expect(() => PlacementSchema.parse({ instanceId: 'a', x: -1, y: 0, w: 1, h: 1 })).toThrow()
     expect(() => PlacementSchema.parse({ instanceId: 'a', x: 0, y: 0, w: 0, h: 1 })).toThrow()

@@ -1,0 +1,144 @@
+/**
+ * What a right click on the editor's canvas offers: one function per menu, each building the list
+ * from the store as it is at that moment. Every command goes through a store action, so undo,
+ * redo and saving work exactly as they do for the inspector's buttons.
+ */
+import { pick, t } from '../shared/i18n'
+import { surfaceOpacity } from '../shared/background'
+import { screensShowing } from '../shared/screens'
+import { SEPARATOR, tidy, type MenuEntry, type MenuItem } from '../shared/ui/contextMenu'
+import { STYLE_KEYS, type AdminStore } from './store'
+import type { SettingField, Widget, WidgetManifest } from '../shared/types'
+
+/** What a menu does outside the store: moving the eye to a part of the editor. */
+export interface MenuUi {
+  /** Opens an inspector section by its id (`widget.settings`, `widget.accent`…) and scrolls to it. */
+  revealSection(id: string): void
+  /** Puts the cursor in the widget library's search box. */
+  focusLibrarySearch(): void
+}
+
+/** The tile opacities the Appearance submenu offers, in percent. */
+export const OPACITY_PRESETS = [100, 80, 60, 40, 0] as const
+
+/** The shortcut hints, as macOS spells them. */
+export const KEYS = { duplicate: '⌘D', copy: '⌘C', paste: '⌘V', remove: '⌫' } as const
+
+/**
+ * The connection a widget's settings point at — the first `connection` or `connections` field
+ * that holds an id — or, when none holds one yet, the type it would need, so the menu can offer
+ * to create it.
+ */
+export function connectionOf(manifest: WidgetManifest | undefined, widget: Widget): { id: string } | { type: string } | null {
+  let type = ''
+  for (const [key, field] of Object.entries(manifest?.settingsSchema ?? {}) as [string, SettingField][]) {
+    if (field.type !== 'connection' && field.type !== 'connections') continue
+    const value = widget.settings[key] ?? field.default
+    const id = Array.isArray(value) ? value.find((v) => typeof v === 'string' && v) : value
+    if (typeof id === 'string' && id) return { id }
+    if (!type && field.connectionType) type = field.connectionType
+  }
+  return type ? { type } : null
+}
+
+/** The menu of one tile on the canvas. Empty when the tile is not on the page being edited. */
+export function widgetMenu(s: AdminStore, instanceId: string, ui: MenuUi): MenuEntry[] {
+  const cfg = s.state.config
+  const scr = s.screen.value
+  const pages = scr?.pages ?? []
+  const placement = s.page.value?.items.find((p) => p.instanceId === instanceId)
+  const widget = cfg?.widgets[instanceId]
+  if (!cfg || !scr || !placement || !widget) return []
+  const manifest = s.state.manifests[widget.widgetId]
+  const name = widget.title?.trim() || pick(manifest?.name) || widget.widgetId
+  const locked = !!placement.locked
+
+  const opacity = Math.round(surfaceOpacity(widget.opacity) * 100)
+  const styled = STYLE_KEYS.some((k) => widget[k] !== undefined)
+  const appearance: MenuEntry[] = [
+    ...OPACITY_PRESETS.map((p): MenuItem => ({
+      label: t('admin.menu.opacity', { percent: p }),
+      checked: opacity === p,
+      run: () => s.updateInstance(instanceId, { opacity: p === 100 ? undefined : p / 100 }),
+    })),
+    SEPARATOR,
+    { label: t('admin.menu.surfaceColor'), run: () => ui.revealSection('widget.background') },
+    { label: t('admin.menu.accent'), run: () => ui.revealSection('widget.accent') },
+    { label: t('admin.menu.backgroundImage'), run: () => ui.revealSection('widget.background') },
+    SEPARATOR,
+    { label: t('admin.menu.resetAppearance'), disabled: !styled, run: () => s.resetAppearance(instanceId) },
+  ]
+
+  const otherScreens = cfg.screens.filter((x) => x.id !== scr.id)
+  const showing = new Set(screensShowing(cfg, instanceId).map((x) => x.id))
+  const screenItems = (run: (id: string) => void): MenuEntry[] => otherScreens.map((x) => ({
+    label: x.name, disabled: showing.has(x.id), run: () => run(x.id),
+  }))
+
+  const sizes: MenuEntry[] = manifest
+    ? ([['defaultSize', manifest.defaultSize], ['minSize', manifest.minSize]] as const).map(([key, size]) => ({
+      label: t(`admin.menu.${key}`, { w: size[0], h: size[1] }),
+      checked: placement.w === size[0] && placement.h === size[1],
+      disabled: !s.canResize(instanceId, [size[0], size[1]]),
+      run: () => s.resizeWidget(instanceId, [size[0], size[1]]),
+    }))
+    : []
+
+  const connection = connectionOf(manifest, widget)
+  const lastPlace = s.isLastPlace(instanceId)
+  const hasSettings = !!manifest && Object.keys(manifest.settingsSchema ?? {}).length > 0
+
+  return tidy([
+    { label: t('admin.menu.settings'), run: () => { s.select(instanceId); ui.revealSection(hasSettings ? 'widget.settings' : '') } },
+    SEPARATOR,
+    { label: t('admin.menu.showTitle'), checked: widget.showTitle, run: () => s.updateInstance(instanceId, { showTitle: !widget.showTitle }) },
+    { label: t('admin.menu.appearance'), children: appearance },
+    { label: t('admin.menu.copyStyle'), run: () => s.copyStyle(instanceId) },
+    { label: t('admin.menu.pasteStyle'), disabled: !s.state.styleClipboard, run: () => s.pasteStyle(instanceId) },
+    SEPARATOR,
+    { label: t('common.duplicate'), shortcut: KEYS.duplicate, run: () => s.duplicateWidget(instanceId) },
+    { label: t('admin.menu.copy'), shortcut: KEYS.copy, run: () => s.copyWidget(instanceId) },
+    { label: t('admin.menu.paste'), shortcut: KEYS.paste, disabled: !s.state.clipboard, run: () => s.pasteWidget() },
+    SEPARATOR,
+    {
+      label: t('admin.menu.moveToPage'),
+      children: tidy([
+        ...pages.map((p, i): MenuItem => ({ label: p.name, disabled: i === s.state.pageIndex, run: () => s.moveWidget(instanceId, i) })),
+        SEPARATOR,
+        { label: t('admin.menu.newPage'), run: () => s.moveWidgetToNewPage(instanceId) },
+      ]),
+    },
+    otherScreens.length > 0 && { label: t('admin.menu.alsoShowOn'), children: screenItems((id) => s.showOnScreen(instanceId, id)) },
+    otherScreens.length > 0 && { label: t('admin.menu.moveToScreen'), children: screenItems((id) => s.moveToScreen(instanceId, id)) },
+    sizes.length > 0 && { label: t('admin.menu.size'), children: sizes },
+    { label: t('admin.menu.lock'), checked: locked, run: () => s.setLocked(instanceId, !locked) },
+    SEPARATOR,
+    connection && {
+      label: t('admin.menu.openConnection'),
+      run: () => ('id' in connection ? s.openConnection(connection.id) : s.openNewConnection(connection.type)),
+    },
+    { label: t('admin.menu.about'), run: () => s.openAbout(instanceId) },
+    { label: t('admin.menu.reload'), run: () => s.reloadWidget(instanceId) },
+    SEPARATOR,
+    // On its last screen the widget itself goes: the submenu is the confirmation, naming it.
+    lastPlace
+      ? {
+        label: t('admin.menu.deleteEverywhere'), danger: true,
+        children: [{ label: t('admin.menu.deleteConfirm', { name }), danger: true, run: () => s.removeFromScreen(instanceId) }],
+      }
+      : { label: t('admin.menu.removeFromScreen'), shortcut: KEYS.remove, run: () => s.removeFromScreen(instanceId) },
+  ])
+}
+
+/** The menu of the canvas's empty background. */
+export function canvasMenu(s: AdminStore, ui: MenuUi): MenuEntry[] {
+  if (!s.state.config) return []
+  return tidy([
+    { label: t('admin.menu.paste'), shortcut: KEYS.paste, disabled: !s.state.clipboard, run: () => s.pasteWidget() },
+    SEPARATOR,
+    { label: t('admin.menu.addWidget'), run: () => ui.focusLibrarySearch() },
+    { label: t('admin.menu.newPage'), run: () => s.addPage() },
+    SEPARATOR,
+    { label: t('admin.menu.screenSettings'), run: () => s.openModal('screen') },
+  ])
+}

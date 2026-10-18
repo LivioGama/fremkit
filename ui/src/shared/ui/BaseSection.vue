@@ -53,7 +53,7 @@ function onToggle(e: Event): void {
 </script>
 
 <template>
-  <details class="section" :open="isOpen" @toggle="onToggle">
+  <details class="section" :data-section="id" :open="isOpen" @toggle="onToggle">
     <summary>
       <BaseIcon class="chevron" name="chevron-down" :size="14" />
       <span class="title">{{ title }}</span>

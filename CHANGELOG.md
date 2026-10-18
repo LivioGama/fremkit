@@ -13,6 +13,17 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **Right-click menus in the editor.** A right click on a widget opens a real menu, like a Mac
+  app's: settings, show title, appearance (opacity presets, colours, background image, reset),
+  copy and paste a widget's style, duplicate, copy and paste, move it to another page or screen,
+  show it on another screen too, default or minimum size, open its connection, about the widget
+  (version, where it came from, what it asks for, an update when one is waiting), reload it, and
+  remove it. A right click on the empty canvas pastes, adds a widget, makes a page or opens the
+  screen settings. The menus work from the keyboard as well.
+- **Copy and paste widgets.** Cmd+C copies the selected widget and Cmd+V pastes a new one with
+  the same settings and look on the page you are on, on any screen.
+- **Lock a widget in place.** From its menu or the inspector: a locked widget can no longer be
+  dragged, resized or nudged in the editor, and wears a small padlock.
 - **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another
   one, and give each its own layout. A pre-fill is shown as a preview first, naming the widgets
   that do not fit the new screen, and the Screen panel gives each screen its own address. A

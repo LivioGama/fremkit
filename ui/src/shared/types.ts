@@ -29,7 +29,11 @@ export interface Widget {
   settings: Record<string, unknown>
 }
 /** Mirrors the server schema: where one widget sits on one page of one screen, in cells. */
-export interface Placement { instanceId: string; x: number; y: number; w: number; h: number }
+export interface Placement {
+  instanceId: string; x: number; y: number; w: number; h: number
+  /** The editor neither drags nor resizes a locked tile. Absent means unlocked. */
+  locked?: boolean
+}
 /**
  * A widget joined with one of its placements: what a frame draws and what the bridge hands the
  * widget. Never stored — built by `tileOf` (or `compactOf` for the bar) from the config.
