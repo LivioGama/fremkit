@@ -102,7 +102,7 @@ describe('companion socket', () => {
     expect(HELLO_TIMEOUT_MS).toBe(5_000)
   })
 
-  it('no hello within 5 s closes 1008', async () => {
+  it('no hello within the timeout (200 ms here) closes 1008', async () => {
     const client = await connect()
     expect(await client.closed).toEqual({ code: 1008 })
   })
