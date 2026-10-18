@@ -8,7 +8,7 @@ import fastifyWebsocket from '@fastify/websocket'
 import WebSocket from 'ws'
 import { DeviceStore } from '../src/devices/store.js'
 import { CompanionSession } from '../src/companion/session.js'
-import { CompanionSockets, HELLO_TIMEOUT_MS, MAX_PENDING_SOCKETS, TRY_AGAIN_LATER_CLOSE_CODE, companionSocket } from '../src/companion/socket.js'
+import { CompanionSockets, HELLO_TIMEOUT_MS, MAX_PENDING_PER_ORIGIN, MAX_PENDING_SOCKETS, TRY_AGAIN_LATER_CLOSE_CODE, companionSocket } from '../src/companion/socket.js'
 import { PROOF_LABEL, PROTOCOL, proofMac } from '../src/companion/protocol.js'
 import { MAX_WS_PAYLOAD_BYTES } from '../src/ws/hub.js'
 import { buildApp } from '../src/app.js'
@@ -129,42 +129,90 @@ describe('companion socket', () => {
     expect(HELLO_TIMEOUT_MS).toBe(5_000)
   })
 
-  it('closes a ninth socket still short of hello with 1013, and takes one again once a slot frees', async () => {
-    expect(MAX_PENDING_SOCKETS).toBe(8)
-    expect(TRY_AGAIN_LATER_CLOSE_CODE).toBe(1013)
-    // A server whose handshake timeout cannot run out under the test.
+  /** Replaces the test server by one whose handshake timeout is `helloTimeoutMs`. */
+  async function restart(helloTimeoutMs: number): Promise<void> {
     await app.close()
     const sockets = new CompanionSockets()
     const quiet = new CompanionSession({ send: (id, msg) => sockets.send(id, msg), changed: () => undefined, canShare: () => true })
     app = Fastify()
     await app.register(fastifyWebsocket, { options: { maxPayload: MAX_WS_PAYLOAD_BYTES } })
-    await app.register(companionSocket, { store, session: quiet, sockets, helloTimeoutMs: 60_000 })
+    await app.register(companionSocket, { store, session: quiet, sockets, helloTimeoutMs })
     await app.listen({ port: 0, host: '127.0.0.1' })
     port = (app.server.address() as { port: number }).port
+  }
 
+  /** 'open' when a new socket from `origin` stays up for 50 ms, else the code it was closed with. */
+  async function probe(origin = ORIGIN): Promise<number | 'open'> {
+    const c = await connect(origin)
+    const code = await Promise.race([c.closed.then((e) => e.code), new Promise<'open'>((r) => setTimeout(() => r('open'), 50))])
+    c.ws.close()
+    await c.closed
+    return code
+  }
+
+  const extensionOrigin = (n: number) => `chrome-extension://${'abcdefghijklmnop'[n].repeat(32)}`
+
+  it('caps sockets short of hello at 4 per extension origin, with 1013, and frees a slot on close', async () => {
+    expect(MAX_PENDING_PER_ORIGIN).toBe(4)
+    expect(TRY_AGAIN_LATER_CLOSE_CODE).toBe(1013)
+    await restart(60_000)
     const { token } = await paired()
-    const waiting = await Promise.all(Array.from({ length: MAX_PENDING_SOCKETS }, () => connect()))
-    const ninth = await connect()
-    expect(await ninth.closed).toEqual({ code: 1013 })
-    expect(ninth.messages).toEqual([])
-
-    // One of them leaves: its slot is free again, and a full handshake goes through.
+    const waiting = await Promise.all(Array.from({ length: MAX_PENDING_PER_ORIGIN }, () => connect()))
+    const fifth = await connect()
+    expect(await fifth.closed).toEqual({ code: 1013 })
+    expect(fifth.messages).toEqual([])
+    // Another extension origin has slots of its own.
+    expect(await probe(OTHER)).toBe('open')
+    // One of them leaves: its slot is free again.
     waiting[0].ws.close()
     await waiting[0].closed
-    await expect.poll(async () => {
-      const c = await connect()
-      const code = await Promise.race([c.closed.then((e) => e.code), new Promise((r) => setTimeout(() => r('open'), 50))])
-      c.ws.close()
-      return code
-    }).toBe('open')
+    await expect.poll(() => probe()).toBe('open')
     // A socket that finished hello no longer counts: the cap is on sockets that proved nothing.
     for (const c of waiting.slice(1)) c.ws.close()
     await Promise.all(waiting.slice(1).map((c) => c.closed))
     const done = await hello(token)
-    const more = await Promise.all(Array.from({ length: MAX_PENDING_SOCKETS }, () => connect()))
+    const more = await Promise.all(Array.from({ length: MAX_PENDING_PER_ORIGIN }, () => connect()))
     const over = await connect()
     expect(await over.closed).toEqual({ code: 1013 })
     for (const c of [done, ...more]) c.ws.close()
+  })
+
+  it('caps sockets short of hello at 32 in all', async () => {
+    expect(MAX_PENDING_SOCKETS).toBe(32)
+    await restart(60_000)
+    const origins = MAX_PENDING_SOCKETS / MAX_PENDING_PER_ORIGIN
+    const waiting = await Promise.all(Array.from({ length: MAX_PENDING_SOCKETS }, (_, i) => connect(extensionOrigin(i % origins))))
+    // A ninth origin, with no socket of its own yet, still meets the global cap.
+    const over = await connect(extensionOrigin(origins))
+    expect(await over.closed).toEqual({ code: 1013 })
+    for (const c of waiting) c.ws.close()
+  })
+
+  it('frees the slot of a socket refused for a bad message', async () => {
+    await restart(60_000)
+    const waiting = await Promise.all(Array.from({ length: MAX_PENDING_PER_ORIGIN }, () => connect()))
+    expect(await probe()).toBe(1013)
+    waiting[0].send('not json')
+    expect(await waiting[0].closed).toEqual({ code: 1008 })
+    expect(await probe()).toBe('open')
+    for (const c of waiting.slice(1)) c.ws.close()
+  })
+
+  it('frees the slots of sockets closed by the hello timeout (200 ms here)', async () => {
+    const waiting = await Promise.all(Array.from({ length: MAX_PENDING_PER_ORIGIN }, () => connect()))
+    for (const c of waiting) expect(await c.closed).toEqual({ code: 1008 })
+    const again = await Promise.all(Array.from({ length: MAX_PENDING_PER_ORIGIN }, () => connect()))
+    // All four were let in: the fourth would have been 1013 had a timed-out slot stayed taken.
+    for (const c of again) expect(await c.closed).toEqual({ code: 1008 })
+  })
+
+  it('answers 403 before the upgrade to anything that is not an extension', async () => {
+    for (const origin of [null, 'http://127.0.0.1:4242', 'https://example.com', `chrome-extension://${'q'.repeat(32)}`]) {
+      await expect(connect(origin), String(origin)).rejects.toThrow('status 403')
+    }
+    // Those never held a slot: a full set from the extension still fits.
+    const waiting = await Promise.all(Array.from({ length: MAX_PENDING_PER_ORIGIN }, () => connect()))
+    for (const c of waiting) c.ws.close()
   })
 
   it('no challenge within the timeout (200 ms here) closes 1008', async () => {
@@ -176,16 +224,6 @@ describe('companion socket', () => {
     const { token } = await paired()
     const client = await proven(token)
     expect(await client.closed).toEqual({ code: 1008 })
-  })
-
-  it('a page that is not an extension closes 1008', async () => {
-    const { device } = await paired()
-    for (const origin of [null, 'http://127.0.0.1:4242', 'https://example.com', `chrome-extension://${'q'.repeat(32)}`]) {
-      const client = await connect(origin)
-      client.send({ type: 'challenge', deviceId: device.id, nonce: nonce() })
-      expect(await client.closed).toEqual({ code: 1008 })
-      expect(client.messages).toEqual([])
-    }
   })
 
   it('proves the record with an HMAC of the nonce keyed by its token hash', async () => {

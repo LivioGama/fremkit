@@ -241,10 +241,14 @@ only, and paired iPads are refused it entirely.
 
 **What a web page can do.** Not pair: it has no extension `Origin`, which a page cannot forge, and
 the pairing still needs your press on the Edge. It cannot open the socket without a token, and it
-cannot read one. It can tell that Fremkit runs: the socket upgrades before it closes with 1008, which
-says no more than the HTTP server on port 4242 already does, and is accepted as such. At most eight
-sockets may be short of their hello at once (one more is closed with 1013), and a share's metadata
-refreshes reach the dashboard at most four times a second.
+cannot read one; its upgrade is answered 403 before any socket exists, so it cannot take a socket's
+place either. It can tell that Fremkit runs from that answer, which says no more than the HTTP
+server on port 4242 already does, and is accepted as such. At most four sockets per extension
+origin, and thirty-two in all, may be short of their hello at once (one more is closed with 1013),
+and a share's metadata refreshes reach the dashboard at most four times a second. A local process
+can forge the extension's `Origin` and keep those slots taken, renewing silent sockets every five
+seconds, so your extension's connections are turned away while it does; a process running as you has
+worse options anyway.
 
 **What another extension can do.** It has its own `chrome-extension://` origin, so it can ask to
 pair, and the request shows its name and code on the Edge; the code is meant to be compared, and a

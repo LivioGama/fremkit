@@ -17,8 +17,10 @@
  * keeps its token. A frame over the 64 KiB cap is refused by `ws` itself, with 1009, before any
  * of it is buffered.
  *
- * At most `MAX_PENDING_SOCKETS` sockets may be mid-handshake at once; one more is closed with 1013
- * (try again later) as soon as it is upgraded.
+ * An upgrade whose `Origin` is not an extension's is answered 403 before any socket exists. Of the
+ * rest, at most `MAX_PENDING_PER_ORIGIN` per extension origin and `MAX_PENDING_SOCKETS` in all may
+ * be mid-handshake at once; one more is closed with 1013 (try again later) as soon as it is
+ * upgraded.
  *
  * Each record holds one socket: a second one for it replaces the first. What the extension says
  * goes to the `CompanionSession`; what the session says comes back through `CompanionSockets`.
@@ -35,13 +37,16 @@ import type { CompanionSession } from './session.js'
 export const HELLO_TIMEOUT_MS = 5_000
 
 /**
- * Sockets that have not finished the handshake, at most, at once. Before hello a socket has proven
- * nothing, so this keeps any local process from holding open sockets by the thousand; an honest
- * extension opens one at a time and finishes in milliseconds.
+ * Sockets that have not finished the handshake, at most, at once, from every extension origin
+ * together and from any one of them. Before hello a socket has proven nothing; an honest extension
+ * opens one at a time and finishes in milliseconds, so it never meets either cap. Only a socket
+ * with an extension `Origin` gets this far (anything else is 403 before the upgrade), so a page
+ * cannot take a slot; a local process can forge that header, and is bounded, not stopped.
  */
-export const MAX_PENDING_SOCKETS = 8
+export const MAX_PENDING_SOCKETS = 32
+export const MAX_PENDING_PER_ORIGIN = 4
 
-/** "Try again later": what a socket over `MAX_PENDING_SOCKETS` is closed with, right after upgrade. */
+/** "Try again later": what a socket over either cap is closed with, right after upgrade. */
 export const TRY_AGAIN_LATER_CLOSE_CODE = 1013
 
 /** How often the session is asked to clear a share that went quiet. */
@@ -130,26 +135,40 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
     unsubscribe()
   })
 
-  /** Sockets between upgrade and a hello accepted (or their close). */
+  /** Sockets between upgrade and a hello accepted (or their close): in all, and by origin. */
   let pending = 0
+  const pendingByOrigin = new Map<string, number>()
 
   /** This Mac's only: the remote allow-list leaves it out too, this is in case it ever grows. */
   const localOnly = async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
     if (isRemoteRequest(req)) return reply.callNotFound()
   }
 
-  app.get('/companion/ws', { websocket: true, onRequest: localOnly }, (socket, req) => {
-    if (pending >= MAX_PENDING_SOCKETS) return closeSocket(socket, TRY_AGAIN_LATER_CLOSE_CODE)
+  /** Before the 101: a web page, or anything else that is not an extension, gets no socket at all. */
+  const extensionOnly = async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const origin = req.headers.origin
+    if (typeof origin !== 'string' || !EXTENSION_ORIGIN_RE.test(origin)) return reply.code(403).send()
+  }
+
+  app.get('/companion/ws', { websocket: true, onRequest: [localOnly, extensionOnly] }, (socket, req) => {
+    const origin = req.headers.origin
+    const key = typeof origin === 'string' ? origin : ''
+    if (pending >= MAX_PENDING_SOCKETS || (pendingByOrigin.get(key) ?? 0) >= MAX_PENDING_PER_ORIGIN) {
+      return closeSocket(socket, TRY_AGAIN_LATER_CLOSE_CODE)
+    }
     pending += 1
+    pendingByOrigin.set(key, (pendingByOrigin.get(key) ?? 0) + 1)
     let counted = true
-    /** Leaves the pending count, once: on hello accepted, on refusal or on close. */
+    /** Leaves the pending counts, once: on hello accepted, on refusal or on close. */
     const settle = (): void => {
       if (!counted) return
       counted = false
       pending -= 1
+      const left = (pendingByOrigin.get(key) ?? 1) - 1
+      if (left > 0) pendingByOrigin.set(key, left)
+      else pendingByOrigin.delete(key)
     }
 
-    const origin = req.headers.origin
     let deviceId: string | null = null
     /** The record the challenge named, once the proof is sent: hello must carry its token. */
     let challenged: string | null = null
@@ -174,7 +193,7 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
       if (deviceId !== null && sockets.release(deviceId, socket)) session.disconnect(deviceId)
     })
 
-    // A web page cannot send a `chrome-extension://` origin; anything else is not the extension.
+    // Refused before the upgrade already (`extensionOnly`); kept in case the hook ever moves.
     if (typeof origin !== 'string' || !EXTENSION_ORIGIN_RE.test(origin)) return refuse()
 
     socket.on('message', (raw: Buffer, isBinary: boolean) => {
