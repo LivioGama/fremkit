@@ -247,6 +247,18 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
     expect(csp).toContain('sandbox allow-scripts')
   })
 
+  it('gives the dashboard a host CSP written for the remote origin', async () => {
+    const res = await remote(port, { path: '/', host: `example.local:${port}` })
+    expect(res.status).toBe(200)
+    const csp = String(res.headers['content-security-policy'])
+    // The WebSocket and the widget frames of https://<mac>:4243, and nothing on loopback, which
+    // from an iPad would be the iPad itself.
+    expect(csp).toContain(`connect-src 'self' wss://example.local:${port}`)
+    expect(csp).toContain(`frame-src https://example.local:${port}/widgets/`)
+    expect(csp).toContain("frame-ancestors 'none'")
+    expect(csp).not.toContain('127.0.0.1')
+  })
+
   it('leaves local requests exactly as they were', async () => {
     expect((await app.inject({ url: '/admin' })).statusCode).toBe(200)
     expect((await app.inject({ url: '/api/connections' })).statusCode).toBe(200)

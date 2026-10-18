@@ -173,7 +173,9 @@ language changes.
 An `enum` may carry a `preview`: `{ "channel": "<one of the widget's commands>", "command":
 "<name>" }`. The admin then shows a ▶ beside the select and, when pressed, sends that command
 with `{ value: <the chosen value> }` — the provider decides what previewing means (the Claude
-sessions widget plays the sound). The provider validates the value like any command payload.
+sessions widget plays the sound). The provider validates the value like any command payload. The
+channel must be covered by `commands` (a manifest naming another is refused), and for an
+installed widget by what the user granted: the ▶ is not shown otherwise.
 
 **`timezone`** — a searchable text field backed by the browser's IANA zone list, red while the
 typed zone is not one of them.
@@ -295,7 +297,7 @@ than wait.
 | `sendCommand(channel, name, payload)` | Sends a command. Returns a promise |
 | `fetch(url, init)` | GET through the server's proxy. Only the host in `permissions.network` is reachable; `body` and `credentials` are ignored |
 | `favicon(url)` | The icon of the site `url` is on, as a `data:` URL for an `<img>`; rejects when there is none. Ask this rather than loading `/api/favicon` in an `<img>`: a widget's frame has an opaque origin, so the server sees that request as cross-site and refuses it |
-| `image(url)` | The image at exactly `url`, as a `data:` URL, under the rules of `favicon` (no SVG, no private address). Fetched only when `url` is a value the user typed into this widget's settings; rejects otherwise — the whole address leaves the machine, so a widget cannot pick it |
+| `image(url)` | The image at exactly `url`, as a `data:` URL, under the rules of `favicon` (no SVG, no private address). Fetched only when `url` is a value the user typed into this widget's settings — a manifest `default` does not count; rejects otherwise — the whole address leaves the machine, so a widget cannot pick it |
 | `installedApps()` | The applications installed on this Mac, as `{ name, bundleId, file }` — enough to match a name the user typed and ask for its icon with `appIcon(bundleId)`, and no filesystem path. Ask this rather than `fetch('/api/apps/installed')`: a widget's frame is served with `connect-src 'none'`, so its own request never leaves the page. Answered only to a widget that subscribes to `dock`, which the consent dialog shows; anything else is refused |
 | `appIcon(bundleId)` | A local application icon as a `data:` URL for an `<img>`. Requires a `dock` subscription, like `installedApps()`. The host fetches it because the opaque widget frame cannot load `/api/apps/icon/<bundleId>` directly |
 | `t(dict, params)` | Resolves a `{ fr, en }` table entry and interpolates `{name}` placeholders |
@@ -462,9 +464,40 @@ under a `Content-Security-Policy` served with its own files, so the two hold eve
 opens `/widgets/<id>/index.html` directly. The document has an opaque origin: nothing it does
 counts as coming from `http://127.0.0.1:4242`, and `localStorage` throws rather than working.
 Scripts and styles load from the widget's own folder; images additionally from `data:` and
-`blob:`. There is no `connect-src` at all — `fetch`, `XMLHttpRequest` and `WebSocket` are dead,
-and every network call goes through `Fremkit.fetch`. Forms cannot submit, frames cannot be
-created, `<base>` cannot be set, and dotfiles in the widget folder are not served.
+`blob:`. `connect-src 'none'` — `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`,
+`sendBeacon` and `WebTransport` are dead, and every network call goes through `Fremkit.fetch`.
+Forms cannot submit, frames cannot be created, `<base>` cannot be set, and dotfiles in the widget
+folder are not served. Only `index.html` runs script: another HTML, SVG or XML file in the folder
+is served with `script-src 'none'`.
+
+**No WebRTC.** The bridge is injected ahead of everything in your `index.html` — straight after
+the doctype — and the first thing it does is make `RTCPeerConnection`,
+`webkitRTCPeerConnection`, `RTCDataChannel`, `RTCSessionDescription` and `RTCIceCandidate`
+`undefined`, for good: a peer connection reaches whatever STUN server or candidate it is given,
+which no CSP directive stops. A registry widget cannot ask for it back, by manifest or through
+the consent dialog.
+
+The one exception is a **built-in** widget that needs a peer on this Mac (a browser tab, an app).
+It is opted in by id, in the server, in the commit that adds it:
+
+```ts
+// server/src/widgets/webrtc.ts
+export const WEBRTC_LOCAL_BUILTINS: ReadonlySet<string> = new Set<string>(['fremplay'])
+```
+
+The server then writes `data-webrtc="local"` and this Mac's addresses on the bridge's `<script>`
+tag in that widget's page — only when the id is served from the built-in `widgets/` folder,
+never from an installed one — and the bridge hands the widget a wrapped `RTCPeerConnection`:
+no ICE server whatever it is given (constructor and `setConfiguration`), and only host
+candidates on loopback or one of this Mac's addresses, in `addIceCandidate` and in the SDP of
+`setRemoteDescription`/`setLocalDescription` (its own description may also keep the browser's
+`<uuid>.local` names for this Mac). A remote `.local` name is dropped, so the widget never dials a
+peer by mDNS: the peer reaches it, and the answer goes back to the address it came from.
+`RTCSessionDescription`, `RTCIceCandidate` and `RTCDataChannel` stay available at that level.
+
+**Navigation.** A frame may only ever hold a widget document: the dashboard's and the admin's
+CSP say `frame-src <origin>/widgets/`, and the helper's windows cancel any other frame
+navigation.
 
 **The kiosk rules.** The bridge turns a widget document into a panel rather than a page: no
 context menu (a long press is one of the dashboard's own gestures, and WebKit would answer it
@@ -507,7 +540,9 @@ press arrives as the right button and would only cancel its own hold.
 
 **A widget must not navigate or reload itself.** Setting `location`, or calling
 `location.reload()`, gives the frame a new document behind the same `contentWindow` — so the host
-drops the widget's subscriptions and stops answering it, for good. Re-render from the data you
+drops the widget's subscriptions and stops answering it, for good. The host talks to a widget
+over a `MessagePort` handed to the document that said hello; the new document never gets it.
+Loading the bridge a second time does nothing (the first one is `window.Fremkit`, and stays). Re-render from the data you
 already have, or ask the host. (A rescan that recreates the frame is a different thing and is
 fine.)
 

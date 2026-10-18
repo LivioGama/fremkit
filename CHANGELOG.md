@@ -169,6 +169,23 @@ tagged `vX.Y.Z`.
 - **Another copy of Fremkit cannot touch your saved passwords.** Each Fremkit now keeps its
   secrets in the keychain under a name of its own, so a test copy given a backup of your
   dashboard can no longer read or delete the real one's. Existing secrets move over by themselves.
+- **Widgets can no longer use WebRTC.** A peer connection was a way for a widget to send its
+  data off the Mac with no network permission and no consent dialog; the constructors are now
+  gone before any widget code runs, and a second page of a widget runs no script at all. A
+  built-in widget that needs a peer on this Mac can be given a narrow, local-only WebRTC; a
+  widget from the registry never can.
+- **A widget can no longer send data away by navigating its own frame.** The dashboard and the
+  admin now carry a Content-Security-Policy that lets a frame load only a widget page, and that
+  no other site can frame them in.
+- **The Edge and the admin window refuse it too.** The helper's web views cancel any frame
+  navigation that is not a widget page, whatever the page's own policy says.
+- **What the dashboard tells a widget stays with that widget's page.** If a widget's frame ever
+  holds a different page, that page hears nothing the first one was told.
+- **A widget's icon is fetched only from an address you typed.** A default address written in
+  the widget's own manifest no longer counts as yours.
+- **A setting's ▶ preview stays within what you granted.** A widget can offer a preview only on
+  a channel it declares as a command, an installed widget only on one you agreed to, and a
+  paired device gains nothing through it.
 
 ## 0.4.1 — 2026-10-16
 

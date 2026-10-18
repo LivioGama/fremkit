@@ -108,7 +108,8 @@ describe('readPackage', () => {
       // `clipboard` carries a preview of everything copied.
       { subscriptions: ['clipboard'] },
       { commands: ['clipboard'] },
-      { settingsSchema: { sound: { type: 'enum', label: 'S', options: [], preview: { channel: 'disk-map', command: 'view' } } } },
+      { commands: ['disk-map'], settingsSchema: { sound: { type: 'enum', label: 'S', options: [], preview: { channel: 'disk-map', command: 'view' } } } },
+      { commands: ['brightness'], settingsSchema: { level: { type: 'enum', label: 'L', options: [], preview: { channel: 'brightness', command: 'set' } } } },
       // `brightness` changes the screen itself: commanding it is for the built-in widget.
       { commands: ['brightness'] },
       { subscriptions: ['brightness'], commands: ['brightness'] },
@@ -116,6 +117,12 @@ describe('readPackage', () => {
       const zip = packageOf(over)
       expect(() => readPackage(zip, expected(zip))).toThrow(expect.objectContaining({ key: 'marketplace.builtinOnlyChannel' }))
     }
+  })
+
+  it('refuses a preview on a channel the widget does not declare in commands', () => {
+    // The admin sends a preview with its own authority; off `commands` it is outside consent.
+    const zip = packageOf({ settingsSchema: { sound: { type: 'enum', label: 'S', options: [], preview: { channel: 'mutedeck', command: 'leave' } } } })
+    expect(() => readPackage(zip, expected(zip))).toThrow(expect.objectContaining({ key: 'marketplace.badManifest' }))
   })
 
   it('lets a widget read the brightness without commanding it', () => {

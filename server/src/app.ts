@@ -64,7 +64,7 @@ import { createBrightnessProvider } from './brightness/provider.js'
 import { brightnessRoutes } from './brightness/routes.js'
 import { findInstance, findInstances } from './config/instances.js'
 import { migrateHomeySecret } from './config/migrate.js'
-import { BYTES_CSP, isByteRoute } from './http/headers.js'
+import { BYTES_CSP, hostCsp, isByteRoute } from './http/headers.js'
 import { isAllowedHost, isReadMethod } from './http/guard.js'
 import { AccessGate } from './http/access.js'
 import { installAccessGate } from './http/access-routes.js'
@@ -110,6 +110,8 @@ export interface AppOptions {
   uiDist?: string
   /** The widget SDK served as `/fremkit.js`. Defaults to the one in the checkout, see `paths.ts`. */
   bridgePath?: string
+  /** Only ever passed by the tests: the built-ins allowed WebRTC's `local` level (`widgets/webrtc.ts`). */
+  webrtcLocalBuiltins?: ReadonlySet<string>
   /** The wallpaper copied into a fresh background library. Defaults like `bridgePath`. */
   wallpaperPath?: string
   providers?: Provider[]
@@ -366,6 +368,11 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     if (isByteRoute(req.url) && !reply.getHeader('content-security-policy')) {
       reply.header('content-security-policy', BYTES_CSP)
     }
+    // Every page of ours that sets nothing itself: the dashboard and the admin, whatever path
+    // reached them. The widgets, the refusal page and the byte routes have their own.
+    if (!reply.getHeader('content-security-policy') && /^text\/html/i.test(String(reply.getHeader('content-type') ?? ''))) {
+      reply.header('content-security-policy', hostCsp(String(req.headers.host ?? '').toLowerCase(), isRemoteRequest(req)))
+    }
     return payload
   })
 
@@ -386,6 +393,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     bridgePath: opts.bridgePath ?? shippedPaths().bridgePath,
     port: opts.port,
     dev: process.env.FREMKIT_DEV === '1',
+    ...(opts.webrtcLocalBuiltins ? { webrtcLocalBuiltins: opts.webrtcLocalBuiltins } : {}),
   })
   await app.register(themeRoutes, { catalog: themes, config: () => store.get() })
   await app.register(proxyRoutes, { catalog, store, secrets, cache: connCache })
