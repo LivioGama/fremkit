@@ -184,6 +184,11 @@ export function effectiveManifest(
   consent: WidgetConsent | undefined,
 ): WidgetManifest {
   if (source === 'builtin') return manifest
+  // A widget in the author's folder is code the person running this server is writing, read
+  // only because they started it with `FREMKIT_WIDGET_DEV=1`: what its manifest asks for is what
+  // they are testing, and a consent dialog would be them agreeing with themselves. Never a
+  // built-in-only channel, though — that one falls through to the line below and gets nothing.
+  if (source === 'dev' && builtinOnlyChannels(manifest).length === 0) return manifest
   // The catalogue refuses such a manifest already; this is the line that holds if it ever did not.
   if (builtinOnlyChannels(manifest).length > 0) consent = undefined
   if (!consent) {

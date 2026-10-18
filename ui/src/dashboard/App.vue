@@ -15,6 +15,7 @@ import { useSwipe } from './useSwipe'
 import { useNavPopover } from './useNavPopover'
 import { isRemotePage, useDeviceScreen, type DeviceInfo } from './remote'
 import { SCREEN_ID } from '../shared/useWidgetBridge'
+import { onWidgetReload } from '../shared/widgetDev'
 
 const socket = useSocket()
 const { t } = useI18n()
@@ -63,6 +64,7 @@ const rootStyle = computed(() => display.value && {
 const gridWidth = computed(() => display.value ? display.value.cols * display.value.cell + 'px' : '0')
 let cycleTimer: number | undefined
 let unsub: (() => void) | undefined
+let offReload: (() => void) | undefined
 
 function go(delta: number) {
   if (!screen.value) return
@@ -126,10 +128,14 @@ onMounted(async () => {
     if (pageIndex.value >= (screen.value?.pages.length ?? 0)) pageIndex.value = 0
   })
   window.addEventListener('keydown', onKey)
+  // A widget's manifest was saved while it is being written: the frames wait for this catalogue.
+  offReload = onWidgetReload(async (reload) => {
+    if (reload.manifest) manifests.value = (await api.getWidgets()).widgets
+  })
 })
 // Another screen for the device: start it on its first page, which every screen has.
 if (remote) watch(() => screen.value?.id, () => { pageIndex.value = 0; popover.close() })
-onUnmounted(() => { unsub?.(); window.removeEventListener('keydown', onKey); window.clearInterval(cycleTimer) })
+onUnmounted(() => { unsub?.(); offReload?.(); window.removeEventListener('keydown', onKey); window.clearInterval(cycleTimer) })
 watch(() => display.value?.autoCycleSeconds, setupCycle)
 /** The manifest of the widget a bar item names, for the popover it opens. */
 function manifestOf(item: NavItem): WidgetManifest | undefined {

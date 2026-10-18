@@ -4,7 +4,7 @@ import fastifyWebsocket from '@fastify/websocket'
 import { homedir } from 'node:os'
 import { shippedPaths } from './paths.js'
 import { join } from 'node:path'
-import { access } from 'node:fs/promises'
+import { access, mkdir } from 'node:fs/promises'
 import { ConfigStore } from './config/store.js'
 import { setServerLocale } from './i18n.js'
 import { ConnectionManager } from './connections/manager.js'
@@ -18,6 +18,7 @@ import { createSecretStore } from './secrets/index.js'
 import { configRoutes } from './config/routes.js'
 import { WidgetCatalog } from './widgets/catalog.js'
 import { installedWidgetsDir } from './widgets/installed.js'
+import { WIDGET_DEV_CHANNEL, WidgetDevWatcher } from './widgets/dev.js'
 import { Registry } from './marketplace/registry.js'
 import { marketplaceRoutes } from './marketplace/routes.js'
 import { recoverStaging } from './marketplace/install.js'
@@ -87,6 +88,11 @@ export interface AppOptions {
   registryUrl?: string
   /** Set with `registryUrl`, and only under `FREMKIT_DEV=1`; see `RegistryOptions.dev`. */
   registryDev?: boolean
+  /**
+   * The widget author's folder, read and watched only when set — which `index.ts` does under
+   * `FREMKIT_WIDGET_DEV=1` and nowhere else. See `widgets/dev.ts`.
+   */
+  widgetDevDir?: string
   /** Where the themes live. Defaults to the repository folder, which is what ships the built-in one. */
   themesDir?: string
   /** Only ever passed by the tests, which need to look inside what the proxy cached. */
@@ -160,7 +166,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // the config store would be racing too — so the comment says what is true rather than the
   // boot growing a lockfile for a case nobody is in.
   await recoverStaging(installedDir)
-  const catalog = new WidgetCatalog(opts.widgetsDir, installedDir)
+  // Created up front so the watcher has something to watch and `pnpm widget:new` somewhere to write.
+  if (opts.widgetDevDir) await mkdir(opts.widgetDevDir, { recursive: true })
+  const catalog = new WidgetCatalog(opts.widgetsDir, installedDir, opts.widgetDevDir)
   await catalog.scan()
   const themes = new ThemeCatalog(
     opts.themesDir ?? shippedPaths().themesDir,
@@ -406,6 +414,22 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   }
 
   app.addHook('onClose', async () => { registry.stop(); bambuCameras.stopAll(); await tracker.flush(); await usage.flush() })
+
+  // Writing a widget: a save reloads its frames, a manifest change rescans first so the frames
+  // come back with the new one. The built-ins are watched too, for whoever works on those.
+  if (opts.widgetDevDir) {
+    const watcher = new WidgetDevWatcher({
+      roots: [opts.widgetDevDir, opts.widgetsDir],
+      onReload: async (reload) => {
+        if (reload.manifest) await catalog.scan()
+        hub.notify(WIDGET_DEV_CHANNEL, reload)
+      },
+      onError: (error) => app.log.warn({ err: error }, 'widget watcher'),
+    })
+    watcher.start()
+    app.log.info({ dir: opts.widgetDevDir }, 'widget development: reading and watching the author folder')
+    app.addHook('onClose', async () => { watcher.close() })
+  }
   // Last: it may start the remote listener, which readies the app and so closes its route table.
   await deviceService.init()
   return app

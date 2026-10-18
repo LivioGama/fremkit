@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ConfigSchema, DEFAULT_CONFIG, type Config } from '../src/config/schema.js'
+import { WIDGET_DEV_CHANNEL } from '../src/widgets/dev.js'
 import { channelAllowed, HOST_CHANNELS, screenChannels, type ChannelManifest } from '../src/devices/channels.js'
 
 const manifests = new Map<string, ChannelManifest>([
@@ -66,7 +67,7 @@ describe('channelAllowed', () => {
     expect(channelAllowed([], 'config')).toBe(false)
   })
 
-  it('names config as the only host channel', () => {
-    expect(HOST_CHANNELS).toEqual(['config'])
+  it('names config and the widget-reload channel as the only host channels', () => {
+    expect(HOST_CHANNELS).toEqual(['config', WIDGET_DEV_CHANNEL])
   })
 })

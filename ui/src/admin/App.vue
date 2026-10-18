@@ -15,6 +15,7 @@ import MarketplacePanel from './MarketplacePanel.vue'
 import { fits, moveRect, resizeRect } from './layout'
 import { useConfigTheme } from '../shared/theme'
 import { SCREEN_ID } from '../shared/useWidgetBridge'
+import { onWidgetReload } from '../shared/widgetDev'
 
 const s = useAdminStore()
 const { t } = useI18n()
@@ -83,12 +84,16 @@ function onPointerDown(e: PointerEvent): void {
   if (active instanceof HTMLElement && inField(active)) active.blur()
 }
 
+// A widget's manifest was saved while it is being written: the previews wait for this catalogue.
+const offReload = onWidgetReload((reload) => { if (reload.manifest) void s.rescan() })
+
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('pointerdown', onPointerDown, true)
   void s.load()
 })
 onUnmounted(() => {
+  offReload()
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('pointerdown', onPointerDown, true)
   void s.flush()

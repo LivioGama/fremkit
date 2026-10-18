@@ -52,6 +52,11 @@ tagged `vX.Y.Z`.
   search ignores accents too now.
 - **Tidy the widget list.** Two buttons beside the Widgets title open or fold every shelf at once,
   and a box hides the widgets the selected screen already shows, on a page or in its bar.
+- **For widget authors: live reload.** Start Fremkit with `FREMKIT_WIDGET_DEV=1` (`pnpm dev`
+  does) and it also reads the widgets in `data/widgets-dev/` — or the folder
+  `FREMKIT_WIDGET_DEV_DIR` names — with the permissions their manifest asks for. Saving a
+  widget's file reloads it on the dashboard and in the admin's previews; saving its manifest
+  reads the catalogue again first. A shipped Fremkit watches nothing.
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer

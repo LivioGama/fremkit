@@ -454,8 +454,11 @@ export function fieldsInScope(
   return out
 }
 
-/** Where a widget came from: shipped with Fremkit, or installed from the marketplace. */
-export type WidgetSource = 'builtin' | 'installed'
+/**
+ * Where a widget came from: shipped with Fremkit, installed from the marketplace, or the folder
+ * a widget author works in (only under `FREMKIT_WIDGET_DEV=1`).
+ */
+export type WidgetSource = 'builtin' | 'installed' | 'dev'
 
 /** The three lists a widget asks for, as the registry index and a consent record spell them. */
 /**
