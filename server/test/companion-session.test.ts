@@ -23,7 +23,7 @@ function setup(opts: { canShare?: boolean; paired?: number } = {}) {
   })
   const hello = (device: string, extra: object = {}) => {
     session.connect(device, `Browser ${device}`)
-    session.onMessage(device, { type: 'hello', token: TOKEN, installId: INSTALL, protocol: 1, ...extra })
+    session.onMessage(device, { type: 'hello', token: TOKEN, installId: INSTALL, protocol: 2, ...extra })
   }
   const start = (device: string, sessionId = S1) => session.onMessage(device, { type: 'tab.started', sessionId, meta: META })
   return {
@@ -42,9 +42,9 @@ describe('CompanionSession', () => {
   it('answers hello with ready, and counts connected and paired extensions', () => {
     const t = setup({ paired: 3 })
     t.hello('a')
-    expect(t.to('a')).toEqual([{ type: 'ready', protocol: 1 }])
+    expect(t.to('a')).toEqual([{ type: 'ready', protocol: 2 }])
     expect(t.session.snapshot()).toEqual({
-      protocol: 1,
+      protocol: 2,
       extensions: { connected: 1, paired: 3 },
       tab: { state: 'idle', sessionId: null, device: null, meta: null, offers: {}, receivers: [] },
     })
@@ -132,8 +132,8 @@ describe('CompanionSession', () => {
 
   it('a protocol it does not speak gets ready with its own version, then every share is refused', () => {
     const t = setup()
-    t.hello('a', { protocol: 2 })
-    expect(t.to('a')).toEqual([{ type: 'ready', protocol: 1 }])
+    t.hello('a', { protocol: 3 })
+    expect(t.to('a')).toEqual([{ type: 'ready', protocol: 2 }])
     t.clear()
     t.start('a')
     expect(t.to('a')).toEqual([{ type: 'tab.refused', sessionId: S1, reason: 'protocol' }])
@@ -298,7 +298,7 @@ describe('CompanionSession', () => {
     t.clear()
     t.hello('a', { session: { sessionId: S1, meta: META } })
     expect(t.to('a')).toEqual([
-      { type: 'ready', protocol: 1 },
+      { type: 'ready', protocol: 2 },
       { type: 'tab.accepted', sessionId: S1 },
       { type: 'tab.view', receiverId: R(1) },
     ])
@@ -308,7 +308,7 @@ describe('CompanionSession', () => {
     t.session.disconnect('a')
     t.clear()
     t.hello('a', { session: { sessionId: S1, meta: META } })
-    expect(t.to('a')).toEqual([{ type: 'ready', protocol: 1 }, { type: 'tab.accepted', sessionId: S1 }])
+    expect(t.to('a')).toEqual([{ type: 'ready', protocol: 2 }, { type: 'tab.accepted', sessionId: S1 }])
     expect(t.session.snapshot().tab.offers).toEqual({ [R(1)]: SDP })
   })
 
@@ -318,7 +318,7 @@ describe('CompanionSession', () => {
     t.start('a', S1)
     t.clear()
     t.hello('b', { session: { sessionId: S2, meta: META } })
-    expect(t.to('b')).toEqual([{ type: 'ready', protocol: 1 }, { type: 'tab.stop' }])
+    expect(t.to('b')).toEqual([{ type: 'ready', protocol: 2 }, { type: 'tab.stop' }])
     expect(t.to('a')).toEqual([])
     expect(t.session.snapshot().tab.sessionId).toBe(S1)
   })

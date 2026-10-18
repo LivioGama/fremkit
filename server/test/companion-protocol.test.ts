@@ -24,7 +24,7 @@ const token = randomBytes(32).toString('base64url')
 
 describe('constants', () => {
   it('pins the protocol version, the size limits and the extension origin', () => {
-    expect(PROTOCOL).toBe(1)
+    expect(PROTOCOL).toBe(2)
     expect(MAX_MESSAGE_BYTES).toBe(65_536)
     expect(MAX_SDP).toBe(32_000)
     expect(EXTENSION_ORIGIN_RE.test(`chrome-extension://${'a'.repeat(32)}`)).toBe(true)
@@ -132,6 +132,8 @@ describe('parseExtensionMessage', () => {
   const parse = (m: unknown) => parseExtensionMessage(JSON.stringify(m))
 
   it('parses each message of the protocol', () => {
+    const nonce = randomBytes(32).toString('base64url')
+    expect(parse({ type: 'challenge', deviceId: installId, nonce })).toEqual({ type: 'challenge', deviceId: installId, nonce })
     expect(parse({ type: 'hello', token, installId, protocol: PROTOCOL })).not.toBeNull()
     expect(parse({ type: 'hello', token, installId, protocol: PROTOCOL, session: { sessionId, meta } })).not.toBeNull()
     expect(parse({ type: 'tab.started', sessionId, meta })).toMatchObject({ type: 'tab.started', sessionId })
@@ -170,7 +172,7 @@ describe('parseExtensionMessage', () => {
   })
 
   it('lets a hello carry any protocol number, so the server can answer a version it does not speak', () => {
-    expect(parse({ type: 'hello', token, installId, protocol: 2 })).toMatchObject({ protocol: 2 })
+    expect(parse({ type: 'hello', token, installId, protocol: 3 })).toMatchObject({ protocol: 3 })
   })
 
   it('lets a hello carry keys it does not know, and strips them, so a newer extension still connects', () => {

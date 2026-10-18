@@ -2,14 +2,20 @@
  * `/companion/ws`: the paired browser extension's socket.
  *
  * The route answers without the access secret (see `isCompanionRoute`), so it checks its own
- * credential, and nothing is heard before it has: an extension origin on the upgrade, then a
- * `hello` within `HELLO_TIMEOUT_MS` whose token belongs to an extension record of that same
- * origin and install. A well-formed hello that matches no such record closes with
- * `DEVICE_CLOSE_CODE` (4401), the code that tells the extension it was unpaired and should forget
- * its token. Anything else, then or later — a message that does not parse, an unknown type, a
- * second hello — closes the socket with 1008, which the extension does not take for an unpairing:
- * a newer or older extension the server cannot read keeps its token. A frame over the 64 KiB cap
- * is refused by `ws` itself, with 1009, before any of it is buffered.
+ * credential, and nothing is heard before it has: an extension origin on the upgrade, then,
+ * within `HELLO_TIMEOUT_MS` for the whole handshake, a `challenge` naming the extension's record
+ * and a `hello` whose token belongs to that same record, origin and install.
+ *
+ * The challenge comes first so the server proves itself before the token is sent: it answers
+ * `proof`, an HMAC of the extension's nonce keyed by the record's token hash (`proofMac`), which
+ * another process holding the port cannot forge. A challenge naming no extension record of this
+ * origin, or a hello whose token is not that record's, closes with `DEVICE_CLOSE_CODE` (4401),
+ * the code that tells the extension it was unpaired and should forget its token. Anything else,
+ * then or later — a message that does not parse, an unknown type, a hello before the challenge
+ * (a version 1 extension), a second challenge or hello — closes the socket with 1008, which the
+ * extension does not take for an unpairing: a newer or older extension the server cannot read
+ * keeps its token. A frame over the 64 KiB cap is refused by `ws` itself, with 1009, before any
+ * of it is buffered.
  *
  * Each record holds one socket: a second one for it replaces the first. What the extension says
  * goes to the `CompanionSession`; what the session says comes back through `CompanionSockets`.
@@ -19,10 +25,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { DeviceStore } from '../devices/store.js'
 import { isRemoteRequest } from '../net/remote.js'
 import { DEVICE_CLOSE_CODE, DEVICE_TERMINATE_MS } from '../ws/hub.js'
-import { EXTENSION_ORIGIN_RE, parseExtensionMessage, type ServerMessage } from './protocol.js'
+import { EXTENSION_ORIGIN_RE, parseExtensionMessage, proofMac, type ServerMessage } from './protocol.js'
 import type { CompanionSession } from './session.js'
 
-/** How long a new socket has to say hello. */
+/** How long a new socket has to finish the handshake: challenge, then hello. */
 export const HELLO_TIMEOUT_MS = 5_000
 
 /** How often the session is asked to clear a share that went quiet. */
@@ -119,6 +125,8 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
   app.get('/companion/ws', { websocket: true, onRequest: localOnly }, (socket, req) => {
     const origin = req.headers.origin
     let deviceId: string | null = null
+    /** The record the challenge named, once the proof is sent: hello must carry its token. */
+    let challenged: string | null = null
     let closed = false
 
     const refuse = (code = POLICY_CLOSE_CODE): void => {
@@ -147,11 +155,25 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
       const msg = parseExtensionMessage(raw.toString('utf8'))
       if (msg === null) return refuse()
 
+      if (challenged === null) {
+        // A version 1 extension says hello first: 1008 tells it an update is due.
+        if (msg.type !== 'challenge') return refuse()
+        const proof = store.extensionProofKey(msg.deviceId)
+        // No record for this extension: it was removed in Appareils (or never paired here).
+        if (proof === null || proof.origin !== origin) return refuse(DEVICE_CLOSE_CODE)
+        challenged = msg.deviceId
+        try { socket.send(JSON.stringify({ type: 'proof', mac: proofMac(proof.key, msg.nonce) } satisfies ServerMessage)) } catch { /* closed */ }
+        return
+      }
+
       if (deviceId === null) {
         if (msg.type !== 'hello') return refuse()
         // Never logged: the token, nor whose it might have been.
         const record = store.findByToken(msg.token, 'extension')
-        if (record === null || record.kind !== 'extension' || record.origin !== origin || record.installId !== msg.installId) {
+        if (
+          record === null || record.kind !== 'extension' || record.id !== challenged ||
+          record.origin !== origin || record.installId !== msg.installId
+        ) {
           // No record for this extension: it was removed in Appareils (or never paired here).
           return refuse(DEVICE_CLOSE_CODE)
         }
@@ -164,7 +186,7 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
         return
       }
 
-      if (msg.type === 'hello') return refuse()
+      if (msg.type === 'hello' || msg.type === 'challenge') return refuse()
       // A socket replaced by a newer one is no longer heard while it closes.
       if (!sockets.isCurrent(deviceId, socket)) return
       session.onMessage(deviceId, msg)

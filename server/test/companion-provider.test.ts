@@ -159,7 +159,7 @@ describe('companion provider', () => {
   it('a share taken back through hello after a restart does not bump reveal.seq', async () => {
     const { provider, start, session } = setup('page')
     const resume = (sessionId: string) => session.onMessage('ext', {
-      type: 'hello', token: 'unused-by-the-session', installId: INSTALL, protocol: 1, session: { sessionId, meta: META },
+      type: 'hello', token: 'unused-by-the-session', installId: INSTALL, protocol: 2, session: { sessionId, meta: META },
     })
     resume(S1)
     const snap = await provider.poll!()
@@ -201,7 +201,7 @@ describe('companion provider', () => {
     // Nothing the extension sent beyond its name: not its origin, not its install id.
     expect(JSON.stringify(snap)).not.toContain(ORIGIN)
     expect(JSON.stringify(snap)).not.toContain(INSTALL)
-    expect(snap).toMatchObject({ protocol: 1, extensions: { connected: 0 }, tab: { state: 'idle' } })
+    expect(snap).toMatchObject({ protocol: 2, extensions: { connected: 0 }, tab: { state: 'idle' } })
   })
 })
 

@@ -12,8 +12,13 @@ import { closeOutcome, POLICY_CLOSE_CODE, REVOKED_CLOSE_CODE } from '../../compa
 // @ts-expect-error plain JS module
 import { localCandidatesOnly, loopbackForMdns } from '../../companion/lib/sdp.js'
 // @ts-expect-error plain JS module
+import { expectedMac, newNonce, PROOF_LABEL, sameBytes, verifyProof } from '../../companion/lib/proof.js'
+// @ts-expect-error plain JS module
+import { handshake, PROOF_TIMEOUT_MS } from '../../companion/lib/handshake.js'
+// @ts-expect-error plain JS module
 import * as ext from '../../companion/lib/protocol.js'
-import { isLocalSdp, parseExtensionMessage, PROTOCOL } from '../src/companion/protocol.js'
+import { isLocalSdp, parseExtensionMessage, PROOF_LABEL as SERVER_PROOF_LABEL, PROTOCOL } from '../src/companion/protocol.js'
+import { HELLO_TIMEOUT_MS } from '../src/companion/socket.js'
 import { DEVICE_CLOSE_CODE } from '../src/ws/hub.js'
 
 const ID = '3f2b8c1e-5a4d-4e6f-9a7b-1c2d3e4f5a6b'
@@ -177,9 +182,135 @@ describe('loopbackForMdns', () => {
     expect(kept(remote[1])).toEqual(['a=candidate:680590759 1 udp 2113937151 127.0.0.1 60466 typ host generation 0 network-cost 999'])
   })
 
-  it('is what the offscreen document sends', async () => {
-    const src = await readFile(fileURLToPath(new URL('../../companion/offscreen.js', import.meta.url)), 'utf8')
-    expect(src).toContain('return loopbackForMdns(localCandidatesOnly(pc.localDescription.sdp))')
+})
+
+/** Bytes 0..31 as the token, 32..63 as the nonce. The same vector is in companion-socket.test.ts, run through the server's proofMac. */
+const PROOF_VECTOR = {
+  token: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
+  nonce: 'ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8',
+  mac: 'GBxF4yvVJMBOdFy_XX8CFPUkR962kYga-wTrWEAEOus',
+}
+
+describe('the server proof, from the extension side', () => {
+  it('signs the label the server signs', () => {
+    expect(PROOF_LABEL).toBe(SERVER_PROOF_LABEL)
+  })
+
+  it('computes the fixed vector the server test pins', async () => {
+    expect(await expectedMac(PROOF_VECTOR.token, PROOF_VECTOR.nonce)).toBe(PROOF_VECTOR.mac)
+    expect(await verifyProof(PROOF_VECTOR.token, PROOF_VECTOR.nonce, PROOF_VECTOR.mac)).toBe(true)
+  })
+
+  it('refuses a wrong mac, a mac for another nonce or token, and garbage', async () => {
+    const { token, nonce, mac } = PROOF_VECTOR
+    const flipped = (mac[0] === 'A' ? 'B' : 'A') + mac.slice(1)
+    expect(await verifyProof(token, nonce, flipped)).toBe(false)
+    expect(await verifyProof(token, newNonce(), mac)).toBe(false)
+    expect(await verifyProof(newNonce(), nonce, mac)).toBe(false)
+    for (const bad of ['', mac.slice(1), mac + 'AA', 'not base64!', null, 42]) {
+      expect(await verifyProof(token, nonce, bad), String(bad)).toBe(false)
+    }
+  })
+
+  it('compares bytes without caring where they differ', () => {
+    expect(sameBytes(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 3]))).toBe(true)
+    expect(sameBytes(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 4]))).toBe(false)
+    expect(sameBytes(new Uint8Array([1, 2]), new Uint8Array([1, 2, 3]))).toBe(false)
+    expect(sameBytes(null, new Uint8Array([1]))).toBe(false)
+  })
+
+  it('makes a fresh 32-byte base64url nonce each time', () => {
+    const a = newNonce()
+    expect(a).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(newNonce()).not.toBe(a)
+  })
+})
+
+describe('handshake (the socket opening)', () => {
+  const DEVICE = '0b7d1c2e-4f5a-4b6c-8d7e-9f0a1b2c3d4e'
+  const { token, nonce, mac } = PROOF_VECTOR
+
+  function run(opts: { timeoutMs?: number } = {}) {
+    const sent: string[] = []
+    let impostor = 0
+    const hs = handshake({
+      socket: { send: (s: string) => sent.push(s) },
+      deviceId: DEVICE,
+      token,
+      nonce,
+      hello: () => ext.hello(token, ID),
+      onImpostor: () => { impostor++ },
+      ...opts,
+    })
+    return { hs, sent, impostors: () => impostor, leaked: () => sent.some((s) => s.includes(token)) }
+  }
+
+  it('gives the server as long as the server gives it', () => {
+    expect(PROOF_TIMEOUT_MS).toBe(HELLO_TIMEOUT_MS)
+  })
+
+  it('sends a challenge the server parses, and no token', () => {
+    const t = run()
+    t.hs.open()
+    expect(t.sent).toHaveLength(1)
+    expect(JSON.parse(t.sent[0])).toEqual({ type: 'challenge', deviceId: DEVICE, nonce })
+    expect(parseExtensionMessage(t.sent[0])).not.toBeNull()
+    expect(t.leaked()).toBe(false)
+    t.hs.cancel()
+  })
+
+  it('sends hello with the token only after a valid proof', async () => {
+    const t = run()
+    t.hs.open()
+    await t.hs.receive({ type: 'proof', mac })
+    expect(t.hs.proven).toBe(true)
+    expect(t.sent).toHaveLength(2)
+    expect(JSON.parse(t.sent[1])).toMatchObject({ type: 'hello', token, protocol: PROTOCOL })
+    expect(t.impostors()).toBe(0)
+  })
+
+  it.each([
+    ['a wrong mac', { type: 'proof', mac: 'A'.repeat(43) }],
+    ['a proof with no mac', { type: 'proof' }],
+    ['ready before any proof', { type: 'ready', protocol: PROTOCOL }],
+    ['something that is not JSON', null],
+  ])('never writes the token after %s, and calls it an impostor', async (_label, msg) => {
+    const t = run()
+    t.hs.open()
+    await t.hs.receive(msg)
+    // Even a valid proof after that changes nothing: the socket is done.
+    await t.hs.receive({ type: 'proof', mac })
+    expect(t.leaked()).toBe(false)
+    expect(t.hs.proven).toBe(false)
+    expect(t.impostors()).toBe(1)
+  })
+
+  it('calls it an impostor when no proof comes in time, and a late one sends nothing', async () => {
+    const t = run({ timeoutMs: 20 })
+    t.hs.open()
+    await new Promise((r) => setTimeout(r, 40))
+    expect(t.impostors()).toBe(1)
+    await t.hs.receive({ type: 'proof', mac })
+    expect(t.leaked()).toBe(false)
+  })
+
+  it('a second message while the proof is being checked is an impostor too', async () => {
+    const t = run()
+    t.hs.open()
+    const checking = t.hs.receive({ type: 'proof', mac })
+    await t.hs.receive({ type: 'proof', mac })
+    await checking
+    expect(t.leaked()).toBe(false)
+    expect(t.impostors()).toBe(1)
+  })
+
+  it('a socket closed before the proof sends nothing and accuses no one', async () => {
+    const t = run({ timeoutMs: 20 })
+    t.hs.open()
+    t.hs.cancel()
+    await new Promise((r) => setTimeout(r, 40))
+    expect(t.impostors()).toBe(0)
+    expect(t.leaked()).toBe(false)
   })
 })
 

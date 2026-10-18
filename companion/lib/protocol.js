@@ -2,7 +2,8 @@
 // server/src/companion/protocol.ts (`parseExtensionMessage`), which is strict: a page's odd values
 // are clamped here so that one bad title or a live stream's Infinity duration cannot get a share refused.
 
-export const PROTOCOL = 1
+/** 2: the socket opens with `challenge`/`proof` before `hello` (lib/handshake.js). */
+export const PROTOCOL = 2
 
 const MAX_TITLE = 300
 const MAX_SECONDS = 604_800
@@ -33,6 +34,7 @@ export function cleanMeta(m) {
   }
 }
 
+export const challenge = (deviceId, nonce) => ({ type: 'challenge', deviceId, nonce })
 export const hello = (token, installId, session) => ({
   type: 'hello',
   token,

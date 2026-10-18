@@ -15,7 +15,7 @@ export const MAX_RECEIVERS = 4
 export const STALE_MS = 10_000
 
 export interface CompanionState {
-  protocol: 1
+  protocol: typeof PROTOCOL
   extensions: { connected: number; paired: number }
   tab: {
     state: 'idle' | 'sharing'

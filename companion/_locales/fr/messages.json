@@ -26,6 +26,9 @@
   "linkRefused": {
     "message": "Mise à jour requise"
   },
+  "linkImpostor": {
+    "message": "Le serveur sur ce port n'est pas votre Fremkit"
+  },
   "linkUnpaired": {
     "message": "Non relié"
   },

@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { randomBytes } from 'node:crypto'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
 import WebSocket from 'ws'
 import { DeviceStore } from '../src/devices/store.js'
 import { CompanionSession } from '../src/companion/session.js'
 import { CompanionSockets, HELLO_TIMEOUT_MS, companionSocket } from '../src/companion/socket.js'
+import { PROOF_LABEL, PROTOCOL, proofMac } from '../src/companion/protocol.js'
 import { MAX_WS_PAYLOAD_BYTES } from '../src/ws/hub.js'
 import { buildApp } from '../src/app.js'
 import { CONFIG_VERSION } from '../src/config/schema.js'
@@ -66,11 +67,37 @@ async function paired(origin = ORIGIN, installId = INSTALL) {
   return store.createExtension({ name: 'Chrome', origin, installId })
 }
 
-/** A connected extension that said hello and got `ready`. */
-async function hello(token: string, installId = INSTALL, origin = ORIGIN): Promise<Client> {
+const nonce = () => randomBytes(32).toString('base64url')
+
+/** Bytes 0..31 as the token, 32..63 as the nonce. The same vector is in companion-extension-lib.test.ts. */
+const PROOF_VECTOR = {
+  token: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
+  nonce: 'ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8',
+  mac: 'GBxF4yvVJMBOdFy_XX8CFPUkR962kYga-wTrWEAEOus',
+}
+
+/** What the extension expects back: the same computation as companion/lib/proof.js. */
+function expectedMac(token: string, n: string): string {
+  const key = createHash('sha256').update(token, 'utf8').digest()
+  return createHmac('sha256', key).update(PROOF_LABEL + n, 'utf8').digest('base64url')
+}
+
+/** A connected extension that sent its challenge and checked the proof. */
+async function proven(token: string, origin = ORIGIN): Promise<Client> {
+  const deviceId = store.findByToken(token, 'extension')?.id
+  if (!deviceId) throw new Error('no extension record for this token')
   const client = await connect(origin)
-  client.send({ type: 'hello', token, installId, protocol: 1 })
-  expect(await client.next()).toEqual({ type: 'ready', protocol: 1 })
+  const n = nonce()
+  client.send({ type: 'challenge', deviceId, nonce: n })
+  expect(await client.next()).toEqual({ type: 'proof', mac: expectedMac(token, n) })
+  return client
+}
+
+/** A connected extension through the handshake: challenge, proof, hello, `ready`. */
+async function hello(token: string, installId = INSTALL, origin = ORIGIN): Promise<Client> {
+  const client = await proven(token, origin)
+  client.send({ type: 'hello', token, installId, protocol: PROTOCOL })
+  expect(await client.next()).toEqual({ type: 'ready', protocol: PROTOCOL })
   return client
 }
 
@@ -98,75 +125,152 @@ describe('companion socket', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  it('waits 5 s for hello by default', () => {
+  it('waits 5 s for the handshake by default', () => {
     expect(HELLO_TIMEOUT_MS).toBe(5_000)
   })
 
-  it('no hello within the timeout (200 ms here) closes 1008', async () => {
+  it('no challenge within the timeout (200 ms here) closes 1008', async () => {
     const client = await connect()
     expect(await client.closed).toEqual({ code: 1008 })
   })
 
-  it('a page that is not an extension closes 1008', async () => {
+  it('a proof but no hello within the same timeout closes 1008', async () => {
     const { token } = await paired()
+    const client = await proven(token)
+    expect(await client.closed).toEqual({ code: 1008 })
+  })
+
+  it('a page that is not an extension closes 1008', async () => {
+    const { device } = await paired()
     for (const origin of [null, 'http://127.0.0.1:4242', 'https://example.com', `chrome-extension://${'q'.repeat(32)}`]) {
       const client = await connect(origin)
-      client.send({ type: 'hello', token, installId: INSTALL, protocol: 1 })
+      client.send({ type: 'challenge', deviceId: device.id, nonce: nonce() })
+      expect(await client.closed).toEqual({ code: 1008 })
+      expect(client.messages).toEqual([])
+    }
+  })
+
+  it('proves the record with an HMAC of the nonce keyed by its token hash', async () => {
+    const { token, device } = await paired()
+    const client = await connect()
+    const n = nonce()
+    client.send({ type: 'challenge', deviceId: device.id, nonce: n })
+    const proof = (await client.next()) as { type: string; mac: string }
+    expect(proof).toEqual({ type: 'proof', mac: expectedMac(token, n) })
+    // Another nonce, another mac: a recorded proof is worth nothing on the next socket.
+    const again = await connect()
+    again.send({ type: 'challenge', deviceId: device.id, nonce: nonce() })
+    expect(((await again.next()) as { mac: string }).mac).not.toBe(proof.mac)
+  })
+
+  it('pins the proof to a fixed vector shared with the extension', () => {
+    const key = createHash('sha256').update(PROOF_VECTOR.token, 'utf8').digest()
+    expect(proofMac(key, PROOF_VECTOR.nonce)).toBe(PROOF_VECTOR.mac)
+  })
+
+  it('a challenge naming no extension record closes 4401, before any proof', async () => {
+    const { device: ipad } = await store.create('iPad', { width: 1180, height: 820 }, null)
+    const removed = await paired(ORIGIN, INSTALL_2)
+    await store.remove(removed.device.id)
+    for (const deviceId of ['22222222-2222-4222-8222-222222222222', ipad.id, removed.device.id]) {
+      const client = await connect()
+      client.send({ type: 'challenge', deviceId, nonce: nonce() })
+      expect(await client.closed).toEqual({ code: 4401 })
+      expect(client.messages).toEqual([])
+    }
+  })
+
+  it('a challenge for a record of another origin closes 4401', async () => {
+    const { device } = await paired()
+    const client = await connect(OTHER)
+    client.send({ type: 'challenge', deviceId: device.id, nonce: nonce() })
+    expect(await client.closed).toEqual({ code: 4401 })
+  })
+
+  it('a malformed challenge closes 1008', async () => {
+    const { device } = await paired()
+    for (const bad of [
+      { type: 'challenge', deviceId: device.id, nonce: 'short' },
+      { type: 'challenge', deviceId: device.id, nonce: nonce() + 'A' },
+      { type: 'challenge', deviceId: 'x', nonce: nonce() },
+      { type: 'challenge', deviceId: device.id, nonce: nonce(), extra: 1 },
+    ]) {
+      const client = await connect()
+      client.send(bad)
       expect(await client.closed).toEqual({ code: 1008 })
     }
   })
 
-  it('a token that names no record closes 4401, a malformed one 1008', async () => {
-    await paired()
-    const unknown = await connect()
-    unknown.send({ type: 'hello', token: randomBytes(32).toString('base64url'), installId: INSTALL, protocol: 1 })
+  it('hello before the challenge (a version 1 extension) closes 1008', async () => {
+    const { token } = await paired()
+    const client = await connect()
+    client.send({ type: 'hello', token, installId: INSTALL, protocol: 1 })
+    expect(await client.closed).toEqual({ code: 1008 })
+    expect(client.messages).toEqual([])
+  })
+
+  it('a second challenge closes 1008, before hello or after', async () => {
+    const { token, device } = await paired()
+    const before = await proven(token)
+    before.send({ type: 'challenge', deviceId: device.id, nonce: nonce() })
+    expect(await before.closed).toEqual({ code: 1008 })
+    const after = await hello(token)
+    after.send({ type: 'challenge', deviceId: device.id, nonce: nonce() })
+    expect(await after.closed).toEqual({ code: 1008 })
+  })
+
+  it('after the proof, a token that names no record closes 4401, a malformed one 1008', async () => {
+    const { token } = await paired()
+    const unknown = await proven(token)
+    unknown.send({ type: 'hello', token: randomBytes(32).toString('base64url'), installId: INSTALL, protocol: PROTOCOL })
     expect(await unknown.closed).toEqual({ code: 4401 })
-    const malformed = await connect()
-    malformed.send({ type: 'hello', token: 'short', installId: INSTALL, protocol: 1 })
+    const malformed = await proven(token)
+    malformed.send({ type: 'hello', token: 'short', installId: INSTALL, protocol: PROTOCOL })
     expect(await malformed.closed).toEqual({ code: 1008 })
   })
 
-  it('a token from another origin or installId closes 4401', async () => {
-    const { token } = await paired()
-    const elsewhere = await connect(OTHER)
-    elsewhere.send({ type: 'hello', token, installId: INSTALL, protocol: 1 })
-    expect(await elsewhere.closed).toEqual({ code: 4401 })
-    const otherInstall = await connect()
-    otherInstall.send({ type: 'hello', token, installId: INSTALL_2, protocol: 1 })
-    expect(await otherInstall.closed).toEqual({ code: 4401 })
+  it('a hello with the token of another device than the challenge named closes 4401', async () => {
+    const a = await paired(ORIGIN, INSTALL)
+    const b = await paired(ORIGIN, INSTALL_2)
+    const client = await proven(a.token)
+    client.send({ type: 'hello', token: b.token, installId: INSTALL_2, protocol: PROTOCOL })
+    expect(await client.closed).toEqual({ code: 4401 })
+    const ipad = await store.create('iPad', { width: 1180, height: 820 }, null)
+    const withIpad = await proven(a.token)
+    withIpad.send({ type: 'hello', token: ipad.token, installId: INSTALL, protocol: PROTOCOL })
+    expect(await withIpad.closed).toEqual({ code: 4401 })
   })
 
-  it('a removed extension closes 4401, so it forgets its token', async () => {
-    const { token, device } = await paired()
-    await store.remove(device.id)
-    const client = await connect()
-    client.send({ type: 'hello', token, installId: INSTALL, protocol: 1 })
-    expect(await client.closed).toEqual({ code: 4401 })
+  it('a token from another installId closes 4401', async () => {
+    const { token } = await paired()
+    const otherInstall = await proven(token)
+    otherInstall.send({ type: 'hello', token, installId: INSTALL_2, protocol: PROTOCOL })
+    expect(await otherInstall.closed).toEqual({ code: 4401 })
   })
 
   it('a hello it cannot parse closes 1008, not 4401: the extension keeps its token', async () => {
     const { token } = await paired()
-    const client = await connect()
+    const client = await proven(token)
     client.send({ type: 'hello', token, installId: INSTALL, protocol: '2' })
     expect(await client.closed).toEqual({ code: 1008 })
   })
 
   it('a hello with keys it does not know is still answered ready', async () => {
     const { token } = await paired()
-    const client = await connect()
-    client.send({ type: 'hello', token, installId: INSTALL, protocol: 1, modules: ['fremplay'] })
-    expect(await client.next()).toEqual({ type: 'ready', protocol: 1 })
+    const client = await proven(token)
+    client.send({ type: 'hello', token, installId: INSTALL, protocol: PROTOCOL, modules: ['fremplay'] })
+    expect(await client.next()).toEqual({ type: 'ready', protocol: PROTOCOL })
   })
 
-  it('an iPad token closes 4401: it names no extension record', async () => {
-    const { token } = await store.create('iPad', { width: 1180, height: 820 }, null)
+  it('a first message other than challenge closes 1008', async () => {
     const client = await connect()
-    client.send({ type: 'hello', token, installId: INSTALL, protocol: 1 })
-    expect(await client.closed).toEqual({ code: 4401 })
+    client.send({ type: 'tab.stopped', sessionId: S1 })
+    expect(await client.closed).toEqual({ code: 1008 })
   })
 
-  it('a first message other than hello closes 1008', async () => {
-    const client = await connect()
+  it('anything but hello after the proof closes 1008', async () => {
+    const { token } = await paired()
+    const client = await proven(token)
     client.send({ type: 'tab.stopped', sessionId: S1 })
     expect(await client.closed).toEqual({ code: 1008 })
   })
@@ -187,7 +291,7 @@ describe('companion socket', () => {
     unknown.send({ type: 'tab.nonsense' })
     expect(await unknown.closed).toEqual({ code: 1008 })
     const twice = await hello(token)
-    twice.send({ type: 'hello', token, installId: INSTALL, protocol: 1 })
+    twice.send({ type: 'hello', token, installId: INSTALL, protocol: PROTOCOL })
     expect(await twice.closed).toEqual({ code: 1008 })
     await expect.poll(() => session.snapshot().extensions.connected).toBe(0)
   })
@@ -299,6 +403,30 @@ describe('companion socket in the app', () => {
     ws.on('error', () => undefined)
     expect(await Promise.race([opened, refused])).toBe('open')
     expect(await closed).toBe(1008)
+  }, 10_000)
+
+  it('goes through the handshake without the access secret: challenge, proof, hello, ready', async () => {
+    await full.listen({ port: 0, host: '127.0.0.1' })
+    const listening = (full.server.address() as { port: number }).port
+    const { token, device } = await full.pairing.store.createExtension({ name: 'Chrome', origin: ORIGIN, installId: INSTALL })
+    const ws = new WebSocket(`ws://127.0.0.1:${listening}/companion/ws`, { origin: ORIGIN, headers: { host: HOST } })
+    const received: unknown[] = []
+    const waiting: Array<(m: unknown) => void> = []
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString())
+      const waiter = waiting.shift()
+      if (waiter) waiter(msg)
+      else received.push(msg)
+    })
+    const next = () => received.length > 0 ? Promise.resolve(received.shift()) : new Promise((res) => waiting.push(res))
+    ws.on('error', () => undefined)
+    await new Promise((resolve) => ws.once('open', resolve))
+    const n = nonce()
+    ws.send(JSON.stringify({ type: 'challenge', deviceId: device.id, nonce: n }))
+    expect(await next()).toEqual({ type: 'proof', mac: expectedMac(token, n) })
+    ws.send(JSON.stringify({ type: 'hello', token, installId: INSTALL, protocol: PROTOCOL }))
+    expect(await next()).toEqual({ type: 'ready', protocol: PROTOCOL })
+    ws.close()
   }, 10_000)
 
   it('still checks the Host', async () => {

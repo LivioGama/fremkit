@@ -7,6 +7,7 @@
 // pairing waiting for its answer in `local`; the share and the link state in `session`.
 
 import { browserName } from './lib/browser.js'
+import { handshake } from './lib/handshake.js'
 import { closeOutcome } from './lib/link.js'
 import { idleDelay } from './lib/presence.js'
 import * as protocol from './lib/protocol.js'
@@ -46,6 +47,8 @@ const ready = (async () => {
   if (session.share && !(await hasOffscreen())) await saveSession({ share: null })
   // And a document left without a share (the worker stopped mid-start) holds a capture nobody sees.
   if (!session.share && (await hasOffscreen())) await chrome.offscreen.closeDocument().catch(() => undefined)
+  // A token without its device id cannot open the socket's handshake: pair again.
+  if (local.token && !local.deviceId) await saveLocal({ token: null })
   if (!local.token) await saveSession({ link: local.revoked ? 'revoked' : 'unpaired' })
   paintBadge()
   if (session.share) connect()
@@ -72,7 +75,7 @@ let flashText = null
 
 function paintBadge() {
   // While a share waits for the server to come back (a restart), the badge keeps showing it.
-  const bang = session.link === 'revoked' || session.link === 'refused' || (session.link === 'unreachable' && !session.share)
+  const bang = ['revoked', 'refused', 'impostor'].includes(session.link) || (session.link === 'unreachable' && !session.share)
   const text = flashText ?? (bang ? '!' : session.share ? '▶' : '')
   const alarm = text === '!'
   chrome.action.setBadgeBackgroundColor({ color: alarm ? DANGER : GOLD })
@@ -209,26 +212,38 @@ function send(msg) {
 }
 
 function connect() {
-  if (ws || retryTimer || !local.token) return
-  if (session.link !== 'ok') setLink('connecting')
+  if (ws || retryTimer || !local.token || !local.deviceId) return
+  // An impostor keeps its warning while the next attempts run: they meet it again, or nothing.
+  if (session.link !== 'ok' && session.link !== 'impostor') setLink('connecting')
   const socket = new WebSocket(WS_URL)
   ws = socket
   greeted = false
-  socket.onopen = () => {
-    const share = session.share
-    socket.send(JSON.stringify(protocol.hello(local.token, local.installId, share?.accepted ? share : undefined)))
-  }
+  // The server proves it holds this extension's record before the token is sent (lib/handshake.js).
+  const opening = handshake({
+    socket,
+    deviceId: local.deviceId,
+    token: local.token,
+    hello: () => {
+      const share = session.share
+      return protocol.hello(local.token, local.installId, share?.accepted ? share : undefined)
+    },
+    onImpostor: () => impostor(socket),
+  })
+  socket.onopen = () => opening.open()
   socket.onmessage = (event) => {
     if (ws !== socket) return
     let msg
     try {
       msg = JSON.parse(event.data)
     } catch {
-      return
+      msg = null
     }
+    if (!opening.proven) return void opening.receive(msg)
+    if (msg === null) return
     onServerMessage(msg).catch(() => undefined)
   }
   socket.onclose = (event) => {
+    opening.cancel()
     if (ws !== socket) return
     const wasGreeted = greeted
     ws = null
@@ -250,6 +265,21 @@ function connect() {
     } else setLink('unreachable')
     retry()
   }
+}
+
+/**
+ * The server on the port did not prove it is this extension's Fremkit: another program holds it.
+ * The token was not sent and is kept; the socket closes and the next attempt runs on the backoff.
+ */
+function impostor(socket) {
+  if (ws !== socket) return
+  ws = null
+  greeted = false
+  try {
+    socket.close(1000)
+  } catch { /* already closed */ }
+  setLink('impostor')
+  retry()
 }
 
 function retry() {
@@ -286,7 +316,8 @@ async function giveUp() {
   presenceUntil = 0
   for (const waiter of readyWaiters) waiter(false)
   readyWaiters.clear()
-  await setLink('unreachable')
+  // The last thing heard was an impostor: that is still what the user needs to know.
+  await setLink(session.link === 'impostor' ? 'impostor' : 'unreachable')
   if (session.share) await endShare({ notify: false, error: 'unreachable' })
 }
 

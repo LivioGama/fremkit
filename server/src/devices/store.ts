@@ -232,6 +232,17 @@ export class DeviceStore {
     return found && found.kind === kind ? toPublic(found) : null
   }
 
+  /**
+   * The key an extension's socket proof is signed with: the 32 raw bytes of its token's sha256,
+   * which the extension can recompute from the token and nobody else can. Null when the id names
+   * no record, or one that is not an extension.
+   */
+  extensionProofKey(id: string): { key: Buffer; origin: string } | null {
+    const device = this.state.devices.find((d) => d.id === id)
+    if (!device || device.kind !== 'extension') return null
+    return { key: Buffer.from(device.tokenHash, 'hex'), origin: device.origin }
+  }
+
   async update(id: string, patch: { name?: string; screenId?: string | null }): Promise<PublicDevice | null> {
     return this.enqueue(async () => {
       const index = this.state.devices.findIndex((d) => d.id === id)

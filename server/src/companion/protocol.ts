@@ -1,8 +1,30 @@
+import { createHmac } from 'node:crypto'
 import { isIP } from 'node:net'
 import { z } from 'zod'
 import { isWellFormedToken } from '../http/access.js'
 
-export const PROTOCOL = 1
+/**
+ * 2: the socket opens with `challenge`/`proof` before `hello` (the server proves it holds the
+ * extension's record before the token is sent). A version 1 extension says hello first and is
+ * refused with 1008, which it shows as "update needed".
+ */
+export const PROTOCOL = 2
+
+/** What the proof's HMAC signs, before the extension's nonce. */
+export const PROOF_LABEL = 'fremkit-companion-proof-v1|'
+
+/** 32 random bytes in base64url, unpadded: exactly 43 characters. */
+const NONCE_RE = /^[A-Za-z0-9_-]{43}$/
+
+/**
+ * The server's answer to a `challenge`: base64url(HMAC-SHA256(key, PROOF_LABEL + nonce)), where
+ * the key is the 32 raw bytes of sha256(token), the digest the device store keeps (in hex). The
+ * extension recomputes the same key from its token (companion/lib/proof.js), so a server that
+ * answers right holds this extension's record, and only then does the token leave the browser.
+ */
+export function proofMac(key: Buffer, nonce: string): string {
+  return createHmac('sha256', key).update(PROOF_LABEL + nonce, 'utf8').digest('base64url')
+}
 
 /** The origin of a Chrome extension: its id is 32 letters from a to p. */
 export const EXTENSION_ORIGIN_RE = /^chrome-extension:\/\/[a-p]{32}$/
@@ -79,6 +101,8 @@ const Sdp = z.string().max(MAX_SDP).refine(isLocalSdp, 'not a local offer')
 const Token = z.string().refine(isWellFormedToken, 'not a token')
 
 export const ExtensionMessageSchema = z.discriminatedUnion('type', [
+  // The first message of a socket: which record to prove, and the nonce to prove it on.
+  z.strictObject({ type: z.literal('challenge'), deviceId: Id, nonce: z.string().regex(NONCE_RE) }),
   // The one message that is not strict: a newer extension may say more in its hello (the spec
   // plans a `modules` list) and must still connect. Unknown keys are stripped, not refused.
   z.object({
@@ -108,6 +132,7 @@ export type Control = z.infer<typeof ControlSchema>
 
 /** What the server sends the extension. It is built here, never parsed, so it is a plain type. */
 export type ServerMessage =
+  | { type: 'proof'; mac: string }
   | { type: 'ready'; protocol: number }
   | { type: 'tab.accepted'; sessionId: string }
   | { type: 'tab.refused'; sessionId: string; reason: 'noWidget' | 'protocol' }

@@ -35,6 +35,7 @@ const LINKS = {
   unreachable: ['ko', () => t('linkUnreachable')],
   revoked: ['ko', () => t('linkRevoked')],
   refused: ['ko', () => t('linkRefused')],
+  impostor: ['ko', () => t('linkImpostor')],
   unpaired: ['', () => t('linkUnpaired')],
 }
 

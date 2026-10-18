@@ -8,7 +8,7 @@
   'use strict'
 
   /** The companion protocol this widget speaks. */
-  var PROTOCOL = 1
+  var PROTOCOL = 2
 
   /**
    * One of 'unpaired', 'offline', 'idle', 'sharing' or 'protocol' (the server speaks another

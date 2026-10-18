@@ -39,7 +39,7 @@ const OTHER = '9a0d3e44-3c1b-4f7e-8a2b-1f5e6d7c8b90'
 
 function snap(over: { protocol?: number; paired?: number; connected?: number; tab?: Record<string, unknown> } = {}) {
   return {
-    protocol: over.protocol ?? 1,
+    protocol: over.protocol ?? 2,
     extensions: { connected: over.connected ?? 1, paired: over.paired ?? 1 },
     tab: { state: 'idle', sessionId: null, device: null, meta: null, offers: {}, ...over.tab },
     pairing: null,
@@ -120,7 +120,7 @@ describe('fremplay/logic.js stateOf', () => {
 
   it('says the protocol differs before anything else', async () => {
     const { stateOf } = await loadLogic()
-    expect(stateOf({ ...sharing('s1'), protocol: 2 })).toBe('protocol')
+    expect(stateOf({ ...sharing('s1'), protocol: 3 })).toBe('protocol')
     expect(stateOf({ ...snap({ paired: 0 }), protocol: 0 })).toBe('protocol')
   })
 
@@ -195,7 +195,7 @@ describe('fremplay/logic.js plan', () => {
 
   it('never views under a protocol it does not speak', async () => {
     const { plan } = await loadLogic()
-    expect(plan({ ...sharing('s1'), protocol: 2 }, fresh()).view).toBe(false)
+    expect(plan({ ...sharing('s1'), protocol: 3 }, fresh()).view).toBe(false)
   })
 })
 
@@ -370,7 +370,7 @@ describe('the fremplay page', () => {
     expect(page.nodes.get('line')!.textContent).toBe('Navigateur fermé ou extension inactive')
     page.publish(snap())
     expect(page.nodes.get('line')!.textContent).toBe('Lancez une vidéo, puis cliquez l’icône Fremkit (⌥⇧E)')
-    page.publish({ ...snap(), protocol: 2 })
+    page.publish({ ...snap(), protocol: 3 })
     expect(page.nodes.get('line')!.textContent).toContain('mettez Fremkit à jour')
     expect(page.commands).toEqual([])
   })
