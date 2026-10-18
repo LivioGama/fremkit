@@ -169,8 +169,11 @@ public IPv4 or IPv6 address gets nothing, and neither does Tailscale (100.64/10 
 fd7a:115c:a1e0::/48 are refused by name). A VPN that uses the same private ranges as a home network
 (WireGuard or OpenVPN on 10/8 or 172.16/12, ZeroTier) cannot be told apart from it and is let in;
 it still needs a live code or a device token. Pairing needs a single-use code, valid five minutes;
-`/api/pair` answers 404 unless a code is live, and wrong guesses are limited per address (5 a
-minute) under a total ceiling (60 a minute), so one guesser cannot lock another iPad out.
+`/api/pair` answers 404 unless a code is live, and wrong guesses are limited per peer (5 a minute;
+a peer is an IPv4 address or an IPv6 /64, since one host controls every address of its /64) under
+a total ceiling of 60 a minute per code. One guesser cannot lock another iPad out over IPv4, but
+does share its allowance with the other IPv6 peers of its /64; several addresses together can spend
+the total, and a new code resets it.
 
 The remote listener is an **allow-list**, decided by the socket a request arrived on rather than
 by a header: the dashboard's page and its code, the routes a dashboard reads, `/ws`, the widget

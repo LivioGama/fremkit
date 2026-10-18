@@ -6,6 +6,7 @@ import {
   MAX_WRONG_PER_MINUTE,
   MAX_WRONG_PER_MINUTE_TOTAL,
   PairingCodes,
+  peerKey,
 } from '../src/devices/codes.js'
 
 function clock(start = 1_000_000) {
@@ -117,6 +118,43 @@ describe('PairingCodes', () => {
     c.t += 60_000
     expect(codes.guessing()).toBe(false)
     expect(codes.consume(code, '192.168.1.20')).toBe('ok')
+  })
+
+  it('keys a peer by its IPv4 address, or by its IPv6 /64', () => {
+    expect(peerKey('192.168.1.20')).toBe('192.168.1.20')
+    expect(peerKey('::ffff:192.168.1.20')).toBe('192.168.1.20')
+    expect(peerKey('::ffff:c0a8:114')).toBe('192.168.1.20')
+    expect(peerKey('fd12:3456:789a:1:aaaa::1')).toBe(peerKey('fd12:3456:789a:1:bbbb:cccc:dddd:eeee'))
+    expect(peerKey('fe80::1%en0')).toBe(peerKey('fe80::abcd:1234'))
+    expect(peerKey('fd12:3456:789a:1::1')).not.toBe(peerKey('fd12:3456:789a:2::1'))
+  })
+
+  it('gives one IPv6 host no more than one allowance, however many addresses it uses', () => {
+    const codes = new PairingCodes(clock().now)
+    const { code } = codes.issue()
+    for (let i = 1; i <= MAX_WRONG_PER_MINUTE; i++) {
+      expect(codes.consume(other(code), `fd12:3456:789a:1::${i.toString(16)}`)).toBe('wrong')
+    }
+    expect(codes.consume(code, 'fd12:3456:789a:1::ffff')).toBe('limited')
+    expect(codes.consume(code, '[fd12:3456:789a:1:1234::9]')).toBe('limited')
+    // Another network prefix, and IPv4, are other peers.
+    expect(codes.consume(other(code), 'fd12:3456:789a:2::1')).toBe('wrong')
+    expect(codes.consume(code, '192.168.1.20')).toBe('ok')
+  })
+
+  it('resets the total with a new code, but not a guesser\'s own window', () => {
+    const c = clock()
+    const codes = new PairingCodes(c.now)
+    const first = codes.issue().code
+    for (let i = 0; i < MAX_WRONG_PER_MINUTE; i++) expect(codes.consume(other(first), '10.9.9.9')).toBe('wrong')
+    for (let i = MAX_WRONG_PER_MINUTE; i < MAX_WRONG_PER_MINUTE_TOTAL; i++) {
+      expect(codes.consume(other(first), `10.0.${Math.floor(i / 4)}.${i % 4}`)).toBe('wrong')
+    }
+    expect(codes.consume(first, '192.168.1.20')).toBe('limited')
+    const second = codes.issue().code
+    // A guesser that spent its own allowance stays refused; the real iPad gets in.
+    expect(codes.consume(second, '10.9.9.9')).toBe('limited')
+    expect(codes.consume(second, '192.168.1.20')).toBe('ok')
   })
 
   it('is live only between a code being issued and it being used, cleared or expired', () => {
