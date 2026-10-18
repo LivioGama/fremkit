@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import type { Provider } from '../providers/types.js'
-import { SCREEN_ID_RE } from '../config/schema.js'
+import type { CommandContext, Provider } from '../providers/types.js'
+import { SCREEN_ID_RE, type Screen } from '../config/schema.js'
 import { tr } from '../i18n.js'
 import { BrightnessError, type BrightnessService } from './service.js'
 
@@ -20,6 +20,23 @@ function parse<T>(schema: z.ZodType<T>, payload: unknown): T {
   const parsed = schema.safeParse(payload ?? {})
   if (!parsed.success) throw new Error(tr(undefined, 'provider.invalidPayload'))
   return parsed.data
+}
+
+/**
+ * Whether the client that sent a command may change this screen's brightness.
+ *
+ * Today every client the server accepts is on this Mac or is refused: a command from a socket on
+ * this machine may drive any screen, and one with no context or from elsewhere drives none.
+ *
+ * What device pairing plugs in here: a paired device's socket is remote (`isRemoteRequest(req)`
+ * from `net/remote.ts`, carried into the `CommandContext` by the WebSocket route) and is bound to
+ * one screen. Such a client must never drive an `edge` screen — the Edge sits on the user's desk —
+ * and may drive only the `device` screen it is bound to, so the context it carries has to name
+ * that screen and this function has to compare the two. Everything else stays refused.
+ */
+export function mayCommandBrightness(ctx: CommandContext | undefined, screen: Screen): boolean {
+  void screen
+  return ctx?.loopback === true
 }
 
 function run<T>(fn: () => T): T {
@@ -42,21 +59,30 @@ function run<T>(fn: () => T): T {
  */
 export function createBrightnessProvider(service: BrightnessService, changed: () => void = () => {}): Provider {
   const after = <T>(result: T): T => { changed(); return result }
+  /** Fails closed: a caller with no context is treated as remote. */
+  const guard = (screen: string | undefined, ctx: CommandContext | undefined): void => {
+    run(() => {
+      if (!mayCommandBrightness(ctx, service.screenOf(screen))) throw new Error(tr(undefined, 'provider.localOnly'))
+    })
+  }
   return {
     channel: 'brightness',
     intervalMs: BRIGHTNESS_INTERVAL_MS,
     poll: async () => service.snapshot(),
     commands: {
-      set: async (payload) => {
+      set: async (payload, ctx) => {
         const { screen, value } = parse(SetSchema, payload)
+        guard(screen, ctx)
         return after(run(() => service.set(screen, value)))
       },
-      step: async (payload) => {
+      step: async (payload, ctx) => {
         const { screen, delta } = parse(StepSchema, payload)
+        guard(screen, ctx)
         return after(run(() => service.step(screen, delta)))
       },
-      resume: async (payload) => {
+      resume: async (payload, ctx) => {
         const { screen } = parse(ResumeSchema, payload)
+        guard(screen, ctx)
         return after(run(() => service.resume(screen)))
       },
     },

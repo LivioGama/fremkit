@@ -7,7 +7,7 @@ import { BrightnessSettingsSchema, ConfigSchema, type BrightnessSettings, type C
 import { phaseAt, sunEvents, transitionsAround } from '../src/brightness/schedule.js'
 import { decide, FOLLOW_RELEASE, followLevel, type Held } from '../src/brightness/decide.js'
 import { BrightnessService, HELPER_STALE_MS, HelperReportSchema } from '../src/brightness/service.js'
-import { createBrightnessProvider } from '../src/brightness/provider.js'
+import { createBrightnessProvider, mayCommandBrightness } from '../src/brightness/provider.js'
 import { buildApp } from '../src/app.js'
 
 const MIN = 60_000
@@ -212,24 +212,45 @@ describe('BrightnessService', () => {
 })
 
 describe('brightness provider', () => {
+  const local = { loopback: true, paired: false }
   it('validates command payloads and refreshes after each', async () => {
     let refreshed = 0
     const cfg = config()
     const svc = new BrightnessService({ config: () => cfg })
     svc.helperReport(report())
     const p = createBrightnessProvider(svc, () => refreshed++)
-    await expect(p.commands!.set({ value: 'bright' })).rejects.toThrow()
-    await expect(p.commands!.set({ value: 30, screen: 'Not A Slug' })).rejects.toThrow()
-    await expect(p.commands!.step({ delta: 500 })).rejects.toThrow()
+    await expect(p.commands!.set({ value: 'bright' }, local)).rejects.toThrow()
+    await expect(p.commands!.set({ value: 30, screen: 'Not A Slug' }, local)).rejects.toThrow()
+    await expect(p.commands!.step({ delta: 500 }, local)).rejects.toThrow()
     expect(refreshed).toBe(0)
-    await expect(p.commands!.set({ value: 30, instanceId: 'brightness-1' })).resolves.toEqual({ screen: 'edge', value: 30 })
-    await expect(p.commands!.resume({})).resolves.toEqual({ screen: 'edge' })
+    await expect(p.commands!.set({ value: 30, instanceId: 'brightness-1' }, local)).resolves.toEqual({ screen: 'edge', value: 30 })
+    await expect(p.commands!.resume({}, local)).resolves.toEqual({ screen: 'edge' })
     expect(refreshed).toBe(2)
   })
   it('turns service errors into readable messages', async () => {
     const cfg = config()
     const p = createBrightnessProvider(new BrightnessService({ config: () => cfg }))
-    await expect(p.commands!.set({ value: 30 })).rejects.toThrow(/luminosité|brightness/)
+    await expect(p.commands!.set({ value: 30 }, local)).rejects.toThrow(/luminosité|brightness/)
+  })
+  it('refuses every command from a client that is not on this Mac, or that says nothing', async () => {
+    const cfg = config([{}, { kind: 'device' }])
+    const svc = new BrightnessService({ config: () => cfg })
+    svc.helperReport(report())
+    const p = createBrightnessProvider(svc)
+    for (const ctx of [undefined, { loopback: false, paired: false }]) {
+      await expect(p.commands!.set({ value: 30 }, ctx)).rejects.toThrow(/machine/)
+      await expect(p.commands!.step({ delta: 10 }, ctx)).rejects.toThrow(/machine/)
+      await expect(p.commands!.resume({}, ctx)).rejects.toThrow(/machine/)
+    }
+    expect(svc.snapshot().screens.edge.target).toBeNull()
+  })
+  it('mayCommandBrightness: this Mac drives any screen, a remote client none', () => {
+    const [edge, device] = config([{}, { kind: 'device' }]).screens
+    expect(mayCommandBrightness({ loopback: true, paired: false }, edge)).toBe(true)
+    expect(mayCommandBrightness({ loopback: true, paired: false }, device)).toBe(true)
+    expect(mayCommandBrightness({ loopback: false, paired: false }, edge)).toBe(false)
+    expect(mayCommandBrightness({ loopback: false, paired: false }, device)).toBe(false)
+    expect(mayCommandBrightness(undefined, edge)).toBe(false)
   })
 })
 

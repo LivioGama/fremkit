@@ -128,10 +128,17 @@ export class BrightnessService {
     return this.helperFresh() ? this.report!.builtin : null
   }
 
-  private resolve(screenId: string | undefined): Screen {
+  /** The screen a command names, or the kiosk's when it names none. */
+  screenOf(screenId: string | undefined): Screen {
     const config = this.opts.config()
     const screen = screenId === undefined ? this.kioskScreen(config) : config.screens.find((s) => s.id === screenId)
     if (!screen) throw new BrightnessError('unknown-screen')
+    return screen
+  }
+
+  private resolve(screenId: string | undefined): Screen {
+    const config = this.opts.config()
+    const screen = this.screenOf(screenId)
     if (this.unavailable(screen, this.kioskScreen(config)?.id)) throw new BrightnessError('unavailable')
     return screen
   }
