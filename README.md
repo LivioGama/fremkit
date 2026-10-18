@@ -214,7 +214,9 @@ two screens is the same widget, with the same settings.
   On a bar widget: settings, move left or right, remove. On a screen above the canvas: rename,
   screen settings, delete. The menus work from the
   keyboard too (arrows, Enter, Escape, type-ahead).
-- **Keyboard** — arrows move the selection by one cell, Shift+arrows resize it from the south-east corner, Delete or Backspace removes it,
+- **Keyboard** — Tab and Shift+Tab select the next or previous widget of the page, arrows move the
+  selection by one cell (a held arrow is one undo step), Shift+arrows resize it from the south-east
+  corner — never through another widget, never a locked one — Delete or Backspace removes it,
   Cmd+D duplicates it, Cmd+C and Cmd+V copy it and paste a new one with the same settings on the
   page you are on (any page, any screen), Escape deselects. Cmd+Z and Cmd+Shift+Z undo and redo
   anywhere, up to 50 steps.

@@ -13,6 +13,9 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **Tab through the page's widgets.** In the editor, Tab and Shift+Tab select the next and the
+  previous widget of the page, top to bottom; the arrows then move it a cell at a time and
+  Shift+arrows resize it. Holding an arrow down is one step to undo, not one per cell.
 - **Dashboard history.** Screen → History (or the button next to undo) lists every saved version
   of the dashboard for the last month, by day, with what changed in each — pages, widgets,
   screens, theme. Open one to see its pages and restore it in two taps; the version it replaces

@@ -5,12 +5,12 @@ import { useSocket } from '../shared/socket'
 import type { Background, Config, NavHeight, NavItem, Page, Placement, Screen, ScreenDisplay, Widget, WidgetInstance, WidgetManifest, WidgetPermissionSet, WidgetSource, WidgetsResponse } from '../shared/types'
 import { DEFAULT_NAV_HEIGHT, MAX_NAV_WIDGETS, ROWS_BY_NAV_HEIGHT, compactWidth, mergeSettings, navHasRoom, navWiderClusterWidth } from '../shared/types'
 import { DEVICE_CELL, DEVICE_NAV_HEIGHT, deviceGrid, pickScreen, screensShowing, tileOf } from '../shared/screens'
-import { fits, largestFreeSpot, type Grid, type Rect } from './layout'
+import { fits, largestFreeSpot, moveRect, resizeRect, type Grid, type Rect } from './layout'
 import { arrangeInto } from './arrange'
 
 export type Mode = 'edit' | 'test'
 /** The modal dialogs opened from the top bar. Kept in the store so a widget setting can open one. */
-export type ModalName = 'screen' | 'connections' | 'marketplace' | 'about' | 'export' | 'import'
+export type ModalName = 'screen' | 'connections' | 'marketplace' | 'about' | 'export' | 'import' | 'shortcuts'
 export type Status = 'saved' | 'saving' | 'error'
 
 /** Edits are grouped this long before one PUT of the whole config. */
@@ -194,6 +194,22 @@ export interface AdminStore {
   canResize(instanceId: string, size: [number, number]): boolean
   /** Locks or unlocks this screen's placement: a locked tile is neither dragged nor resized. */
   setLocked(instanceId: string, locked: boolean): void
+  /**
+   * The keyboard's move: one tile of the page shifted by (dx, dy) cells, or — `resize` — grown or
+   * shrunk by that much from its south-east corner, as the arrow keys and Shift+arrows do. The
+   * rules are the drag's: kept inside the grid, never under the manifest's minimum size, refused
+   * when it would land on another tile, and nothing at all for a locked tile. False when refused.
+   *
+   * `repeat` is a key held down: its steps join the press that started it in one undo step, so
+   * one ⌘Z puts back what one hold moved.
+   */
+  nudgeWidget(instanceId: string, dx: number, dy: number, opts?: { resize?: boolean; repeat?: boolean }): boolean
+  /**
+   * Selects the next tile of the page (`delta` 1) or the previous one (-1), in reading order — top
+   * to bottom, then left to right — wrapping at both ends. With none selected, the first or the
+   * last. Null when the page has no tile.
+   */
+  cycleSelection(delta: 1 | -1): string | null
   copyWidget(instanceId: string): void
   /**
    * A new widget set up like the copied one — settings and look — on the current page, at the
@@ -422,10 +438,21 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     timer = setTimeout(() => { timer = undefined; kick() }, debounceMs)
   }
 
-  function apply(mutate: (cfg: Config) => void): void {
+  /**
+   * The step the last `apply` belonged to, when it may be continued (a key held down), else null.
+   * An apply under the same name joins that undo step instead of starting one; any other apply,
+   * an undo or a redo ends it.
+   */
+  let openStep: string | null = null
+
+  function apply(mutate: (cfg: Config) => void, step: { name: string; join: boolean } | null = null): void {
     if (!state.config) return
-    undoStack.push(snapshot())
-    if (undoStack.length > UNDO_LIMIT) undoStack.shift()
+    // An emptied history (a reload, a push from another tab) has no step left to join.
+    if (!(step?.join && openStep === step.name && undoStack.length)) {
+      undoStack.push(snapshot())
+      if (undoStack.length > UNDO_LIMIT) undoStack.shift()
+    }
+    openStep = step?.name ?? null
     redoStack.length = 0
     mutate(state.config)
     clampSelection()
@@ -503,9 +530,10 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       state.catalogErrors = widgets.errors
     },
 
-    apply,
+    apply: (mutate) => apply(mutate),
 
     undo(): void {
+      openStep = null
       const prev = undoStack.pop()
       if (!prev) return
       redoStack.push(snapshot())
@@ -515,6 +543,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     },
 
     redo(): void {
+      openStep = null
       const next = redoStack.pop()
       if (!next) return
       undoStack.push(snapshot())
@@ -899,6 +928,34 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
           if (placement) { if (locked) placement.locked = true; else delete placement.locked }
         }
       })
+    },
+
+    nudgeWidget(instanceId: string, dx: number, dy: number, opts: { resize?: boolean; repeat?: boolean } = {}): boolean {
+      const placement = page.value?.items.find((p) => p.instanceId === instanceId)
+      const widget = state.config?.widgets[instanceId]
+      if (!placement || !widget || placement.locked) return false
+      const start = rectOf(placement)
+      const min = state.manifests[widget.widgetId]?.minSize ?? [1, 1]
+      const next = opts.resize
+        ? resizeRect(start, 'se', dx, dy, min, grid.value)
+        : moveRect(start, dx, dy, grid.value)
+      if (GEOMETRY.every((k) => next[k] === start[k])) return false
+      if (!fits(next, grid.value, store.others(instanceId))) return false
+      const pageId = page.value!.id
+      apply((c) => {
+        const target = here(c).pages.find((p) => p.id === pageId)?.items.find((x) => x.instanceId === instanceId)
+        if (target) Object.assign(target, next)
+      }, { name: `nudge:${opts.resize ? 'resize' : 'move'}:${instanceId}`, join: !!opts.repeat })
+      return true
+    },
+
+    cycleSelection(delta: 1 | -1): string | null {
+      const items = [...(page.value?.items ?? [])].sort((a, b) => a.y - b.y || a.x - b.x)
+      if (!items.length) return null
+      const at = items.findIndex((p) => p.instanceId === state.selectedId)
+      const i = at < 0 ? (delta > 0 ? 0 : items.length - 1) : (at + delta + items.length) % items.length
+      state.selectedId = items[i].instanceId
+      return state.selectedId
     },
 
     copyWidget(instanceId: string): void {

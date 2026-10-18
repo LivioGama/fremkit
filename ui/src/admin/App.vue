@@ -17,7 +17,7 @@ import ShareExportDialog from './ShareExportDialog.vue'
 import ShareImportDialog from './ShareImportDialog.vue'
 import { carriesFiles, openImportFile, share } from './share'
 import ContextMenu from '../shared/ui/ContextMenu.vue'
-import { fits, moveRect, resizeRect } from './layout'
+import { ARROW_DELTAS, matchShortcut } from './shortcuts'
 import { followThemeSchedule, useConfigTheme } from '../shared/theme'
 import { useSocket } from '../shared/socket'
 import { SCREEN_ID } from '../shared/useWidgetBridge'
@@ -38,62 +38,71 @@ function inField(target: EventTarget | null): boolean {
   return !!el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
 }
 
-const ARROWS: Record<string, [number, number]> = {
-  ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+/**
+ * Tab moves the selection through the page's tiles only while the editor, not a control, has the
+ * keyboard: a widget is selected, or nothing has the focus. Otherwise it walks the buttons, as it
+ * should for anybody driving the editor from the keyboard.
+ */
+function tabCyclesWidgets(): boolean {
+  if (s.selected.value) return true
+  const active = document.activeElement
+  return !active || active === document.body
 }
 
 function onKeyDown(e: KeyboardEvent): void {
-  const mod = e.metaKey || e.ctrlKey
-  if (mod && e.key.toLowerCase() === 'z') {
-    e.preventDefault()
-    if (e.shiftKey) s.redo()
-    else s.undo()
-    return
+  const typing = inField(e.target)
+  const shortcut = matchShortcut(e, typing)
+  if (!shortcut) return
+  switch (shortcut.id) {
+    case 'undo': e.preventDefault(); s.undo(); return
+    case 'redo': e.preventDefault(); s.redo(); return
   }
-  if (inField(e.target)) return
   const inst = s.selected.value
-  if (mod && e.key.toLowerCase() === 'd') {
-    e.preventDefault()
-    if (inst) s.duplicateWidget(inst.instanceId)
-    return
-  }
-  // ⌘C and ⌘V work on the editor's own widget clipboard, but never over text the user has
-  // selected on the page: that copy is the browser's.
-  if (mod && !e.shiftKey && !e.altKey && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'v') && s.state.mode === 'edit') {
-    if (hasTextSelection()) return
-    if (e.key.toLowerCase() === 'c') {
-      if (!inst) return
+  const editing = s.state.mode === 'edit'
+  switch (shortcut.id) {
+    case 'duplicate':
+      e.preventDefault()
+      if (inst) s.duplicateWidget(inst.instanceId)
+      return
+    // ⌘C and ⌘V work on the editor's own widget clipboard, but never over text the user has
+    // selected on the page: that copy is the browser's.
+    case 'copy':
+      if (!editing || hasTextSelection() || !inst) return
       e.preventDefault()
       s.copyWidget(inst.instanceId)
-    } else if (s.state.clipboard) {
+      return
+    case 'paste':
+      if (!editing || hasTextSelection() || !s.state.clipboard) return
       e.preventDefault()
       s.pasteWidget()
+      return
+    case 'nextWidget':
+    case 'previousWidget':
+      if (!editing || s.state.modal || !tabCyclesWidgets()) return
+      if (s.cycleSelection(shortcut.id === 'nextWidget' ? 1 : -1)) e.preventDefault()
+      return
+  }
+  if (!inst || !editing) return
+  switch (shortcut.id) {
+    case 'deselect': s.select(null); return
+    case 'remove': {
+      e.preventDefault()
+      // Off this screen only: done at once, undo covers it. On its last screen the widget itself
+      // goes, so the key arms the inspector's confirmation and a second press confirms it.
+      const id = inst.instanceId
+      if (!s.isLastPlace(id)) s.removeFromScreen(id)
+      else widgetDelete.ask(widgetDeleteKey(id), () => s.removeFromScreen(id))
+      return
     }
-    return
+    case 'move':
+    case 'resize': {
+      const delta = ARROW_DELTAS[e.key]
+      if (!delta) return
+      e.preventDefault()
+      // A held key repeats: its steps join the first press's undo step.
+      s.nudgeWidget(inst.instanceId, delta[0], delta[1], { resize: shortcut.id === 'resize', repeat: e.repeat })
+    }
   }
-  if (!inst || s.state.mode !== 'edit') return
-  if (e.key === 'Escape') { s.select(null); return }
-  if (e.key === 'Delete' || e.key === 'Backspace') {
-    e.preventDefault()
-    // Off this screen only: done at once, undo covers it. On its last screen the widget itself
-    // goes, so the key arms the inspector's confirmation and a second press confirms it.
-    const id = inst.instanceId
-    if (!s.isLastPlace(id)) s.removeFromScreen(id)
-    else widgetDelete.ask(widgetDeleteKey(id), () => s.removeFromScreen(id))
-    return
-  }
-  const delta = ARROWS[e.key]
-  if (!delta) return
-  e.preventDefault()
-  // A locked tile stays where it is, whatever moves it.
-  if (inst.locked) return
-  const start = { x: inst.x, y: inst.y, w: inst.w, h: inst.h }
-  const min = s.state.manifests[inst.widgetId]?.minSize ?? [1, 1]
-  // Shift resizes from the south-east corner, a bare arrow moves the whole widget.
-  const next = e.shiftKey
-    ? resizeRect(start, 'se', delta[0], delta[1], min, s.grid.value)
-    : moveRect(start, delta[0], delta[1], s.grid.value)
-  if (fits(next, s.grid.value, s.others(inst.instanceId))) s.updateInstance(inst.instanceId, next)
 }
 
 /** True when the user has selected some text on the page, which ⌘C must copy as usual. */

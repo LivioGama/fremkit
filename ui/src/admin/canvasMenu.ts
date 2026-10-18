@@ -8,6 +8,7 @@ import { surfaceOpacity } from '../shared/background'
 import { screensShowing } from '../shared/screens'
 import { SEPARATOR, tidy, type MenuEntry, type MenuItem } from '../shared/ui/contextMenu'
 import { STYLE_KEYS, type AdminStore } from './store'
+import { shortcutHint } from './shortcuts'
 import type { SettingField, Widget, WidgetManifest } from '../shared/types'
 
 /** What a menu does outside the store: moving the eye to a part of the editor. */
@@ -40,8 +41,10 @@ export function revealPageBackground(s: AdminStore, i: number, ui: MenuUi): void
 /** The tile opacities the Appearance submenu offers, in percent. */
 export const OPACITY_PRESETS = [100, 80, 60, 40, 0] as const
 
-/** The shortcut hints, as macOS spells them. */
-export const KEYS = { duplicate: '⌘D', copy: '⌘C', paste: '⌘V', remove: '⌫' } as const
+/** The shortcut hints, as macOS spells them: read from the editor's one table of shortcuts. */
+export const KEYS = {
+  duplicate: shortcutHint('duplicate'), copy: shortcutHint('copy'), paste: shortcutHint('paste'), remove: shortcutHint('remove'),
+} as const
 
 /**
  * The connection a widget's settings point at — the first `connection` or `connections` field
