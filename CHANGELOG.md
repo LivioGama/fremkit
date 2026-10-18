@@ -31,14 +31,33 @@ tagged `vX.Y.Z`.
   derived from the Mac's key; a device that shows the same four words is talking to this Mac. The Mac
   is also announced on the network under its computer name rather than "Fremkit", with its address,
   so an iPad finds it even where the Mac's `.local` name does not resolve.
+- **Dashboard history.** Screen → History (or the button next to undo) lists every saved version
+  of the dashboard for the last month, by day, with what changed in each — pages, widgets,
+  screens, theme. Open one to see its pages and restore it in two taps; the version it replaces
+  stays in the list, so a restore is undone the same way. The version before a backup restore or
+  a Fremkit update is always kept. Your privacy settings, widget permissions and secrets stay as
+  they are.
 - **Widget health in the editor.** A widget that cannot work — not installed, its connection
-  deleted, incomplete or refusing its credentials, its data source out of reach, no connection
-  chosen yet, or an update waiting — wears a red or orange dot on its tile in the editor, with
-  the reason in its tooltip. Select it and the reason sits above its settings with the button
-  that fixes it (open the connection, open the setting, install, update…); its right-click menu
-  starts with **Fix:**. The pages list and the screens selector mark where such a widget is, and
-  the top bar counts them: click the count to list them all. It follows the dashboard live; a
-  widget whose page has not been on screen since Fremkit started has nothing to report yet.
+  deleted, incomplete or refusing its credentials, its data source out of reach, or no connection
+  chosen yet — wears a red or orange dot on its tile in the editor, with the reason in its
+  tooltip. Select it and the reason sits above its settings with the button that fixes it (open
+  the connection, open the setting, install…); its right-click menu starts with **Fix:**. The
+  pages list and the screens selector mark where such a widget is, and the top bar counts them:
+  click the count to list them all. An update is not a problem: a widget with a newer version in
+  the registry wears a small arrow in the theme's accent instead, its inspector says which
+  version is available beside an **Update** button, and its menu offers **Update to vX**; the
+  Sietch button counts updates. It follows the dashboard live; a widget whose page has not been
+  on screen since Fremkit started has nothing to report yet.
+- **Share a page, a screen or your whole setup.** **Export page…** in a page's right-click menu,
+  **Export screen…** and **Export the whole setup…** in a screen's, or **Screen → Share your setup**
+  write a `.fremkit-layout.json` holding the pages, the bar, the tiles' look and settings, the
+  theme and the background images. The export shows what is in the file before you download or
+  copy it: connections, secrets, host names, e-mail addresses, device names, privacy choices and
+  brightness schedules never are, and settings typed as free text (a label, a link) go in only
+  if you tick them. **Import a layout…** — or dropping the file onto the editor — shows what it
+  adds, offers to install the widgets you do not have from the Sietch (asking what they may do,
+  as always), asks which of your connections a widget should use, and adds the pages or screens
+  beside yours unless you choose to replace them. One ⌘Z takes the whole import back.
 - **A theme for the night.** Under the theme list, pick another theme for the night and when it
   takes over: at sunrise and sunset where you are, or at fixed times — the same choice as the
   screen brightness's day and night, and its place is offered when it has one. The dashboard,

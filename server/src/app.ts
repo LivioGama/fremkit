@@ -4,8 +4,10 @@ import fastifyWebsocket from '@fastify/websocket'
 import { homedir } from 'node:os'
 import { shippedPaths } from './paths.js'
 import { join } from 'node:path'
-import { access, mkdir } from 'node:fs/promises'
+import { access, mkdir, readFile } from 'node:fs/promises'
 import { ConfigStore } from './config/store.js'
+import { ConfigHistory } from './config/history.js'
+import { historyRoutes } from './config/history-routes.js'
 import { setServerLocale } from './i18n.js'
 import { ConnectionManager } from './connections/manager.js'
 import { ConnectionTypeRegistry } from './connections/registry.js'
@@ -53,7 +55,8 @@ import { helperRoutes } from './helper/routes.js'
 import { createDockProvider } from './dock/provider.js'
 import { bambuCameras } from './bambu/cameras.js'
 import { sweepStaleCameraDirs } from './providers/bambu-rtsp.js'
-import { seedDefaultBackground } from './backgrounds/seed.js'
+import { DEFAULT_BACKGROUND, seedDefaultBackground } from './backgrounds/seed.js'
+import { isSafeBackgroundName } from './config/schema.js'
 import { backupRoutes } from './backup/routes.js'
 import { bambuRoutes } from './bambu/routes.js'
 import { createShortcutsProvider } from './providers/shortcuts.js'
@@ -84,6 +87,8 @@ import { REMOTE_PORT } from './devices/listener.js'
 import type { Advertiser } from './devices/bonjour.js'
 import type { Exec } from './secrets/keychain.js'
 import { diagnosticsRoutes } from './diagnostics/routes.js'
+import { shareRoutes } from './share/routes.js'
+import { shareRedaction } from './share/context.js'
 import type { LogTail } from './diagnostics/log-tail.js'
 import { isDeclaredType } from './connections/declared.js'
 import { tightenDataDir } from './data-permissions.js'
@@ -178,7 +183,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
 
   // Private before anything is read from it or written to it: see data-permissions.ts.
   await tightenDataDir(opts.dataDir)
-  const store = new ConfigStore(join(opts.dataDir, 'fremkit.json'))
+  const store = new ConfigStore(join(opts.dataDir, 'fremkit.json'), { history: new ConfigHistory(join(opts.dataDir, 'history')) })
   await store.load()
   // Providers, the proxy and the connection types are far from any request, so they read the
   // language from this module-level copy rather than being handed a store they have no use for.
@@ -437,6 +442,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     // then report `unauthorized` until the secrets are typed back in.
     onRestored: async (config) => { await connections.sync(config.connections); retainCameras(config) },
   })
+  await app.register(historyRoutes, {
+    store,
+    types: connectionTypes,
+    secrets,
+    // A version put back brings its connections back as they were, exactly like a backup.
+    onRestored: async (config) => { await connections.sync(config.connections); retainCameras(config) },
+  })
   await app.register(faviconRoutes, { dir: join(opts.dataDir, 'icons', 'favicons'), config: () => store.get(), screenOfDevice })
   await app.register(claudeRoutes, { tracker, usage })
   await app.register(dockRoutes, { state: dock, appIcons, deviceMayListApps: (id) => deviceService.maySubscribe(id, 'dock') })
@@ -491,6 +503,22 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       remoteAccess: () => devices.enabled,
       accessToken: opts.accessToken,
       ...(opts.logTail ? { log: (count: number) => opts.logTail!.recent(count) } : {}),
+    },
+  })
+  await app.register(shareRoutes, {
+    deps: {
+      config: () => store.get(),
+      manifest: (id) => catalog.get(id),
+      source: (id) => catalog.entry(id)?.source,
+      readImage: (name) => (isSafeBackgroundName(name)
+        ? readFile(join(opts.dataDir, 'backgrounds', name)).catch(() => null)
+        : Promise.resolve(null)),
+      redaction: () => shareRedaction(store.get(), {
+        secretsFor: (connection) => connections.secretsFor(connection),
+        devices: () => devices.list(),
+        accessToken: opts.accessToken,
+      }),
+      shippedBackground: DEFAULT_BACKGROUND,
     },
   })
   app.addHook('onClose', async () => { await deviceService.close() })

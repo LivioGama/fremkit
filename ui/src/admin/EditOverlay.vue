@@ -31,23 +31,30 @@ const boardH = computed(() => s.grid.value.rows * cell.value)
 
 const health = useHealth()
 /** The menus lead with the fix of a widget that is not well. */
-const menuUi = { ...editorFocus, fix: health.fix }
+const menuUi = { ...editorFocus, fix: health.fix, update: health.update }
 /**
  * The health badge is drawn inside the scaled board, so it is sized in the board's pixels from
  * the size it should have on screen: a fixed 12 px here is 5 px once the Edge's 2560 px are fitted
  * into the editor's column, which is how the lock icon ended up unreadable.
  */
 const BADGE_SCREEN_PX = 20
-const badgeStyle = computed(() => {
+const badgeSize = computed(() => BADGE_SCREEN_PX / (props.scale || 1))
+/** The `n`th badge from the tile's bottom-left corner: the problem first, the update beside it. */
+const badgeStyle = (n: number) => {
   const k = props.scale || 1
-  const size = BADGE_SCREEN_PX / k
+  const size = badgeSize.value
   return {
-    width: size + 'px', height: size + 'px', left: 6 / k + 'px', bottom: 6 / k + 'px',
+    width: size + 'px', height: size + 'px', left: 6 / k + n * (size + 4 / k) + 'px', bottom: 6 / k + 'px',
     fontSize: size * 0.68 + 'px', borderWidth: 2 / k + 'px',
   }
-})
-/** The badge's tooltip: every problem, one per line. */
+}
+/** The problem badge's tooltip: every problem, one per line. */
 const healthTitle = (instanceId: string): string => health.of(instanceId).problems.map(describeProblem).join('\n')
+/** The update badge's tooltip. */
+function updateTitle(instanceId: string): string {
+  const v = health.of(instanceId).update?.version
+  return v ? t('admin.health.update.available', { version: v }) : t('admin.health.update.badge')
+}
 
 interface Drag { kind: 'move' | 'resize' | 'create'; instanceId: string; widgetId: string; start: Rect; handle: Handle; min: [number, number]; ox: number; oy: number }
 const drag = ref<Drag | null>(null)
@@ -223,8 +230,12 @@ function onDragLeave(): void { ghost.value = null }
       <BaseChip v-if="shownOn(w.instanceId) > 1" class="shared" :title="t('admin.overlay.sharedOn', { n: shownOn(w.instanceId) })">
         <BaseIcon name="monitor" :size="12" />{{ shownOn(w.instanceId) }}
       </BaseChip>
-      <span v-if="health.of(w.instanceId).level !== 'ok'" class="health" :class="health.of(w.instanceId).level"
-        :style="badgeStyle" :title="healthTitle(w.instanceId)" role="img" :aria-label="healthTitle(w.instanceId)" data-health-badge>!</span>
+      <span v-if="health.of(w.instanceId).problems.length" class="health" :class="health.of(w.instanceId).level"
+        :style="badgeStyle(0)" :title="healthTitle(w.instanceId)" role="img" :aria-label="healthTitle(w.instanceId)" data-health-badge>!</span>
+      <!-- An update is news, not a problem: an arrow in the accent, like the library's "↑ version" chip. -->
+      <span v-if="health.of(w.instanceId).update" class="health update"
+        :style="badgeStyle(health.of(w.instanceId).problems.length ? 1 : 0)" :title="updateTitle(w.instanceId)" role="img"
+        :aria-label="updateTitle(w.instanceId)" data-update-badge><BaseIcon name="arrow-up" :size="badgeSize * 0.7" /></span>
       <span v-if="w.locked" class="lock" :title="t('admin.overlay.locked')"><BaseIcon name="lock" :size="12" /></span>
       <span
         v-for="hnd in HANDLES" v-show="w.instanceId === s.state.selectedId && !w.locked" :key="hnd"
@@ -253,6 +264,7 @@ function onDragLeave(): void { ghost.value = null }
   font-family: var(--font); box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); cursor: help; }
 .health.error { background: var(--danger); }
 .health.warning { background: var(--warn); }
+.health.update { background: var(--accent); color: var(--on-accent); }
 .shared { position: absolute; right: 6px; top: 6px; pointer-events: none; gap: 2px; }
 .tag { position: absolute; left: 6px; top: 6px; pointer-events: none; }
 .handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 3px;

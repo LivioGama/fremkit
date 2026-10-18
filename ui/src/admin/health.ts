@@ -15,7 +15,12 @@ import { pick, t } from '../shared/i18n'
 import type { Config, ConnectionSummary, ConnectionTypeInfo, Page, Screen, SettingField, Widget, WidgetManifest } from '../shared/types'
 import { channelAllowed, navItemsOf } from '../shared/types'
 
-export type HealthLevel = 'ok' | 'warning' | 'error'
+/**
+ * `update` is news, not a problem: a newer version waits in the registry and the widget works.
+ * It sits below `warning`, and nothing that means "something is wrong" counts it — the top bar's
+ * count, the page and screen dots, the menus' fix. The Sietch button counts updates.
+ */
+export type HealthLevel = 'ok' | 'update' | 'warning' | 'error'
 
 /** The one button a problem offers. The editor runs it (`runHealthAction`); this only names it. */
 export type HealthAction =
@@ -41,7 +46,7 @@ export type HealthAction =
  * connection's or a field's label, never a value read from a setting, a secret or an account.
  */
 export interface HealthProblem {
-  level: Exclude<HealthLevel, 'ok'>
+  level: 'warning' | 'error'
   code: ProblemCode
   /** The provider's own error code, for `failing`: what the server said, already reduced. */
   error?: string
@@ -62,18 +67,28 @@ export type ProblemCode =
   | 'unavailable'
   | 'invalid'
   | 'failing'
-  | 'update'
+
+/** A newer version of the widget in the registry. */
+export interface HealthUpdate {
+  widgetId: string
+  /** The registry's version, when the index says it. */
+  version: string | null
+}
 
 export interface InstanceHealth {
+  /** The worst problem's level; `update` when an update is all there is to say. */
   level: HealthLevel
-  /** Worst first; the first one is the badge's reason and the banner's. */
+  /** Worst first; the first one is the badge's reason and the banner's. Never an update. */
   problems: HealthProblem[]
+  update: HealthUpdate | null
 }
 
 /** A registry entry, as far as health needs one. */
 export interface MarketEntry {
   id: string
   updateAvailable: boolean
+  /** The registry's version of it. */
+  version?: string
   /** It could be installed here: not installed, not too new, not a built-in's id. */
   installable: boolean
 }
@@ -89,7 +104,7 @@ export interface HealthInput {
   market: MarketEntry[]
 }
 
-export const HEALTHY: InstanceHealth = Object.freeze({ level: 'ok', problems: [] }) as InstanceHealth
+export const HEALTHY: InstanceHealth = Object.freeze({ level: 'ok', problems: [], update: null }) as InstanceHealth
 
 /** What a provider's error code means to somebody looking at the editor. */
 const ERROR_CODES: Record<string, { code: ProblemCode; level: 'warning' | 'error' }> = {
@@ -112,19 +127,22 @@ const NOT_A_PROBLEM = new Set(['disabled'])
 /** Sort order within a level: what blocks the widget entirely comes before what degrades it. */
 const ORDER: ProblemCode[] = [
   'missing', 'connectionGone', 'connectionIncomplete', 'unauthorized', 'unconfigured', 'invalid', 'failing',
-  'connectionUnset', 'offline', 'rateLimited', 'unavailable', 'update',
+  'connectionUnset', 'offline', 'rateLimited', 'unavailable',
 ]
 
 const rank = (p: HealthProblem): number => (p.level === 'error' ? 0 : 100) + ORDER.indexOf(p.code)
 
+const SEVERITY: Record<HealthLevel, number> = { ok: 0, update: 1, warning: 2, error: 3 }
+
+/** The worst of some levels: error > warning > update > ok. */
 export function worst(levels: Iterable<HealthLevel>): HealthLevel {
   let out: HealthLevel = 'ok'
-  for (const l of levels) {
-    if (l === 'error') return 'error'
-    if (l === 'warning') out = 'warning'
-  }
+  for (const l of levels) if (SEVERITY[l] > SEVERITY[out]) out = l
   return out
 }
+
+/** A level as far as "something is wrong" goes: an update is not. */
+export const problemLevel = (l: HealthLevel): HealthLevel => (l === 'update' ? 'ok' : l)
 
 /** A setting's value as the widget reads it: its own, else the manifest's default. */
 function valueOf(widget: Widget, key: string, field: SettingField): unknown {
@@ -165,7 +183,7 @@ export function widgetHealth(widget: Widget, input: HealthInput): InstanceHealth
       level: 'error', code: 'missing',
       action: market?.installable ? { kind: 'install', widgetId: widget.widgetId } : { kind: 'rescan' },
     })
-    return { level: 'error', problems }
+    return { level: 'error', problems, update: null }
   }
 
   // Connections the settings point at, and the channels they publish on.
@@ -217,10 +235,11 @@ export function widgetHealth(widget: Widget, input: HealthInput): InstanceHealth
     if (p && !(p.code === 'unconfigured' && problems.some((q) => q.code === 'connectionIncomplete'))) problems.push(p)
   }
 
-  if (market?.updateAvailable) problems.push({ level: 'warning', code: 'update', action: { kind: 'update', widgetId: widget.widgetId } })
+  const update: HealthUpdate | null = market?.updateAvailable ? { widgetId: widget.widgetId, version: market.version ?? null } : null
 
   problems.sort((a, b) => rank(a) - rank(b))
-  return { level: worst(problems.map((p) => p.level)), problems }
+  const level = worst(problems.map((p) => p.level))
+  return { level: level === 'ok' && update ? 'update' : level, problems, update }
 }
 
 /** Every widget of the config, by instance id. */
@@ -234,13 +253,13 @@ export function computeHealth(input: HealthInput): Record<string, InstanceHealth
 const onPage = (page: Page): string[] => page.items.map((p) => p.instanceId)
 
 export function pageLevel(health: Record<string, InstanceHealth>, page: Page): HealthLevel {
-  return worst(onPage(page).map((id) => health[id]?.level ?? 'ok'))
+  return problemLevel(worst(onPage(page).map((id) => health[id]?.level ?? 'ok')))
 }
 
 /** A screen's pages and its bar. */
 export function screenLevel(health: Record<string, InstanceHealth>, screen: Screen): HealthLevel {
   const ids = [...screen.pages.flatMap(onPage), ...navItemsOf(screen).map((n) => n.instanceId)]
-  return worst(ids.map((id) => health[id]?.level ?? 'ok'))
+  return problemLevel(worst(ids.map((id) => health[id]?.level ?? 'ok')))
 }
 
 /** Where a widget can be found: a page of a screen, or a screen's bar. */
@@ -250,8 +269,8 @@ export interface HealthPlace { screenId: string; screenName: string; pageIndex: 
 export interface HealthEntry { instanceId: string; widget: Widget; health: InstanceHealth; place: HealthPlace }
 
 /**
- * Every unhealthy widget that is placed somewhere, errors first. Placed on the screen being
- * edited, it is listed where it is there; otherwise where it first appears.
+ * Every widget with a problem that is placed somewhere, errors first; an update is not a problem.
+ * Placed on the screen being edited, it is listed where it is there; otherwise where it first appears.
  */
 export function healthEntries(config: Config, health: Record<string, InstanceHealth>, currentScreenId?: string): HealthEntry[] {
   const places = new Map<string, HealthPlace>()
@@ -268,7 +287,7 @@ export function healthEntries(config: Config, health: Record<string, InstanceHea
   for (const [instanceId, place] of places) {
     const h = health[instanceId]
     const widget = config.widgets[instanceId]
-    if (!h || h.level === 'ok' || !widget) continue
+    if (!h || h.problems.length === 0 || !widget) continue
     out.push({ instanceId, widget, health: h, place })
   }
   return out.sort((a, b) => Number(b.health.level === 'error') - Number(a.health.level === 'error'))

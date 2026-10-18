@@ -13,6 +13,9 @@ import ScreenInspector from './ScreenInspector.vue'
 import ConnectionsInspector from './ConnectionsInspector.vue'
 import MarketplacePanel from './MarketplacePanel.vue'
 import WidgetAbout from './WidgetAbout.vue'
+import ShareExportDialog from './ShareExportDialog.vue'
+import ShareImportDialog from './ShareImportDialog.vue'
+import { carriesFiles, openImportFile, share } from './share'
 import ContextMenu from '../shared/ui/ContextMenu.vue'
 import { fits, moveRect, resizeRect } from './layout'
 import { followThemeSchedule, useConfigTheme } from '../shared/theme'
@@ -111,18 +114,46 @@ function onPointerDown(e: PointerEvent): void {
   if (active instanceof HTMLElement && inField(active)) active.blur()
 }
 
+/**
+ * A layout file dropped anywhere on the admin opens the import dialog. Only a drag carrying files
+ * is ours: the editor's own drags (a widget from the library, a page) carry their own types, and
+ * anything that handles a drop itself first marks it handled (`defaultPrevented`).
+ */
+function onDragOver(e: DragEvent): void {
+  if (!carriesFiles(e) || e.defaultPrevented) return
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+}
+function onDrop(e: DragEvent): void {
+  if (!carriesFiles(e) || e.defaultPrevented) return
+  // Never let the browser navigate to the dropped file, whatever it is.
+  e.preventDefault()
+  const file = Array.from(e.dataTransfer?.files ?? []).find((f) => f.name.toLowerCase().endsWith('.json'))
+  if (file) void openImportFile(s, file)
+}
+
+function closeShare(): void {
+  share.exporting = null
+  share.importing = null
+  s.closeModal()
+}
+
 // A widget's manifest was saved while it is being written: the previews wait for this catalogue.
 const offReload = onWidgetReload((reload) => { if (reload.manifest) void s.rescan() })
 
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('pointerdown', onPointerDown, true)
+  window.addEventListener('dragover', onDragOver)
+  window.addEventListener('drop', onDrop)
   void s.load()
 })
 onUnmounted(() => {
   offReload()
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('pointerdown', onPointerDown, true)
+  window.removeEventListener('dragover', onDragOver)
+  window.removeEventListener('drop', onDrop)
   void s.flush()
 })
 </script>
@@ -150,6 +181,14 @@ onUnmounted(() => {
     <BaseModal v-else-if="s.state.modal === 'about'" :title="t('admin.about.title')"
       :width="480" :close-label="t('common.close')" @close="s.closeModal()">
       <WidgetAbout :instance-id="s.state.aboutId" />
+    </BaseModal>
+    <BaseModal v-else-if="s.state.modal === 'export' && share.exporting" :title="t('admin.share.export.title')"
+      :width="560" :close-label="t('common.close')" @close="closeShare()">
+      <ShareExportDialog />
+    </BaseModal>
+    <BaseModal v-else-if="s.state.modal === 'import' && share.importing" :title="t('admin.share.import.title')"
+      :width="560" :close-label="t('common.close')" @close="closeShare()">
+      <ShareImportDialog />
     </BaseModal>
     <ContextMenu />
     <BaseToast v-if="s.state.toast" :message="s.state.toast" @close="s.dismissToast()" />

@@ -173,6 +173,13 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   *kinds*, never instances: connection types, not connection names; widget ids, not titles;
   counts, not device names. A new kind of value that could identify someone (a host, an account,
   a path) gets a redaction rule and a test with documentation-range fixtures.
+- **A shared layout is built, never sliced.** `server/src/share/export.ts` writes a
+  `.fremkit-layout.json` from an allow-list of keys (`format.ts`), so a config key added later
+  stays home by default; adding one to the file is a decision, with a test in `share.test.ts`.
+  Settings travel by their manifest type (`share/settings.ts`): connection-typed ones never, free
+  text only when ticked; every name, title and value goes through `redact()`, and the finished file
+  is checked again. On import the file is a stranger's: re-check settings against local manifests
+  and never keep a value naming one of the user's connection ids.
 - **The author's widget folder is a development tool.** `<dataDir>/widgets-dev` is read only
   under `FREMKIT_WIDGET_DEV=1`, its widgets skip the consent dialog, and nothing shipped sets the
   flag. Never read it, or watch files, without that flag, and never let it shadow a built-in or
@@ -215,6 +222,11 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   Mac's `secrets`, `privacy` and `marketplace.installed`; PUT replays `connections`, `secrets`
   and `marketplace.installed` (privacy stays editable there: it is the admin's switch). Consent
   records change only through the marketplace routes.
+- **Anything that replaces the whole config goes through `applyConfig`** (`server/src/backup/apply.ts`):
+  backup restore, history restore, and any import. It keeps the security settings above, drops a
+  secret whose connection comes back changed, and passes a `reason` to `store.save` so the history
+  (`config/history.ts`) keeps the version it replaced. `<dataDir>/history/` holds full configs: it
+  stays out of backups and diagnostics, and its routes stay off the 4243 allow-list.
 - **Deleting a connection deletes every secret stored under its id**, registered type or not
   (`SecretStore.keysOf`), and a new connection purges its id first: never adopt a stale secret.
 - **System tools by absolute path** (`/usr/bin/open`, `/usr/bin/osascript`, `/usr/sbin/scutil`…),
@@ -274,6 +286,12 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   browser automation never reach the widget. Real touches do.
 - The bar's swipe handler captures the pointer on `pointerdown`; anything in the bar that wants
   the release must listen on `window`, not on itself.
+- Never `import … from 'undici'` at module level. Loaded as CommonJS before the first `fetch`,
+  the package takes the process-wide dispatcher slot Node's built-in `fetch` reads too, and Node
+  26's `fetch` then hands back HTTP/2 gzip bodies undecoded — every provider's `res.json()`
+  fails at once (`invalid-json`, `offline`) while every unit test, which injects `fetch`, stays
+  green. Go through `loadUndici()` in `server/src/net/pinned.ts`; `net-pinned.test.ts` replays
+  the server's load order in a fresh process.
 
 ## Where to look first
 
@@ -294,3 +312,4 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
 | change what the editor says about a failing widget | `ui/src/admin/health.ts` (pure, tested), `useHealth.ts` (stores, socket, the fixes), `server/src/providers/health.ts` (the `config:health` channel) |
 | pair a device, the remote listener | `server/src/devices/`, `ui/src/admin/DevicesSection.vue` |
 | change the iPad app | `ios/FremkitKit/Sources/FremkitKit/` (logic, `AppModel.swift` for the screens' state, `PairingFlow.swift` for pairing; test there), `ios/Fremkit/` (`RootView.swift`, `DashboardView.swift` for the web view, `LocalNetwork.swift` for Bonjour), `ui/src/dashboard/native.ts` (what the page tells the app), `scripts/build-ios.sh` |
+| export or import a layout | `server/src/share/` (file format, export, import), `ui/src/admin/share.ts`, `shareApply.ts`, `Share*Dialog.vue`, `docs/sharing.md` |

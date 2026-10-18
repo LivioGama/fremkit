@@ -94,6 +94,9 @@ const fr = {
   'backup.notAnImage': 'un fond d’écran de l’archive n’est pas une image',
   'backup.imageTooLarge': 'un fond d’écran de l’archive est trop grand',
   'backup.writeFailed': 'écriture des fonds d’écran impossible',
+  'history.notFound': 'cette version n’est plus dans l’historique',
+  'history.unreadable': 'cette version de l’historique est illisible',
+  'history.secretsFailed': 'impossible de retirer les secrets que cette version déplace',
   'synology.invalidHost': 'adresse du NAS invalide',
   'synology.noAccount': 'compte DSM manquant',
   'synology.unauthorized': 'compte ou mot de passe refusé par DSM',
@@ -268,6 +271,16 @@ const fr = {
   'backgrounds.emptyImage': 'image vide',
   'backgrounds.unknownImage': 'image inconnue',
 
+  // share/ — layouts exported and imported as .fremkit-layout.json
+  'share.pageName': 'Page {n}',
+  'share.screenName': 'Écran {n}',
+  'share.unknownScreen': 'écran inconnu',
+  'share.unknownPage': 'page inconnue',
+  'share.badRequest': 'demande d’export invalide',
+  'share.notALayout': 'ce fichier n’est pas une disposition Fremkit',
+  'share.tooNew': 'ce fichier vient d’un Fremkit plus récent ({version}) : mettez Fremkit à jour pour l’ouvrir',
+  'share.invalid': 'fichier de disposition invalide (à {where})',
+
   // widgets/routes.ts, proxy/routes.ts, bambu/routes.ts
   'widgets.unknown': 'widget inconnu',
   'bambu.unknownConnection': 'connexion inconnue',
@@ -365,6 +378,9 @@ const en: Record<MessageKey, string> = {
   'backup.notAnImage': 'a background in the archive is not an image',
   'backup.imageTooLarge': 'a background in the archive is too large',
   'backup.writeFailed': 'the backgrounds could not be written',
+  'history.notFound': 'this version is no longer in the history',
+  'history.unreadable': 'this version of the history cannot be read',
+  'history.secretsFailed': 'the secrets this version moves could not be removed',
   'synology.invalidHost': 'invalid NAS address',
   'synology.noAccount': 'the DSM account is missing',
   'synology.unauthorized': 'DSM refused the account or the password',
@@ -526,6 +542,16 @@ const en: Record<MessageKey, string> = {
   'backgrounds.unsupportedFormat': 'unsupported format (PNG, JPEG or WebP)',
   'backgrounds.emptyImage': 'empty image',
   'backgrounds.unknownImage': 'unknown image',
+
+  // share/ — layouts exported and imported as .fremkit-layout.json
+  'share.pageName': 'Page {n}',
+  'share.screenName': 'Screen {n}',
+  'share.unknownScreen': 'unknown screen',
+  'share.unknownPage': 'unknown page',
+  'share.badRequest': 'invalid export request',
+  'share.notALayout': 'this file is not a Fremkit layout',
+  'share.tooNew': 'this file comes from a newer Fremkit ({version}): update Fremkit to open it',
+  'share.invalid': 'invalid layout file (at {where})',
 
   'widgets.unknown': 'unknown widget',
   'bambu.unknownConnection': 'unknown connection',

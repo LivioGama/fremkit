@@ -13,6 +13,7 @@ import BackgroundPicker from './BackgroundPicker.vue'
 import CopySettingsFrom from './CopySettingsFrom.vue'
 import MissingWidget from './MissingWidget.vue'
 import HealthBanner from './HealthBanner.vue'
+import UpdateNote from './UpdateNote.vue'
 import { useHealth } from './useHealth'
 import SettingsForm from './SettingsForm.vue'
 import WidgetPermissions from './WidgetPermissions.vue'
@@ -33,8 +34,10 @@ const health = useHealth()
 /** A missing widget has its own notice below, with the install button: the banner would repeat it. */
 const wellness = computed(() => {
   const h = inst.value ? health.of(inst.value.instanceId) : null
-  return h && h.level !== 'ok' && h.problems[0]?.code !== 'missing' ? h : null
+  return h && h.problems.length > 0 && h.problems[0].code !== 'missing' ? h : null
 })
+/** A newer version in the registry: a calm note of its own, not part of the banner. */
+const update = computed(() => (inst.value ? health.of(inst.value.instanceId).update : null))
 const manifest = computed(() => (inst.value ? s.state.manifests[inst.value.widgetId] : undefined))
 /**
  * What the widget's manifest asks for, beside what it may do.
@@ -164,6 +167,7 @@ function moveToPage(): void {
       <strong>{{ manifest ? pick(manifest.name) : inst.widgetId }}</strong>
     </div>
     <HealthBanner v-if="wellness" :health="wellness" @action="health.run(inst!.instanceId, $event)" />
+    <UpdateNote v-if="update" :update="update" @action="health.run(inst!.instanceId, $event)" />
     <p v-if="alsoOn" class="hint shared"><BaseIcon name="monitor" :size="14" />{{ t('admin.inspector.widget.alsoOn', { screens: alsoOn }) }}</p>
     <MissingWidget v-if="!manifest" :widget-id="inst.widgetId" />
 
