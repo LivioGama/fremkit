@@ -358,6 +358,13 @@ describe('connection API hardening', () => {
     expect((await app.inject({ method: 'DELETE', url: '/api/connections/types' })).statusCode).toBe(400)
   })
 
+  it('reserves the id whose secrets namespace holds the pairing TLS key', async () => {
+    const res = await put('devices', body)
+    expect(res.statusCode).toBe(400)
+    expect((await app.inject({ url: '/api/connections' })).json().map((c: { id: string }) => c.id)).not.toContain('devices')
+    expect((await app.inject({ method: 'DELETE', url: '/api/connections/devices' })).statusCode).toBe(400)
+  })
+
   it('lets two overlapping writes both land', async () => {
     const [a, b] = await Promise.all([
       put('ado-x1z9', body),

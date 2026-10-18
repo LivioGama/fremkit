@@ -15,8 +15,12 @@ import { isCrossSiteFetch } from '../http/guard.js'
 import { tr } from '../i18n.js'
 import { placeLabel, whereShown } from '../config/instances.js'
 
-/** Ids the route table already spells: `/api/connections/types` must stay the type list. */
-const RESERVED_IDS = new Set(['types'])
+/**
+ * Ids no connection may take: `types`, because `/api/connections/types` must stay the type list;
+ * `devices`, because a connection's secrets are stored under `<id>/<key>` and the pairing TLS key
+ * lives at `devices/tls-key` in the same store.
+ */
+const RESERVED_IDS = new Set(['types', 'devices'])
 
 const usableId = (id: string): boolean => CONNECTION_ID_RE.test(id) && !RESERVED_IDS.has(id)
 
