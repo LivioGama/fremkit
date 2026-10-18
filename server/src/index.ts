@@ -88,8 +88,31 @@ async function main(): Promise<void> {
     logger: true,
     port,
   })
+  installShutdown(app)
   await app.listen({ port, host: '127.0.0.1' })
   app.log.info({ tokenFile, source: access.source }, 'local access secret written')
+}
+
+/**
+ * The helper stops the server with SIGTERM (and SIGKILL three seconds later); a terminal sends
+ * SIGINT. Node's default for both is to die on the spot, which skips every `onClose` hook — the
+ * remote listener, and the `dns-sd` child advertising it, among them. So the app is closed first,
+ * with a deadline under the helper's, and the process exits either way: the helper restarts or
+ * not on its own terms, whatever the exit status.
+ */
+function installShutdown(app: Awaited<ReturnType<typeof buildApp>>): void {
+  let closing = false
+  const shutdown = (signal: NodeJS.Signals): void => {
+    if (closing) return
+    closing = true
+    const code = signal === 'SIGINT' ? 130 : 143
+    setTimeout(() => process.exit(code), 2_000).unref()
+    app.close()
+      .catch((error: unknown) => console.error(error))
+      .finally(() => process.exit(code))
+  }
+  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', shutdown)
 }
 
 main().catch((error: unknown) => {
