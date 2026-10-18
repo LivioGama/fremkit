@@ -217,9 +217,9 @@ describe('companion routes', () => {
 
   it('an install refused a moment ago is 429 cooldown', async () => {
     const installId = randomUUID()
-    const r = (await pair(ORIGIN, { name: 'Edge', installId })).json()
+    const r = (await pair(ORIGIN, { name: 'Microsoft Edge', installId })).json()
     expect((await answer(r.requestId, 'refuse', { code: r.code })).statusCode).toBe(200)
-    const res = await pair(ORIGIN, { name: 'Edge', installId })
+    const res = await pair(ORIGIN, { name: 'Microsoft Edge', installId })
     expect(res.statusCode).toBe(429)
     expect(res.json()).toEqual({ error: 'request refused: try again in a minute', reason: 'cooldown' })
   })

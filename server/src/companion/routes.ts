@@ -29,8 +29,10 @@ export interface CompanionRoutesOptions {
 /**
  * The names the extension may give itself (`companion/lib/browser.js`). A closed list: the name is
  * shown on the Edge next to the code, and a free one could read "Approve this, it is safe".
+ * Microsoft's browser keeps its full name: a bare "Edge" on the Edge's own screen reads as the
+ * screen.
  */
-export const COMPANION_NAMES = ['Chrome', 'Edge', 'Brave', 'Arc', 'Opera', 'Vivaldi', 'Chromium'] as const
+export const COMPANION_NAMES = ['Chrome', 'Microsoft Edge', 'Brave', 'Arc', 'Opera', 'Vivaldi', 'Chromium'] as const
 
 const PairSchema = z.strictObject({
   name: z.enum(COMPANION_NAMES),

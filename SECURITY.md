@@ -220,7 +220,7 @@ install whose request was refused is turned away for a minute. Allow and Refuse 
 showed, and the server answers 409 when it is not the waiting request's, so an answer never lands
 on a request swapped in after you read the code; Allow is also held off for two seconds whenever
 the request on show changes. The name shown is one of a closed list of browser names (Chrome,
-Edge, Brave, Arc, Opera, Vivaldi, Chromium). An approved request that is never collected is
+Microsoft Edge, Brave, Arc, Opera, Vivaldi, Chromium). An approved request that is never collected is
 removed when it expires.
 Removing the extension in **Screen → Devices** closes its socket and its token stops working.
 

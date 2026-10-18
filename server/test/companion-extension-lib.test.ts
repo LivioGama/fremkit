@@ -613,7 +613,7 @@ describe('browserName', () => {
   it('names the browser from its brands', () => {
     const brands = (...names: string[]) => names.map((brand) => ({ brand, version: '130' }))
     expect(browserName(brands('Not)A;Brand', 'Chromium', 'Google Chrome'))).toBe('Chrome')
-    expect(browserName(brands('Chromium', 'Microsoft Edge', 'Not_A Brand'))).toBe('Edge')
+    expect(browserName(brands('Chromium', 'Microsoft Edge', 'Not_A Brand'))).toBe('Microsoft Edge')
     expect(browserName(brands('Brave', 'Chromium', 'Not.A/Brand'))).toBe('Brave')
     expect(browserName(brands('Chromium', 'Not.A/Brand'))).toBe('Chromium')
     expect(browserName(undefined)).toBe('Chromium')

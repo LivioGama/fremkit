@@ -3,7 +3,8 @@
 // list of `navigator.userAgentData` is what tells them apart.
 
 const NAMES = [
-  [/edge/i, 'Edge'],
+  // The full name: the screen it is shown on is the Edge too.
+  [/edge/i, 'Microsoft Edge'],
   [/opera/i, 'Opera'],
   [/brave/i, 'Brave'],
   [/vivaldi/i, 'Vivaldi'],
