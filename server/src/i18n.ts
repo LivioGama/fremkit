@@ -282,6 +282,7 @@ const fr = {
   // brightness/ — the brightness of a screen
   'brightness.unknownScreen': 'écran inconnu',
   'brightness.unavailable': 'luminosité non réglable sur cet écran',
+  'brightness.placesUnavailable': 'recherche de lieu indisponible',
 }
 
 export type MessageKey = keyof typeof fr
@@ -532,6 +533,7 @@ const en: Record<MessageKey, string> = {
 
   'brightness.unknownScreen': 'unknown screen',
   'brightness.unavailable': 'brightness cannot be set on this screen',
+  'brightness.placesUnavailable': 'place search unavailable',
 }
 
 const DICTIONARIES: Record<Locale, Record<string, string>> = { fr, en }

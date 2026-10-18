@@ -33,7 +33,8 @@ tagged `vX.Y.Z`.
   helper's menu has the same slider. It works over DDC/CI on Apple silicon Macs; a display that
   does not answer DDC says so instead of failing silently. In **Screen → Brightness**, each
   screen can switch between a day and a night level at sunrise and sunset (computed on the Mac
-  from a location you type, no network) or at fixed times, with a gradual change, and can follow
+  from coordinates you type, or find with a city search that asks Open-Meteo only when you press
+  *Search*) or at fixed times, with a gradual change, and can follow
   the Mac's built-in screen and its light sensor. With both on, the screen follows the Mac with
   the night level as a ceiling; a change by hand holds until the next switch or until the Mac's
   brightness moves noticeably, and *Back to automatic* ends it at once. Rebuild and reinstall the helper with

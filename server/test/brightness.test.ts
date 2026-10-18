@@ -9,6 +9,9 @@ import { decide, FOLLOW_RELEASE, followLevel, type Held } from '../src/brightnes
 import { BrightnessService, HELPER_STALE_MS, HelperReportSchema } from '../src/brightness/service.js'
 import { createBrightnessProvider, mayCommandBrightness } from '../src/brightness/provider.js'
 import { buildApp } from '../src/app.js'
+import Fastify from 'fastify'
+import { brightnessRoutes } from '../src/brightness/routes.js'
+import { GEOCODE_URL, GeocodeError, searchPlaces } from '../src/brightness/geocode.js'
 
 const MIN = 60_000
 const settings = (patch: { dayNight?: object; followMac?: object } = {}): BrightnessSettings =>
@@ -273,5 +276,50 @@ describe('POST /api/hooks/brightness', () => {
     expect((await app.inject({ method: 'POST', url: '/api/hooks/brightness', payload: { available: true, value: 101 } })).statusCode).toBe(400)
     const remote = await app.inject({ method: 'POST', url: '/api/hooks/brightness', payload: { available: true }, remoteAddress: '203.0.113.7' })
     expect(remote.statusCode).toBe(403)
+  })
+})
+
+describe('place search', () => {
+  const answer = (body: unknown, status = 200) => async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+  const PARIS = { results: [
+    { name: 'Paris', latitude: 48.85341, longitude: 2.3488, admin1: 'Île-de-France', country: 'France', population: 2138551 },
+    { name: 'Paris', latitude: 33.66094, longitude: -95.55551, admin1: 'Texas', country: 'United States' },
+  ] }
+
+  it('asks Open-Meteo for the name only, and reduces the answer to places', async () => {
+    let asked = ''
+    const places = await searchPlaces('Paris', 'fr', async (url) => { asked = url; return answer(PARIS)() })
+    const url = new URL(asked)
+    expect(url.origin + url.pathname).toBe(GEOCODE_URL)
+    expect(Object.fromEntries(url.searchParams)).toEqual({ name: 'Paris', count: '6', language: 'fr', format: 'json' })
+    expect(places).toEqual([
+      { name: 'Paris', detail: 'Île-de-France, France', latitude: 48.8534, longitude: 2.3488 },
+      { name: 'Paris', detail: 'Texas, United States', latitude: 33.6609, longitude: -95.5555 },
+    ])
+  })
+  it('answers an empty list when nothing matches', async () => {
+    expect(await searchPlaces('Zzzz', 'en', answer({ generationtime_ms: 0.2 }))).toEqual([])
+  })
+  it('fails on an error status, a malformed answer or no network', async () => {
+    await expect(searchPlaces('Paris', 'en', answer({}, 500))).rejects.toThrow(GeocodeError)
+    await expect(searchPlaces('Paris', 'en', answer({ results: [{ name: 'X', latitude: 200, longitude: 0 }] }))).rejects.toThrow(GeocodeError)
+    await expect(searchPlaces('Paris', 'en', async () => { throw new TypeError('fetch failed') })).rejects.toThrow(GeocodeError)
+  })
+
+  it('is served at /api/brightness/places, validated, and refuses a cross-site read', async () => {
+    const cfg = config()
+    const app = Fastify()
+    await app.register(brightnessRoutes, { service: new BrightnessService({ config: () => cfg }), changed: () => {}, fetch: answer(PARIS) })
+    const ok = await app.inject({ method: 'GET', url: '/api/brightness/places?q=Paris&lang=fr' })
+    expect(ok.statusCode).toBe(200)
+    expect(ok.json().places).toHaveLength(2)
+    expect((await app.inject({ method: 'GET', url: '/api/brightness/places?q=P' })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'GET', url: `/api/brightness/places?q=${'x'.repeat(101)}` })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'GET', url: '/api/brightness/places?q=Paris', headers: { 'sec-fetch-site': 'cross-site' } })).statusCode).toBe(403)
+    await app.close()
+    const down = Fastify()
+    await down.register(brightnessRoutes, { service: new BrightnessService({ config: () => cfg }), changed: () => {}, fetch: answer({}, 503) })
+    expect((await down.inject({ method: 'GET', url: '/api/brightness/places?q=Paris' })).statusCode).toBe(502)
+    await down.close()
   })
 })

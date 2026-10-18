@@ -408,7 +408,7 @@ export const en: Record<string, string> = {
   'brightness.admin.schedule.fixed': 'Fixed times',
   'brightness.admin.latitude': 'Latitude',
   'brightness.admin.longitude': 'Longitude',
-  'brightness.admin.locationHint': 'In decimal degrees (Paris: 48.8566, 2.3522). Sun times are computed on this Mac, with no network.',
+  'brightness.admin.locationHint': 'Or type them, in decimal degrees (Paris: 48.8566, 2.3522).',
   'brightness.admin.noLocation': 'Type a latitude and a longitude: without them, day / night does nothing.',
   'brightness.admin.dayAt': 'Day at',
   'brightness.admin.nightAt': 'Night at',
@@ -424,4 +424,9 @@ export const en: Record<string, string> = {
   'brightness.admin.badCoordinate': 'Invalid coordinate',
   'brightness.admin.badTime': 'Invalid time: HH:MM',
   'brightness.admin.badRamp': 'Invalid duration: 0 to 120 minutes',
+  'brightness.admin.city': 'Search for a city',
+  'brightness.admin.cityHint': 'Asks Open-Meteo (the weather’s service) for this name, only when you press Search. Sun times are still computed on this Mac.',
+  'brightness.admin.cityPlaceholder': 'Paris, London, Montréal…',
+  'brightness.admin.search': 'Search',
+  'brightness.admin.noPlace': 'No place found.',
 }

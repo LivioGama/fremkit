@@ -198,4 +198,8 @@ export const api = {
   deleteAllDevices: () => fetch('/api/devices', { method: 'DELETE' }).then(empty),
   /** A new TLS key: every paired device is removed with it, since each pinned the old one. */
   resetDeviceCertificate: () => fetch('/api/devices/reset-certificate', { method: 'POST' }).then((r) => json<DeviceStatus>(r)),
+  /** Screen → Brightness: places matching a city name, through the server (Open-Meteo). Only on Search. */
+  searchPlaces: (q: string, lang: 'fr' | 'en') =>
+    fetch(`/api/brightness/places?q=${encodeURIComponent(q)}&lang=${lang}`)
+      .then((r) => json<{ places: { name: string; detail: string; latitude: number; longitude: number }[] }>(r)),
 }

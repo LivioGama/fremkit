@@ -275,7 +275,8 @@ API, logged, written to the config or sent on the WebSocket.
 
 **Brightness.** *Screen → Brightness* sets the level of the selected screen and how it changes
 on its own, per screen: a **day / night** pair of levels switched at sunrise and sunset (computed
-on the Mac from a latitude and longitude you type, no network) or at fixed times, with a gradual
+on the Mac from a latitude and longitude — typed, or found with *Search for a city*, which asks
+Open-Meteo for that name only when you press it) or at fixed times, with a gradual
 change of a few minutes; and **follow the Mac**, where the screen follows the Mac's built-in display
 and its light sensor, through a scale and an offset. With both on, the screen follows the Mac and
 day / night is a ceiling at night. A change by hand — the `brightness` widget, this panel, or the

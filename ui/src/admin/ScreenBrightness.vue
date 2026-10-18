@@ -8,6 +8,7 @@ import BaseRange from '../shared/ui/BaseRange.vue'
 import BaseSection from '../shared/ui/BaseSection.vue'
 import BaseSegmented from '../shared/ui/BaseSegmented.vue'
 import { useI18n } from '../shared/i18n'
+import { api } from '../shared/api'
 import { useSocket } from '../shared/socket'
 import type { BrightnessSettings, Config, Screen } from '../shared/types'
 import { useAdminStore } from './store'
@@ -88,6 +89,29 @@ function setCoordinate(key: 'latitude' | 'longitude', raw: string | number): voi
   }
   setDayNight({ [key]: Math.round(value * 10000) / 10000 })
 }
+// The city search: one request when the user presses Search, never as they type.
+const placeQuery = ref('')
+const places = ref<{ name: string; detail: string; latitude: number; longitude: number }[] | null>(null)
+const searching = ref(false)
+async function searchPlaces(): Promise<void> {
+  const q = placeQuery.value.trim()
+  if (q.length < 2 || searching.value) return
+  searching.value = true
+  try {
+    places.value = (await api.searchPlaces(q, locale.value === 'fr' ? 'fr' : 'en')).places
+  } catch (err) {
+    places.value = null
+    s.state.toast = (err as Error).message
+  } finally {
+    searching.value = false
+  }
+}
+function usePlace(p: { latitude: number; longitude: number }): void {
+  setDayNight({ latitude: p.latitude, longitude: p.longitude })
+  places.value = null
+  placeQuery.value = ''
+}
+
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/
 function setClock(key: 'dayAt' | 'nightAt', raw: string | number): void {
   const value = String(raw).trim().replace(/^(\d):/, '0$1:').replace('h', ':')
@@ -168,6 +192,21 @@ const scalePercent = computed(() => Math.round(b.value.followMac.scale * 100))
           @update:model-value="setDayNight({ schedule: $event as 'sun' | 'fixed' })" />
       </BaseField>
       <template v-if="b.dayNight.schedule === 'sun'">
+        <BaseField :label="t('brightness.admin.city')" :hint="t('brightness.admin.cityHint')">
+          <form class="search" @submit.prevent="searchPlaces()">
+            <BaseInput v-model="placeQuery" :placeholder="t('brightness.admin.cityPlaceholder')" />
+            <BaseButton :disabled="searching || placeQuery.trim().length < 2" @click="searchPlaces()">{{ t('brightness.admin.search') }}</BaseButton>
+          </form>
+        </BaseField>
+        <ul v-if="places" class="places">
+          <li v-if="places.length === 0" class="ro">{{ t('brightness.admin.noPlace') }}</li>
+          <li v-for="p in places" :key="`${p.latitude},${p.longitude}`">
+            <button type="button" class="place" @click="usePlace(p)">
+              <strong>{{ p.name }}</strong><span v-if="p.detail"> — {{ p.detail }}</span>
+              <span class="coords">{{ p.latitude }}, {{ p.longitude }}</span>
+            </button>
+          </li>
+        </ul>
         <div class="pair">
           <BaseField :label="t('brightness.admin.latitude')">
             <BaseInput lazy :model-value="b.dayNight.latitude ?? ''" placeholder="48.8566"
@@ -213,6 +252,13 @@ const scalePercent = computed(() => Math.round(b.value.followMac.scale * 100))
 </template>
 
 <style scoped>
+.search { display: flex; gap: var(--space-2); align-items: center; margin: 0; }
+.search > :first-child { flex: 1; min-width: 0; }
+.places { list-style: none; margin: 0 0 var(--space-2); padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.place { width: 100%; text-align: left; font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface-2, transparent);
+  border: 1px solid var(--border, rgba(128,128,128,.3)); border-radius: 8px; padding: var(--space-2) var(--space-3); cursor: pointer; }
+.place:hover { border-color: var(--accent); }
+.coords { float: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
 .ro { margin: var(--space-1) 0; color: var(--text-muted); font-size: var(--fs-sm); }
 .note { line-height: 1.4; }
