@@ -22,7 +22,7 @@ body:
       label: How Fremkit is installed
       options:
         - The app (DMG or Homebrew)
-        - From source (git clone + pnpm setup)
+        - From source (git clone + pnpm run setup)
     validations:
       required: true
   - type: input
@@ -57,11 +57,13 @@ body:
   - type: textarea
     id: log
     attributes:
-      label: Server log
+      label: Diagnostics
       description: |
-        The last lines of `~/Library/Logs/Fremkit/server.log`. For a source install, add the
-        output of `pnpm setup --check`. Read it before pasting: remove anything you would not
-        post publicly (host names, IP addresses, account names).
+        Use **Copy diagnostics** (editor: Screen → About → Diagnostics, or the menu bar **F**) and
+        paste the result here: it holds the versions, the widgets in use and the recent server log,
+        with secrets, addresses, e-mails and names removed. Read it before posting. On an older
+        version without it: the last lines of `~/Library/Logs/Fremkit/server.log`, and for a source
+        install the output of `pnpm run setup --check`.
       render: text
   - type: checkboxes
     id: checks

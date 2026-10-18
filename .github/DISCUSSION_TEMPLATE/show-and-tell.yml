@@ -19,6 +19,14 @@ body:
       label: Widgets and theme
       description: Which widgets are on which page, the theme, a background. Anything you built yourself?
   - type: textarea
+    id: layout
+    attributes:
+      label: Layout file (optional)
+      description: |
+        Attach your `.fremkit-layout.json` (editor: Screen → Share your setup, or right click a page
+        → Export page…) so others can load it in one click. It never holds your accounts,
+        connections, secrets or devices, and the export shows exactly what is in it first.
+  - type: textarea
     id: wish
     attributes:
       label: What is missing
