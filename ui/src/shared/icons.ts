@@ -30,6 +30,7 @@ export const ICONS: Record<string, string> = {
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   'trash-2': '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
+  'arrow-up': '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
   'chevron-up': '<path d="m18 15-6-6-6 6"/>',
   'chevron-down': '<path d="m6 9 6 6 6-6"/>',
   'chevrons-up-down': '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>',
