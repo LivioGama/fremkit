@@ -23,7 +23,8 @@ tagged `vX.Y.Z`.
   screens.
 - **Choose page names in the bar.** Each screen can keep the familiar page dots or show
   scrolling names with a current-page marker. Arrows move by a visible page, and the admin
-  reserves room for compact widgets. Page taps still work with the admin gestures.
+  reserves room for compact widgets. Page taps still work with the admin gestures
+  (@FlorianBruniaux, #18).
 - **Pair an iPad** (Mac side). **Screen → Devices** turns on an encrypted listener on the local
   network, shows a pairing QR code, lists the paired devices with the screen each shows, and
   unpairs one after you confirm. An iPad screen is created from the paired iPad, at its exact size. The
@@ -37,14 +38,14 @@ tagged `vX.Y.Z`.
   *Search*) or at fixed times, with a gradual change, and can follow
   the Mac's built-in screen and its light sensor. With both on, the screen follows the Mac with
   the night level as a ceiling; a change by hand holds until the next switch or until the Mac's
-  brightness moves noticeably, and *Back to automatic* ends it at once. Rebuild and reinstall the helper with
-  this version (`pnpm helper:build && pnpm helper:install`).
+  brightness moves noticeably, and *Back to automatic* ends it at once.
 - **Only Fremkit itself sets the brightness.** A widget from the registry may show the screen's
   brightness, but one that asks to change it is refused at install: the built-in widget, the
   admin and the helper's menu are what set it. A paired iPad can never change the Edge's
   brightness, only that of its own screen.
-- **Widgets know their screen.** `Fremkit.screen` names the screen a widget is drawn on, for
-  widgets whose data differs from one screen to the next (widget SDK generation 3).
+- **Widget SDK generation 3.** `Fremkit.screen` names the screen a widget is drawn on, for
+  widgets whose data differs from one screen to the next, and `Fremkit.holdSwipe()` keeps the
+  page from turning while a finger slides a widget's control past its edge.
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer
@@ -52,9 +53,10 @@ tagged `vX.Y.Z`.
 - **Upgrading the dashboard file.** Your dashboard is converted to the new screens layout the
   first time this version starts, and the previous file is kept as `data/fremkit.v3.json` — the
   file as it was at that first upgrade, never overwritten after: to go back to an older version,
-  put it back as `data/fremkit.json`, knowing that changes made since are not in it. Rebuild
-  and reinstall the helper with this version (`pnpm helper:build && pnpm helper:install`), or it
-  will not recognise the new server.
+  put it back as `data/fremkit.json`, knowing that changes made since are not in it.
+- **From a checkout, rebuild and reinstall the helper** with this version
+  (`pnpm helper:build && pnpm helper:install`): an older helper does not recognise the new
+  server, has no access secret and cannot set the brightness. The app updates both at once.
 - **Adding a screen** creates an Edge screen; an iPad screen is now created from a paired iPad.
 
 ### Fixed
@@ -67,7 +69,8 @@ tagged `vX.Y.Z`.
   made fresh each time the helper starts, so a web page or another account's program can no
   longer read your dashboard or change it. The Edge and the admin window keep working with
   nothing to do. In a browser, open the admin from the **F** menu (*Open the admin in the
-  browser*) or with `pnpm open`; typing `127.0.0.1:4242` by hand now shows a page saying so.
+  browser*), or from a checkout with `pnpm open`; typing `127.0.0.1:4242` by hand now shows a
+  page saying so.
   Scripts calling the server read the secret from
   `~/Library/Application Support/Fremkit/access-4242.token` (see the README).
 
