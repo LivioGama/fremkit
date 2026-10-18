@@ -1,5 +1,6 @@
 import { ref, type Ref } from 'vue'
 import { t } from './i18n'
+import { deviceUnauthorized, isRemotePage } from './remote'
 
 type Cb = (data: unknown) => void
 export interface Socket {
@@ -26,12 +27,19 @@ export function useSocket(): Socket {
    * is just a close — so a plain request asks, and a 401 reloads the page once. In the helper's
    * windows the reload picks up the new cookie; in a browser it lands on the server's page
    * explaining how to get back in, which has no script and so cannot loop.
+   *
+   * A paired device has no access secret to pick up: its 401 means it was revoked, so it raises
+   * the shared flag the dashboard shows instead of reloading.
    */
   let reloading = false
   const checkSession = () => {
     if (reloading) return
     fetch('/api/config/status', { cache: 'no-store' })
-      .then((res) => { if (res.status === 401 && !reloading) { reloading = true; location.reload() } })
+      .then((res) => {
+        if (res.status !== 401 || reloading) return
+        if (isRemotePage()) { deviceUnauthorized.value = true; return }
+        reloading = true; location.reload()
+      })
       .catch(() => { /* the server is down: the reconnect loop handles that */ })
   }
 

@@ -378,4 +378,6 @@ export const en: Record<string, string> = {
   'dashboard.navigation.previousNames': 'Show previous pages',
   'dashboard.navigation.nextNames': 'Show next pages',
   'dashboard.widget.notInstalled': 'not installed',
+  'dashboard.remote.noScreen': 'Choose a screen for this iPad in the Mac’s admin',
+  'dashboard.remote.unauthorized': 'This iPad is no longer allowed',
 }

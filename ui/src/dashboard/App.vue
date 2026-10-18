@@ -13,17 +13,34 @@ import NavBar from './NavBar.vue'
 import NavPopover from './NavPopover.vue'
 import { useSwipe } from './useSwipe'
 import { useNavPopover } from './useNavPopover'
+import { isRemotePage, useDeviceScreen, type DeviceInfo } from './remote'
 
 const socket = useSocket()
 const { t } = useI18n()
 const config = ref<Config | null>(null)
 const manifests = ref<Record<string, WidgetManifest>>({})
 /**
+ * A paired device loads this page over HTTPS from the Mac's TLS listener. It shows the screen the
+ * server assigned to it and nothing else: `?screen=` is ignored, and an unassigned device gets a
+ * message rather than the Edge's screen.
+ */
+const remote = isRemotePage()
+const { device, unauthorized } = remote
+  ? useDeviceScreen()
+  : { device: ref<DeviceInfo | null>(null), unauthorized: ref(false) }
+/**
  * The screen this dashboard shows, named by `?screen=<id>`. The kiosk opens `/` with no id and
  * gets the first Edge screen; an id that no longer exists gets it too, never a blank page.
  */
 const screenId = new URLSearchParams(location.search).get('screen')
-const screen = computed(() => (config.value ? pickScreen(config.value, screenId) ?? null : null))
+const screen = computed(() => {
+  if (!config.value) return null
+  if (!remote) return pickScreen(config.value, screenId) ?? null
+  // The server can name a just-deleted screen once before it sends null: an id that names no
+  // screen of this config is no screen, never the fallback `pickScreen` would give it.
+  const id = device.value?.screenId ?? null
+  return id && config.value.screens.some((s) => s.id === id) ? pickScreen(config.value, id) : null
+})
 const display = computed(() => screen.value?.display ?? null)
 const pageIndex = ref(0)
 const page = computed(() => screen.value?.pages[pageIndex.value] ?? null)
@@ -71,6 +88,8 @@ const kiosk = new URLSearchParams(location.search).has('kiosk')
  * open its own admin window; in an ordinary browser a new tab is what the user expects.
  */
 async function openAdmin() {
+  // A paired device has no admin: it is reached on the Mac only.
+  if (remote) return
   if (!kiosk) { window.open('/admin', '_blank'); return }
   try {
     await fetch('/api/helper/admin', { method: 'POST' })
@@ -90,8 +109,14 @@ function setupCycle() {
 }
 
 onMounted(async () => {
-  manifests.value = (await api.getWidgets()).widgets
-  config.value = await api.getConfig()
+  try {
+    manifests.value = (await api.getWidgets()).widgets
+    config.value = await api.getConfig()
+  } catch (e) {
+    // A revoked device is refused here too; `/api/devices/me` says so, and the socket below still
+    // brings the config if the server was only unreachable.
+    if (!remote) throw e
+  }
   unsub = socket.subscribe('config', async (c) => {
     manifests.value = (await api.getWidgets()).widgets
     config.value = c as Config
@@ -99,6 +124,8 @@ onMounted(async () => {
   })
   window.addEventListener('keydown', onKey)
 })
+// Another screen for the device: start it on its first page, which every screen has.
+if (remote) watch(() => screen.value?.id, () => { pageIndex.value = 0; popover.close() })
 onUnmounted(() => { unsub?.(); window.removeEventListener('keydown', onKey); window.clearInterval(cycleTimer) })
 watch(() => display.value?.autoCycleSeconds, setupCycle)
 /** The manifest of the widget a bar item names, for the popover it opens. */
@@ -111,7 +138,14 @@ watch(() => config.value?.locale, (l) => setLocale(l))
 </script>
 
 <template>
-  <div class="root" :class="{ kiosk }" :style="rootStyle" v-if="config && screen && display && page">
+  <div v-if="remote && unauthorized" class="remote-message" role="status">
+    <p class="remote-title">{{ t('dashboard.remote.unauthorized') }}</p>
+  </div>
+  <div v-else-if="remote && config && !screen && device" class="remote-message" role="status">
+    <p class="remote-name">{{ device.name }}</p>
+    <p class="remote-title">{{ t('dashboard.remote.noScreen') }}</p>
+  </div>
+  <div class="root" :class="{ kiosk }" :style="rootStyle" v-else-if="config && screen && display && page">
     <div v-if="socket.status.value !== 'open'" class="banner">{{ t('dashboard.reconnecting') }}</div>
     <div
       class="stage"
@@ -166,6 +200,15 @@ watch(() => config.value?.locale, (l) => setLocale(l))
 .bar { position: absolute; bottom: 0; left: 0; right: 0; margin: 0 auto; }
 .edge { position: absolute; top: 0; bottom: 0; width: 24px; z-index: 5; touch-action: none; user-select: none; }
 .edge.left { left: 0; } .edge.right { right: 0; }
+/* The two messages a paired device can show instead of a screen, in the theme's colours. */
+.remote-message {
+  width: 100vw; height: 100vh; height: 100dvh; box-sizing: border-box; padding: var(--space-5);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3);
+  background: var(--bg); color: var(--text); font-family: var(--font); text-align: center;
+}
+.remote-message p { margin: 0; max-width: 32em; }
+.remote-name { color: var(--accent); font-size: var(--fs-lg); font-weight: 600; }
+.remote-title { font-size: calc(var(--fs-lg) * 1.5); line-height: 1.3; }
 .banner { position: absolute; top: 0; left: 50%; transform: translateX(-50%); padding: 4px 12px; background: #a33; color: #fff; font-size: 14px; border-radius: 0 0 8px 8px; z-index: 10; }
 /* Scoped under .stage so these rules outrank `.page { position: relative }` from
    PageView whatever order the two scoped stylesheets are injected in. */
