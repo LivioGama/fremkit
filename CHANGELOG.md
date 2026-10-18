@@ -138,6 +138,11 @@ tagged `vX.Y.Z`.
   light-tile layouts, every text in both languages — and has a running server pick it up.
   `pnpm widget:check <folder>` applies the registry's and the installer's rules to a widget
   before you open a pull request on the Sietch.
+- **End-to-end tests, for contributors.** `pnpm e2e` drives the admin and the dashboard in
+  Chromium (and WebKit when installed) against a throwaway server per worker: the library,
+  editing with the mouse and the keyboard, every right-click menu, ⌘K, undo, export and import,
+  the history, widget health, swipes and the night theme, and a security smoke test. Pull
+  requests run it in CI. See `docs/contributing.md`.
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer

@@ -507,6 +507,7 @@ pnpm build        # ui + server
 pnpm start        # production: http://127.0.0.1:4242 and /admin
 pnpm test         # vitest, server + ui
 pnpm typecheck
+pnpm e2e          # Playwright end-to-end tests, after pnpm --filter ui build (docs/contributing.md)
 pnpm helper:build   # native/dist/Fremkit Helper.app
 pnpm helper:install
 pnpm helper:test
@@ -517,6 +518,7 @@ bash scripts/build-app.sh   # native/dist/Fremkit.app: the self-contained app, s
 |---|---|
 | `server/` | Fastify 5 on 127.0.0.1:4242 — config, widget catalog, providers, connections, secrets, the bridge, the WebSocket |
 | `ui/` | Vue 3 — the dashboard, the admin, and the code they share |
+| `e2e/` | Playwright end-to-end tests of the admin and the dashboard, each worker on a throwaway server |
 | `native/` | The Swift helper — kiosk window, HID touch driver, mouse fence, admin window, Dock badges, server supervision, and `fremkit-scan`, the disk map's scanner |
 | `widgets/` | One folder per widget |
 | `scripts/` | Setup, dev, the helper's build and tests, the app's build, notarization and release, the signing identity, kiosk, the Claude Code hooks |
