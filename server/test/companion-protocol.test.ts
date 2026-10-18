@@ -52,7 +52,7 @@ describe('isLocalSdp', () => {
     expect(isLocalSdp(sdp(host('192.168.1.20', 'srflx')))).toBe(false)
     expect(isLocalSdp(sdp(host('192.168.1.20', 'relay')))).toBe(false)
     const outside = [
-      '8.8.8.8', '172.15.0.1', '172.32.0.1', '192.169.0.1', '11.0.0.1', '169.253.0.1', '128.0.0.1',
+      '198.51.100.7', '172.15.0.1', '172.32.0.1', '192.169.0.1', '11.0.0.1', '169.253.0.1', '128.0.0.1',
       '2001:db8::1', 'fec0::1', 'fe00::1', 'fe::1', '::', '::ffff:10.0.0.1', 'example.com', 'local',
       '10.0.0', '10.0.0.256', '010.0.0.1',
     ]
@@ -60,7 +60,7 @@ describe('isLocalSdp', () => {
   })
 
   it('refuses the whole offer when one candidate is not local', () => {
-    expect(isLocalSdp(sdp(host('192.168.1.20'), host('8.8.8.8')))).toBe(false)
+    expect(isLocalSdp(sdp(host('192.168.1.20'), host('198.51.100.7')))).toBe(false)
   })
 
   it('refuses a candidate line it cannot read', () => {
@@ -165,7 +165,7 @@ describe('parseExtensionMessage', () => {
     expect(parse({ type: 'hello', token: 'short', installId, protocol: PROTOCOL })).toBeNull()
     expect(parse({ type: 'hello', token, installId: 'x', protocol: PROTOCOL })).toBeNull()
     expect(parse({ type: 'hello', token, installId, protocol: 'one' })).toBeNull()
-    expect(parse({ type: 'tab.offer', sessionId, receiverId, sdp: sdp(host('8.8.8.8')) })).toBeNull()
+    expect(parse({ type: 'tab.offer', sessionId, receiverId, sdp: sdp(host('198.51.100.7')) })).toBeNull()
     expect(parse({ type: 'tab.offer', sessionId, receiverId: 'x', sdp: sdp() })).toBeNull()
   })
 

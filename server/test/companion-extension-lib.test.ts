@@ -86,7 +86,7 @@ describe('cropRect', () => {
 describe('localCandidatesOnly', () => {
   const cand = (addr: string, typ: string, n: number) => `a=candidate:${n} 1 udp 2113937151 ${addr} 5000${n} typ ${typ} generation 0`
   const sdp = ['v=0', 'o=- 1 2 IN IP4 127.0.0.1', 's=-', 'm=video 9 UDP/TLS/RTP/SAVPF 96',
-    cand('192.168.1.20', 'host', 1), cand('203.0.113.9', 'srflx', 2), cand('8.8.8.8', 'host', 3),
+    cand('192.168.1.20', 'host', 1), cand('203.0.113.9', 'srflx', 2), cand('198.51.100.7', 'host', 3),
     cand('abcd-1234.local', 'host', 4), cand('10.0.0.5', 'relay', 5), cand('fe80::1', 'host', 6), cand('2001:db8::1', 'host', 7), ''].join('\r\n')
 
   it('removes srflx and public candidates', () => {
@@ -96,7 +96,7 @@ describe('localCandidatesOnly', () => {
     expect(out).toContain('abcd-1234.local')
     expect(out).toContain('fe80::1')
     expect(out).not.toContain('203.0.113.9')
-    expect(out).not.toContain('8.8.8.8')
+    expect(out).not.toContain('198.51.100.7')
     expect(out).not.toContain('2001:db8')
     expect(out).not.toContain('relay')
     expect(out).toContain('\r\n')
@@ -109,7 +109,7 @@ describe('localCandidatesOnly agrees with the server isLocalSdp', () => {
     '127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.254', '192.168.1.20', '169.254.9.9',
     '::1', 'fe80::1', 'febf::1', 'fc00::1', 'fd12:3456::1', 'fe80::1%en0',
     'f3a1c2d4-0000-4000-8000-123456789abc.local',
-    '8.8.8.8', '172.15.0.1', '172.32.0.1', '192.169.0.1', '11.0.0.1', '169.253.0.1', '128.0.0.1',
+    '198.51.100.7', '172.15.0.1', '172.32.0.1', '192.169.0.1', '11.0.0.1', '169.253.0.1', '128.0.0.1',
     '2001:db8::1', 'fec0::1', 'fe00::1', 'fe::1', '::', '::ffff:10.0.0.1', 'example.com', 'local',
     '10.0.0', '10.0.0.256', '010.0.0.1', '10.999.1.1', '10.0.0.1.1', 'fe80:zz', 'fe80::1::2', 'fe80:1:2:3:4:5:6:7:8',
     'fe80:1:2:3:4:5:6:7', 'fe80:1:2:3:4:5:6::', ':fe80::1', 'fe80::1:', 'fe80:::1', 'fe80::12345', 'fd00::1.2.3.4', 'fd00::1.2.3.400',
