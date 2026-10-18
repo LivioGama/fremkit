@@ -78,6 +78,18 @@ describe('effectiveManifest', () => {
     expect(effective.name).toBe(asked.name)
   })
 
+  it('grants a widget being written what its manifest asks, with no record', () => {
+    const asked = manifest({ subscriptions: ['system'], commands: ['shortcuts'], permissions: { network: ['api.example.com'] } })
+    expect(effectiveManifest(asked, 'dev', undefined)).toEqual(asked)
+  })
+
+  it('grants a widget being written nothing when it asks for a built-in-only channel', () => {
+    const asked = manifest({ subscriptions: ['clipboard'], permissions: { network: ['api.example.com'] } })
+    const effective = effectiveManifest(asked, 'dev', undefined)
+    expect(effective.subscriptions).toEqual([])
+    expect(effective.permissions.network).toEqual([])
+  })
+
   it('grants an installed widget with no record nothing at all', () => {
     // A folder dropped into data/widgets by hand, or a config restored without the record:
     // neither is a user saying yes, and the safe reading of silence is "no".

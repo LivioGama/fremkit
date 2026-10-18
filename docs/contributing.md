@@ -3,6 +3,11 @@
 Notes for people working on Fremkit itself. For writing a widget — which needs none of this — see
 [writing-widgets.md](writing-widgets.md).
 
+Writing a widget needs a checkout and two commands: `pnpm widget:new <id>` writes one that works,
+`pnpm dev` reloads it on every save, and `pnpm widget:check <folder>` tells you what the registry
+would refuse before you open the pull request — see
+[Your first widget in five minutes](writing-widgets.md#your-first-widget-in-five-minutes).
+
 ## Language
 
 The repository is in English: code, comments, commit messages, documentation. The interface
@@ -40,6 +45,8 @@ pnpm typecheck
 pnpm helper:build   # native/dist/Fremkit Helper.app
 pnpm helper:install
 pnpm helper:test
+pnpm widget:new <id>      # a new widget in the author's folder (data/widgets-dev)
+pnpm widget:check <dir>   # the registry's and the installer's rules, before a pull request
 ```
 
 `pnpm dev` exports `FREMKIT_DEV=1`, which is what puts the Vite origin
@@ -47,7 +54,10 @@ pnpm helper:test
 WebSocket and a write from. Without it only `http://127.0.0.1:4242` and `http://localhost:4242`
 are trusted, plus the port `FREMKIT_PORT` moved a second checkout to. A production instance must
 not trust 5173: it is Vite's default port, so any unrelated project serving on it would be
-trusted to save this dashboard's config. Running Vite by hand (`pnpm --filter ui dev`) against a
+trusted to save this dashboard's config. It also exports `FREMKIT_WIDGET_DEV=1`: the server reads
+the widget author's folder (`data/widgets-dev`, or `FREMKIT_WIDGET_DEV_DIR`) and watches it and
+`widgets/`, reloading a widget's frames when its files are saved
+([writing-widgets.md](writing-widgets.md#your-first-widget-in-five-minutes)). Running Vite by hand (`pnpm --filter ui dev`) against a
 server started without the flag gives a dashboard whose WebSocket is refused — export
 `FREMKIT_DEV=1` for the server too.
 

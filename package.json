@@ -19,7 +19,9 @@
     "open": "bash scripts/open.sh",
     "helper:build": "bash scripts/build-helper.sh",
     "helper:install": "bash scripts/install-helper.sh",
-    "helper:test": "bash scripts/test-helper.sh"
+    "helper:test": "bash scripts/test-helper.sh",
+    "widget:new": "server/node_modules/.bin/tsx server/src/cli/widget.ts new",
+    "widget:check": "server/node_modules/.bin/tsx server/src/cli/widget.ts check"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

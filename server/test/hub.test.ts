@@ -36,6 +36,16 @@ describe('Hub', () => {
     a.receive({ type: 'subscribe', channel: 'config' })
     expect(a.sent).toEqual([{ type: 'data', channel: 'config', data: { version: 1 } }])
   })
+  it('notifies subscribers without keeping the value for the next one', () => {
+    const { hub } = setup()
+    const a = new FakeSocket(); hub.attach(a)
+    a.receive({ type: 'subscribe', channel: 'widget-dev' })
+    hub.notify('widget-dev', { ids: ['clock'], manifest: false })
+    expect(a.sent).toEqual([{ type: 'data', channel: 'widget-dev', data: { ids: ['clock'], manifest: false } }])
+    const b = new FakeSocket(); hub.attach(b)
+    b.receive({ type: 'subscribe', channel: 'widget-dev' })
+    expect(b.sent).toEqual([])
+  })
   it('forwards subscriber counts to the registry and releases on close', () => {
     const { hub, registry } = setup()
     const add = vi.spyOn(registry, 'addSubscriber'), rem = vi.spyOn(registry, 'removeSubscriber')

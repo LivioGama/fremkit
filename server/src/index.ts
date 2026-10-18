@@ -3,6 +3,7 @@ import { buildApp } from './app.js'
 import { providers } from './providers/index.js'
 import { shippedPaths } from './paths.js'
 import { DEFAULT_BACKGROUND } from './backgrounds/seed.js'
+import { widgetDevDir } from './widgets/dev.js'
 import { accessTokenPath, resolveAccessToken, writeAccessToken } from './http/access-file.js'
 import { helperLogPath, LogTail } from './diagnostics/log-tail.js'
 
@@ -48,6 +49,18 @@ if (!configured && process.env.FREMKIT_ROOT) {
 const dataDir = configured || `${shipped.root}/data`
 
 /**
+ * Writing a widget (`FREMKIT_WIDGET_DEV=1`, which `pnpm dev` exports): the author's folder is read
+ * beside the built-ins and watched, and a save reloads the widget. See `widgets/dev.ts`.
+ */
+let devDir: string | undefined
+try {
+  devDir = widgetDevDir(process.env, dataDir)
+} catch (error) {
+  console.error(`fremkit: ${(error as Error).message}`)
+  process.exit(1)
+}
+
+/**
  * A registry served from somewhere else, for development only.
  *
  * The production registry is a constant: one host, https, private addresses refused. That is
@@ -84,6 +97,7 @@ async function main(): Promise<void> {
     accessToken: access.token,
     dataDir,
     widgetsDir: shipped.widgetsDir,
+    ...(devDir ? { widgetDevDir: devDir } : {}),
     ...(registryUrl ? { registryUrl, registryDev: true } : {}),
     themesDir: shipped.themesDir,
     uiDist: shipped.uiDist,
