@@ -28,6 +28,11 @@ tagged `vX.Y.Z`.
   network, shows a pairing QR code, lists the paired devices with the screen each shows, and
   unpairs one after you confirm. An iPad screen is created from the paired iPad, at its exact size. The
   iPad app comes next.
+- **Screen brightness.** A new built-in *Brightness* widget sets the brightness of the screen
+  the dashboard is on, from a tile or from the bar (− / +, and a slider in its popover); the
+  helper's menu has the same slider. It works over DDC/CI on Apple silicon Macs; a display that
+  does not answer DDC says so instead of failing silently. Rebuild and reinstall the helper with
+  this version (`pnpm helper:build && pnpm helper:install`).
 - **Widgets know their screen.** `Fremkit.screen` names the screen a widget is drawn on, for
   widgets whose data differs from one screen to the next (widget SDK generation 3).
 

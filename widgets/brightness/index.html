@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Brightness</title>
+<style>
+  html,body{margin:0;height:100%;background:transparent;color:var(--text, #e6e8eb);font-family:var(--font, -apple-system,system-ui,sans-serif);overflow:hidden}
+  [hidden]{display:none!important}
+  .wrap{box-sizing:border-box;height:100%;padding:clamp(8px,3vh,16px) clamp(10px,3vw,18px);display:flex;flex-direction:column;justify-content:center;gap:clamp(6px,2vh,12px)}
+  .ctrl{display:flex;align-items:center;gap:clamp(8px,2.4vw,16px)}
+  /* 56 px: the − and + are hit while glancing at the strip. */
+  button{flex:0 0 auto;font:inherit;border:0;border-radius:12px;background:var(--surface-3, #252a32);color:var(--text, #e6e8eb);
+         min-width:56px;height:56px;padding:0 12px;font-size:calc(26px * var(--text-scale, 1));line-height:1;cursor:pointer;touch-action:manipulation}
+  button:active{background:var(--accent, #d9b36a);color:var(--on-accent, #0b0d10)}
+  button:disabled{opacity:.35}
+  .slider{position:relative;flex:1;height:clamp(24px,9vh,48px);min-height:24px;border-radius:999px;background:var(--surface-3, #252a32);overflow:hidden;touch-action:none;cursor:pointer}
+  .slider>i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--accent, #d9b36a)}
+  .slider.off{opacity:.35;cursor:default}
+  .lvl{flex:0 0 auto;min-width:3ch;text-align:right;font-size:calc(clamp(18px,8vh,34px) * var(--text-scale, 1));font-weight:600;font-variant-numeric:tabular-nums}
+  .status{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px}
+  .note{min-width:0;font-size:calc(clamp(11px,3.4vh,15px) * var(--text-scale, 1));color:var(--text-muted, #8b93a0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* "Back to automatic" is a secondary action: 44 px is enough. */
+  #auto{min-width:44px;height:44px;font-size:calc(14px * var(--text-scale, 1));border-radius:10px}
+  .sun{flex:0 0 auto;width:1em;height:1em}
+  .sun circle{fill:currentColor}
+  .sun line{stroke:currentColor;stroke-width:2;stroke-linecap:round}
+  html.on-light body{color:var(--on-surface,#0b0d10)}
+  html.on-light .note{color:var(--on-surface,#0b0d10);opacity:.75}
+  /* A fill in the accent vanishes when the body *is* the accent, so it flips to the text colour. */
+  html.on-light .slider,html.accent-fill .slider{background:rgba(128,128,128,.35)}
+  html.accent-fill .slider>i{background:var(--on-surface,#0b0d10)}
+  html.on-light button,html.accent-fill button{background:rgba(128,128,128,.25);color:var(--on-surface,#0b0d10)}
+
+  /* Compact, in the bar: − ☀ 62 +, sized off the bar's height. */
+  .cwrap{display:none}
+  html.compact .wrap{display:none}
+  html.compact .cwrap{display:flex;box-sizing:border-box;height:100%;align-items:center;justify-content:center;gap:calc(var(--h,80px) * .08);padding:0 4px}
+  html.compact.slot-left .cwrap{justify-content:flex-start}
+  html.compact.slot-right .cwrap{justify-content:flex-end}
+  html.compact .cwrap button{min-width:44px;height:min(44px, calc(var(--h,80px) * .8));font-size:calc(calc(var(--h,80px) * .3) * var(--text-scale, 1));border-radius:10px;padding:0 8px}
+  .cval{display:flex;align-items:center;gap:calc(var(--h,80px) * .06);font-size:calc(calc(var(--h,80px) * .28) * var(--text-scale, 1));font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .cval.off{opacity:.45}
+</style></head><body>
+<div class="wrap">
+  <div class="ctrl">
+    <button id="down" aria-label="-">−</button>
+    <div class="slider" id="slider"><i id="fill"></i></div>
+    <button id="up" aria-label="+">+</button>
+    <span class="lvl" id="lvl">--</span>
+  </div>
+  <div class="status"><span class="note" id="note"></span><button id="auto" hidden></button></div>
+</div>
+<div class="cwrap">
+  <button id="cdown" aria-label="-">−</button>
+  <span class="cval" id="cval"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.6" y1="4.6" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.4" y2="19.4"/><line x1="4.6" y1="19.4" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.4" y2="4.6"/></svg><span id="cnum">--</span></span>
+  <button id="cup" aria-label="+">+</button>
+</div>
+<script>
+  var L = {
+    manual: { fr: 'Réglage manuel', en: 'Manual' },
+    dayNight: { fr: 'Jour / nuit', en: 'Day / night' },
+    followMac: { fr: 'Suit l’écran du Mac', en: 'Follows the Mac’s screen' },
+    both: { fr: 'Suit le Mac, plafonné la nuit', en: 'Follows the Mac, capped at night' },
+    toNight: { fr: 'nuit à {t}', en: 'night at {t}' },
+    toDay: { fr: 'jour à {t}', en: 'day at {t}' },
+    dimming: { fr: 'passe en nuit', en: 'dimming for the night' },
+    brightening: { fr: 'passe en jour', en: 'brightening for the day' },
+    held: { fr: 'Réglage manuel, l’automatique reprend ensuite', en: 'Manual for now, automatic resumes next' },
+    heldUntil: { fr: 'Réglage manuel jusqu’à {t}', en: 'Manual until {t}' },
+    resume: { fr: 'Auto', en: 'Auto' },
+    noLocation: { fr: 'Jour / nuit : position à saisir dans l’admin', en: 'Day / night: set a location in the admin' },
+    noBuiltin: { fr: 'Pas d’écran intégré à suivre', en: 'No built-in screen to follow' },
+    'no-helper': { fr: 'Assistant Fremkit absent', en: 'Fremkit Helper is not running' },
+    'no-display': { fr: 'Écran absent', en: 'No display' },
+    'no-ddc': { fr: 'Pas réglable sur cet écran (DDC)', en: 'Not adjustable on this display (DDC)' },
+    ambiguous: { fr: 'Écran non identifié avec certitude', en: 'Display not identified for sure' },
+    'device-unsupported': { fr: 'Pas encore réglable sur cet appareil', en: 'Not adjustable on this device yet' },
+    waiting: { fr: 'En attente…', en: 'Waiting…' }
+  }
+
+  Fremkit.whenReady(function () {
+    var $ = function (id) { return document.getElementById(id) }
+    var slider = $('slider'), fill = $('fill'), lvl = $('lvl'), note = $('note'), auto = $('auto')
+    var cnum = $('cnum'), cval = $('cval')
+    var buttons = [$('down'), $('up'), $('cdown'), $('cup')]
+    // Which screen this tile drives: the one the host says it is drawn on, else the kiosk's.
+    var screenId = Fremkit.screen
+    var cur = null, level = null, dragging = false, holdUntil = 0
+    var lastSent = 0, pending = null, timer = null
+
+    function clockOf(iso) {
+      var d = new Date(iso)
+      return isNaN(d) ? '' : d.toLocaleTimeString(Fremkit.locale === 'fr' ? 'fr-FR' : 'en-GB', { hour: '2-digit', minute: '2-digit' })
+    }
+    function show(v) {
+      var text = v === null ? '--' : String(Math.round(v))
+      lvl.textContent = text; cnum.textContent = text
+      fill.style.width = (v === null ? 0 : v) + '%'
+    }
+    function statusText(s) {
+      if (!s) return Fremkit.t(L.waiting)
+      if (!s.available) return Fremkit.t(L[s.reason] || L['no-ddc'])
+      var next = s.phase && s.phase.next ? clockOf(s.phase.next.at) : ''
+      if (s.overridden) return next && s.mode !== 'follow-mac' ? Fremkit.t(L.heldUntil, { t: next }) : Fremkit.t(L.held)
+      var parts = []
+      if (s.mode === 'manual') parts.push(Fremkit.t(L.manual))
+      if (s.mode === 'day-night') parts.push(Fremkit.t(L.dayNight))
+      if (s.mode === 'follow-mac') parts.push(Fremkit.t(L.followMac))
+      if (s.mode === 'both') parts.push(Fremkit.t(L.both))
+      if (s.phase && (s.phase.state === 'dimming' || s.phase.state === 'brightening')) parts.push(Fremkit.t(L[s.phase.state]))
+      else if (next && s.phase.next) parts.push(Fremkit.t(s.phase.next.to === 'night' ? L.toNight : L.toDay, { t: next }))
+      if (s.dayNightProblem) parts.push(Fremkit.t(L.noLocation))
+      if (s.followProblem) parts.push(Fremkit.t(L.noBuiltin))
+      return parts.join(' · ')
+    }
+    function render() {
+      var s = cur
+      var ok = !!(s && s.available)
+      slider.classList.toggle('off', !ok)
+      cval.classList.toggle('off', !ok)
+      buttons.forEach(function (b) { b.disabled = !ok })
+      note.textContent = statusText(s)
+      auto.hidden = !(ok && s.overridden)
+      auto.textContent = Fremkit.t(L.resume)
+      level = ok ? (s.value !== null && s.value !== undefined ? s.value : s.target) : null
+      // A value echoed back while the finger is still on the slider, or just after, would fight it.
+      if (!dragging && Date.now() >= holdUntil) show(level)
+      else if (!ok) show(null)
+    }
+
+    function payload(extra) {
+      var p = extra
+      if (screenId) p.screen = screenId
+      return p
+    }
+    function send(v, force) {
+      var now = Date.now()
+      holdUntil = now + 800
+      if (!force && now - lastSent < 100) {
+        pending = v
+        if (!timer) timer = setTimeout(function () { timer = null; if (pending !== null) { var p = pending; pending = null; send(p, true) } }, 100 - (now - lastSent))
+        return
+      }
+      lastSent = now; pending = null
+      Fremkit.sendCommand('brightness', 'set', payload({ value: v })).catch(function () {})
+    }
+    function step(sign) {
+      if (!cur || !cur.available) return
+      var size = Number(Fremkit.settings.step) || 10
+      var v = Math.max(0, Math.min(100, Math.round((level === null ? 50 : level) + sign * size)))
+      level = v; show(v); send(v, true)
+    }
+    $('down').onclick = $('cdown').onclick = function () { step(-1) }
+    $('up').onclick = $('cup').onclick = function () { step(1) }
+    auto.onclick = function () { Fremkit.sendCommand('brightness', 'resume', payload({})).catch(function () {}) }
+
+    function levelAt(x) {
+      var r = slider.getBoundingClientRect()
+      return Math.max(0, Math.min(100, Math.round((x - r.left) / r.width * 100)))
+    }
+    slider.addEventListener('pointerdown', function (e) {
+      if (!cur || !cur.available) return
+      dragging = true; slider.setPointerCapture(e.pointerId)
+      var v = levelAt(e.clientX); level = v; show(v); send(v)
+    })
+    slider.addEventListener('pointermove', function (e) {
+      if (!dragging) return
+      var v = levelAt(e.clientX); level = v; show(v); send(v)
+    })
+    function stop(e) {
+      if (!dragging) return
+      dragging = false
+      var v = levelAt(e.clientX); level = v; show(v); send(v, true)
+    }
+    slider.addEventListener('pointerup', stop); slider.addEventListener('pointercancel', stop)
+    // The Edge's touch driver turns a quick drag into wheel events at the finger's position, with
+    // no pointer event at all: follow the finger when it moves, and step for a real mouse wheel.
+    // Swallowing them keeps the stage from taking the same gesture for a swipe between pages.
+    var wheelX = null, wheelIdle = null
+    slider.addEventListener('wheel', function (e) {
+      e.preventDefault()
+      if (!cur || !cur.available) return
+      var v
+      if (wheelX !== null && Math.abs(e.clientX - wheelX) > 0.5) v = levelAt(e.clientX)
+      else v = Math.max(0, Math.min(100, Math.round((level === null ? 50 : level) - (e.deltaY + e.deltaX) / 10)))
+      wheelX = e.clientX; dragging = true
+      level = v; show(v); send(v)
+      clearTimeout(wheelIdle)
+      wheelIdle = setTimeout(function () { wheelX = null; dragging = false; send(level, true) }, 200)
+    }, { passive: false })
+
+    function sizeVars() {
+      if (Fremkit.size && Fremkit.size.px) document.documentElement.style.setProperty('--h', Fremkit.size.px.height + 'px')
+    }
+    sizeVars()
+    Fremkit.onResize(sizeVars)
+    Fremkit.onLocale(render)
+
+    Fremkit.subscribe('brightness', function (d) {
+      if (!d || !d.screens) return
+      var id = screenId || d.kiosk
+      cur = (id && d.screens[id]) || null
+      render()
+    })
+    render()
+  })
+</script></body></html>
