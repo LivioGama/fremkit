@@ -216,13 +216,18 @@ export class DeviceService {
    * Pairs a device with the live code. It is attached to the one device screen made for its
    * viewport; none, or more than one, leaves it unattached for the user to choose.
    */
-  async pair(code: string, name: string, viewport: Viewport): Promise<PairResult> {
-    const result = this.codes.consume(code)
+  async pair(code: string, name: string, viewport: Viewport, peer = ''): Promise<PairResult> {
+    const result = this.codes.consume(code, peer)
     if (result !== 'ok') return { error: result }
     const matches = this.config.get().screens.filter((s) => s.kind === 'device' && fits(s, viewport))
     const screenId = matches.length === 1 ? matches[0].id : null
     const { device, token } = await this.store.create(name, viewport, screenId)
     return { token, device }
+  }
+
+  /** Whether a pairing code is live: outside of one, there is nothing to pair with. */
+  get pairingOpen(): boolean {
+    return this.codes.hasLive()
   }
 
   /** Puts a device on a device screen, or on none. Refuses any other screen. */

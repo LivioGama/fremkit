@@ -163,7 +163,11 @@ on, a second listener answers on port 4243, **TLS only**, with a self-signed key
 (the hash of its public key travels in the pairing QR code, and the app shows four words from it
 to compare when you pair without the camera). A device holds a random token that the Mac stores as
 a hash; revoking the device, or resetting the certificate, ends it at once, open WebSocket
-included. Pairing needs a single-use code, valid five minutes, and wrong guesses are rate-limited.
+included. The listener drops any peer outside the local networks — RFC 1918 and link-local IPv4,
+unique-local and link-local IPv6, and the Mac itself — before the TLS handshake, so a VPN peer or a
+host on a global IPv6 address gets nothing. Pairing needs a single-use code, valid five minutes;
+`/api/pair` answers 404 unless a code is live, and wrong guesses are limited per address (5 a
+minute) under a total ceiling (60 a minute), so one guesser cannot lock another iPad out.
 
 The remote listener is an **allow-list**, decided by the socket a request arrived on rather than
 by a header: the dashboard's page and its code, the routes a dashboard reads, `/ws`, the widget

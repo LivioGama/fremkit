@@ -4,6 +4,7 @@ import {
   CODE_LENGTH,
   CODE_TTL_MS,
   MAX_WRONG_PER_MINUTE,
+  MAX_WRONG_PER_MINUTE_TOTAL,
   PairingCodes,
 } from '../src/devices/codes.js'
 
@@ -89,6 +90,52 @@ describe('PairingCodes', () => {
     const codes = new PairingCodes(clock().now)
     for (let i = 0; i < MAX_WRONG_PER_MINUTE; i++) expect(codes.consume('AAAAAAAA')).toBe('wrong')
     expect(codes.consume('AAAAAAAA')).toBe('limited')
+  })
+
+  it('counts wrong codes per peer, so one guesser does not lock another out', () => {
+    const c = clock()
+    const codes = new PairingCodes(c.now)
+    const { code } = codes.issue()
+    for (let i = 0; i < MAX_WRONG_PER_MINUTE; i++) expect(codes.consume(other(code), '192.168.1.66')).toBe('wrong')
+    expect(codes.consume(other(code), '192.168.1.66')).toBe('limited')
+    expect(codes.consume(code, '192.168.1.66')).toBe('limited')
+    expect(codes.guessing()).toBe(true)
+    // The real iPad, on another address, still pairs.
+    expect(codes.consume(code, '192.168.1.20')).toBe('ok')
+  })
+
+  it('refuses everyone once the total is spent, however many peers share it, then recovers', () => {
+    const c = clock()
+    const codes = new PairingCodes(c.now)
+    const { code } = codes.issue()
+    expect(MAX_WRONG_PER_MINUTE_TOTAL).toBe(60)
+    for (let i = 0; i < MAX_WRONG_PER_MINUTE_TOTAL; i++) {
+      expect(codes.consume(other(code), `10.0.${Math.floor(i / 4)}.${i % 4}`)).toBe('wrong')
+    }
+    expect(codes.consume(code, '192.168.1.20')).toBe('limited')
+    expect(codes.guessing()).toBe(true)
+    c.t += 60_000
+    expect(codes.guessing()).toBe(false)
+    expect(codes.consume(code, '192.168.1.20')).toBe('ok')
+  })
+
+  it('is live only between a code being issued and it being used, cleared or expired', () => {
+    const c = clock()
+    const codes = new PairingCodes(c.now)
+    expect(codes.hasLive()).toBe(false)
+    const { code } = codes.issue()
+    expect(codes.hasLive()).toBe(true)
+    c.t += CODE_TTL_MS
+    expect(codes.hasLive()).toBe(true)
+    c.t += 1
+    expect(codes.hasLive()).toBe(false)
+    codes.issue()
+    codes.clear()
+    expect(codes.hasLive()).toBe(false)
+    const next = codes.issue().code
+    expect(codes.consume(next)).toBe('ok')
+    expect(codes.hasLive()).toBe(false)
+    expect(code).toHaveLength(8)
   })
 
   it('clear() drops the live code', () => {

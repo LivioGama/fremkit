@@ -4,7 +4,8 @@
  * - the admin, on this Mac: everything under `/api/devices` but `/me`. These are absent from the
  *   remote allow-list, so the devices gate already answers 404 on the remote listener; each one
  *   also refuses a remote request itself, in case the allow-list ever grows by mistake.
- * - a device, on the remote listener: `POST /api/pair` (public, it is how a token is obtained),
+ * - a device, on the remote listener: `POST /api/pair` (public, it is how a token is obtained, and
+ *   there only while a code is live),
  *   `GET /api/devices/me` and `POST /api/devices/me/brightness` (token). Pairing answers 404 locally: a code typed on the Mac itself
  *   would pair nothing that could use it.
  */
@@ -63,11 +64,15 @@ export async function deviceRoutes(app: FastifyInstance, opts: DeviceRoutesOptio
 
   app.post('/api/pair', async (req, reply) => {
     if (!isRemoteRequest(req)) return reply.callNotFound()
+    // Only while the Mac shows a code: the rest of the time the route does not exist, so nobody can
+    // probe it or spend the guess allowance before the user even asks for a code.
+    if (!service.pairingOpen) return reply.callNotFound()
     reply.header('cache-control', 'no-store')
     const parsed = PairSchema.safeParse(req.body)
     if (!parsed.success) return badBody(reply, parsed.error)
     const { code, name, viewport } = parsed.data
-    const result = await service.pair(code.trim().toUpperCase(), name, viewport)
+    // Counted per peer address (`codes.ts`): the socket's, which no header can change.
+    const result = await service.pair(code.trim().toUpperCase(), name, viewport, req.ip)
     if ('error' in result) {
       const { status, key } = PAIR_ERRORS[result.error]
       return reply.code(status).send({ error: tr(locale(), key) })

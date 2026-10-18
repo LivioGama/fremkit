@@ -132,6 +132,7 @@ final class PairingFlowTests: XCTestCase {
             (.unreachable, .unreachable),
             (.wrongMac, .wrongMac),
             (.invalidRequest, .invalidRequest),
+            (.noCode, .noCode),
         ]
         for (error, problem) in cases {
             let (flow, model) = makeFlow(pairer: ScriptedPairer(.failure(error)))

@@ -88,6 +88,12 @@ tagged `vX.Y.Z`.
   browser*) or with `pnpm open`; typing `127.0.0.1:4242` by hand now shows a page saying so.
   Scripts calling the server read the secret from
   `~/Library/Application Support/Fremkit/access-4242.token` (see the README).
+- **An iPad pairs only from your local network, and only while a code is showing.** With
+  *Allow an iPad on the local network* on, the Mac now answers only addresses of a home or office
+  network (and itself): nothing reaches it over a VPN or a public IPv6 address. Pairing answers
+  only while the admin shows a code; the iPad says so when the code has run out, so make a new one.
+  Wrong codes are counted per address, so someone guessing on the network no longer locks your own
+  iPad out of pairing.
 
 ## 0.4.1 — 2026-10-16
 

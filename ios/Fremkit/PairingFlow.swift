@@ -24,6 +24,8 @@ extension PairingProblem {
             Text("This is not the Mac that showed the code")
         case .invalidRequest:
             Text("The Mac did not accept the request. Update Fremkit on the Mac.")
+        case .noCode:
+            Text("The Mac is not showing a pairing code any more. Make a new one in Fremkit and scan it.")
         case .notSaved:
             Text("The pairing could not be saved on this iPad.")
         }

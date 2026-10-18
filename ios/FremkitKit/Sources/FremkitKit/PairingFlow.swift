@@ -112,6 +112,8 @@ public enum PairingProblem: Equatable, Sendable {
     case wrongMac
     /// The Mac did not accept the request itself (a version mismatch, not the user's doing).
     case invalidRequest
+    /// The Mac shows no live code: a new one has to be made there.
+    case noCode
     /// The Mac paired this iPad but the keychain refused to keep it.
     case notSaved
 }
@@ -365,6 +367,7 @@ public final class PairingFlow {
             case .unreachable: .unreachable
             case .wrongMac: .wrongMac
             case .invalidRequest: .invalidRequest
+            case .noCode: .noCode
             }
         }
     }

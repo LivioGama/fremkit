@@ -251,6 +251,16 @@
         }
       }
     },
+    "The Mac is not showing a pairing code any more. Make a new one in Fremkit and scan it." : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le Mac n’affiche plus de code d’appairage. Créez-en un nouveau dans Fremkit et scannez-le."
+          }
+        }
+      }
+    },
     "The Mac refused the code." : {
       "localizations" : {
         "fr" : {

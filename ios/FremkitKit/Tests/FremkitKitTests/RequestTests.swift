@@ -135,6 +135,16 @@ final class PairClientTests: XCTestCase {
         }
     }
 
+    func testNoCodeWhenTheMacAnswers404() async {
+        StubProtocol.answer("192.0.2.44", with: .status(404, #"{"statusCode":404,"error":"Not Found"}"#))
+        do {
+            _ = try await pair(PairClient(configuration: StubProtocol.configuration), hosts: ["192.0.2.44"])
+            XCTFail("paired")
+        } catch {
+            XCTAssertEqual(error as? PairError, .noCode)
+        }
+    }
+
     func testUnreachableWhenNoHostAnswers() async {
         StubProtocol.answer("192.0.2.35", with: .failure(.timedOut))
         do {

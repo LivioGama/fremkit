@@ -49,6 +49,22 @@ describe.skipIf(!hasOpenssl)('RemoteListener', () => {
     await expect(remote(port, { path: '/' })).rejects.toMatchObject({ code: 'ECONNREFUSED' })
   })
 
+  it('drops a peer outside the local networks before TLS, with nothing said', async () => {
+    await listener.stop()
+    const seen: (string | undefined)[] = []
+    listener = new RemoteListener(app, 0, (address) => { seen.push(address); return false })
+    const port = await start()
+    await expect(remote(port, { path: '/' })).rejects.toThrow()
+    expect(seen.length).toBeGreaterThan(0)
+    // Reported as the socket sees it: a loopback address here, in one spelling or the other.
+    expect(seen[0]).toMatch(/127\.0\.0\.1|::1/)
+  })
+
+  it('lets this Mac in by default, as a loopback peer', async () => {
+    const port = await start()
+    expect((await remote(port, { path: '/' })).status).not.toBe(403)
+  })
+
   it('judges a request to https://127.0.0.1 remote: no cookie, 401', async () => {
     const port = await start()
     // The same request on the loopback app answers 200: the socket, not the address, decides.

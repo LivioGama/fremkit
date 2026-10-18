@@ -137,6 +137,20 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     expect((await pair({ code: 'AAAA', name: 'x', viewport: { width: 0, height: 1 } })).status).toBe(400)
   })
 
+  it('answers /api/pair 404, as a route that does not exist, while no code is live', async () => {
+    // The code `pairWith` used is spent: nothing is live now.
+    await pairWith({ width: 640, height: 480 })
+    const body = { code: 'AAAAAAAA', name: 'x', viewport: { width: 640, height: 480 } }
+    const closed = await pair(body)
+    expect(closed.status).toBe(404)
+    expect(JSON.parse(closed.body)).toMatchObject({ statusCode: 404, error: 'Not Found' })
+    // Nor are guesses counted while it is closed.
+    for (let i = 0; i < 6; i++) expect((await pair(body)).status).toBe(404)
+    const code = await issueCode()
+    expect((await pair({ ...body, code })).status).toBe(200)
+    expect((await pair(body)).status).toBe(404)
+  })
+
   it('refuses to attach a device to a screen that is not a device screen', async () => {
     const { deviceId } = await pairWith({ width: 640, height: 480 })
     const edge = await app.inject({ method: 'PATCH', url: `/api/devices/${deviceId}`, payload: { screenId: 'edge' } })

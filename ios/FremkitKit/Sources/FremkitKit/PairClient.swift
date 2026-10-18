@@ -19,6 +19,9 @@ public enum PairError: Error, Equatable, Sendable {
     case rejected(String)
     /// 429: too many tries.
     case limited(String)
+    /// 404 from the Mac itself (it passed the pin): no pairing code is showing on it right now —
+    /// none was made, it was used, or its five minutes are over. The Mac answers nothing else then.
+    case noCode
     /// An address answered with another key than the QR's: not the Mac that showed the code.
     case wrongMac
     /// Nothing answered.
@@ -78,6 +81,7 @@ public struct PairClient: Sendable {
                                  port: port, keyHash: keyHash, token: paired.token, deviceId: paired.deviceId, name: macName)
             case let .response(403, data): throw PairError.rejected(Self.message(data))
             case let .response(429, data): throw PairError.limited(Self.message(data))
+            case .response(404, _): throw PairError.noCode
             case .response(400, _): throw PairError.invalidRequest
             case .response: continue
             case .pinRejected: sawWrongMac = true
