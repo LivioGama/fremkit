@@ -105,6 +105,11 @@ export const PlacementSchema = z.object({
   y: z.number().int().min(0),
   w: z.number().int().min(1),
   h: z.number().int().min(1),
+  /**
+   * Pins the tile where it is: the editor neither drags nor resizes it. Absent means unlocked,
+   * so a file written before this existed reads exactly as before and needs no migration.
+   */
+  locked: z.boolean().optional(),
 })
 
 export const PageSchema = z.object({
