@@ -260,7 +260,8 @@ title, a host, a position), and a WebRTC offer, to the Edge. It cannot read your
 config or your connections, call any other API, or send a command to a widget other than driving its
 own share. Its offer may only name this Mac — host candidates on loopback, a `.local` name or one of
 the Mac's own addresses — so the kiosk is never sent to another machine on the network (an offer
-naming anything else ends that share, and the popup says the Edge refused the video connection), and
+naming anything else is not relayed: that widget gets no picture while the share goes on for the
+others, and the popup says the Edge refused the video connection), and
 the video does not leave your Mac; it never goes through the server either. The picture is cropped
 to the page's main video element; a page can make that element cover the whole tab, frames from
 other sites included, but the picture only goes to your own dashboard. The extension asks for

@@ -8,7 +8,7 @@ import { browserName } from '../../companion/lib/browser.js'
 // @ts-expect-error plain JS module
 import { IDLE_SLACK_MS, idleDelay } from '../../companion/lib/presence.js'
 // @ts-expect-error plain JS module
-import { closeOutcome, POLICY_CLOSE_CODE, REVOKED_CLOSE_CODE } from '../../companion/lib/link.js'
+import { closeOutcome, POLICY_CLOSE_CODE, refusalOf, REVOKED_CLOSE_CODE } from '../../companion/lib/link.js'
 // @ts-expect-error plain JS module
 import { localCandidatesOnly, loopbackAnswer, loopbackForMdns, offerSdp } from '../../companion/lib/sdp.js'
 // @ts-expect-error plain JS module
@@ -689,6 +689,19 @@ describe('closeOutcome', () => {
     await after.receive({ type: 'proof', mac: PROOF_VECTOR.mac })
     after.cancel()
     expect(closeOutcome(4401, { proven: after.proven })).toBe('revoked')
+  })
+})
+
+describe('refusalOf (what a tab.refused does to the share)', () => {
+  it('a refused offer costs only that receiver: the share goes on, nothing is retried, the popup says why', () => {
+    expect(refusalOf('offer')).toEqual({ endShare: false, error: 'offerRefused' })
+  })
+
+  it('no widget ends the share as such, and anything else as an update due', () => {
+    expect(refusalOf('noWidget')).toEqual({ endShare: true, error: 'noWidget' })
+    expect(refusalOf('protocol')).toEqual({ endShare: true, error: 'protocol' })
+    expect(refusalOf('something new')).toEqual({ endShare: true, error: 'protocol' })
+    expect(refusalOf(undefined)).toEqual({ endShare: true, error: 'protocol' })
   })
 })
 

@@ -99,8 +99,8 @@ export type TabMeta = z.infer<typeof MetaSchema>
 const Id = z.uuid()
 /**
  * An offer's text, bounded. Whether it names only this Mac is the session's call (`isLocalSdp`): a
- * candidate it refuses ends that share with `tab.refused` (reason `offer`) rather than closing the
- * socket, which the extension would reconnect and offer again.
+ * candidate it refuses costs that one receiver its video, with `tab.refused` (reason `offer`, and
+ * the receiver), rather than closing the socket, which the extension would reconnect and offer again.
  */
 const Sdp = z.string().max(MAX_SDP)
 const Token = z.string().refine(isWellFormedToken, 'not a token')
@@ -140,7 +140,9 @@ export type ServerMessage =
   | { type: 'proof'; mac: string }
   | { type: 'ready'; protocol: number }
   | { type: 'tab.accepted'; sessionId: string }
-  | { type: 'tab.refused'; sessionId: string; reason: 'noWidget' | 'protocol' | 'offer' }
+  | { type: 'tab.refused'; sessionId: string; reason: 'noWidget' | 'protocol' }
+  /** One receiver's offer named more than this Mac: that receiver gets no video, the share goes on. */
+  | { type: 'tab.refused'; sessionId: string; reason: 'offer'; receiverId: string }
   | { type: 'tab.view'; receiverId: string }
   | { type: 'tab.answer'; receiverId: string; sdp: string }
   | ({ type: 'tab.control' } & Control)

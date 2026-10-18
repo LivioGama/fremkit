@@ -336,16 +336,32 @@ describe('CompanionSession', () => {
 })
 
 describe('CompanionSession refused offer', () => {
-  it('ends the share with tab.refused (offer) and relays nothing, when the offer names another host', () => {
+  it('refuses only that receiver\'s offer, naming it, when the offer names another host', () => {
     const t = setup()
     t.hello('a')
     t.start('a', S1)
     t.session.view(R(1), 'w1')
+    t.session.view(R(2), 'w2')
+    t.session.onMessage('a', { type: 'tab.offer', sessionId: S1, receiverId: R(2), sdp: 'v=0 local' })
     t.clear()
     const lan = 'v=0\r\na=candidate:1 1 udp 2122260223 198.51.100.7 54321 typ host\r\n'
     t.session.onMessage('a', { type: 'tab.offer', sessionId: S1, receiverId: R(1), sdp: lan })
-    expect(t.to('a')).toEqual([{ type: 'tab.refused', sessionId: S1, reason: 'offer' }])
-    expect(t.session.snapshot().tab).toMatchObject({ state: 'idle', offers: {} })
+    expect(t.to('a')).toEqual([{ type: 'tab.refused', sessionId: S1, reason: 'offer', receiverId: R(1) }])
+    // The share and the other receiver go on; the refused one stays known, with no offer, so its
+    // frame waits instead of asking again.
+    expect(t.session.snapshot().tab).toMatchObject({ state: 'sharing', sessionId: S1, offers: { [R(2)]: 'v=0 local' }, receivers: [R(1), R(2)] })
+  })
+
+  it('takes back a receiver\'s earlier offer when its new one is refused', () => {
+    const t = setup()
+    t.hello('a')
+    t.start('a', S1)
+    t.session.view(R(1), 'w1')
+    t.session.onMessage('a', { type: 'tab.offer', sessionId: S1, receiverId: R(1), sdp: 'v=0 local' })
+    expect(t.session.snapshot().tab.offers).toEqual({ [R(1)]: 'v=0 local' })
+    const lan = 'v=0\r\na=candidate:1 1 udp 2122260223 198.51.100.7 54321 typ host\r\n'
+    t.session.onMessage('a', { type: 'tab.offer', sessionId: S1, receiverId: R(1), sdp: lan })
+    expect(t.session.snapshot().tab).toMatchObject({ state: 'sharing', offers: {}, receivers: [R(1)] })
   })
 
   it('ignores a bad offer about a share that is not the current one', () => {

@@ -23,3 +23,14 @@ export function closeOutcome(code, { proven = false, greeted = false } = {}) {
   if (!proven && !greeted && code === POLICY_CLOSE_CODE) return 'refused'
   return 'retry'
 }
+
+/**
+ * What a `tab.refused` does to the share. `offer`: the server would not relay one receiver's video
+ * connection (the offer named more than this Mac); only that receiver's peer goes, the share and
+ * the other receivers keep going, nothing is offered again, and the popup says why. Any other
+ * reason ends the share: `noWidget` as such, anything else as an update due.
+ */
+export function refusalOf(reason) {
+  if (reason === 'offer') return { endShare: false, error: 'offerRefused' }
+  return { endShare: true, error: reason === 'noWidget' ? 'noWidget' : 'protocol' }
+}

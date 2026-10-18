@@ -10,7 +10,7 @@ import { approvalTooFast } from './lib/approval.js'
 import { browserName } from './lib/browser.js'
 import { handshake } from './lib/handshake.js'
 import { grantToReturn } from './lib/grant.js'
-import { closeOutcome } from './lib/link.js'
+import { closeOutcome, refusalOf } from './lib/link.js'
 import { idleDelay } from './lib/presence.js'
 import { isOwnContext } from './lib/sender.js'
 import * as protocol from './lib/protocol.js'
@@ -430,11 +430,17 @@ async function onServerMessage(msg) {
       await saveSession({ share, lastError: null })
       decide(msg.sessionId, { ok: true })
       return
-    case 'tab.refused':
+    case 'tab.refused': {
       if (share?.sessionId !== msg.sessionId) return
-      // `offer`: the server would not relay this share's video connection; the share ends, with no
-      // retry, and the popup says so (not "update needed": nothing is out of date).
-      return endShare({ notify: false, error: msg.reason === 'noWidget' ? 'noWidget' : msg.reason === 'offer' ? 'offerRefused' : 'protocol' })
+      const refusal = refusalOf(msg.reason)
+      if (refusal.endShare) return endShare({ notify: false, error: refusal.error })
+      // One receiver's offer refused (lib/link.js): its peer goes, with no new offer; the badge
+      // flashes and the popup says why next time it opens (not "update needed").
+      if (typeof msg.receiverId === 'string') await toOffscreen('detach', { receiverId: msg.receiverId })
+      await saveSession({ lastError: refusal.error })
+      flash('!')
+      return
+    }
     case 'tab.stop':
       return endShare({ notify: false })
     case 'revoked':

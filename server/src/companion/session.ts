@@ -144,12 +144,18 @@ export class CompanionSession {
       }
       case 'tab.offer': {
         if (!this.shareOf(deviceId, msg.sessionId)) return
-        // An offer naming anything beyond this Mac is never relayed: that share ends, said why.
-        if (!isLocalSdp(msg.sdp)) {
-          this.send(deviceId, { type: 'tab.refused', sessionId: msg.sessionId, reason: 'offer' })
-          return this.endShare()
-        }
         const receiver = this.receivers.get(msg.receiverId)
+        // An offer naming anything beyond this Mac is never relayed. Only that receiver goes
+        // without: the share and the other receivers keep going, and the extension is told why.
+        // The receiver stays known with no offer, so its frame waits rather than asking again.
+        if (!isLocalSdp(msg.sdp)) {
+          this.send(deviceId, { type: 'tab.refused', sessionId: msg.sessionId, reason: 'offer', receiverId: msg.receiverId })
+          if (receiver && receiver.offer !== null) {
+            receiver.offer = null
+            this.changed()
+          }
+          return
+        }
         if (!receiver) return
         receiver.offer = msg.sdp
         return this.changed()
