@@ -150,6 +150,12 @@
   "pairLimited": {
     "message": "Trop de demandes : réessayez dans une minute."
   },
+  "pairBusy": {
+    "message": "Une autre demande d'appairage attend déjà sur l'Edge."
+  },
+  "pairCooldown": {
+    "message": "Demande refusée, réessayez dans une minute."
+  },
   "pairUnreachable": {
     "message": "Fremkit ne répond pas sur ce Mac. Est-il lancé ?"
   },

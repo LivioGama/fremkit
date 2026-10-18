@@ -26,6 +26,8 @@ const PAIR_ERRORS = {
   refused: () => t('pairRefused'),
   expired: () => t('pairExpired'),
   limited: () => t('pairLimited'),
+  busy: () => t('pairBusy'),
+  cooldown: () => t('pairCooldown'),
   unreachable: () => t('pairUnreachable'),
   failed: () => t('pairFailed'),
 }

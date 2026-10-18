@@ -150,6 +150,12 @@
   "pairLimited": {
     "message": "Too many requests: try again in a minute."
   },
+  "pairBusy": {
+    "message": "Another pairing request is already waiting on the Edge."
+  },
+  "pairCooldown": {
+    "message": "Request refused; try again in a minute."
+  },
   "pairUnreachable": {
     "message": "Fremkit is not answering on this Mac. Is it running?"
   },

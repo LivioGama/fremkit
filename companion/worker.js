@@ -115,7 +115,12 @@ async function pair() {
   } catch {
     return saveLocal({ pairError: 'unreachable' })
   }
-  if (res.status === 429) return saveLocal({ pairError: 'limited' })
+  // 409: another extension's request waits on the Edge; 429: too many, or refused a moment ago.
+  if (res.status === 409 || res.status === 429) {
+    const reason = (await res.json().catch(() => null))?.reason
+    const known = res.status === 409 ? ['busy'] : ['limited', 'cooldown']
+    return saveLocal({ pairError: known.includes(reason) ? reason : res.status === 409 ? 'busy' : 'limited' })
+  }
   const body = res.ok ? await res.json().catch(() => null) : null
   if (!body?.requestId || !body.code) return saveLocal({ pairError: 'failed' })
   await saveLocal({ pairing: { requestId: body.requestId, code: body.code, expiresAt: body.expiresAt }, name })
