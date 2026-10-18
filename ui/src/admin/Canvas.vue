@@ -95,7 +95,7 @@ onUnmounted(() => observer?.disconnect())
   <div class="host" ref="host">
     <div class="board" ref="board" :style="boardStyle"
       @pointerdown="onBoardDown" @pointerup="onBoardUp" @pointercancel="onBoardCancel" @wheel="onBoardWheel">
-      <PageView v-if="s.page.value" :page="s.page.value" :config="s.state.config!" :display="display" :manifests="s.state.manifests" :edit="s.state.mode === 'edit'" />
+      <PageView v-if="s.page.value" :page="s.page.value" :config="s.state.config!" :display="display" :manifests="s.state.manifests" :edit="s.state.mode === 'edit'" :reloads="s.state.reloads" />
       <NavBar :pages="screen.pages" :active="s.state.pageIndex" :height="navH"
         :opacity="display.navOpacity" :nav-items="navItemsOf(screen)" :widgets="s.state.config!.widgets" :manifests="s.state.manifests"
         :cell="display.cell" :edit="s.state.mode === 'edit'" :nav-style="display.navStyle" @select="s.selectPage"

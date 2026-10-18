@@ -171,7 +171,7 @@ onBeforeUnmount(unbindDragFallback)
         </BaseButton>
       </span>
     </h2>
-    <div class="search">
+    <div class="search" data-library-search>
       <BaseInput v-model="query" :placeholder="t('admin.market.search')"
         @keydown.enter="placeFirst()" @keydown.esc="query = ''" />
       <BaseButton v-if="searching" variant="icon" class="clear" :title="t('admin.library.clearSearch')" @click="query = ''">

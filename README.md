@@ -198,9 +198,16 @@ two screens is the same widget, with the same settings.
   handles to resize. In Test the overlay steps aside and the widgets are usable, and the preview
   behaves like the screen: a horizontal swipe on the navigation bar or on free board space changes
   page, wrapping around at either end.
+- **Right click** — on a widget: settings, show title, appearance (opacity presets, colours,
+  background image, reset), copy and paste its style, duplicate, copy and paste, move to another
+  page or screen, also show it on another screen, default or minimum size, lock its position (a
+  locked widget is neither dragged nor resized), open its connection, about, reload, remove. On
+  the empty canvas: paste, add a widget, new page, screen settings. The menus work from the
+  keyboard too (arrows, Enter, Escape, type-ahead).
 - **Keyboard** — arrows move the selection by one cell, Shift+arrows resize it from the south-east corner, Delete or Backspace removes it,
-  Cmd+D duplicates it, Escape deselects. Cmd+Z and Cmd+Shift+Z undo and redo anywhere, up to 50
-  steps.
+  Cmd+D duplicates it, Cmd+C and Cmd+V copy it and paste a new one with the same settings on the
+  page you are on (any page, any screen), Escape deselects. Cmd+Z and Cmd+Shift+Z undo and redo
+  anywhere, up to 50 steps.
 - **Left column** — the pages (rename, reorder, duplicate, delete) and the widget library, with a
   rescan button that re-reads the `widgets/` folder without restarting the server. Each card says
   in a line what that widget asks for, so a folder dropped into `widgets/` cannot ask for anything

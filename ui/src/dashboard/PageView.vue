@@ -14,7 +14,9 @@ const props = withDefaults(defineProps<{
    * viewport larger than the grid shows no second, differently scaled copy.
    */
   paintBackground?: boolean
-}>(), { paintBackground: true })
+  /** The admin's "Reload widget": a tile whose count changes gets a fresh frame. */
+  reloads?: Record<string, number>
+}>(), { paintBackground: true, reloads: () => ({}) })
 
 /** Each placement joined with the shared widget it names: the tile shape every frame and the bridge speak. */
 const tiles = computed(() => props.page.items.map((p) => tileOf(props.config, p)))
@@ -31,12 +33,13 @@ const style = computed(() => ({
   <!--
     The key is the instance id alone: settings go to the running widget over the bridge
     (fremkit:settings) and the appearance over fremkit:appearance, so neither typing in the
-    inspector nor recolouring a tile reloads the iframe.
+    inspector nor recolouring a tile reloads the iframe. Only the admin's "Reload widget"
+    does, on purpose, by bumping that tile's count in `reloads`.
   -->
   <div class="page" :style="style">
     <WidgetFrame
       v-for="w in tiles"
-      :key="w.instanceId"
+      :key="`${w.instanceId}:${reloads[w.instanceId] ?? 0}`"
       :instance="w"
       :manifest="manifests[w.widgetId]"
       :cell="display.cell"

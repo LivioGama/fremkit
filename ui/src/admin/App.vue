@@ -12,6 +12,8 @@ import BaseModal from '../shared/ui/BaseModal.vue'
 import ScreenInspector from './ScreenInspector.vue'
 import ConnectionsInspector from './ConnectionsInspector.vue'
 import MarketplacePanel from './MarketplacePanel.vue'
+import WidgetAbout from './WidgetAbout.vue'
+import ContextMenu from '../shared/ui/ContextMenu.vue'
 import { fits, moveRect, resizeRect } from './layout'
 import { useConfigTheme } from '../shared/theme'
 import { SCREEN_ID } from '../shared/useWidgetBridge'
@@ -48,6 +50,20 @@ function onKeyDown(e: KeyboardEvent): void {
     if (inst) s.duplicateWidget(inst.instanceId)
     return
   }
+  // ⌘C and ⌘V work on the editor's own widget clipboard, but never over text the user has
+  // selected on the page: that copy is the browser's.
+  if (mod && !e.shiftKey && !e.altKey && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'v') && s.state.mode === 'edit') {
+    if (hasTextSelection()) return
+    if (e.key.toLowerCase() === 'c') {
+      if (!inst) return
+      e.preventDefault()
+      s.copyWidget(inst.instanceId)
+    } else if (s.state.clipboard) {
+      e.preventDefault()
+      s.pasteWidget()
+    }
+    return
+  }
   if (!inst || s.state.mode !== 'edit') return
   if (e.key === 'Escape') { s.select(null); return }
   if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -62,6 +78,8 @@ function onKeyDown(e: KeyboardEvent): void {
   const delta = ARROWS[e.key]
   if (!delta) return
   e.preventDefault()
+  // A locked tile stays where it is, whatever moves it.
+  if (inst.locked) return
   const start = { x: inst.x, y: inst.y, w: inst.w, h: inst.h }
   const min = s.state.manifests[inst.widgetId]?.minSize ?? [1, 1]
   // Shift resizes from the south-east corner, a bare arrow moves the whole widget.
@@ -69,6 +87,12 @@ function onKeyDown(e: KeyboardEvent): void {
     ? resizeRect(start, 'se', delta[0], delta[1], min, s.grid.value)
     : moveRect(start, delta[0], delta[1], s.grid.value)
   if (fits(next, s.grid.value, s.others(inst.instanceId))) s.updateInstance(inst.instanceId, next)
+}
+
+/** True when the user has selected some text on the page, which ⌘C must copy as usual. */
+function hasTextSelection(): boolean {
+  const sel = window.getSelection()
+  return !!sel && !sel.isCollapsed && sel.toString().trim() !== ''
 }
 
 /**
@@ -115,6 +139,11 @@ onUnmounted(() => {
       :width="720" :height="840" :close-label="t('common.close')" @close="s.closeModal()">
       <MarketplacePanel />
     </BaseModal>
+    <BaseModal v-else-if="s.state.modal === 'about'" :title="t('admin.about.title')"
+      :width="480" :close-label="t('common.close')" @close="s.closeModal()">
+      <WidgetAbout :instance-id="s.state.aboutId" />
+    </BaseModal>
+    <ContextMenu />
     <BaseToast v-if="s.state.toast" :message="s.state.toast" @close="s.dismissToast()" />
   </div>
   <p v-else class="loading">{{ t('common.loading') }}</p>
