@@ -172,4 +172,9 @@ describe('parseExtensionMessage', () => {
   it('lets a hello carry any protocol number, so the server can answer a version it does not speak', () => {
     expect(parse({ type: 'hello', token, installId, protocol: 2 })).toMatchObject({ protocol: 2 })
   })
+
+  it('lets a hello carry keys it does not know, and strips them, so a newer extension still connects', () => {
+    expect(parse({ type: 'hello', token, installId, protocol: PROTOCOL, modules: ['fremplay'] }))
+      .toEqual({ type: 'hello', token, installId, protocol: PROTOCOL })
+  })
 })

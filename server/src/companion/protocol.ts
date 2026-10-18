@@ -79,7 +79,9 @@ const Sdp = z.string().max(MAX_SDP).refine(isLocalSdp, 'not a local offer')
 const Token = z.string().refine(isWellFormedToken, 'not a token')
 
 export const ExtensionMessageSchema = z.discriminatedUnion('type', [
-  z.strictObject({
+  // The one message that is not strict: a newer extension may say more in its hello (the spec
+  // plans a `modules` list) and must still connect. Unknown keys are stripped, not refused.
+  z.object({
     type: z.literal('hello'),
     token: Token,
     installId: Id,
