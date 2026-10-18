@@ -17,6 +17,8 @@ import { expectedMac, newNonce, PROOF_LABEL, sameBytes, verifyProof } from '../.
 import { handshake, PROOF_TIMEOUT_MS } from '../../companion/lib/handshake.js'
 // @ts-expect-error plain JS module
 import * as ext from '../../companion/lib/protocol.js'
+// @ts-expect-error plain JS module
+import { isOwnContext } from '../../companion/lib/sender.js'
 import { isLocalSdp, parseExtensionMessage, PROOF_LABEL as SERVER_PROOF_LABEL, PROTOCOL } from '../src/companion/protocol.js'
 import { HELLO_TIMEOUT_MS } from '../src/companion/socket.js'
 import { COMPANION_NAMES } from '../src/companion/routes.js'
@@ -672,5 +674,33 @@ describe('closeOutcome', () => {
     await after.receive({ type: 'proof', mac: PROOF_VECTOR.mac })
     after.cancel()
     expect(closeOutcome(4401, { proven: after.proven })).toBe('revoked')
+  })
+})
+
+describe('isOwnContext (who the worker and the offscreen document listen to)', () => {
+  const EXT_ID = 'lnckeodobpbbmfbdlpnegjpchgkehdlk'
+  const BASE = `chrome-extension://${EXT_ID}/`
+  const own = { id: EXT_ID, base: BASE, tabPages: [`${BASE}options.html`] }
+  const cases: [string, unknown, boolean][] = [
+    ['the popup', { id: EXT_ID, url: `${BASE}popup.html` }, true],
+    ['the offscreen document', { id: EXT_ID, url: `${BASE}offscreen.html` }, true],
+    ['the worker', { id: EXT_ID, url: `${BASE}worker.js` }, true],
+    ['the options page in its tab', { id: EXT_ID, url: `${BASE}options.html`, tab: { id: 4 } }, true],
+    ['the options page with a fragment', { id: EXT_ID, url: `${BASE}options.html#x`, tab: { id: 4 } }, true],
+    ['code injected into a page', { id: EXT_ID, url: 'https://example.com/watch', tab: { id: 4 }, frameId: 0 }, false],
+    ['injected code in a page that claims no tab', { id: EXT_ID, url: 'https://example.com/watch' }, false],
+    ['another extension page in a tab', { id: EXT_ID, url: `${BASE}popup.html`, tab: { id: 4 } }, false],
+    ['another extension', { id: 'abcdefghijklmnopabcdefghijklmnop', url: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/x.html' }, false],
+    ['our id on another base', { id: EXT_ID, url: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/popup.html' }, false],
+    ['no URL', { id: EXT_ID }, false],
+    ['no sender', undefined, false],
+  ]
+  it.each(cases)('%s', (_, sender, expected) => {
+    expect(isOwnContext(sender, own)).toBe(expected)
+  })
+  it('refuses every tab when no page is listed, and an empty id or base', () => {
+    expect(isOwnContext({ id: EXT_ID, url: `${BASE}options.html`, tab: { id: 1 } }, { id: EXT_ID, base: BASE })).toBe(false)
+    expect(isOwnContext({ id: '', url: BASE }, { id: '', base: BASE })).toBe(false)
+    expect(isOwnContext({ id: EXT_ID, url: 'https://example.com/' }, { id: EXT_ID, base: '' })).toBe(false)
   })
 })

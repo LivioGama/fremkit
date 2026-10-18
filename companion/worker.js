@@ -10,6 +10,7 @@ import { browserName } from './lib/browser.js'
 import { handshake } from './lib/handshake.js'
 import { closeOutcome } from './lib/link.js'
 import { idleDelay } from './lib/presence.js'
+import { isOwnContext } from './lib/sender.js'
 import * as protocol from './lib/protocol.js'
 import { cleanFrames, cleanState, control, embeddedPlayer, pickVideo, survey, videoFrameOf, youtubeVolume } from './lib/video.js'
 
@@ -40,6 +41,13 @@ const local = { installId: null, token: null, deviceId: null, name: null, pairin
 const session = { link: 'unpaired', share: null, lastError: null }
 
 const ready = (async () => {
+  // The token lives in `local`: only the extension's own pages and this worker may read it, never
+  // the code it injects into a page. (`session` is trusted contexts only by default; said again.)
+  await Promise.all(['local', 'session'].map(async (area) => {
+    try {
+      await chrome.storage[area].setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })
+    } catch { /* a browser without it: no content script of this extension reads storage anyway */ }
+  }))
   Object.assign(local, await chrome.storage.local.get(Object.keys(local)))
   Object.assign(session, await chrome.storage.session.get(Object.keys(session)))
   if (!local.installId) await saveLocal({ installId: crypto.randomUUID() })
@@ -715,8 +723,11 @@ chrome.permissions.onAdded.addListener(async (permissions) => {
   })
 })
 
+/** The popup and the offscreen document, plus the options page, which opens in a tab. */
+const OWN = { id: chrome.runtime.id, base: chrome.runtime.getURL(''), tabPages: [chrome.runtime.getURL('options.html')] }
+
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {
-  if (sender.id !== chrome.runtime.id || msg?.target !== 'worker') return
+  if (!isOwnContext(sender, OWN) || msg?.target !== 'worker') return
   const reply = (promise) => {
     promise.then(respond, (e) => respond({ ok: false, error: 'failed', detail: String(e?.message ?? e) }))
     return true

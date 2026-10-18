@@ -3,6 +3,7 @@
 // The worker holds the socket and relays the signalling; this document holds the media.
 
 import { loopbackAnswer, offerSdp } from './lib/sdp.js'
+import { isOwnContext } from './lib/sender.js'
 import { cropRect } from './lib/video.js'
 
 const FPS = 30
@@ -138,8 +139,11 @@ async function answer(receiverId, sdp) {
   await pc.setRemoteDescription({ type: 'answer', sdp: filtered })
 }
 
+/** Only the worker talks to this document; no page in a tab does. */
+const OWN = { id: chrome.runtime.id, base: chrome.runtime.getURL('') }
+
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {
-  if (sender.id !== chrome.runtime.id || msg?.target !== 'offscreen') return
+  if (!isOwnContext(sender, OWN) || msg?.target !== 'offscreen') return
   const reply = (promise) => {
     promise.then(respond, (e) => respond({ ok: false, error: String(e?.message ?? e) }))
     return true
