@@ -5,8 +5,12 @@ export interface Advertisement {
   stop(): void
 }
 
-/** `name` is the service instance name the Mac is listed under; `Fremkit` when omitted. */
-export type Advertiser = (port: number, name?: string) => Advertisement
+/**
+ * `name` is the service instance name the Mac is listed under; `Fremkit` when omitted. `address`,
+ * when known, goes in the TXT record as `a=<address> p=<port>` (the address the QR code carries):
+ * a device that cannot resolve the Mac's `.local` name still learns where to connect.
+ */
+export type Advertiser = (port: number, name?: string, address?: string | null) => Advertisement
 
 const DNS_SD = '/usr/bin/dns-sd'
 const PGREP = '/usr/bin/pgrep'
@@ -31,9 +35,15 @@ export interface AdvertiserDeps {
 }
 
 /** The exact argument list `dns-sd` is run with, so a stale one can be recognised by it. */
-function dnsSdArgs(port: number, name: string): string[] {
-  return ['-R', name, '_fremkit._tcp', 'local', String(port)]
+function dnsSdArgs(port: number, name: string, address: string | null): string[] {
+  const args = ['-R', name, '_fremkit._tcp', 'local', String(port)]
+  // `p` repeats the SRV port: a device that cannot resolve the SRV target cannot read it there.
+  if (address !== null && TXT_ADDRESS.test(address)) args.push(`a=${address}`, `p=${port}`)
+  return args
 }
+
+/** An IPv4 or IPv6 literal, possibly with a zone: all a TXT `a=` may carry. */
+const TXT_ADDRESS = /^[0-9A-Fa-f.:]+(%[0-9A-Za-z]+)?$/
 
 const realDeps: Required<AdvertiserDeps> = {
   platform: process.platform,
@@ -64,14 +74,15 @@ const realDeps: Required<AdvertiserDeps> = {
 /**
  * Kills the `dns-sd` an earlier run of the server left advertising this port: a server killed
  * before it could stop its child orphans it, and it keeps announcing a Mac nobody answers for.
- * Any `/usr/bin/dns-sd -R <any name> _fremkit._tcp local <this port>` is reaped whatever its name:
+ * Any `/usr/bin/dns-sd -R <any name> _fremkit._tcp local <this port> [a=<address> p=<this port>]` is reaped
+ * whatever its name and address:
  * an orphan from an older version ("Fremkit") or from before the Mac was renamed is just as stale.
  * The port is bound by this server by now, so no live Fremkit can own that advertisement.
  */
 function killStale(port: number, deps: Required<AdvertiserDeps>): void {
   // A regular expression to pgrep; the exact parse below is what decides.
   const output = deps.listProcesses('dns-sd -R .* _fremkit._tcp local')
-  const own = new RegExp(`^${DNS_SD.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} -R .+ _fremkit\\._tcp local ${port}$`)
+  const own = new RegExp(`^${DNS_SD.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} -R .+ _fremkit\\._tcp local ${port}(?: a=[0-9A-Za-z.:%]+ p=${port})?$`)
   for (const line of output.split('\n')) {
     const m = /^\s*(\d+) (.*)$/.exec(line)
     if (!m) continue
@@ -92,10 +103,10 @@ function killStale(port: number, deps: Required<AdvertiserDeps>): void {
  */
 export function createAdvertiser(deps: AdvertiserDeps = {}): Advertiser {
   const d: Required<AdvertiserDeps> = { ...realDeps, ...deps }
-  return (port, name = 'Fremkit') => {
+  return (port, name = 'Fremkit', address = null) => {
     if (d.platform !== 'darwin') return { stop: () => undefined }
     killStale(port, d)
-    const child = d.spawn(DNS_SD, dnsSdArgs(port, name))
+    const child = d.spawn(DNS_SD, dnsSdArgs(port, name, address))
     // A missing or failing dns-sd only costs discovery; the QR code still carries the address.
     child.on('error', () => undefined)
     const kill = (): void => {

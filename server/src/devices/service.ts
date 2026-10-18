@@ -112,6 +112,9 @@ export class DeviceService {
   private keyHash: string | null = null
   private keyHashKnown = false
   private bonjour: Advertisement | null = null
+  /** The name and TXT address `bonjour` was started with, to restart it when the address moves. */
+  private bonjourName = 'Fremkit'
+  private bonjourAddress: string | null = null
   private timer: NodeJS.Timeout | null = null
   /** The granted catalogue, as the policy reads it; dropped when the config or catalogue moves. */
   private manifests: Map<string, ChannelManifest> | null = null
@@ -323,7 +326,9 @@ export class DeviceService {
     }
     this.error = null
     this.updateHosts()
-    this.bonjour = this.advertiser(this.listener.port, await computerName(this.exec))
+    this.bonjourName = await computerName(this.exec)
+    this.bonjourAddress = await this.pickAddress(this.certAddresses)
+    this.bonjour = this.advertiser(this.listener.port, this.bonjourName, this.bonjourAddress)
     this.timer = setInterval(() => { void this.checkAddresses() }, ADDRESS_CHECK_MS)
     this.timer.unref()
     await this.store.setEnabled(true)
@@ -363,7 +368,8 @@ export class DeviceService {
 
   /**
    * Follows the Mac to a new address: re-issues the certificate from the same key (so the pin
-   * holds) and lets the new authority through the gate. Nothing happens when nothing changed.
+   * holds), lets the new authority through the gate, and advertises the new address in the
+   * Bonjour TXT record. Nothing happens when nothing changed.
    */
   private checkAddresses(): Promise<void> {
     return this.serialize(async () => {
@@ -378,6 +384,12 @@ export class DeviceService {
       this.hostName = hostName
       this.certAddresses = addresses
       this.updateHosts()
+      // The advertisement carries the address too (TXT `a=`): announce the new one.
+      const address = await this.pickAddress(addresses)
+      if (!this.listener.running || this.bonjour === null || address === this.bonjourAddress) return
+      this.bonjour.stop()
+      this.bonjourAddress = address
+      this.bonjour = this.advertiser(this.listener.port, this.bonjourName, address)
     }).catch((err: unknown) => {
       this.app.log.warn({ err: (err as Error).message }, 'could not follow a change of address')
     })

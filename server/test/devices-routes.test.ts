@@ -9,7 +9,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { CONFIG_VERSION, ConfigSchema } from '../src/config/schema.js'
 import { BrightnessService } from '../src/brightness/service.js'
-import { noAdvertise } from '../src/devices/bonjour.js'
+import { noAdvertise, type Advertiser } from '../src/devices/bonjour.js'
 import { RemoteListener } from '../src/devices/listener.js'
 import { fingerprintWords } from '../src/devices/fingerprint.js'
 import { execFileAsync, type Exec } from '../src/secrets/keychain.js'
@@ -401,6 +401,13 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
   let adir: string
   let aapp: FastifyInstance
   let addresses = ['192.0.2.10']
+  /** Every advertisement started, as `[address, stopped]`. */
+  const ads: { address: string | null | undefined; stopped: boolean }[] = []
+  const recordingAdvertise: Advertiser = (_port, _name, address) => {
+    const ad = { address, stopped: false }
+    ads.push(ad)
+    return { stop: () => { ad.stopped = true } }
+  }
 
   beforeAll(async () => {
     adir = await mkdtemp(join(tmpdir(), 'fremkit-devices-addr-'))
@@ -411,7 +418,7 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
       widgetsDir: join(process.cwd(), '..', 'widgets'),
       providers: [],
       devicesPort: 0,
-      devices: { exec, advertise: noAdvertise, lanAddresses: () => addresses, preferredAddress: async (a) => a[0] ?? null },
+      devices: { exec, advertise: recordingAdvertise, lanAddresses: () => addresses, preferredAddress: async (a) => a[0] ?? null },
     })
   })
   afterAll(async () => {
@@ -450,6 +457,9 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
       expect(cert.subjectAltName).not.toContain('192.0.2.10')
       // Same key, so the pin every paired device holds still matches.
       expect(spkiHash(cert.toString())).toBe(keyHash)
+      // The Bonjour TXT record follows: the old advertisement withdrawn, the new address announced.
+      await expect.poll(() => ads.length).toBe(2)
+      expect(ads).toEqual([{ address: '192.0.2.10', stopped: true }, { address: '198.51.100.7', stopped: false }])
       expect((await aapp.inject({ url: '/api/devices' })).json().keyHash).toBe(keyHash)
       // The gate follows: the new authority is in, the old one out.
       expect((await remote(aport, { path: '/', host: `198.51.100.7:${aport}` })).status).not.toBe(421)
@@ -458,6 +468,7 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
       const off = await aapp.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: false } })
       expect(off.json()).toMatchObject({ enabled: false, listening: false })
       expect(vi.getTimerCount()).toBe(before)
+      expect(ads[1].stopped).toBe(true)
     } finally {
       setCertificate.mockRestore()
       vi.useRealTimers()

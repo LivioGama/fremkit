@@ -24,7 +24,8 @@ tagged `vX.Y.Z`.
   widget. When the app is not open on that screen, the controls say so.
 - **A fingerprint for your Mac's key.** Under the pairing code, the Devices section shows four words
   derived from the Mac's key; a device that shows the same four words is talking to this Mac. The Mac
-  is also announced on the network under its computer name rather than "Fremkit".
+  is also announced on the network under its computer name rather than "Fremkit", with its address,
+  so an iPad finds it even where the Mac's `.local` name does not resolve.
 - **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another
   one, and give each its own layout. A pre-fill is shown as a preview first, naming the widgets
   that do not fit the new screen, and the Screen panel gives each screen its own address. A

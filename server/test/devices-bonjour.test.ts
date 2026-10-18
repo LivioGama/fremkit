@@ -44,6 +44,19 @@ describe('the Bonjour advertiser', () => {
     expect(child.kill).toHaveBeenCalledTimes(1)
   })
 
+  it('carries the address in the TXT record when it has one', () => {
+    const { spawn, advertise } = setup()
+    advertise(4243, 'Example Mac', '192.0.2.10')
+    expect(spawn).toHaveBeenLastCalledWith('/usr/bin/dns-sd', ['-R', 'Example Mac', '_fremkit._tcp', 'local', '4243', 'a=192.0.2.10', 'p=4243'])
+    advertise(4243, 'Example Mac', 'fe80::1%en0')
+    expect(spawn).toHaveBeenLastCalledWith('/usr/bin/dns-sd', ['-R', 'Example Mac', '_fremkit._tcp', 'local', '4243', 'a=fe80::1%en0', 'p=4243'])
+    advertise(4243, 'Example Mac', null)
+    expect(spawn).toHaveBeenLastCalledWith('/usr/bin/dns-sd', ['-R', 'Example Mac', '_fremkit._tcp', 'local', '4243'])
+    // Never anything that is not an address, even though dns-sd gets an argument list.
+    advertise(4243, 'Example Mac', 'x b=1')
+    expect(spawn).toHaveBeenLastCalledWith('/usr/bin/dns-sd', ['-R', 'Example Mac', '_fremkit._tcp', 'local', '4243'])
+  })
+
   it('kills the child synchronously when the process exits', () => {
     const { child, exitHooks, advertise } = setup()
     advertise(4243)
@@ -58,11 +71,15 @@ describe('the Bonjour advertiser', () => {
       '103 /usr/bin/dns-sd -R Fremkit _fremkit._tcp local 4243 extra',
       '104 /bin/sh -c /usr/bin/dns-sd -R Fremkit _fremkit._tcp local 4243',
       '105 /usr/bin/dns-sd -R Other _fremkit._tcp local 4243',
+      '106 /usr/bin/dns-sd -R Fremkit _fremkit._tcp local 4243 a=192.0.2.10 p=4243',
+      '107 /usr/bin/dns-sd -R Fremkit _fremkit._tcp local 4300 a=192.0.2.10 p=4300',
+      '108 /usr/bin/dns-sd -R Fremkit _fremkit._tcp local 4243 a=fe80::1%en0 p=4243',
+      '109 /usr/bin/dns-sd -R Fremkit _fremkit._tcp local 4243 a=192.0.2.10 p=4300',
       '',
     ].join('\n'))
     advertise(4243)
     expect(listProcesses).toHaveBeenCalled()
-    expect(kill.mock.calls).toEqual([[101], [105]])
+    expect(kill.mock.calls).toEqual([[101], [105], [106], [108]])
     // Cleaned before the new one is started.
     expect(kill.mock.invocationCallOrder[0]).toBeLessThan(spawn.mock.invocationCallOrder[0])
   })
