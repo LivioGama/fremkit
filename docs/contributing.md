@@ -3,6 +3,11 @@
 Notes for people working on Fremkit itself. For writing a widget — which needs none of this — see
 [writing-widgets.md](writing-widgets.md).
 
+Writing a widget needs a checkout and two commands: `pnpm widget:new <id>` writes one that works,
+`pnpm dev` reloads it on every save, and `pnpm widget:check <folder>` tells you what the registry
+would refuse before you open the pull request — see
+[Your first widget in five minutes](writing-widgets.md#your-first-widget-in-five-minutes).
+
 ## Language
 
 The repository is in English: code, comments, commit messages, documentation. The interface
@@ -40,6 +45,8 @@ pnpm typecheck
 pnpm helper:build   # native/dist/Fremkit Helper.app
 pnpm helper:install
 pnpm helper:test
+pnpm widget:new <id>      # a new widget in the author's folder (data/widgets-dev)
+pnpm widget:check <dir>   # the registry's and the installer's rules, before a pull request
 ```
 
 `pnpm dev` exports `FREMKIT_DEV=1`, which is what puts the Vite origin
@@ -47,7 +54,10 @@ pnpm helper:test
 WebSocket and a write from. Without it only `http://127.0.0.1:4242` and `http://localhost:4242`
 are trusted, plus the port `FREMKIT_PORT` moved a second checkout to. A production instance must
 not trust 5173: it is Vite's default port, so any unrelated project serving on it would be
-trusted to save this dashboard's config. Running Vite by hand (`pnpm --filter ui dev`) against a
+trusted to save this dashboard's config. It also exports `FREMKIT_WIDGET_DEV=1`: the server reads
+the widget author's folder (`data/widgets-dev`, or `FREMKIT_WIDGET_DEV_DIR`) and watches it and
+`widgets/`, reloading a widget's frames when its files are saved
+([writing-widgets.md](writing-widgets.md#your-first-widget-in-five-minutes)). Running Vite by hand (`pnpm --filter ui dev`) against a
 server started without the flag gives a dashboard whose WebSocket is refused — export
 `FREMKIT_DEV=1` for the server too.
 
@@ -55,11 +65,18 @@ server started without the flag gives a dashboard whose WebSocket is refused —
 
 The server answers only callers holding its access secret ([SECURITY.md](../SECURITY.md#the-local-access-secret)),
 which it writes to `~/Library/Application Support/Fremkit/access-<port>.token` (under
-`FREMKIT_SUPPORT_DIR` when set). The helper's windows need nothing. A browser needs a one-time
-link: `pnpm open` mints one through `POST /api/auth/code` and opens `/auth?code=…&next=…`, which
-sets the cookie and lands on the page. Under `pnpm dev`, `pnpm open --dev` opens it on Vite's
-origin instead — Vite proxies `/auth`, so the cookie belongs to `localhost:5173` — and `dev.sh`
-exports one secret for the session, so `tsx watch` restarting the server does not sign you out.
+`FREMKIT_SUPPORT_DIR` when set) once it listens, and removes when it exits. The helper's windows
+need nothing. A browser needs a one-time link: `pnpm open` mints one through `POST /api/auth/code`
+and opens `/auth?code=…&next=…`, which opens a session, sets its cookie and lands on the page.
+Under `pnpm dev`, `pnpm open --dev` opens it on Vite's origin instead — Vite proxies `/auth`, so
+the cookie belongs to `localhost:5173`. Sessions live in the server's memory: when `tsx watch`
+restarts the server, the page is refused and shows how to get back in — run `pnpm open --dev`
+again. `dev.sh` exports one secret for the whole session, so scripts are not affected.
+
+Anything that holds the secret and talks to the port should ask `GET /auth/proof?nonce=<random>`
+first, without a credential, and check the answer — HMAC-SHA256 of
+`fremkit-access-proof-v1:<nonce>` under the secret, base64url — before sending the secret: the
+helper does (`AccessProof.swift`).
 
 Scripts send `Authorization: Bearer <secret>`; `scripts/lib/access.sh` has the helpers, and
 hands the header to curl through a file descriptor rather than on the command line:
@@ -184,7 +201,7 @@ run:
 
 | Key | Default | What it is |
 |---|---|---|
-| `repoPath` | `~/fremkit` | the checkout whose server the helper supervises (`pnpm setup` writes the real path) |
+| `repoPath` | `~/fremkit` | the checkout whose server the helper supervises (`pnpm run setup` writes the real path) |
 | `url` | `http://127.0.0.1:4242/?kiosk=1` | what the kiosk window loads |
 | `adminUrl` | `http://127.0.0.1:4242/admin` | what the admin window loads |
 | `port` | `4242` | port watched to decide whether a server is already up |

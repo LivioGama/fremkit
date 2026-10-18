@@ -1,30 +1,14 @@
 node_modules/
 dist/
-data/secrets.json
-data/icons/
-data/*.bak
-data/*.tmp
-data/*.corrupt
-data/claude-usage.json
-data/claude-usage.json.tmp
-data/claude-sessions.json
-data/claude-sessions.json.*.tmp
+# Runtime state: the dashboard, its backups, the caches, installed widgets and themes,
+# secrets in file mode. Everything in data/ but the example config is the user's own.
+data/*
+!data/fremkit.example.json
 .DS_Store
 .vitest/
 native/.build/
 native/dist/
-data/claude-account.json
-data/claude-account.json.tmp
-# The disk map's last scans: folder names of this Mac.
-data/disk-map/
 .worktrees/
-data/backgrounds/
-# Widgets installed from the marketplace: third-party code the user chose, never ours to commit.
-data/widgets/
-data/fremkit.json
-data/fremkit.v3.json
-data/devices.json
-data/devices.json.corrupt
 # Working notes of the coding agents: local only
 docs/superpowers/
 .superpowers/

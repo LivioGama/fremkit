@@ -223,7 +223,7 @@ export function createDiskMapProvider(opts: DiskMapOptions): Provider<DiskMapSna
     await mkdir(saveDir, { recursive: true })
     const file = join(saveDir, saveName(h.root))
     const tmp = `${file}.${process.pid}.tmp`
-    await writeFile(tmp, body)
+    await writeFile(tmp, body, { mode: 0o600 })
     await rename(tmp, file)
   }
 

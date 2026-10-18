@@ -23,7 +23,7 @@ const ADDRESS = '192.0.2.10'
 
 /** `scutil` answers a fixed name; `openssl` is the real one. */
 const exec: Exec = (cmd, args) =>
-  cmd === 'scutil' ? Promise.resolve({ stdout: 'example\n' }) : execFileAsync(cmd, args)
+  cmd === '/usr/sbin/scutil' ? Promise.resolve({ stdout: 'example\n' }) : execFileAsync(cmd, args)
 
 const screen = (id: string, kind: 'edge' | 'device', viewport?: { width: number; height: number }) => ({
   id, name: id, kind,

@@ -33,7 +33,8 @@ export async function configRoutes(
     if (!parsed.success) {
       return reply.code(400).send({ errors: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`) })
     }
-    // Connections and the secrets backend do not change through here. /api/config carries them
+    // Connections, the secrets backend and the marketplace's consent records do not change
+    // through here. /api/config carries them
     // so the admin can read and write one config object, but a save only ever replays what the
     // connections API already stored. Otherwise a single PUT could point an existing connection
     // at another host — the manager would rebuild its provider with the *stored* secret and the
@@ -42,6 +43,10 @@ export async function configRoutes(
     const current = opts.store.get()
     parsed.data.connections = current.connections
     parsed.data.secrets = current.secrets
+    // Consent records and shares change only through the marketplace routes, which show the user
+    // what is granted. A stale admin tab saving an old copy must not bring back a revoked share
+    // or a consent the user withdrew, and a PUT must not forge one.
+    parsed.data.marketplace = { ...parsed.data.marketplace, installed: current.marketplace.installed }
 
     const errors = [
       ...validateLayout(parsed.data, opts.catalog.manifests),

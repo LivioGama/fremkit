@@ -25,6 +25,33 @@ interface State {
   pollAgain: boolean
   /** A `refresh()` arrived while a poll was in flight: poll once more, and publish that one. */
   refreshAgain: boolean
+  /**
+   * What the last poll said about itself, for the diagnostics report: `null` for a snapshot
+   * without an error, an error code otherwise, `undefined` before the first poll.
+   */
+  lastError: string | null | undefined
+}
+
+/** One channel as the diagnostics report sees it. */
+export interface ChannelStatus {
+  channel: string
+  /** Widgets watching it right now. */
+  watched: boolean
+  /** `null` when the last poll was clean, a code when it was not, absent before any poll. */
+  lastError?: string | null
+}
+
+/**
+ * An error a snapshot carries, as a code fit for a public report. A provider's `error` is meant
+ * to be a code (`offline`, `unauthorized`…); anything that does not look like one — a thrown
+ * error's message, which may quote a host or a path — is reported as `error` and nothing more.
+ */
+export function errorCode(data: unknown, threw: boolean): string | null {
+  if (threw) return 'exception'
+  if (typeof data !== 'object' || data === null || !('error' in data)) return null
+  const error = (data as { error: unknown }).error
+  if (error === undefined || error === null || error === false) return null
+  return typeof error === 'string' && /^[a-z][a-z0-9_-]{0,39}$/i.test(error) ? error : 'error'
 }
 
 export class ProviderRegistry {
@@ -52,7 +79,7 @@ export class ProviderRegistry {
     // away because the connection behind it was edited, so the replacement inherits them.
     const subscribers = previous?.subscribers ?? 0
     if (previous) this.teardown(previous, 'gone')
-    const state: State = { provider, subscribers, started: false, timer: null, backoffMs: 0, lastJson: undefined, inFlight: false, pollAgain: false, refreshAgain: false }
+    const state: State = { provider, subscribers, started: false, timer: null, backoffMs: 0, lastJson: undefined, inFlight: false, pollAgain: false, refreshAgain: false, lastError: undefined }
     this.states.set(provider.channel, state)
     if (state.subscribers > 0) this.activate(state)
   }
@@ -66,6 +93,15 @@ export class ProviderRegistry {
   }
 
   channels(): string[] { return [...this.states.keys()] }
+
+  /** Every channel, whether anybody watches it and how its last poll went. */
+  status(): ChannelStatus[] {
+    return [...this.states.values()].map((s) => ({
+      channel: s.provider.channel,
+      watched: s.subscribers > 0,
+      ...(s.lastError !== undefined ? { lastError: s.lastError } : {}),
+    }))
+  }
 
   /**
    * `privacy.showAccountEmail` changed: every provider that can publish the address answers again
@@ -192,10 +228,12 @@ export class ProviderRegistry {
     if (!this.isCurrent(s) || s.subscribers === 0 || !s.provider.poll) return
     s.inFlight = true
     let data: unknown
+    let threw = false
     try {
       data = await s.provider.poll()
       s.backoffMs = 0
     } catch (err) {
+      threw = true
       data = { error: (err as Error).message ?? String(err) }
       s.backoffMs = Math.min(s.backoffMs === 0 ? (s.provider.intervalMs ?? MAX_BACKOFF_MS) : s.backoffMs * 2, MAX_BACKOFF_MS)
     } finally {
@@ -203,6 +241,7 @@ export class ProviderRegistry {
     }
     // Checked again after the await, not only before it: this is where the replacement happens.
     if (!this.isCurrent(s)) return
+    s.lastError = errorCode(data, threw)
     if (s.pollAgain) {
       // Computed under a privacy setting the user has changed since: never published. Forgotten
       // again in case the channel went idle meanwhile, so nothing is cached for the next widget.

@@ -16,7 +16,7 @@ export type InterfaceMap = NodeJS.Dict<NetworkInterfaceInfo[]>
  */
 export async function localHostName(exec: Exec = execFileAsync): Promise<string | null> {
   try {
-    const { stdout } = await exec('scutil', ['--get', 'LocalHostName'])
+    const { stdout } = await exec('/usr/sbin/scutil', ['--get', 'LocalHostName'])
     const name = stdout.trim()
     return HOST_NAME_RE.test(name) ? name : null
   } catch {

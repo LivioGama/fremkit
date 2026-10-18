@@ -153,6 +153,7 @@ describe('createDockProvider', () => {
 
   it('refuses activate from a socket that is not on this machine', async () => {
     const state = new DockState({ iconsDir: join(await mkdtemp(join(tmpdir(), 'fremkit-dock-')), 'icons') })
+    state.update(APPS)
     const activated: string[] = []
     const provider = createDockProvider(state, { activate: async (b) => { activated.push(b) } })
     await expect(provider.commands!.activate({ bundleId: 'com.example.mail' }, { loopback: false, paired: false }))
@@ -166,6 +167,23 @@ describe('createDockProvider', () => {
   })
 })
 
+describe('activate is held to the Dock', () => {
+  it('opens only an app the current Dock snapshot shows', async () => {
+    const state = new DockState({ iconsDir: join(await mkdtemp(join(tmpdir(), 'fremkit-dock-')), 'icons') })
+    state.update(APPS)
+    const activated: string[] = []
+    const provider = createDockProvider(state, { activate: async (b) => { activated.push(b) } })
+    const local = { loopback: true, paired: false }
+    await expect(provider.commands!.activate({ bundleId: 'com.apple.Terminal' }, local)).rejects.toThrow('cette app n’est pas dans le Dock')
+    expect(activated).toEqual([])
+    await provider.commands!.activate({ bundleId: APPS[0].bundleId }, local)
+    expect(activated).toEqual([APPS[0].bundleId])
+    // Gone from the Dock, gone from reach.
+    state.update(APPS.filter((a) => a.bundleId !== APPS[0].bundleId))
+    await expect(provider.commands!.activate({ bundleId: APPS[0].bundleId }, local)).rejects.toThrow()
+  })
+})
+
 describe('the hub carries the socket origin into the dock command', () => {
   class FakeSocket extends EventEmitter {
     sent: unknown[] = []
@@ -176,6 +194,7 @@ describe('the hub carries the socket origin into the dock command', () => {
 
   const setup = async () => {
     const state = new DockState({ iconsDir: join(await mkdtemp(join(tmpdir(), 'fremkit-dock-')), 'icons') })
+    state.update(APPS)
     const activated: string[] = []
     let hub!: Hub
     const registry = new ProviderRegistry((c, d) => hub.broadcast(c, d))

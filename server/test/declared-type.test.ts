@@ -245,7 +245,7 @@ describe('the type a declaration amounts to', () => {
 })
 
 describe('keeping the registry in step with what is installed', () => {
-  const entry = (source: 'builtin' | 'installed', connection?: ConnectionDecl) =>
+  const entry = (source: 'builtin' | 'installed' | 'dev', connection?: ConnectionDecl) =>
     ({ manifest: { connection } as never, source })
 
   it('registers a declared type for an installed widget and drops it when it goes', () => {
@@ -266,6 +266,12 @@ describe('keeping the registry in step with what is installed', () => {
     ]
     const found = declaredFromCatalog(entries, (id) => entries.find(([i]) => i === id)?.[1].manifest)
     expect(found.map((f) => f.widgetId)).toEqual(['homey-flows'])
+  })
+
+  it('registers one for a widget being written, as it will once published', () => {
+    const entries: [string, ReturnType<typeof entry>][] = [['my-widget', entry('dev', bearer())]]
+    const found = declaredFromCatalog(entries, (id) => entries.find(([i]) => i === id)?.[1].manifest)
+    expect(found.map((f) => f.widgetId)).toEqual(['my-widget'])
   })
 
   it('registers nothing for a widget whose declaration was not granted', () => {

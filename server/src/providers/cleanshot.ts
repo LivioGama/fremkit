@@ -93,7 +93,7 @@ export const CLEANSHOT_BUNDLE_ID = 'pl.maketheweb.cleanshotx'
  */
 export async function runningCleanshotPath(run: Runner): Promise<string | undefined> {
   try {
-    const out = await run('lsappinfo', ['info', '-only', 'bundlepath', CLEANSHOT_BUNDLE_ID])
+    const out = await run('/usr/bin/lsappinfo', ['info', '-only', 'bundlepath', CLEANSHOT_BUNDLE_ID])
     const path = /"LSBundlePath"="([^"]+)"/.exec(out)?.[1]
     return path && path.startsWith('/') ? path : undefined
   } catch {
@@ -128,7 +128,7 @@ export function createCleanshotProvider(run: Runner = runProgram): Provider {
           return { ok: false, error: parsed.error.issues[0]?.message ?? tr(undefined, 'provider.invalidPayload') }
         }
         try {
-          await run('open', await openArgs(urlFor(parsed.data), run))
+          await run('/usr/bin/open', await openArgs(urlFor(parsed.data), run))
           return { ok: true }
         } catch (err) {
           return { ok: false, error: (err as Error).message || String(err) }

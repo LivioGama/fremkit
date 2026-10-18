@@ -4,7 +4,7 @@ import fastifyWebsocket from '@fastify/websocket'
 import { homedir } from 'node:os'
 import { shippedPaths } from './paths.js'
 import { join } from 'node:path'
-import { access } from 'node:fs/promises'
+import { access, mkdir } from 'node:fs/promises'
 import { ConfigStore } from './config/store.js'
 import { setServerLocale } from './i18n.js'
 import { ConnectionManager } from './connections/manager.js'
@@ -18,12 +18,14 @@ import { createSecretStore } from './secrets/index.js'
 import { configRoutes } from './config/routes.js'
 import { WidgetCatalog } from './widgets/catalog.js'
 import { installedWidgetsDir } from './widgets/installed.js'
+import { WIDGET_DEV_CHANNEL, WidgetDevWatcher } from './widgets/dev.js'
 import { Registry } from './marketplace/registry.js'
 import { marketplaceRoutes } from './marketplace/routes.js'
 import { recoverStaging } from './marketplace/install.js'
 import { ThemeCatalog } from './themes/catalog.js'
 import { installedThemesDir } from './themes/installed.js'
 import { themeRoutes } from './themes/routes.js'
+import { createThemeProvider } from './themes/schedule.js'
 import { widgetRoutes } from './widgets/routes.js'
 import { ProviderRegistry } from './providers/registry.js'
 import type { Provider } from './providers/types.js'
@@ -80,14 +82,28 @@ import { deviceRoutes } from './devices/routes.js'
 import { REMOTE_PORT } from './devices/listener.js'
 import type { Advertiser } from './devices/bonjour.js'
 import type { Exec } from './secrets/keychain.js'
+import { diagnosticsRoutes } from './diagnostics/routes.js'
+import type { LogTail } from './diagnostics/log-tail.js'
+import { isDeclaredType } from './connections/declared.js'
+import { tightenDataDir } from './data-permissions.js'
 
 export interface AppOptions {
   dataDir: string
+  /**
+   * This instance may take over the keychain items an earlier version filed under the shared
+   * `fremkit` service. Only the live server (port 4242) passes it; see `secrets/keychain.ts`.
+   */
+  adoptLegacyKeychain?: boolean
   widgetsDir: string
   /** Development only: a registry served from somewhere else. See `server/src/index.ts`. */
   registryUrl?: string
   /** Set with `registryUrl`, and only under `FREMKIT_DEV=1`; see `RegistryOptions.dev`. */
   registryDev?: boolean
+  /**
+   * The widget author's folder, read and watched only when set — which `index.ts` does under
+   * `FREMKIT_WIDGET_DEV=1` and nowhere else. See `widgets/dev.ts`.
+   */
+  widgetDevDir?: string
   /** Where the themes live. Defaults to the repository folder, which is what ships the built-in one. */
   themesDir?: string
   /** Only ever passed by the tests, which need to look inside what the proxy cached. */
@@ -99,6 +115,11 @@ export interface AppOptions {
   wallpaperPath?: string
   providers?: Provider[]
   logger?: boolean
+  /**
+   * What this process has written to its log, for `GET /api/diagnostics`. `index.ts` installs
+   * one on the real streams; the tests leave it out and the report says the log is unavailable.
+   */
+  logTail?: LogTail
   claudeTranscriptsDir?: string
   /** Overrides the built-in connection types; tests inject fakes here. */
   connectionTypes?: ConnectionType[]
@@ -139,13 +160,21 @@ export interface AppOptions {
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // The query string is stripped from every logged request line: see http/logging.ts. Typed
   // explicitly, or an inline object literal sends TypeScript down Fastify's http2 overload.
-  const serverOptions: FastifyServerOptions = { logger: opts.logger ? LOGGER_OPTIONS : false }
+  //
+  // With a log tail, pino writes through `process.stdout` rather than straight to descriptor 1,
+  // so the tail's copy of the stream sees the request lines too.
+  const logger = opts.logger
+    ? (opts.logTail ? { ...(LOGGER_OPTIONS as object), stream: process.stdout } : LOGGER_OPTIONS)
+    : false
+  const serverOptions: FastifyServerOptions = { logger }
   const app = Fastify(serverOptions)
   // The paired device a remote request authenticated as (see `net/remote.ts`). Declared up front
   // with a null value so every request has the same shape; only the devices gate sets it.
   app.decorateRequest('deviceId', null)
   if (opts.onRoute) app.addHook('onRoute', opts.onRoute)
 
+  // Private before anything is read from it or written to it: see data-permissions.ts.
+  await tightenDataDir(opts.dataDir)
   const store = new ConfigStore(join(opts.dataDir, 'fremkit.json'))
   await store.load()
   // Providers, the proxy and the connection types are far from any request, so they read the
@@ -163,7 +192,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // the config store would be racing too — so the comment says what is true rather than the
   // boot growing a lockfile for a case nobody is in.
   await recoverStaging(installedDir)
-  const catalog = new WidgetCatalog(opts.widgetsDir, installedDir)
+  // Created up front so the watcher has something to watch and `pnpm widget:new` somewhere to write.
+  if (opts.widgetDevDir) await mkdir(opts.widgetDevDir, { recursive: true })
+  const catalog = new WidgetCatalog(opts.widgetsDir, installedDir, opts.widgetDevDir)
   await catalog.scan()
   const themes = new ThemeCatalog(
     opts.themesDir ?? shippedPaths().themesDir,
@@ -245,7 +276,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // A paired device may set only its own screen's brightness: see mayCommandBrightness. Read
   // at command time, so a device moved to another screen (or unpaired) is judged as it is now.
   registry.register(createBrightnessProvider(brightness, brightnessChanged, (id) => deviceService.deviceScreenOf(id)))
-  const secrets = createSecretStore(store.get().secrets.backend, opts.dataDir)
+  // The theme in force, day or night: see themes/schedule.ts.
+  registry.register(createThemeProvider(() => store.get()))
+  const secrets = createSecretStore(store.get().secrets.backend, opts.dataDir, { adoptLegacyKeychain: opts.adoptLegacyKeychain === true })
   // v2 → v3 moved the Homey connection to the type its widget declares, and the declaration
   // calls the key `token` where the coded type called it `apiKey`. The config half of that is in
   // `migrateConfig`; this is the half that needs the secret store. Idempotent, so it costs one
@@ -297,6 +330,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     hub.broadcast('config', cfg)
     brightness.snapshot()
     brightnessChanged()
+    registry.refresh('theme')
     // Fire and forget: a failed sync must not break the save that triggered it.
     void connections.sync(cfg.connections)
       .then(() => retainCameras(cfg))
@@ -371,7 +405,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     dev: process.env.FREMKIT_DEV === '1',
     screenOfDevice,
   })
-  await app.register(themeRoutes, { catalog: themes })
+  await app.register(themeRoutes, { catalog: themes, config: () => store.get() })
   await app.register(proxyRoutes, { catalog, store, secrets, cache: connCache, screenOfDevice })
   const marketplaceRegistry = new Registry({
     ...(opts.registryUrl ? { url: opts.registryUrl } : {}),
@@ -431,6 +465,23 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     config: store,
     reportBrightness: (screenId, report) => { brightness.deviceReport(screenId, report); brightnessChanged() },
   })
+  await app.register(diagnosticsRoutes, {
+    deps: {
+      config: () => store.get(),
+      widget: (id) => {
+        const entry = catalog.entry(id)
+        return entry ? { version: entry.manifest.version, source: entry.source } : undefined
+      },
+      connectionKind: (type) => (isDeclaredType(type) ? 'declared' : connectionTypes.get(type) ? 'coded' : 'unknown'),
+      channelFor: (connection) => connections.channelFor(connection),
+      secretsFor: (connection) => connections.secretsFor(connection),
+      channels: () => registry.status(),
+      devices: () => devices.list(),
+      remoteAccess: () => devices.enabled,
+      accessToken: opts.accessToken,
+      ...(opts.logTail ? { log: (count: number) => opts.logTail!.recent(count) } : {}),
+    },
+  })
   app.addHook('onClose', async () => { await deviceService.close() })
 
   if (opts.uiDist && (await access(opts.uiDist).then(() => true, () => false))) {
@@ -441,6 +492,22 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   }
 
   app.addHook('onClose', async () => { registry.stop(); bambuCameras.stopAll(); await tracker.flush(); await usage.flush() })
+
+  // Writing a widget: a save reloads its frames, a manifest change rescans first so the frames
+  // come back with the new one. The built-ins are watched too, for whoever works on those.
+  if (opts.widgetDevDir) {
+    const watcher = new WidgetDevWatcher({
+      roots: [opts.widgetDevDir, opts.widgetsDir],
+      onReload: async (reload) => {
+        if (reload.manifest) await catalog.scan()
+        hub.notify(WIDGET_DEV_CHANNEL, reload)
+      },
+      onError: (error) => app.log.warn({ err: error }, 'widget watcher'),
+    })
+    watcher.start()
+    app.log.info({ dir: opts.widgetDevDir }, 'widget development: reading and watching the author folder')
+    app.addHook('onClose', async () => { watcher.close() })
+  }
   // Last: it may start the remote listener, which readies the app and so closes its route table.
   await deviceService.init()
   return app

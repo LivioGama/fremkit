@@ -1,7 +1,7 @@
 # Releasing Fremkit.app
 
 How the downloadable app is built, signed, notarized and published. Contributors never need any
-of this: the source install (`pnpm setup`) builds the developer helper, which runs a checkout.
+of this: the source install (`pnpm run setup`) builds the developer helper, which runs a checkout.
 
 ## What the app is
 
@@ -61,7 +61,7 @@ Still to do:
    then builds and signs the app, notarizes and staples it, builds, signs, notarizes and staples
    the DMG, zips the app for Sparkle and signs the zip with the private key from the keychain
    (macOS asks once whether `sign_update` may read it), writes `native/dist/appcast.xml` from
-   the changelog section, and fills the cask's `version` and `sha256`. Notarization takes a few
+   the changelog section and signs it with the same key, and fills the cask's `version` and `sha256`. Notarization takes a few
    minutes per submission; a refusal prints Apple's log.
 3. Run the commands it prints, in order: commit the cask, tag and push, `gh release create` with
    the DMG, the zip and `appcast.xml`, then copy the cask into the tap and push it.
@@ -76,9 +76,12 @@ The app's `SUFeedURL` is
 redirects to the `appcast.xml` of the newest published release. Publishing the release is then
 the one step that offers the update: the archive and the feed naming it appear together, a draft
 or a failed upload offers nothing, and there is no GitHub Pages branch to keep in step or to
-commit to. The feed carries the newest release only, which is all Sparkle needs; the update
-itself is verified by its EdDSA signature and by the Developer ID signature of the new app, not
-by where the feed lives.
+commit to. The feed carries the newest release only, which is all Sparkle needs. The feed is
+itself EdDSA-signed (`SURequireSignedFeed`: the app refuses an unsigned or altered one), and the
+update is verified by its own EdDSA signature *before it is extracted*
+(`SUVerifyUpdateBeforeExtraction`) and by the Developer ID signature of the new app — none of it
+depends on where the feed lives. Since builds require a signed feed, a feed published by hand
+must be signed too: `sign_update appcast.xml` after the last edit.
 
 ## Testing an update locally
 
@@ -100,7 +103,10 @@ FREMKIT_APP_VERSION=0.2.0 bash scripts/build-app.sh && ditto native/dist/Fremkit
 FREMKIT_APP_VERSION=0.2.1 bash scripts/build-app.sh
 ditto -c -k --sequesterRsrc --keepParent native/dist/Fremkit.app /tmp/fremkit-sparkle/feed/Fremkit-0.2.1.zip
 native/.build/app/sparkle-2.10.0/bin/sign_update --ed-key-file /tmp/fremkit-sparkle/private.key /tmp/fremkit-sparkle/feed/Fremkit-0.2.1.zip
-# then node scripts/lib/appcast.mjs appcast … > /tmp/fremkit-sparkle/feed/appcast.xml, and
+# then node scripts/lib/appcast.mjs appcast … > /tmp/fremkit-sparkle/feed/appcast.xml, sign it
+# (the app requires a signed feed):
+native/.build/app/sparkle-2.10.0/bin/sign_update --ed-key-file /tmp/fremkit-sparkle/private.key /tmp/fremkit-sparkle/feed/appcast.xml
+# and serve it
 python3 -m http.server 8765 --bind 127.0.0.1 --directory /tmp/fremkit-sparkle/feed
 ```
 

@@ -195,3 +195,6 @@ export class FrameTrust {
 export function mayListApps(subscriptions: string[] | undefined): boolean {
   return channelAllowed(subscriptions ?? [], 'dock')
 }
+
+/** Dispatched on the host window when a widget asks, through the bridge, to hold swipes off. */
+export const HOLD_SWIPE_EVENT = 'fremkit:hold-swipe'

@@ -3,7 +3,22 @@ import { buildApp } from './app.js'
 import { providers } from './providers/index.js'
 import { shippedPaths } from './paths.js'
 import { DEFAULT_BACKGROUND } from './backgrounds/seed.js'
-import { accessTokenPath, resolveAccessToken, writeAccessToken } from './http/access-file.js'
+import { safePath } from './system-path.js'
+import { widgetDevDir } from './widgets/dev.js'
+import { accessTokenPath, removeAccessToken, resolveAccessToken, writeAccessToken } from './http/access-file.js'
+
+import { helperLogPath, LogTail } from './diagnostics/log-tail.js'
+
+// Every file and folder this process (and its children) creates is this account's alone; the data
+// folder's older files are brought to the same modes at start (data-permissions.ts).
+process.umask(0o077)
+
+// System folders first on PATH, for every child this process runs: see system-path.ts.
+process.env.PATH = safePath(process.env.PATH)
+
+// First, so the diagnostics report sees every line this process writes, the boot's included.
+const logTail = new LogTail(helperLogPath())
+logTail.install()
 
 // A checkout's own folders, or the app bundle's when the helper sets `FREMKIT_ROOT`: see paths.ts.
 let shipped: ReturnType<typeof shippedPaths>
@@ -23,8 +38,8 @@ const port = Number(process.env.FREMKIT_PORT) || 4242
  *
  * `FREMKIT_DATA_DIR` is what makes a from-scratch run possible on the live checkout without
  * moving anything: the dashboard, the connections list and the background library all come from
- * here, so pointing it elsewhere gives a brand-new install. The keychain is keyed by connection
- * id, so a fresh config never names the real items and they are left untouched.
+ * here, so pointing it elsewhere gives a brand-new install. Keychain items are filed per data
+ * folder (`instanceService`), so another data folder never reads or deletes the real ones.
  *
  * Absolute only: a relative path would be read against whatever directory the process happened
  * to start in, which for the helper's child is the checkout and for a shell is anywhere.
@@ -41,6 +56,18 @@ if (!configured && process.env.FREMKIT_ROOT) {
   process.exit(1)
 }
 const dataDir = configured || `${shipped.root}/data`
+
+/**
+ * Writing a widget (`FREMKIT_WIDGET_DEV=1`, which `pnpm dev` exports): the author's folder is read
+ * beside the built-ins and watched, and a save reloads the widget. See `widgets/dev.ts`.
+ */
+let devDir: string | undefined
+try {
+  devDir = widgetDevDir(process.env, dataDir)
+} catch (error) {
+  console.error(`fremkit: ${(error as Error).message}`)
+  process.exit(1)
+}
 
 /**
  * A registry served from somewhere else, for development only.
@@ -73,12 +100,13 @@ if (access.rejected) console.error('fremkit: FREMKIT_ACCESS_TOKEN is not a valid
 const tokenFile = accessTokenPath(port)
 
 async function main(): Promise<void> {
-  // Written before the server listens, so whoever sees the port answer can already read it.
-  await writeAccessToken(tokenFile, access.token)
   const app = await buildApp({
     accessToken: access.token,
     dataDir,
+    // Keychain items from before they were filed per data folder belong to the live instance.
+    adoptLegacyKeychain: port === 4242,
     widgetsDir: shipped.widgetsDir,
+    ...(devDir ? { widgetDevDir: devDir } : {}),
     ...(registryUrl ? { registryUrl, registryDev: true } : {}),
     themesDir: shipped.themesDir,
     uiDist: shipped.uiDist,
@@ -86,10 +114,16 @@ async function main(): Promise<void> {
     wallpaperPath: join(shipped.wallpaperDir, DEFAULT_BACKGROUND),
     providers,
     logger: true,
+    logTail,
     port,
   })
   installShutdown(app)
   await app.listen({ port, host: '127.0.0.1' })
+  // Written once the port is ours, and removed on the way out: the file names a server that is
+  // listening, never one that failed to bind or has gone. The helper knows the secret of a
+  // server it spawned without reading this; scripts and a helper facing a `pnpm dev` read it.
+  await writeAccessToken(tokenFile, access.token)
+  process.on('exit', () => removeAccessToken(tokenFile, access.token))
   app.log.info({ tokenFile, source: access.source }, 'local access secret written')
 }
 

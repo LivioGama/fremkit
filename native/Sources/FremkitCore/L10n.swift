@@ -15,6 +15,8 @@ public enum Language: String {
 public enum L10nKey: String, CaseIterable {
     // Server state line
     case serverExternal
+    /// One `%d`: the port.
+    case serverForeign
     case serverStarting
     case serverRunning
     case serverStopped
@@ -55,6 +57,8 @@ public enum L10nKey: String, CaseIterable {
     case toggleManageServer
     case toggleLaunchAtLogin
     case openLog
+    case copyDiagnostics
+    case diagnosticsCopied
     /// Only in the app, which updates itself through Sparkle.
     case checkForUpdates
     case quit
@@ -87,6 +91,7 @@ public enum L10nKey: String, CaseIterable {
 public enum L10n {
     private static let fr: [L10nKey: String] = [
         .serverExternal: "Serveur : externe",
+        .serverForeign: "Serveur : le port %d est pris par un autre programme",
         .serverStarting: "Serveur : démarrage…",
         .serverRunning: "Serveur : lancé",
         .serverStopped: "Serveur : arrêté",
@@ -121,6 +126,8 @@ public enum L10n {
         .toggleManageServer: "Gérer le serveur",
         .toggleLaunchAtLogin: "Lancer au login",
         .openLog: "Journal…",
+        .copyDiagnostics: "Copier le diagnostic",
+        .diagnosticsCopied: "Diagnostic copié",
         .checkForUpdates: "Rechercher les mises à jour…",
         .quit: "Quitter",
 
@@ -147,6 +154,7 @@ public enum L10n {
 
     private static let en: [L10nKey: String] = [
         .serverExternal: "Server: external",
+        .serverForeign: "Server: port %d is held by another program",
         .serverStarting: "Server: starting…",
         .serverRunning: "Server: running",
         .serverStopped: "Server: stopped",
@@ -181,6 +189,8 @@ public enum L10n {
         .toggleManageServer: "Manage the server",
         .toggleLaunchAtLogin: "Launch at login",
         .openLog: "Log…",
+        .copyDiagnostics: "Copy diagnostics",
+        .diagnosticsCopied: "Diagnostics copied",
         .checkForUpdates: "Check for Updates…",
         .quit: "Quit",
 

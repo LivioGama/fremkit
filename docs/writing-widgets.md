@@ -4,26 +4,75 @@ A widget is a folder with a manifest and an HTML page. There is no build step, n
 package to install: the page runs in a sandboxed iframe, and a small bridge object talks to the
 dashboard for it.
 
+## Your first widget in five minutes
+
+From a checkout of Fremkit, after `pnpm install`:
+
+```sh
+pnpm dev                     # a server that reads your widgets and reloads them on save
+pnpm open --dev /admin       # in another terminal: the editor, signed in
+pnpm widget:new my-widget    # answers a few questions and writes a working widget
+```
+
+`widget:new` asks for the name and a one-line description in French and English, the
+[category](#categories), the size in grid cells, the [data channel](#channels) it reads (none
+gives you a small touch counter to start from) and your handle. Every answer can be a flag
+instead — `--name-en`, `--name-fr`, `--description-en`, `--description-fr`, `--category`,
+`--size 8x4`, `--channel system`, `--author`, `--no-compact`, and `--yes` to take the defaults.
+It refuses an id that is not `[a-z0-9_-]+` or that is already taken, writes
+`data/widgets-dev/my-widget/` (a `manifest.json`, an `index.html` and a `CHANGELOG.md`), and tells
+the running server to rescan: the widget is in the admin's library, ready to drop on a page.
+
+Now edit `index.html`. Every save reloads the widget wherever it is shown — the dashboard, the
+navigation bar, the admin's preview — and saving `manifest.json` reads the catalogue again first,
+so a new setting or channel is there when the page comes back. The generated page already follows
+the [conventions](#conventions): no background of its own, the theme's accent, a layout for a
+light tile, one for an accent-filled one and one for the bar, every string in both languages.
+
+When it does what you want, check it against the rules the registry and the installer apply:
+
+```sh
+pnpm widget:check data/widgets-dev/my-widget
+```
+
+It reports what would be refused — a text in one language only, a missing `author`, a script
+loaded from outside the folder, a private host, a version with no changelog entry, a file the
+package may not carry — and then [publishing it](#publishing-it) is a pull request.
+
+**Where it lives.** `pnpm dev` exports `FREMKIT_WIDGET_DEV=1`, which makes the server read a third
+folder, the author's: `<data>/widgets-dev`, or the absolute path in `FREMKIT_WIDGET_DEV_DIR`.
+Point that at the `widgets/` of your clone of the
+[registry](https://github.com/fdussert/fremkit-sietch) and you write the widget where its pull
+request comes from (`pnpm widget:new my-widget --dir ../fremkit-sietch/widgets` writes there).
+A widget in the author's folder gets what its manifest asks for, with no consent dialog — you are
+the one writing it — except a channel reserved to built-in widgets, refused as it is everywhere.
+It never takes the id of a built-in or an installed widget. Without the flag — the helper's
+server, the app — the folder is not read and nothing is watched; to try a widget beside the live
+dashboard, run a second server on another port:
+`FREMKIT_WIDGET_DEV=1 FREMKIT_PORT=4301 pnpm start`, then `pnpm widget:new my-widget --port 4301`.
+
 ## The folder
 
 ```
-widgets/
-  my-widget/
-    manifest.json
-    index.html
+my-widget/
+  manifest.json
+  index.html
+  CHANGELOG.md     # for the registry; never packed
 ```
 
-The folder name and the manifest's `id` must match the shape `[a-z0-9_-]+`. Drop the folder in
-`widgets/`, then press the rescan button (⟳) at the top of the admin's widget library — it calls
-`POST /api/widgets/rescan` and the widget appears without restarting the server. A manifest that
-does not validate is reported there rather than silently ignored.
+The folder name and the manifest's `id` must match the shape `[a-z0-9_-]+`. A manifest that does
+not validate is reported in the admin's widget library rather than silently ignored; the rescan
+button (⟳) there reads the folders again (`POST /api/widgets/rescan`), which a server reading the
+author's folder does by itself on every manifest save.
 
-Fremkit reads widgets from two folders. `widgets/` in the checkout holds the ones that ship with
-the server: this is where you develop, and they are the reason a fresh install works with no
-network. `data/widgets/` holds the ones installed from the
-[marketplace](marketplace.md), and is written by the admin and by nothing else — it is git-ignored, it moves with `FREMKIT_DATA_DIR`, and a widget
-there can never take the id of a built-in: the installer refuses the collision, and a folder
-dropped in by hand is reported as an error while the built-in keeps the id.
+Fremkit reads widgets from up to three folders. `widgets/` in the checkout holds the ones that
+ship with the server — the reason a fresh install works with no network; a new widget belongs on
+the registry, not there. `data/widgets/` holds the ones installed from the
+[marketplace](marketplace.md), and is written by the admin and by nothing else — it is
+git-ignored, it moves with `FREMKIT_DATA_DIR`, and a widget there can never take the id of a
+built-in: the installer refuses the collision, and a folder dropped in by hand is reported as an
+error while the built-in keeps the id (and is granted nothing, having no consent record). The
+author's folder, above, is read only under `FREMKIT_WIDGET_DEV=1`.
 
 ## manifest.json
 
@@ -212,7 +261,7 @@ installing it and leaving the call to fail.
 |---|---|---|
 | `1` | 0.2.0 | Everything not listed below |
 | `2` | 0.3.0 | `favicon(url)`, `image(url)`, `installedApps()`, `appIcon(bundleId)` |
-| `3` | next release | `screen` |
+| `3` | next release | `screen`, `holdSwipe` |
 
 A widget calling `installedApps()` with `"sdk": 1` would install on 0.2.0 and find the method
 missing. Data channels are not generations: a channel the running Fremkit has no provider for
@@ -226,6 +275,7 @@ than wait.
 | `Fremkit.sdk` | The bridge generation this Fremkit speaks, as a number |
 | `Fremkit.instanceId` | This instance's id |
 | `Fremkit.screen` | The id of the screen the widget is drawn on (the Edge, a paired device), or `null` when the host does not say. For data that is per screen, like brightness. Generation 3 |
+| `Fremkit.holdSwipe()` | Keeps the page from swiping for half a second. Call it on every move of a slider or a knob: a quick slide arrives as wheel events at the finger, and once the finger leaves the widget they would land on the dashboard and turn the page. Generation 3 |
 | `Fremkit.settings` | The settings object, manifest defaults merged in |
 | `Fremkit.locale` | `'fr'` or `'en'` |
 | `Fremkit.showTitle` | Whether the frame drew the title — a widget must never draw its own |
@@ -526,7 +576,8 @@ editor still wins. See [themes.md](themes.md).
 
 A widget that works is a pull request on the
 [registry](https://github.com/fdussert/fremkit-sietch): one folder under `widgets/<id>/`, and
-its CONTRIBUTING is the whole procedure. The CI applies the package rules — no dotfile, no
+its CONTRIBUTING is the whole procedure. Run `pnpm widget:check <folder>` first: it applies the
+same rules, so the pull request's CI has nothing new to tell you. The CI applies the package rules — no dotfile, no
 symlink, no off-package script, size ceilings, a manifest that validates, a `version` that goes
 up — and the merge publishes a zip and an index entry that every Fremkit can install from.
 

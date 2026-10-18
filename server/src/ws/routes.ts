@@ -4,7 +4,7 @@ import { isLocalRequest, isRemoteRequest } from '../net/remote.js'
 
 /**
  * Origins allowed to drive this server — the WebSocket, and every write, through the gate in
- * `app.ts`: the production port, and the one `FREMKIT_PORT` moves a second checkout to.
+ * `app.ts`: its own port, which is `FREMKIT_PORT` when set and 4242 otherwise.
  *
  * The Vite dev server on `:5173` is on the list only when `FREMKIT_DEV=1`, which `scripts/dev.sh`
  * sets. Trusting it unconditionally meant that any unrelated project running Vite — 5173 is its
@@ -14,9 +14,11 @@ import { isLocalRequest, isRemoteRequest } from '../net/remote.js'
  * can set it without reaching into module state.
  */
 export function allowedOrigins(): string[] {
-  const ports = new Set([4242])
+  // This server's own port, and only that: a second checkout on 4301 must not take writes from
+  // pages the live server on 4242 served (or from whatever else holds 4242 at the time).
   const configured = Number(process.env.FREMKIT_PORT)
-  if (Number.isInteger(configured) && configured > 0 && configured < 65536) ports.add(configured)
+  const own = Number.isInteger(configured) && configured > 0 && configured < 65536 ? configured : 4242
+  const ports = new Set([own])
   if (process.env.FREMKIT_DEV === '1') ports.add(5173)
   return [...ports].flatMap((port) => [`http://127.0.0.1:${port}`, `http://localhost:${port}`])
 }

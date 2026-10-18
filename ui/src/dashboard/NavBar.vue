@@ -33,6 +33,8 @@ const emit = defineEmits<{
   tap: [item: NavItem, el: Element]
   /** The page buttons asked for the admin — a long press, or a double tap. */
   admin: []
+  /** The editor's preview only: a right click on a bar widget, for its menu. */
+  itemMenu: [item: NavItem, event: MouseEvent]
 }>()
 
 /**
@@ -310,6 +312,18 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', measureNames)
 })
 /** The items of one cluster, in their configured order. */
+/**
+ * The editor's right click on a bar widget. Listened for on the bar itself and found by position:
+ * the swipe handler has captured the pointer by then, so the event is aimed at the bar, not at the
+ * widget under the pointer. Only in the editor's Edit mode; the screen keeps its own gestures.
+ */
+function onItemMenu(e: MouseEvent): void {
+  if (!props.edit) return
+  const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-nav-instance]')
+  const item = props.navItems.find((x) => x.instanceId === el?.getAttribute('data-nav-instance'))
+  if (item) emit('itemMenu', item, e)
+}
+
 const cluster = (slot: NavSlot): NavItem[] => props.navItems.filter((item) => item.slot === slot)
 /** The manifest of the widget an item names; none for a widget gone from the config or the disk. */
 const manifestOf = (item: NavItem): WidgetManifest | undefined => {
@@ -354,7 +368,7 @@ const style = computed<Record<string, string | number>>(() => {
 </script>
 
 <template>
-  <nav :style="style" :class="{ named: (navStyle ?? DEFAULT_NAV_STYLE) === 'names' }"
+  <nav :style="style" :class="{ named: (navStyle ?? DEFAULT_NAV_STYLE) === 'names' }" @contextmenu="onItemMenu"
     @pointerdown="s.down" @pointerup="s.up" @pointercancel="cancelNavigation" @wheel="s.wheel">
     <!--
       Equal outside columns keep page navigation centred. Named pages also reserve each cluster's
@@ -373,6 +387,7 @@ const style = computed<Record<string, string | number>>(() => {
         :cell="cell"
         :height="height"
         :edit="edit"
+        :data-nav-instance="item.instanceId"
         @tap="emit('tap', item, $event)"
       />
     </div>

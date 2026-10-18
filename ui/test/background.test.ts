@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DEFAULT_WIDGET_DIM, backgroundStyle, rootBackgroundStyle, backgroundUrl, fade, surfaceOpacity, widgetBackgroundStyle, widgetDim } from '../src/shared/background'
+import { DEFAULT_WIDGET_DIM, pageBackground, backgroundStyle, rootBackgroundStyle, backgroundUrl, fade, surfaceOpacity, widgetBackgroundStyle, widgetDim } from '../src/shared/background'
 
 describe('backgroundUrl', () => {
   it('points at the backgrounds route and escapes the name', () => {
@@ -127,5 +127,17 @@ describe('fade', () => {
   })
   it('mixes a CSS variable, whose value only the browser knows', () => {
     expect(fade('var(--surface)', 0.4)).toBe('color-mix(in srgb, var(--surface) 40%, transparent)')
+  })
+})
+
+describe('pageBackground', () => {
+  const display = { background: { image: 'screen.png' } }
+  it('is the screen\'s for a page without one', () => {
+    expect(pageBackground(display, { })).toEqual({ image: 'screen.png' })
+    expect(pageBackground(display, null)).toEqual({ image: 'screen.png' })
+    expect(pageBackground({}, {})).toBeUndefined()
+  })
+  it('is the page\'s own, whole, when it has one', () => {
+    expect(pageBackground(display, { background: { color: '#101820' } })).toEqual({ color: '#101820' })
   })
 })

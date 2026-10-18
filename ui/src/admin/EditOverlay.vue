@@ -10,6 +10,9 @@ import { pick, useI18n } from '../shared/i18n'
 import { screensShowing, tileOf } from '../shared/screens'
 import { DND_EXISTING_TYPE, DND_TYPE, useAdminStore } from './store'
 import { fitAround, fits, moveRect, resizeRect, snapPoint, type Handle, type Rect } from './layout'
+import { openContextMenu } from '../shared/ui/contextMenu'
+import { canvasMenu, widgetMenu } from './canvasMenu'
+import { editorFocus } from './editorFocus'
 
 const props = defineProps<{ scale: number }>()
 const s = useAdminStore()
@@ -62,6 +65,9 @@ function begin(e: PointerEvent, instanceId: string, kind: 'move' | 'resize', han
   const inst = widgets.value.find((w) => w.instanceId === instanceId)
   if (!inst) return
   s.select(instanceId)
+  // A secondary press (right button, or Control-click on a Mac) is a context menu, not a drag;
+  // a locked tile is selected but never dragged nor resized.
+  if (e.button !== 0 || e.ctrlKey || inst.locked) { e.stopPropagation(); return }
   const p = cellAt(e)
   drag.value = {
     kind, instanceId, widgetId: inst.widgetId, handle,
@@ -101,6 +107,16 @@ function onPointerUp(): void {
 
 function onBackgroundDown(): void {
   s.select(null)
+}
+
+/** A right click on a tile selects it, as on the Mac's desktop, then opens its menu. */
+function onTileMenu(e: MouseEvent, instanceId: string): void {
+  s.select(instanceId)
+  openContextMenu(e, widgetMenu(s, instanceId, editorFocus))
+}
+function onBackgroundMenu(e: MouseEvent): void {
+  s.select(null)
+  openContextMenu(e, canvasMenu(s, editorFocus))
 }
 
 /**
@@ -171,11 +187,13 @@ function onDragLeave(): void { ghost.value = null }
     class="overlay" ref="root" :style="[{ height: boardH + 'px' }, gridStyle]"
     @pointerdown="onBackgroundDown" @pointermove="onPointerMove" @pointerup="onPointerUp" @pointercancel="onPointerUp"
     @dragover="onDragOver" @drop="onDrop" @dragleave="onDragLeave"
+    @contextmenu="onBackgroundMenu"
   >
     <div
       v-for="w in widgets" :key="w.instanceId" class="hit"
-      :class="{ selected: w.instanceId === s.state.selectedId }" :style="boxStyle(w)"
+      :class="{ selected: w.instanceId === s.state.selectedId, locked: w.locked }" :style="boxStyle(w)"
       @pointerdown="begin($event, w.instanceId, 'move', 'se')"
+      @contextmenu="onTileMenu($event, w.instanceId)"
     >
       <BaseChip v-if="w.instanceId === s.state.selectedId" tone="accent" class="tag">
         <BaseIcon :name="iconOf(w.instanceId)" :size="14" />{{ labelOf(w.instanceId) }}
@@ -183,8 +201,9 @@ function onDragLeave(): void { ghost.value = null }
       <BaseChip v-if="shownOn(w.instanceId) > 1" class="shared" :title="t('admin.overlay.sharedOn', { n: shownOn(w.instanceId) })">
         <BaseIcon name="monitor" :size="12" />{{ shownOn(w.instanceId) }}
       </BaseChip>
+      <span v-if="w.locked" class="lock" :title="t('admin.overlay.locked')"><BaseIcon name="lock" :size="12" /></span>
       <span
-        v-for="hnd in HANDLES" v-show="w.instanceId === s.state.selectedId" :key="hnd"
+        v-for="hnd in HANDLES" v-show="w.instanceId === s.state.selectedId && !w.locked" :key="hnd"
         class="handle" :class="hnd" @pointerdown="begin($event, w.instanceId, 'resize', hnd)"
       />
     </div>
@@ -202,6 +221,9 @@ function onDragLeave(): void { ghost.value = null }
 }
 .hit { position: absolute; box-sizing: border-box; cursor: move; border: 2px solid transparent; border-radius: var(--radius-md); }
 .hit.selected { border-color: var(--accent); }
+.hit.locked { cursor: default; }
+.lock { position: absolute; right: 6px; bottom: 6px; display: inline-flex; padding: 4px; pointer-events: none;
+  border-radius: var(--radius-sm); background: var(--surface-3); color: var(--text-muted); }
 .shared { position: absolute; right: 6px; top: 6px; pointer-events: none; gap: 2px; }
 .tag { position: absolute; left: 6px; top: 6px; pointer-events: none; }
 .handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 3px;

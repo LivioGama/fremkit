@@ -113,18 +113,18 @@ export function isPrivatePasteboard(types: string[]): boolean {
 
 export const pbPasteboard: Pasteboard = {
   read: () => new Promise((resolve, reject) => {
-    execFile('pbpaste', [], { timeout: 5000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+    execFile('/usr/bin/pbpaste', [], { timeout: 5000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
       // A pasteboard holding no text at all is not an error: it is simply nothing to record.
       if (err) reject(new Error(err.message))
       else resolve(stdout)
     })
   }),
   write: (text) => new Promise((resolve, reject) => {
-    const child = execFile('pbcopy', [], { timeout: 5000 }, (err) => (err ? reject(new Error(err.message)) : resolve()))
+    const child = execFile('/usr/bin/pbcopy', [], { timeout: 5000 }, (err) => (err ? reject(new Error(err.message)) : resolve()))
     child.stdin?.end(text)
   }),
   types: () => new Promise((resolve) => {
-    execFile('osascript', ['-l', 'JavaScript', '-e', TYPES_SCRIPT], { timeout: 5000 }, (err, stdout) => {
+    execFile('/usr/bin/osascript', ['-l', 'JavaScript', '-e', TYPES_SCRIPT], { timeout: 5000 }, (err, stdout) => {
       // A machine that will not run this simply gets the old behaviour, not an empty widget.
       resolve(err ? [] : stdout.split('\n').map((t) => t.trim()).filter(Boolean))
     })

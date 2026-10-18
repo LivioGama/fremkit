@@ -84,6 +84,10 @@ if [ -z "$({ grep -v '^#' packaging/sparkle/public-key.txt || true; } | tr -d '[
 fi
 
 # --- Build, sign, notarize ----------------------------------------------------------------------
+# From a clean work folder: build-app.sh reuses an already-extracted Node and Sparkle there to
+# keep everyday builds fast, without checking them again. A release ships those bytes, so they
+# are extracted afresh from the hash-checked archives in the cache.
+rm -rf native/.build/app
 bash scripts/build-app.sh
 APP="$DIST/Fremkit.app"
 built="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
@@ -120,6 +124,16 @@ BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info
 node scripts/lib/appcast.mjs appcast "$VERSION" "$BUILD" \
     "$REPO_URL/releases/download/$TAG/Fremkit-$VERSION.zip" "$length" "$signature" "$NOTES" \
     > "$DIST/appcast.xml"
+# The feed is signed too, with the same key: the app requires it (SURequireSignedFeed), and refuses
+# an unsigned or altered one. sign_update embeds the signature in the XML; nothing may touch the
+# file afterwards. The zip's check above already tied this key to the one the app carries.
+if [ -n "${FREMKIT_SPARKLE_KEY_FILE:-}" ]; then
+    "$SIGN_UPDATE" --ed-key-file "$FREMKIT_SPARKLE_KEY_FILE" "$DIST/appcast.xml" >/dev/null
+    "$SIGN_UPDATE" --verify --ed-key-file "$FREMKIT_SPARKLE_KEY_FILE" "$DIST/appcast.xml"
+else
+    "$SIGN_UPDATE" "$DIST/appcast.xml" >/dev/null
+    "$SIGN_UPDATE" --verify "$DIST/appcast.xml"
+fi
 
 # --- Homebrew -----------------------------------------------------------------------------------
 DMG_SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"

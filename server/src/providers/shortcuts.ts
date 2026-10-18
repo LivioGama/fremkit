@@ -113,9 +113,9 @@ export const runProgram: Runner = (file, args) =>
 /** Which program opens which kind of target, as an argv. */
 export function argvFor(payload: OpenPayload): [string, string[]] {
   switch (payload.kind) {
-    case 'app': return ['open', ['-a', payload.target]]
-    case 'url': return ['open', [payload.target]]
-    case 'shortcut': return ['shortcuts', ['run', payload.target]]
+    case 'app': return ['/usr/bin/open', ['-a', payload.target]]
+    case 'url': return ['/usr/bin/open', [payload.target]]
+    case 'shortcut': return ['/usr/bin/shortcuts', ['run', payload.target]]
   }
 }
 

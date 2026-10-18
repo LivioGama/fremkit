@@ -6,9 +6,13 @@ export interface ChannelConnection { id: string; type: string }
 /**
  * Channels the dashboard page subscribes to itself, outside any widget. A paired device shows
  * that page, so it needs them whatever its screen holds. Checked with
- * `grep subscribe( ui/src/dashboard`: the page listens to `config` and nothing else.
+ * `grep subscribe( ui/src` over the dashboard and the shared frame code: the page listens to
+ * `config`, and every widget frame to `widget-dev` (`ui/src/shared/widgetDev.ts`), which carries
+ * nothing but the ids of widgets whose files were just saved and is silent unless the server
+ * runs with `FREMKIT_WIDGET_DEV=1`. `theme` is the theme in force, day or night
+ * (`themes/schedule.ts`): an id, a phase and the time of the next switch.
  */
-export const HOST_CHANNELS: readonly string[] = ['config']
+export const HOST_CHANNELS: readonly string[] = ['config', 'widget-dev', 'theme']
 
 /**
  * The channel a paired socket hears about its own device on (its screen, its name). Reserved in

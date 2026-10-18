@@ -79,6 +79,7 @@ final class StatusMenu: NSObject {
     private let manageServerToggle: NSMenuItem
     private let launchAtLoginToggle: NSMenuItem
     private let checkForUpdatesItem = NSMenuItem()
+    private let copyDiagnosticsItem = NSMenuItem()
     /// A title line and a slider, as one custom view: a menu item cannot hold a slider otherwise.
     private let brightnessItem = NSMenuItem()
     private let brightnessLabel = NSTextField(labelWithString: "")
@@ -94,6 +95,7 @@ final class StatusMenu: NSObject {
     var onToggleManageServer: ((Bool) -> Void)?
     var onToggleLaunchAtLogin: ((Bool) -> Void)?
     var onOpenLog: (() -> Void)?
+    var onCopyDiagnostics: (() -> Void)?
     var onCheckForUpdates: (() -> Void)?
     var onFix: ((PermissionFix) -> Void)?
     var onQuit: (() -> Void)?
@@ -148,6 +150,18 @@ final class StatusMenu: NSObject {
         apply()
     }
 
+    /// What the menu shows right now, for the diagnostics report.
+    var current: MenuState { state }
+
+    /// Says on the menu item that the report is on the pasteboard, for a few seconds: the menu
+    /// is closed by the click, so this is what the user sees when they open it again to check.
+    func diagnosticsCopied() {
+        copyDiagnosticsItem.title = L10n.string(.diagnosticsCopied)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            self?.copyDiagnosticsItem.title = L10n.string(.copyDiagnostics)
+        }
+    }
+
     /// Edits the current state in place, then redraws.
     func update(_ mutate: (inout MenuState) -> Void) {
         mutate(&state)
@@ -191,6 +205,11 @@ final class StatusMenu: NSObject {
         menu.addItem(.separator())
 
         menu.addItem(actionItem(L10n.string(.openLog), #selector(openLog)))
+        copyDiagnosticsItem.title = L10n.string(.copyDiagnostics)
+        copyDiagnosticsItem.action = #selector(copyDiagnostics)
+        copyDiagnosticsItem.target = self
+        copyDiagnosticsItem.isEnabled = true
+        menu.addItem(copyDiagnosticsItem)
         checkForUpdatesItem.title = L10n.string(.checkForUpdates)
         checkForUpdatesItem.action = #selector(checkForUpdates)
         checkForUpdatesItem.target = self
@@ -277,6 +296,7 @@ final class StatusMenu: NSObject {
     @objc private func reload() { onReload?() }
     @objc private func toggleDashboard() { onToggleDashboard?() }
     @objc private func openLog() { onOpenLog?() }
+    @objc private func copyDiagnostics() { onCopyDiagnostics?() }
     @objc private func checkForUpdates() { onCheckForUpdates?() }
     @objc private func quit() { onQuit?() }
 

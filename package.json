@@ -21,7 +21,9 @@
     "helper:install": "bash scripts/install-helper.sh",
     "helper:test": "bash scripts/test-helper.sh",
     "ios:build": "bash scripts/build-ios.sh build",
-    "ios:test": "bash scripts/build-ios.sh test"
+    "ios:test": "bash scripts/build-ios.sh test",
+    "widget:new": "server/node_modules/.bin/tsx server/src/cli/widget.ts new",
+    "widget:check": "server/node_modules/.bin/tsx server/src/cli/widget.ts check"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

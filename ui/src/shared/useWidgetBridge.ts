@@ -4,7 +4,8 @@ import { t, useI18n } from './i18n'
 import { isHexColor, tileText } from './color'
 import { useAppliedTheme, useThemeColors } from './theme'
 import { channelAllowed, mergeSettings, type AccentMode, type NavSlot, type WidgetInstance, type WidgetManifest, type WidgetSize } from './types'
-import { FrameTrust, appIconTarget, connRequest, faviconTarget, fetchTarget, imageTarget, mayListApps, nonEmptyString, stampInstance } from './widgetMessages'
+import { onWidgetReload } from './widgetDev'
+import { FrameTrust, HOLD_SWIPE_EVENT, appIconTarget, connRequest, faviconTarget, fetchTarget, imageTarget, mayListApps, nonEmptyString, stampInstance } from './widgetMessages'
 
 export type BridgeState = 'loading' | 'ready' | 'error'
 
@@ -142,6 +143,10 @@ export function useWidgetBridge(
         unsubs.set(channel, socket.subscribe(channel, (data) => post({ type: 'fremkit:data', channel, data })))
         break
       }
+      case 'fremkit:hold-swipe':
+        // useSwipe listens on the host window; the admin has no swipe and ignores it.
+        window.dispatchEvent(new Event(HOLD_SWIPE_EVENT))
+        break
       case 'fremkit:unsubscribe': {
         // A widget whose settings now point at another connection drops the old channel.
         const channel = str(m.channel)
@@ -257,12 +262,51 @@ export function useWidgetBridge(
     timer = window.setTimeout(() => { if (state.value === 'loading') state.value = 'error' }, 5000)
   }
 
+  /**
+   * Loads the frame's document again, as a fresh one: the subscriptions it held are dropped (the
+   * new document asks for its own) and the trust state starts over, since the load that follows
+   * is ours and not the widget navigating itself.
+   */
+  function reloadFrame() {
+    const el = iframe.value
+    const src = el?.getAttribute('src')
+    if (!el || !src) return
+    unsubs.forEach((f) => f())
+    unsubs.clear()
+    trust.reset()
+    state.value = 'loading'
+    armTimeout()
+    // Setting the attribute navigates even to the same value; the server sends the page no-store.
+    el.setAttribute('src', src)
+  }
+
+  /** A pending wait for a new manifest, so an unmount or a second save can drop it. */
+  let stopWaiting: (() => void) | undefined
+  /**
+   * The widget's files were saved (`FREMKIT_WIDGET_DEV=1` only). After a manifest change the
+   * frame waits for the page to have the new manifest — its channels, its settings defaults —
+   * so the document that loads is answered with it; a second is the most it waits.
+   */
+  const offReload = onWidgetReload((reload) => {
+    if (!reload.ids.includes(instance().widgetId)) return
+    stopWaiting?.()
+    if (!reload.manifest) { reloadFrame(); return }
+    const before = manifest()
+    let stopWatch: (() => void) | undefined
+    const done = () => { window.clearTimeout(fallback); stopWatch?.(); stopWaiting = undefined }
+    const fallback = window.setTimeout(() => { done(); reloadFrame() }, 1000)
+    stopWatch = watch(manifest, (m) => { if (m !== before) { done(); reloadFrame() } })
+    stopWaiting = done
+  })
+
   onMounted(() => {
     window.addEventListener('message', onMessage)
     if (!manifest()) { state.value = 'error'; return }
     armTimeout()
   })
   onUnmounted(() => {
+    offReload()
+    stopWaiting?.()
     window.removeEventListener('message', onMessage)
     iframe.value?.removeEventListener('load', onLoad)
     unsubs.forEach((f) => f())

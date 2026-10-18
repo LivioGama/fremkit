@@ -174,6 +174,14 @@
       return request({ type: 'fremkit:command', channel: channel, name: name, payload: payload })
     },
     /**
+     * Tells the host a finger is working a control in this frame — a slider, a knob — so the page
+     * does not swipe for the next half second. Call it on every move. The touch driver turns a
+     * quick slide into wheel events at the finger's position; once the finger leaves the frame they
+     * land on the dashboard, which would otherwise take the end of the slide for a swipe.
+     * Generation 3.
+     */
+    holdSwipe: function () { post({ type: 'fremkit:hold-swipe' }) },
+    /**
      * Fetches through the host.
      *
      * Two shapes. An `https://…` URL goes to a host the manifest declared in

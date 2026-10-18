@@ -4,7 +4,7 @@ import { assertBundleId, type DockSnapshot, type DockState } from './state.js'
 import { tr } from '../i18n.js'
 
 const activateApp = (bundleId: string): Promise<void> =>
-  new Promise((resolve, reject) => execFile('open', ['-b', bundleId], (err) => (err ? reject(err) : resolve())))
+  new Promise((resolve, reject) => execFile('/usr/bin/open', ['-b', bundleId], (err) => (err ? reject(err) : resolve())))
 
 /**
  * The `dock` channel.
@@ -27,6 +27,11 @@ export function createDockProvider(state: DockState, deps: { activate?: (bundleI
         if (!isTrusted(ctx)) throw new Error(tr(undefined, 'provider.localOnly'))
         const bundleId = String((payload as { bundleId?: unknown })?.bundleId ?? '')
         assertBundleId(bundleId)
+        // Only an app the Dock shows right now: the widget mirrors the Dock, and a bundle id of
+        // its own choosing would let it open any application on the Mac.
+        if (!state.snapshot().apps.some((app) => app.bundleId === bundleId)) {
+          throw new Error(tr(undefined, 'dock.notInDock'))
+        }
         await activate(bundleId)
         return { activated: bundleId }
       },

@@ -6,6 +6,7 @@ import type { ConfigStore } from '../config/store.js'
 import type { SecretStore } from '../secrets/types.js'
 import { grantedFor } from '../marketplace/consent.js'
 import { resolvesToPrivate } from '../net/private.js'
+import { publicFetch, type PublicFetch } from '../net/pinned.js'
 import { isCrossSiteFetch } from '../http/guard.js'
 import { findInstance } from '../config/instances.js'
 import { authFor, declaredTypeId, isDeclaredType, originOf, parseDeclaredHost, secretField, slugText } from '../connections/declared.js'
@@ -66,6 +67,11 @@ export interface ProxyOptions {
   secrets?: SecretStore
   /** Only ever passed by the tests; production uses the global `fetch`. */
   fetch?: typeof fetch
+  /**
+   * The fetch for `GET /api/proxy/:widgetId`. Production uses `publicFetch`, which refuses at
+   * connect time a name that resolves to a private address (DNS rebinding). Tests may stand in.
+   */
+  publicFetch?: PublicFetch
   /** Only ever passed by the tests, to make a cache expiry happen without waiting for it. */
   now?: () => number
   /**
@@ -87,6 +93,7 @@ export interface ProxyOptions {
 export async function proxyRoutes(app: FastifyInstance, opts: ProxyOptions): Promise<void> {
   const isPrivate = opts.isPrivate ?? resolvesToPrivate
   const screenOfDevice: ScreenOfDevice = opts.screenOfDevice ?? (() => null)
+  const fetchPublic = opts.publicFetch ?? publicFetch
   const checkUrl = (url: URL, allowedHosts: string[]): { ok: true } | { error: string; code: number } => {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return { error: tr(undefined, 'proxy.badScheme'), code: 400 }
     if (!allowedHosts.includes(url.hostname)) return { error: tr(undefined, 'proxy.hostNotAllowed', { host: url.hostname }), code: 403 }
@@ -147,7 +154,9 @@ export async function proxyRoutes(app: FastifyInstance, opts: ProxyOptions): Pro
     let hops = 0
     try {
       for (;;) {
-        upstream = await fetch(current, { signal: AbortSignal.timeout(TIMEOUT_MS), redirect: 'manual' })
+        // The check above judged the name; `fetchPublic` judges the address it connects to, so a
+        // name that flips to a private address in between is refused there (net/pinned.ts).
+        upstream = await fetchPublic(current, { signal: AbortSignal.timeout(TIMEOUT_MS), redirect: 'manual' })
         if (![301, 302, 303, 307, 308].includes(upstream.status)) break
         const location = upstream.headers.get('location')
         void upstream.body?.cancel().catch(() => {})
