@@ -43,8 +43,10 @@ public struct PairClient: Sendable {
         self.transport = transport
     }
 
+    /// `code` or `secret`, never both: the one left nil is not encoded.
     private struct Body: Encodable {
-        let code: String
+        let code: String?
+        let secret: String?
         let name: String
         let viewport: Viewport
     }
@@ -63,11 +65,14 @@ public struct PairClient: Sendable {
     ///     service's name and resolved addresses.
     ///   - name: this iPad's name, shown on the Mac.
     ///   - macName: the Mac's name for people, stored in the record.
-    public func pair(hosts: [String], port: Int, keyHash: String, code: String, name: String, viewport: Viewport,
-                     macName: String) async throws -> PairedMac {
+    ///   - secret: the QR link's secret, sent instead of `code` when there is one: the Mac takes it
+    ///     even while it refuses codes to someone guessing them.
+    public func pair(hosts: [String], port: Int, keyHash: String, code: String, secret: String? = nil, name: String,
+                     viewport: Viewport, macName: String) async throws -> PairedMac {
         let hosts = hosts.map(trimmingTrailingDot)
         let policy = PinPolicy(keyHash: keyHash, hosts: Set(hosts))
-        let body = try JSONEncoder().encode(Body(code: code, name: name, viewport: viewport))
+        let body = try JSONEncoder().encode(Body(code: secret == nil ? code : nil, secret: secret, name: name,
+                                                 viewport: viewport))
         var sawWrongMac = false
         // The Mac counts wrong codes per address, so one candidate answering 429 says nothing about
         // the next: someone guessing over link-local IPv6 must not keep the iPad from pairing over

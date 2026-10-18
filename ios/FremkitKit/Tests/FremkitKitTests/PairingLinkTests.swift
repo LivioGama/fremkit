@@ -15,6 +15,36 @@ final class PairingLinkTests: XCTestCase {
         XCTAssertEqual(parsed, PairingLink(host: "studio.local", address: "192.0.2.10", port: 4243, code: "ABCDEFGH", keyHash: Self.key))
     }
 
+    static let secret = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
+
+    func testALinkWithoutASecretHasNone() throws {
+        XCTAssertNil(try XCTUnwrap(link(valid)).secret, "a Mac from before the secret still pairs, with the code")
+    }
+
+    func testParsesTheSecret() throws {
+        let parsed = try XCTUnwrap(link("h=studio.local&a=192.0.2.10&p=4243&c=ABCDEFGH&s=\(Self.secret)&k=\(Self.key)"))
+        XCTAssertEqual(parsed, PairingLink(host: "studio.local", address: "192.0.2.10", port: 4243, code: "ABCDEFGH",
+                                           keyHash: Self.key, secret: Self.secret))
+    }
+
+    func testRefusesABadSecret() {
+        let s = Self.secret
+        for secret in ["", String(s.dropLast()), s + "A", String(s.dropLast()) + "=", String(s.dropLast()) + "+",
+                       String(s.dropLast()) + "F", "ABCDEFGH"] {
+            XCTAssertNil(link("\(valid)&s=\(secret)"), "secret \(secret) parsed")
+        }
+        XCTAssertNil(link("\(valid)&s=\(s)&s=\(s)"), "a repeated secret parsed")
+    }
+
+    func testPrintingALinkNeverShowsTheSecret() throws {
+        let parsed = try XCTUnwrap(link("\(valid)&s=\(Self.secret)"))
+        var dumped = ""
+        dump(parsed, to: &dumped)
+        for text in [String(describing: parsed), String(reflecting: parsed), dumped] {
+            XCTAssertFalse(text.contains(Self.secret))
+        }
+    }
+
     func testAcceptsAnIPv6Address() throws {
         let parsed = try XCTUnwrap(link("h=studio.local&a=2001:db8::1&p=4243&c=ABCDEFGH&k=\(Self.key)"))
         XCTAssertEqual(parsed.address, "2001:db8::1")

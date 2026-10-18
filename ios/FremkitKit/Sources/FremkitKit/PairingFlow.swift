@@ -124,17 +124,20 @@ public struct PairAttempt: Equatable, Sendable {
     public let port: Int
     public let keyHash: String
     public let code: String
+    /// The QR link's secret, when it carried one; nil on the manual path.
+    public let secret: String?
     public let name: String
     public let viewport: Viewport
     public let macName: String
 }
 
-/// Printing an attempt never shows the code or the pin.
+/// Printing an attempt never shows the code, the secret or the pin.
 extension PairAttempt: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
     public var description: String { "PairAttempt(\(hosts), port \(port))" }
     public var debugDescription: String { description }
     public var customMirror: Mirror {
         Mirror(self, children: ["hosts": hosts, "port": port, "keyHash": redacted, "code": redacted,
+                                "secret": secret == nil ? "none" : redacted,
                                 "name": name, "viewport": viewport, "macName": macName])
     }
 }
@@ -189,7 +192,8 @@ public final class PairingFlow {
                 viewport: @escaping @MainActor () async -> Viewport,
                 pair: @escaping Pair = { attempt in
                     try await PairClient().pair(hosts: attempt.hosts, port: attempt.port, keyHash: attempt.keyHash,
-                                                code: attempt.code, name: attempt.name, viewport: attempt.viewport,
+                                                code: attempt.code, secret: attempt.secret, name: attempt.name,
+                                                viewport: attempt.viewport,
                                                 macName: attempt.macName)
                 },
                 readKey: @escaping ReadKey = { host, port in await FirstContact.keyHash(host: host, port: port) }) {
@@ -266,7 +270,7 @@ public final class PairingFlow {
     public func retry() -> Task<Void, Never>? {
         guard case let .link(link) = step, !isWorking else { return nil }
         return send(hosts: [link.host, link.address], port: link.port, keyHash: link.keyHash, code: link.code,
-                    macName: link.macName)
+                    secret: link.secret, macName: link.macName)
     }
 
     /// The manual path: the user picked a Mac in the list. Reads its key, to show its words.
@@ -288,7 +292,8 @@ public final class PairingFlow {
     @discardableResult
     public func submit(code text: String) -> Task<Void, Never>? {
         guard case let .manualCode(service, keyHash) = step, !isWorking, let code = normaliseCode(text) else { return nil }
-        return send(hosts: [service.address], port: service.port, keyHash: keyHash, code: code, macName: service.name)
+        return send(hosts: [service.address], port: service.port, keyHash: keyHash, code: code, secret: nil,
+                    macName: service.name)
     }
 
     /// Whether a link must be confirmed first: this iPad has a pairing that still works. One the
@@ -311,7 +316,8 @@ public final class PairingFlow {
         self.step = step
     }
 
-    private func send(hosts: [String], port: Int, keyHash: String, code: String, macName: String) -> Task<Void, Never> {
+    private func send(hosts: [String], port: Int, keyHash: String, code: String, secret: String?,
+                      macName: String) -> Task<Void, Never> {
         generation += 1
         let generation = generation
         isWorking = true
@@ -320,7 +326,7 @@ public final class PairingFlow {
         let task = Task { [pair] in
             let viewport = await self.viewport()
             guard generation == self.generation else { return }
-            let attempt = PairAttempt(hosts: hosts, port: port, keyHash: keyHash, code: code, name: name,
+            let attempt = PairAttempt(hosts: hosts, port: port, keyHash: keyHash, code: code, secret: secret, name: name,
                                       viewport: viewport, macName: macName)
             let result: Result<PairedMac, PairError>
             do {

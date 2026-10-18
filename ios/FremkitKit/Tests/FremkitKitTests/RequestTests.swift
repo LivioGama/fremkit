@@ -102,8 +102,25 @@ final class PairClientTests: XCTestCase {
         let body = try XCTUnwrap(seen.body)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["code"] as? String, "ABCDEFGH")
+        XCTAssertNil(json["secret"], "no secret, no field")
         XCTAssertEqual(json["name"] as? String, "iPad")
         XCTAssertEqual(json["viewport"] as? [String: Int], ["width": 1180, "height": 820])
+    }
+
+    func testSendsTheSecretInsteadOfTheCode() async throws {
+        let secret = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
+        let bodies = Recorder<Data>()
+        let client = PairClient(transport: { request, _ in
+            if let body = request.httpBody { bodies.add(body) }
+            return .response(status: 200, body: Data(#"{"token":"t","deviceId":"d"}"#.utf8))
+        })
+        _ = try await client.pair(hosts: ["192.0.2.35"], port: 4243, keyHash: SPKIFixture.keyHash, code: "ABCDEFGH",
+                                  secret: secret, name: "iPad", viewport: viewport, macName: "studio")
+        let body = try XCTUnwrap(bodies.items.first)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["secret"] as? String, secret)
+        XCTAssertNil(json["code"], "the Mac takes one or the other, never both")
+        XCTAssertEqual(json["name"] as? String, "iPad")
     }
 
     func testKeepsTheLinksAddressWhenTheNameAnswers() async throws {

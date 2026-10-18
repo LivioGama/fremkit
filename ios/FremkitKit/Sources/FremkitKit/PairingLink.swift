@@ -13,8 +13,9 @@ public func normaliseCode(_ s: String) -> String? {
 }
 
 /// What the QR code on the Mac carries:
-/// `fremkit://pair?h=<name>.local&a=<lan ip>&p=4243&c=<code>&k=<base64url SPKI sha256>`.
-/// Every field must be present and valid, or there is no link: the app never guesses.
+/// `fremkit://pair?h=<name>.local&a=<lan ip>&p=4243&c=<code>&s=<secret>&k=<base64url SPKI sha256>`.
+/// Every field must be present and valid, or there is no link: the app never guesses. The one
+/// exception is `s`, which a Mac from before it does not send; when present it must be valid too.
 public struct PairingLink: Equatable, Sendable {
     /// The Mac's Bonjour name, ending in `.local`.
     public let host: String
@@ -25,13 +26,18 @@ public struct PairingLink: Equatable, Sendable {
     public let code: String
     /// The pin: base64url SHA-256 of the Mac's public key, no padding.
     public let keyHash: String
+    /// The pairing secret bound to the code: 256 random bits, base64url, no padding. Sent instead
+    /// of the code, since the Mac takes it even while it refuses codes to someone guessing them.
+    /// Nil from a Mac that does not issue one: the code is sent then.
+    public let secret: String?
 
-    public init(host: String, address: String, port: Int, code: String, keyHash: String) {
+    public init(host: String, address: String, port: Int, code: String, keyHash: String, secret: String? = nil) {
         self.host = host
         self.address = address
         self.port = port
         self.code = code
         self.keyHash = keyHash
+        self.secret = secret
     }
 
     public init?(url: URL) {
@@ -49,16 +55,19 @@ public struct PairingLink: Equatable, Sendable {
               let portText = fields["p"], let port = parsePort(portText),
               let codeText = fields["c"], let code = normaliseCode(codeText),
               let keyHash = fields["k"], isKeyHash(keyHash) else { return nil }
-        self.init(host: host, address: address, port: port, code: code, keyHash: keyHash)
+        let secret = fields["s"]
+        if let secret, !isPairingSecret(secret) { return nil }
+        self.init(host: host, address: address, port: port, code: code, keyHash: keyHash, secret: secret)
     }
 }
 
-/// Printing a link never shows its pin (nor its code, which is as good as a password while it lives).
+/// Printing a link never shows its pin (nor its code or secret, as good as a password while they live).
 extension PairingLink: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
     public var description: String { "PairingLink(\(host), \(address):\(port))" }
     public var debugDescription: String { description }
     public var customMirror: Mirror {
-        Mirror(self, children: ["host": host, "address": address, "port": port, "code": redacted, "keyHash": redacted])
+        Mirror(self, children: ["host": host, "address": address, "port": port, "code": redacted, "keyHash": redacted,
+                           "secret": secret == nil ? "none" : redacted])
     }
 }
 
@@ -98,6 +107,11 @@ func parsePort(_ s: String) -> Int? {
 func isKeyHash(_ s: String) -> Bool {
     guard s.count == 43, let data = Data(base64URLEncoded: s), data.count == 32 else { return false }
     return data.base64URLEncoded() == s
+}
+
+/// A pairing secret has the shape of a key hash: 32 bytes in canonical base64url.
+func isPairingSecret(_ s: String) -> Bool {
+    isKeyHash(s)
 }
 
 extension Data {

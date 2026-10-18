@@ -23,6 +23,8 @@ final class ScriptedPairer: @unchecked Sendable {
 
 private let linkURL = URL(string: "fremkit://pair?h=studio.local&a=192.0.2.10&p=4243&c=abcd-efgh&k=\(SPKIFixture.keyHash)")!
 private let otherKey = "Y4nRTFWKfvKwllWID7DQPMgZIF8SqUUvgWkQZsK_ArQ"
+private let linkSecret = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
+private let secretLinkURL = URL(string: "fremkit://pair?h=studio.local&a=192.0.2.10&p=4243&c=abcd-efgh&s=\(linkSecret)&k=\(SPKIFixture.keyHash)")!
 private let paired = PairedMac(host: "studio.local", address: "192.0.2.10", port: 4243, keyHash: SPKIFixture.keyHash,
                                token: "t", deviceId: "d1", name: "studio")
 
@@ -65,11 +67,22 @@ final class PairingFlowTests: XCTestCase {
         XCTAssertEqual(attempt.hosts, ["studio.local", "192.0.2.10"], "the name first, then the address")
         XCTAssertEqual(attempt.keyHash, SPKIFixture.keyHash)
         XCTAssertEqual(attempt.code, "ABCDEFGH")
+        XCTAssertNil(attempt.secret, "a link without a secret pairs with the code")
         XCTAssertEqual(attempt.name, "Studio iPad")
         XCTAssertEqual(attempt.viewport, Viewport(width: 1408, height: 950))
         XCTAssertEqual(attempt.macName, "studio")
         XCTAssertEqual(flow.step, .idle)
         XCTAssertEqual(model.mac, paired)
+    }
+
+    func testALinkWithASecretSendsIt() async throws {
+        let pairer = ScriptedPairer(.success(paired))
+        let (flow, _) = makeFlow(pairer: pairer)
+        XCTAssertTrue(flow.handle(url: secretLinkURL))
+        await flow.inFlight?.value
+        let attempt = try XCTUnwrap(pairer.attempts.first)
+        XCTAssertEqual(attempt.secret, linkSecret)
+        XCTAssertEqual(attempt.keyHash, SPKIFixture.keyHash, "the pin is checked as before")
     }
 
     func testALinkWhilePairedAsksFirst() async {
@@ -201,6 +214,7 @@ final class PairingFlowTests: XCTestCase {
         XCTAssertEqual(attempt.hosts, ["192.0.2.10"], "the resolved address: the .local name may not resolve")
         XCTAssertEqual(attempt.keyHash, otherKey, "the key the user compared is the pin")
         XCTAssertEqual(attempt.code, "ABCDEFGH")
+        XCTAssertNil(attempt.secret, "the manual path has only the code")
         XCTAssertEqual(attempt.macName, "Studio", "the service name is the Mac's name")
         XCTAssertEqual(model.mac, paired)
         XCTAssertEqual(flow.step, .idle)
@@ -225,15 +239,17 @@ final class PairingFlowTests: XCTestCase {
 
     func testAnAttemptNeverPrintsTheCodeOrThePin() {
         let attempt = PairAttempt(hosts: ["192.0.2.10"], port: 4243, keyHash: otherKey, code: "ABCDEFGH",
-                                  name: "iPad", viewport: Viewport(width: 1, height: 1), macName: "Studio")
+                                  secret: linkSecret, name: "iPad", viewport: Viewport(width: 1, height: 1), macName: "Studio")
         for text in [String(describing: attempt), String(reflecting: attempt), "\(attempt)"] {
             XCTAssertFalse(text.contains("ABCDEFGH"))
             XCTAssertFalse(text.contains(otherKey))
+            XCTAssertFalse(text.contains(linkSecret))
         }
         var dumped = ""
         dump(attempt, to: &dumped)
         XCTAssertFalse(dumped.contains("ABCDEFGH"))
         XCTAssertFalse(dumped.contains(otherKey))
+        XCTAssertFalse(dumped.contains(linkSecret))
     }
 
     func testAScanThatMustBeConfirmedStopsTheCamera() async {
