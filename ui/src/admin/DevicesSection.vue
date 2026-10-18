@@ -25,7 +25,7 @@ const s = useAdminStore()
 const { t, locale } = useI18n()
 const devices = useDevices()
 const confirm = useConfirm()
-const { status, offer, error } = devices
+const { status, offer, error, pollError } = devices
 
 const now = ref(Date.now())
 let ticker: ReturnType<typeof setInterval> | undefined
@@ -76,9 +76,15 @@ function pickScreen(device: PublicDevice, value: string): void {
 
 /** The device a screen is being made for, while its dialog is open. */
 const creatingFor = ref<PublicDevice | null>(null)
-function onCreated(screenId: string): void {
+/**
+ * The server attaches a device only to a device screen it has saved, and `addScreen` saves on a
+ * debounce: wait for that save before attaching, or the server answers that no such screen exists.
+ */
+async function onCreated(screenId: string): Promise<void> {
   const device = creatingFor.value
-  if (device) void devices.attach(device.id, screenId)
+  if (!device) return
+  await s.flush()
+  await devices.attach(device.id, screenId)
 }
 </script>
 
@@ -102,7 +108,11 @@ function onCreated(screenId: string): void {
     <p v-if="live && status?.guessing" class="warn" role="alert">
       <BaseIcon name="alert-triangle" :size="16" />{{ t('admin.devices.guessing') }}
     </p>
-    <p v-if="error" class="bad">{{ error }}</p>
+    <p v-if="error" class="bad action" role="alert" data-test="action-error">
+      {{ error }}
+      <BaseButton variant="icon" :title="t('common.close')" @click="devices.dismiss()"><BaseIcon name="x" :size="14" /></BaseButton>
+    </p>
+    <p v-if="pollError" class="bad" data-test="poll-error">{{ pollError }}</p>
 
     <ul v-if="list.length" class="list">
       <li v-for="d in list" :key="d.id" class="device" data-test="device">
@@ -149,6 +159,7 @@ function onCreated(screenId: string): void {
 <style scoped>
 .ro { margin: 0 0 var(--space-2); font-size: var(--fs-sm); color: var(--text-muted); }
 .bad { margin: 0 0 var(--space-2); font-size: var(--fs-sm); color: var(--danger); white-space: pre-wrap; }
+.bad.action { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .warn { display: flex; gap: var(--space-2); align-items: flex-start; margin: 0 0 var(--space-2); font-size: var(--fs-sm); color: var(--danger); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .pair { display: flex; gap: var(--space-3); align-items: center; margin-bottom: var(--space-3); }

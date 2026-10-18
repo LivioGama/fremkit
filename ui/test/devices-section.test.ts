@@ -65,6 +65,7 @@ beforeEach(() => {
   d.status.value = null
   d.offer.value = null
   d.error.value = ''
+  d.pollError.value = ''
   const s = useAdminStore()
   s.state.config = config()
   s.state.manifests = {}
@@ -140,6 +141,48 @@ describe('the devices section', () => {
     expect(s.state.config!.screens[2]).toMatchObject({ id: 'kitchen-ipad', kind: 'device' })
     expect(deviceApi.patchDevice).toHaveBeenCalledWith('dev-1', { screenId: 'kitchen-ipad' })
     expect(document.querySelector('form')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('attaches the device only once the new screen is saved', async () => {
+    deviceApi.getDevices.mockResolvedValue(status({ devices: [device()] }))
+    // The config save is held until the test lets it land, as a slow server would.
+    let land!: () => void
+    const saved = new Promise<void>((resolve) => { land = resolve })
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/config' && init?.method === 'PUT') await saved
+      return new Response(init?.body ?? '{}', { headers: { 'content-type': 'application/json' } })
+    }))
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    await wrapper.find('[data-test="create-screen"]').trigger('click')
+    const add = [...document.querySelectorAll('form button')].find((b) => b.textContent?.trim() === 'Add') as HTMLButtonElement
+    add.click()
+    await flushPromises()
+    expect(useAdminStore().state.config!.screens[2]?.id).toBe('kitchen-ipad')
+    expect(deviceApi.patchDevice).not.toHaveBeenCalled()
+    land()
+    await flushPromises()
+    expect(deviceApi.patchDevice).toHaveBeenCalledWith('dev-1', { screenId: 'kitchen-ipad' })
+    wrapper.unmount()
+  })
+
+  it('keeps a failed action’s error through a successful poll, until dismissed', async () => {
+    deviceApi.getDevices.mockResolvedValue(status({ devices: [device()] }))
+    deviceApi.deleteDevice.mockRejectedValue(new Error('unknown device'))
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    const remove = () => wrapper.find('[data-test="device"]').findAll('button').find((b) => /Remove|Confirm/.test(b.text()))!
+    await remove().trigger('click')
+    await remove().trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="action-error"]').text()).toContain('unknown device')
+    await useDevices().refresh()
+    await flushPromises()
+    expect(deviceApi.getDevices.mock.calls.length).toBeGreaterThan(1)
+    expect(wrapper.find('[data-test="action-error"]').text()).toContain('unknown device')
+    await wrapper.find('[data-test="action-error"] button').trigger('click')
+    expect(wrapper.find('[data-test="action-error"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

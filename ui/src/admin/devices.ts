@@ -20,8 +20,14 @@ export interface Devices {
   status: Ref<DeviceStatus | null>
   /** The code on show, or null while pairing is off or none was asked for yet. */
   offer: Ref<PairingOffer | null>
-  /** The last request's error, in the server's words; empty when it went through. */
+  /**
+   * The last action's error, in the server's words. It stays until the next action or `dismiss()`:
+   * the poll does not clear it, or a failed removal would vanish within seconds.
+   */
   error: Ref<string>
+  /** The last status read's error; the next successful read clears it. */
+  pollError: Ref<string>
+  dismiss(): void
   refresh(): Promise<void>
   setEnabled(on: boolean): Promise<void>
   /** Asks for a fresh code. One request at a time: a second call while one runs joins it. */
@@ -40,22 +46,28 @@ export function createDevices(deviceApi: DevicesApi, pollMs = DEVICES_POLL_MS): 
   const status = ref<DeviceStatus | null>(null)
   const offer = ref<PairingOffer | null>(null)
   const error = ref('')
+  const pollError = ref('')
   let holders = 0
   let timer: ReturnType<typeof setInterval> | undefined
   let codeInFlight: Promise<void> | null = null
 
-  /** Runs a request, keeping its error to show; a success clears the last one. */
+  /** Runs an action, keeping its error to show; starting one clears the last one's. */
   async function run(request: () => Promise<void>): Promise<void> {
+    error.value = ''
     try {
       await request()
-      error.value = ''
     } catch (err) {
       error.value = (err as Error).message
     }
   }
 
   async function refresh(): Promise<void> {
-    await run(async () => { status.value = await deviceApi.getDevices() })
+    try {
+      status.value = await deviceApi.getDevices()
+      pollError.value = ''
+    } catch (err) {
+      pollError.value = (err as Error).message
+    }
   }
 
   function newCode(): Promise<void> {
@@ -73,7 +85,8 @@ export function createDevices(deviceApi: DevicesApi, pollMs = DEVICES_POLL_MS): 
   }
 
   return {
-    status, offer, error, refresh, newCode,
+    status, offer, error, pollError, refresh, newCode,
+    dismiss() { error.value = '' },
     async setEnabled(on) {
       await run(async () => {
         const { message: _message, ...next } = await deviceApi.setDevicesEnabled(on)
