@@ -170,6 +170,7 @@ function configFor(names: { host: string | null; addresses: string[] }): string 
     ...(san.length > 0 ? [`subjectAltName = ${san.join(',')}`] : []),
     'basicConstraints = CA:FALSE',
     'keyUsage = digitalSignature',
+    'extendedKeyUsage = serverAuth',
     '',
   ].join('\n')
 }

@@ -99,6 +99,8 @@ describe('pairing TLS key and certificate', () => {
     expect(cert.subjectAltName).toContain('IP Address:192.0.2.10')
     expect(cert.subject).toBe('CN=fremkit')
     expect(cert.ca).toBe(false)
+    // Extended key usage: TLS server authentication (id-kp-serverAuth), and nothing else.
+    expect(cert.keyUsage).toEqual(['1.3.6.1.5.5.7.3.1'])
     expect(cert.issuer).toBe(cert.subject)
     expect(cert.verify(cert.publicKey)).toBe(true)
     const days = (Date.parse(cert.validTo) - Date.parse(cert.validFrom)) / 86_400_000
