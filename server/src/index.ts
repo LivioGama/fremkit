@@ -4,6 +4,11 @@ import { providers } from './providers/index.js'
 import { shippedPaths } from './paths.js'
 import { DEFAULT_BACKGROUND } from './backgrounds/seed.js'
 import { accessTokenPath, resolveAccessToken, writeAccessToken } from './http/access-file.js'
+import { helperLogPath, LogTail } from './diagnostics/log-tail.js'
+
+// First, so the diagnostics report sees every line this process writes, the boot's included.
+const logTail = new LogTail(helperLogPath())
+logTail.install()
 
 // A checkout's own folders, or the app bundle's when the helper sets `FREMKIT_ROOT`: see paths.ts.
 let shipped: ReturnType<typeof shippedPaths>
@@ -86,6 +91,7 @@ async function main(): Promise<void> {
     wallpaperPath: join(shipped.wallpaperDir, DEFAULT_BACKGROUND),
     providers,
     logger: true,
+    logTail,
     port,
   })
   installShutdown(app)

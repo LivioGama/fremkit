@@ -79,6 +79,9 @@ import { deviceRoutes } from './devices/routes.js'
 import { REMOTE_PORT } from './devices/listener.js'
 import type { Advertiser } from './devices/bonjour.js'
 import type { Exec } from './secrets/keychain.js'
+import { diagnosticsRoutes } from './diagnostics/routes.js'
+import type { LogTail } from './diagnostics/log-tail.js'
+import { isDeclaredType } from './connections/declared.js'
 
 export interface AppOptions {
   dataDir: string
@@ -98,6 +101,11 @@ export interface AppOptions {
   wallpaperPath?: string
   providers?: Provider[]
   logger?: boolean
+  /**
+   * What this process has written to its log, for `GET /api/diagnostics`. `index.ts` installs
+   * one on the real streams; the tests leave it out and the report says the log is unavailable.
+   */
+  logTail?: LogTail
   claudeTranscriptsDir?: string
   /** Overrides the built-in connection types; tests inject fakes here. */
   connectionTypes?: ConnectionType[]
@@ -136,7 +144,13 @@ export interface AppOptions {
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // The query string is stripped from every logged request line: see http/logging.ts. Typed
   // explicitly, or an inline object literal sends TypeScript down Fastify's http2 overload.
-  const serverOptions: FastifyServerOptions = { logger: opts.logger ? LOGGER_OPTIONS : false }
+  //
+  // With a log tail, pino writes through `process.stdout` rather than straight to descriptor 1,
+  // so the tail's copy of the stream sees the request lines too.
+  const logger = opts.logger
+    ? (opts.logTail ? { ...(LOGGER_OPTIONS as object), stream: process.stdout } : LOGGER_OPTIONS)
+    : false
+  const serverOptions: FastifyServerOptions = { logger }
   const app = Fastify(serverOptions)
   // The paired device a remote request authenticated as (see `net/remote.ts`). Declared up front
   // with a null value so every request has the same shape; only the devices gate sets it.
@@ -396,6 +410,23 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     ...opts.devices,
   })
   await app.register(deviceRoutes, { service: deviceService, config: store })
+  await app.register(diagnosticsRoutes, {
+    deps: {
+      config: () => store.get(),
+      widget: (id) => {
+        const entry = catalog.entry(id)
+        return entry ? { version: entry.manifest.version, source: entry.source } : undefined
+      },
+      connectionKind: (type) => (isDeclaredType(type) ? 'declared' : connectionTypes.get(type) ? 'coded' : 'unknown'),
+      channelFor: (connection) => connections.channelFor(connection),
+      secretsFor: (connection) => connections.secretsFor(connection),
+      channels: () => registry.status(),
+      devices: () => devices.list(),
+      remoteAccess: () => devices.enabled,
+      accessToken: opts.accessToken,
+      ...(opts.logTail ? { log: (count: number) => opts.logTail!.recent(count) } : {}),
+    },
+  })
   app.addHook('onClose', async () => { await deviceService.close() })
 
   if (opts.uiDist && (await access(opts.uiDist).then(() => true, () => false))) {
