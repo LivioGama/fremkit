@@ -68,6 +68,44 @@ final class BrightnessSendTests: XCTestCase {
     }
 }
 
+/// A clock the test drives: `sleep` suspends until `fire()`, or until the sleeper is cancelled.
+final class Sleeper: @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
+    var pending: Int { lock.withLock { waiters.count } }
+    private(set) var durations: [Duration] = []
+
+    func sleep(_ duration: Duration) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+                lock.lock()
+                durations.append(duration)
+                if Task.isCancelled {
+                    lock.unlock()
+                    c.resume(throwing: CancellationError())
+                } else {
+                    waiters[id] = c
+                    lock.unlock()
+                }
+            }
+        } onCancel: {
+            lock.lock()
+            let c = waiters.removeValue(forKey: id)
+            lock.unlock()
+            c?.resume(throwing: CancellationError())
+        }
+    }
+
+    func fire() {
+        lock.lock()
+        let all = waiters
+        waiters = [:]
+        lock.unlock()
+        for c in all.values { c.resume() }
+    }
+}
+
 @MainActor
 final class BrightnessSyncTests: XCTestCase {
     private final class Fake: @unchecked Sendable {
@@ -85,19 +123,32 @@ final class BrightnessSyncTests: XCTestCase {
         }
     }
 
-    private func make(_ fake: Fake, unauthorized: @escaping @MainActor () -> Void = {},
-                      debounce: Duration = .milliseconds(20), interval: Duration = .milliseconds(30)) -> BrightnessSync {
+    private let sleeper = Sleeper()
+
+    private func make(_ fake: Fake, unauthorized: @escaping @MainActor () -> Void = {}) -> BrightnessSync {
         BrightnessSync(read: { fake.screen }, write: { fake.screen = $0 },
                        send: { level, applied in fake.record(level, applied) },
-                       unauthorized: unauthorized, debounce: debounce, interval: interval)
+                       unauthorized: unauthorized,
+                       sleep: { [sleeper] in try await sleeper.sleep($0) })
     }
 
-    func testAppliesANewTargetAndReportsItWithTheSeq() async {
+    /// Lets the main actor run until `condition` holds.
+    private func until(_ condition: @autoclosure () -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
+        for _ in 0..<5000 where !condition() { await Task.yield() }
+        XCTAssertTrue(condition(), file: file, line: line)
+    }
+
+    /// Lets everything that can run, run.
+    private func settle() async { for _ in 0..<200 { await Task.yield() } }
+
+    func testAppliesANewTargetAndReportsTheScreenLevelWithTheSeq() async {
         let fake = Fake()
         let sync = make(fake)
         await sync.receive(target: 30, seq: 4)?.value
         XCTAssertEqual(fake.screen, 0.3, accuracy: 1e-9)
         XCTAssertEqual(fake.reports.count, 1)
+        XCTAssertEqual(fake.reports[0].0, fake.screen, accuracy: 1e-9)
+        XCTAssertEqual(BrightnessReporter.value(for: fake.reports[0].0), 30)
         XCTAssertEqual(fake.reports[0].1, 4)
     }
 
@@ -111,6 +162,26 @@ final class BrightnessSyncTests: XCTestCase {
         XCTAssertEqual(fake.reports.count, 1)
     }
 
+    func testASyncThatOutlivesTheDashboardStillRefusesTheSeqItApplied() async {
+        // The dashboard is rebuilt around the same sync: the new page pushes seq 4 again.
+        let fake = Fake()
+        let sync = make(fake)
+        await sync.receive(target: 30, seq: 4)?.value
+        sync.stop()  // the old dashboard went away
+        fake.screen = 0.8
+        XCTAssertNil(sync.receive(target: 30, seq: 4))
+        XCTAssertEqual(fake.screen, 0.8)
+        XCTAssertEqual(sync.lastApplied, 4)
+    }
+
+    func testResetForgetsWhatWasApplied() async {
+        let fake = Fake()
+        let sync = make(fake)
+        await sync.receive(target: 30, seq: 4)?.value
+        sync.reset()
+        XCTAssertNotNil(sync.receive(target: 30, seq: 4))
+    }
+
     func testAppliedIsSentAgainUntilAReportLands() async {
         let fake = Fake()
         fake.answer = .failed
@@ -118,37 +189,56 @@ final class BrightnessSyncTests: XCTestCase {
         await sync.receive(target: 30, seq: 4)?.value
         fake.answer = .sent
         sync.levelChanged()
-        try? await Task.sleep(for: .milliseconds(120))
-        sync.stop()
-        XCTAssertEqual(fake.reports.map { $0.1 }, [4, 4])
-        // Once landed, later reports carry no `applied`.
-        let task = Task { await sync.run() }
-        try? await Task.sleep(for: .milliseconds(100))
-        task.cancel()
-        XCTAssertNil(fake.reports.last?.1)
+        await until(sleeper.pending == 1)
+        sleeper.fire()
+        await until(fake.reports.count == 2)
+        sync.levelChanged()
+        await until(sleeper.pending == 1)
+        sleeper.fire()
+        await until(fake.reports.count == 3)
+        XCTAssertEqual(fake.reports.map { $0.1 }, [4, 4, nil])
     }
 
     func testLevelChangesAreDebounced() async {
         let fake = Fake()
-        let sync = make(fake, debounce: .milliseconds(60))
+        let sync = make(fake)
         sync.levelChanged()
         sync.levelChanged()
         sync.levelChanged()
-        try? await Task.sleep(for: .milliseconds(250))
+        await until(sleeper.pending >= 1)
+        await settle()
+        XCTAssertEqual(fake.reports.count, 0)
+        sleeper.fire()
+        await until(fake.reports.count == 1)
+        await settle()
         XCTAssertEqual(fake.reports.count, 1)
+        XCTAssertEqual(sleeper.durations.first, BrightnessSync.debounce)
     }
 
-    func testHeartbeatReportsUntilCancelled() async {
+    func testStopPreventsAPendingDebouncedReport() async {
+        let fake = Fake()
+        let sync = make(fake)
+        sync.levelChanged()
+        await until(sleeper.pending == 1)
+        sync.stop()
+        sleeper.fire()
+        await settle()
+        XCTAssertEqual(fake.reports.count, 0)
+    }
+
+    func testHeartbeatReportsEveryIntervalUntilCancelled() async {
         let fake = Fake()
         let sync = make(fake)
         let task = Task { await sync.run() }
-        try? await Task.sleep(for: .milliseconds(200))
+        await until(fake.reports.count == 1 && sleeper.pending == 1)
+        sleeper.fire()
+        await until(fake.reports.count == 2 && sleeper.pending == 1)
+        XCTAssertEqual(sleeper.durations.last, BrightnessSync.heartbeat)
         task.cancel()
         await task.value
-        let count = fake.reports.count
-        XCTAssertGreaterThanOrEqual(count, 3)
-        try? await Task.sleep(for: .milliseconds(100))
-        XCTAssertEqual(fake.reports.count, count)
+        sleeper.fire()
+        await settle()
+        XCTAssertEqual(fake.reports.count, 2)
     }
 
     func testA401FeedsTheUnauthorizedPath() async {
@@ -160,6 +250,17 @@ final class BrightnessSyncTests: XCTestCase {
         XCTAssertEqual(called, 1)
     }
 
+    func testA401OnAHeartbeatFeedsTheUnauthorizedPath() async {
+        let fake = Fake()
+        fake.answer = .unauthorized
+        var called = 0
+        let sync = make(fake, unauthorized: { called += 1 })
+        let task = Task { await sync.run() }
+        await until(called == 1)
+        task.cancel()
+        await task.value
+    }
+
     func testOtherFailuresAreSilent() async {
         let fake = Fake()
         fake.answer = .failed
@@ -167,5 +268,21 @@ final class BrightnessSyncTests: XCTestCase {
         let sync = make(fake, unauthorized: { called += 1 })
         await sync.receive(target: 30, seq: 1)?.value
         XCTAssertEqual(called, 0)
+    }
+
+    func testStopCancelsAReportInFlight() async {
+        let cancelled = expectation(description: "the send was cancelled")
+        let started = expectation(description: "the send started")
+        let sync = BrightnessSync(read: { 0.5 }, write: { _ in },
+                                  send: { _, _ in
+                                      started.fulfill()
+                                      do { try await Task.sleep(for: .seconds(60)) } catch { cancelled.fulfill() }
+                                      return .failed
+                                  },
+                                  unauthorized: {})
+        sync.receive(target: 30, seq: 1)
+        await fulfillment(of: [started], timeout: 5)
+        sync.stop()
+        await fulfillment(of: [cancelled], timeout: 5)
     }
 }

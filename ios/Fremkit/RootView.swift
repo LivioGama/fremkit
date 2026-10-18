@@ -13,6 +13,7 @@ struct RootView: View {
     let flow: PairingFlow
     let network: LocalNetwork
     let meter: ViewportMeter
+    let brightness: BrightnessSync
     @Environment(\.scenePhase) private var scenePhase
     @State private var wasInBackground = false
 
@@ -38,6 +39,8 @@ struct RootView: View {
         } message: { link in
             Text("This iPad will show the dashboard of \(link.macName) instead.")
         }
+        // A new pairing (or none) starts brightness over; an address update keeps the token.
+        .onChange(of: model.mac?.token) { brightness.reset() }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background:
@@ -83,7 +86,7 @@ struct RootView: View {
             ConnectingView(name: model.mac?.name)
         case let .dashboard(host, _):
             if let mac = model.mac {
-                DashboardScreen(host: host, mac: mac, model: model)
+                DashboardScreen(host: host, mac: mac, model: model, brightness: brightness)
                     .id(host)
             }
         case let .unreachable(name):
@@ -109,21 +112,7 @@ private struct DashboardScreen: View {
     let mac: PairedMac
     let model: AppModel
     @Environment(\.scenePhase) private var scenePhase
-    @State private var brightness: BrightnessSync
-
-    init(host: String, mac: PairedMac, model: AppModel) {
-        self.host = host
-        self.mac = mac
-        self.model = model
-        let reporter = BrightnessReporter(mac: mac, host: host)
-        let transport = BrightnessReporter.pinnedTransport()
-        _brightness = State(initialValue: BrightnessSync(
-            read: { ScreenBrightness.level },
-            write: { ScreenBrightness.level = $0 },
-            send: { level, applied in await reporter.send(brightness: level, applied: applied, transport: transport) },
-            // Same path as the probe's 401: the pairing was removed on the Mac.
-            unauthorized: { model.pageSaidUnauthorized() }))
-    }
+    let brightness: BrightnessSync
 
     var body: some View {
         DashboardView(host: host, port: mac.port, mac: mac,
@@ -148,15 +137,17 @@ private struct DashboardScreen: View {
             }
             .task(id: scenePhase) {
                 // Heartbeat: the level goes to the Mac every 10 s while the dashboard is shown and
-                // the app active, which is what keeps the screen from going `no-device`.
-                guard scenePhase == .active else {
+                // the app not in the background, which is what keeps the screen from going `no-device`.
+                // `.inactive` (Control Center open) keeps reporting, so the Mac follows the level the
+                // user is setting; only the background stops.
+                guard scenePhase != .background else {
                     brightness.stop()
                     return
                 }
                 await brightness.run()
             }
             .onReceive(NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification)) { _ in
-                if scenePhase == .active { brightness.levelChanged() }
+                if scenePhase != .background { brightness.levelChanged() }
             }
             .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
             .onDisappear {
@@ -168,7 +159,7 @@ private struct DashboardScreen: View {
 
 /// The brightness of the screen the app's window scene is on (`UIScreen.main` is deprecated).
 @MainActor
-private enum ScreenBrightness {
+enum ScreenBrightness {
     private static var screen: UIScreen? {
         UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.screen
     }

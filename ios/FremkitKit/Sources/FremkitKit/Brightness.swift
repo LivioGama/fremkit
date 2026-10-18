@@ -11,6 +11,9 @@ public struct BrightnessState: Equatable, Sendable {
         self.lastApplied = lastApplied
     }
 
+    /// Edge case (R5): if the server restarts and its first `seq` is 0 while 0 was the last
+    /// applied, that one target is skipped; the next `seq` applies.
+    ///
     /// True when `seq` is new and the caller should set the screen to `target`; records it.
     public mutating func apply(target: Double, seq: Int) -> Bool {
         guard target.isFinite, seq != lastApplied else { return false }
@@ -65,6 +68,8 @@ public final class BrightnessSync {
     /// The `seq` the Mac has not yet been told about: sent with each report until one succeeds.
     private var unreportedApplied: Int?
     private var debounced: Task<Void, Never>?
+    /// Reports on their way, cancelled by `stop()`.
+    private var inFlight: [UUID: Task<Void, Never>] = [:]
 
     private let read: @MainActor () -> Double
     private let write: @MainActor (Double) -> Void
@@ -72,6 +77,7 @@ public final class BrightnessSync {
     private let unauthorized: @MainActor () -> Void
     private let debounceDelay: Duration
     private let interval: Duration
+    private let sleep: @Sendable (Duration) async throws -> Void
 
     /// - Parameters:
     ///   - read: the screen's brightness, 0–1.
@@ -83,7 +89,9 @@ public final class BrightnessSync {
                 send: @escaping @Sendable (Double, Int?) async -> ReportOutcome,
                 unauthorized: @escaping @MainActor () -> Void,
                 debounce: Duration = BrightnessSync.debounce,
-                interval: Duration = BrightnessSync.heartbeat) {
+                interval: Duration = BrightnessSync.heartbeat,
+                sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+        self.sleep = sleep
         self.read = read
         self.write = write
         self.send = send
@@ -104,8 +112,8 @@ public final class BrightnessSync {
     /// The screen's brightness changed: reports once it has stopped changing.
     public func levelChanged() {
         debounced?.cancel()
-        debounced = Task { [debounceDelay] in
-            try? await Task.sleep(for: debounceDelay)
+        debounced = Task { [debounceDelay, sleep] in
+            try? await sleep(debounceDelay)
             if Task.isCancelled { return }
             await report().value
         }
@@ -116,21 +124,39 @@ public final class BrightnessSync {
     public func run() async {
         while !Task.isCancelled {
             await report().value
-            try? await Task.sleep(for: interval)
+            try? await sleep(interval)
         }
     }
 
-    /// Drops a pending debounced report (the dashboard went away or the app left the foreground).
+    /// Drops a pending debounced report and cancels the ones in flight (the dashboard went away or
+    /// the app went to the background).
     public func stop() {
         debounced?.cancel()
         debounced = nil
+        for task in inFlight.values { task.cancel() }
+        inFlight = [:]
     }
+
+    /// Forgets what was applied and reported: for a new pairing, whose Mac numbers its targets
+    /// on its own.
+    public func reset() {
+        stop()
+        state = BrightnessState()
+        unreportedApplied = nil
+    }
+
+    /// For tests: the last `seq` applied.
+    public var lastApplied: Int? { state.lastApplied }
 
     private func report() -> Task<Void, Never> {
         let level = read()
         let applied = unreportedApplied
-        return Task { [send] in
-            switch await send(level, applied) {
+        let id = UUID()
+        let task = Task { [send] in
+            let outcome = await send(level, applied)
+            self.inFlight[id] = nil
+            if Task.isCancelled { return }
+            switch outcome {
             case .sent:
                 if let applied, self.unreportedApplied == applied { self.unreportedApplied = nil }
             case .unauthorized:
@@ -139,5 +165,7 @@ public final class BrightnessSync {
                 break
             }
         }
+        inFlight[id] = task
+        return task
     }
 }
