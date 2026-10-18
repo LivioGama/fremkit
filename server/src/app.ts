@@ -410,6 +410,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     config: store,
     hub,
     catalog,
+    channelOf: (connection) => connections.channelFor(connection),
     brightnessOf: (screenId) => {
       const s = brightness.snapshot().screens[screenId]
       return s ? { target: s.target, seq: s.seq } : null

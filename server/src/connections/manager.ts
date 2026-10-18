@@ -59,7 +59,7 @@ export class ConnectionManager {
    * another family — `ics` publishes calendars, so its channel is `calendar:<id>`. The prefix is
    * read from the registry here and nowhere else, so registering and unregistering cannot drift.
    */
-  channelFor(connection: Connection): string {
+  channelFor(connection: Pick<Connection, 'id' | 'type'>): string {
     const prefix = this.deps.types.get(connection.type)?.channelPrefix ?? connection.type
     return `${prefix}:${connection.id}`
   }

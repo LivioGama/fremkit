@@ -17,7 +17,7 @@ import type { Hub } from '../ws/hub.js'
 import { fingerprintWords } from './fingerprint.js'
 import { advertise as bonjourAdvertise, type Advertisement, type Advertiser } from './bonjour.js'
 import { ensureKey, issueCertificate, readKey, resetKey, spkiHash } from './certificate.js'
-import { channelAllowed, screenChannels, type ChannelManifest, type ScreenChannels } from './channels.js'
+import { channelAllowed, screenChannels, type ChannelConnection, type ChannelManifest, type ScreenChannels } from './channels.js'
 import { deviceConfigView } from './scope.js'
 import type { PairingCodes } from './codes.js'
 import { lanAddresses as readLanAddresses, computerName, localHostName, preferredAddress } from './host.js'
@@ -55,6 +55,11 @@ export type PairResult =
   | { error: 'wrong' | 'expired' | 'limited' }
 
 export interface DeviceServiceOptions {
+  /**
+   * The channel a connection publishes on (`ConnectionManager.channelFor`), so a device's policy
+   * names its screen's connections and no others. Defaults to `<type>:<id>`.
+   */
+  channelOf?: (connection: ChannelConnection) => string
   /** The brightness decided for a screen, injected so this module does not import brightness. */
   brightnessOf?: (screenId: string) => DeviceBrightness | null
   app: FastifyInstance
@@ -120,6 +125,7 @@ export class DeviceService {
   /** The granted catalogue, as the policy reads it; dropped when the config or catalogue moves. */
   private manifests: Map<string, ChannelManifest> | null = null
   private readonly brightnessOf: (screenId: string) => DeviceBrightness | null
+  private readonly channelOf: ((connection: ChannelConnection) => string) | undefined
 
   constructor(opts: DeviceServiceOptions) {
     this.app = opts.app
@@ -129,6 +135,7 @@ export class DeviceService {
     this.config = opts.config
     this.hub = opts.hub
     this.brightnessOf = opts.brightnessOf ?? (() => null)
+    this.channelOf = opts.channelOf
     this.catalog = opts.catalog
     this.exec = opts.exec ?? execFileAsync
     this.advertiser = opts.advertise ?? bonjourAdvertise
@@ -421,7 +428,7 @@ export class DeviceService {
     const config = this.config.get()
     // A screen that stopped being a device screen grants nothing, even before the store catches up.
     if (!isDeviceScreen(config, screenId)) return null
-    return screenChannels(config, screenId, this.grantedManifests())
+    return screenChannels(config, screenId, this.grantedManifests(), this.channelOf)
   }
 
   private refreshAll(): void {

@@ -430,6 +430,19 @@ describe('a paired socket', () => {
     registry.stop()
   })
 
+  it('answers a command on a channel it may not use and on one that does not exist the same way', async () => {
+    const { paired, registry, setPolicy } = pairedSetup()
+    // `ghost:x` is in the policy but registered nowhere; `spotify` is registered but not allowed.
+    setPolicy({ 'dev-a': { subscriptions: [], commands: ['claude', 'ghost:x'] } })
+    const socket = paired('dev-a')
+    socket.receive({ type: 'command', id: 'a', channel: 'ghost:x', name: 'nope', payload: {} })
+    socket.receive({ type: 'command', id: 'b', channel: 'spotify', name: 'nope', payload: {} })
+    socket.receive({ type: 'command', id: 'c', channel: 'nowhere:1', name: 'nope', payload: {} })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(socket.sent).toEqual([{ ...REFUSED, id: 'a' }, { ...REFUSED, id: 'b' }, { ...REFUSED, id: 'c' }])
+    registry.stop()
+  })
+
   it('with no screen, is held to the host channels', () => {
     const { paired, registry } = pairedSetup()
     const socket = paired('dev-unknown')

@@ -277,7 +277,10 @@ export class Hub {
       case 'command': {
         const { id, channel, name, payload } = msg
         const ctx = this.contextOf(socket)
-        if (ctx.paired && (typeof channel !== 'string' || !channelAllowed(this.policyOf(ctx)?.commands ?? [], channel))) {
+        // A paired device hears one answer for a channel it may not use and for one that does not
+        // exist: the registry's own "unknown channel" would otherwise let it enumerate ids.
+        if (ctx.paired && (typeof channel !== 'string' || !channelAllowed(this.policyOf(ctx)?.commands ?? [], channel)
+          || !this.registry.has(channel))) {
           return this.refuse(socket, id)
         }
         this.registry.runCommand(channel, name, payload, ctx).then(

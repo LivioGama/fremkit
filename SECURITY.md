@@ -173,7 +173,9 @@ The remote listener is an **allow-list**, decided by the socket a request arrive
 by a header: the dashboard's page and its code, the routes a dashboard reads, `/ws`, the widget
 proxy, and the device's own `GET /api/devices/me` and `POST /api/devices/me/brightness`. Everything
 else, the admin and every route that writes the configuration or reads a secret, answers 404. A
-paired socket may subscribe to and command only what the widgets of its own screen declare, and a
+paired socket may subscribe to and command only what the widgets of its own screen declare — on a
+per-connection channel (`calendar:<id>`, `github:<id>`), only the connections those widgets are
+bound to, with the same refusal as a channel that does not exist — and a
 device acts only on the instances of its own screen: the widget proxy (and so a widget's stored
 credential) and the commands that resolve an instance refuse any instance shown elsewhere, and a
 device with no screen acts on none. The configuration it reads, over HTTP and on the WebSocket,

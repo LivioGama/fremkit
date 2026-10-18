@@ -16,7 +16,16 @@ import { hasOpenssl, remote, tlsMaterial, TinyWs, upgrade } from './helpers/remo
 const RAW_CONFIG = {
   version: 4,
   locale: 'en',
+  secrets: { backend: 'file' },
+  connections: [
+    { id: 'ics-b', type: 'ics', name: 'B', fields: {} },
+    { id: 'ics-edge', type: 'ics', name: 'Work', fields: {} },
+  ],
   widgets: {
+    'cal-b': { widgetId: 'cal', settings: { source: 'ics-b' } },
+    'cal-edge': { widgetId: 'cal', settings: { source: 'ics-edge' } },
+    'sc-b': { widgetId: 'shortcuts', settings: { buttons: [] } },
+    'sc-edge': { widgetId: 'shortcuts', settings: { buttons: [] } },
     'clock-edge': { widgetId: 'clock', settings: {} },
     'clock-a': { widgetId: 'clock', settings: {} },
     'clock-b': { widgetId: 'clock', settings: {} },
@@ -32,6 +41,8 @@ const RAW_CONFIG = {
         { instanceId: 'clock-edge', x: 0, y: 0, w: 8, h: 4 },
         { instanceId: 'status-edge', x: 8, y: 0, w: 8, h: 4 },
         { instanceId: 'only-edge', x: 16, y: 0, w: 8, h: 4 },
+        { instanceId: 'cal-edge', x: 24, y: 0, w: 8, h: 4 },
+        { instanceId: 'sc-edge', x: 32, y: 0, w: 8, h: 4 },
       ] }] },
     { id: 'tab-a', name: 'Tablet A', kind: 'device', display: { cols: 34, rows: 23 }, nav: [],
       pages: [{ id: 'p', name: 'P', items: [
@@ -43,6 +54,8 @@ const RAW_CONFIG = {
       pages: [{ id: 'p', name: 'P', items: [
         { instanceId: 'clock-b', x: 0, y: 0, w: 8, h: 4 },
         { instanceId: 'docky-b', x: 8, y: 0, w: 8, h: 4 },
+        { instanceId: 'cal-b', x: 16, y: 0, w: 8, h: 4 },
+        { instanceId: 'sc-b', x: 24, y: 0, w: 8, h: 4 },
       ] }] },
   ],
 }
@@ -87,7 +100,7 @@ describe('deviceConfigView', () => {
     const view = deviceConfigView(config(), 'tab-b')
     expect(Object.keys(view).sort()).toEqual(['locale', 'screens', 'theme', 'version', 'widgets'])
     expect(view.screens.map((s) => s.id)).toEqual(['tab-b'])
-    expect(Object.keys(view.widgets).sort()).toEqual(['clock-b', 'docky-b', 'status-b'])
+    expect(Object.keys(view.widgets).sort()).toEqual(['cal-b', 'clock-b', 'docky-b', 'sc-b', 'status-b'])
   })
   it('has no screen and no instance for a device with none, or a screen that is gone', () => {
     for (const id of [null, 'gone']) {
@@ -121,6 +134,11 @@ describe.skipIf(!hasOpenssl)('a paired device acts on its own screen only', () =
     await widget('clock', {})
     await widget('edgeonly', {})
     await widget('docky', { subscriptions: ['dock'] })
+    await widget('cal', {
+      subscriptions: ['calendar:*'], commands: ['calendar:*'],
+      settingsSchema: { source: { type: 'connection', connectionType: 'ics', label: { fr: 'Source', en: 'Source' } } },
+    })
+    await widget('shortcuts', { commands: ['shortcuts'] })
     await widget('service-status', { commands: ['service-status'], compact: { width: 4 } })
     await mkdir(join(dir, 'data'), { recursive: true })
     await writeFile(join(dir, 'data', 'fremkit.json'), JSON.stringify(RAW_CONFIG))
@@ -216,7 +234,7 @@ describe.skipIf(!hasOpenssl)('a paired device acts on its own screen only', () =
     expect(Object.keys(res.sources).sort()).toEqual(['clock', 'service-status'])
     // Its bar counts: tablet B shows service-status only there.
     const b = JSON.parse((await remote(port, { path: '/api/widgets', headers: cookie(tokenB) })).body)
-    expect(Object.keys(b.widgets).sort()).toEqual(['clock', 'docky', 'service-status'])
+    expect(Object.keys(b.widgets).sort()).toEqual(['cal', 'clock', 'docky', 'service-status', 'shortcuts'])
     const none = JSON.parse((await remote(port, { path: '/api/widgets', headers: cookie(tokenNone) })).body)
     expect(none.widgets).toEqual({})
     expect(none.sources).toEqual({})
@@ -238,6 +256,91 @@ describe.skipIf(!hasOpenssl)('a paired device acts on its own screen only', () =
     expect((await remote(port, { path: '/api/apps/installed', headers: cookie(tokenA) })).status).toBe(403)
     expect((await remote(port, { path: '/api/apps/installed', headers: cookie(tokenNone) })).status).toBe(403)
     expect((await remote(port, { path: '/api/apps/installed', headers: cookie(tokenB) })).status).not.toBe(403)
+  })
+
+  const openWs = async (token: string): Promise<TinyWs> => {
+    const opened = await upgrade(port, { ...cookie(token), origin: `https://127.0.0.1:${port}` })
+    if (!('socket' in opened)) throw new Error(`no upgrade: ${opened.status}`)
+    return new TinyWs(opened.socket, opened.head)
+  }
+  let seq = 0
+  const command = async (ws: TinyWs, channel: string, name: string, payload: unknown) => {
+    const id = `c${++seq}`
+    ws.send({ type: 'command', id, channel, name, payload })
+    const msg = await ws.next((m) => m.id === id)
+    // The id is ours; what the device can compare is everything else.
+    const { id: _id, ...rest } = msg
+    return rest
+  }
+
+  it('reaches only the connections its own screen uses on a per-connection channel', async () => {
+    const ws = await openWs(tokenB)
+    try {
+      // Its calendar is bound to ics-b; ics-edge is the Edge's.
+      ws.send({ type: 'subscribe', channel: 'calendar:ics-edge' })
+      const refused = await ws.next((m) => m.type === 'error')
+      expect(refused.id).toBeUndefined()
+      // A command on another screen's connection reads exactly like one on a channel that does
+      // not exist: nothing to enumerate ids with.
+      const other = await command(ws, 'calendar:ics-edge', 'nope', {})
+      const unknown = await command(ws, 'calendar:ics-zzzz', 'nope', {})
+      const nowhere = await command(ws, 'nowhere:zz', 'nope', {})
+      expect(other).toEqual(unknown)
+      expect(other).toEqual(nowhere)
+      expect(other.type).toBe('error')
+      // Its own connection's channel is let through to the provider, which knows no such command.
+      const own = await command(ws, 'calendar:ics-b', 'nope', {})
+      expect(own).not.toEqual(other)
+    } finally {
+      ws.close()
+    }
+  })
+
+  it('presses only the shortcuts of its own screen', async () => {
+    const ws = await openWs(tokenB)
+    try {
+      const edge = await command(ws, 'shortcuts', 'open', { instanceId: 'sc-edge', index: 0 })
+      const missing = await command(ws, 'shortcuts', 'open', { instanceId: 'sc-nope', index: 0 })
+      expect(edge).toEqual(missing)
+      expect(edge.result.ok).toBe(false)
+      // Its own instance is found; it has no button 0, so nothing runs either way.
+      const own = await command(ws, 'shortcuts', 'open', { instanceId: 'sc-b', index: 0 })
+      expect(own.result.ok).toBe(false)
+      expect(own).not.toEqual(edge)
+    } finally {
+      ws.close()
+    }
+  })
+
+  it('follows the device to another screen over a live socket', async () => {
+    const { device, token } = await app.pairing.store.create('Mover', { width: 1180, height: 820 }, 'tab-b')
+    const ws = await openWs(token)
+    try {
+      ws.send({ type: 'subscribe', channel: 'config' })
+      const first = await ws.next((m) => m.channel === 'config')
+      expect(first.data.screens.map((s: { id: string }) => s.id)).toEqual(['tab-b'])
+      ws.send({ type: 'subscribe', channel: 'dock' })
+      expect((await conn(token, 'clock', 'clock-b')).status).toBe(403)
+
+      const moved = await app.inject({ method: 'PATCH', url: `/api/devices/${device.id}`, payload: { screenId: 'tab-a' } })
+      expect(moved.statusCode).toBe(200)
+      const next = await ws.next((m) => m.channel === 'config')
+      expect(next.data.screens.map((s: { id: string }) => s.id)).toEqual(['tab-a'])
+      expect(Object.keys(next.data.widgets).sort()).toEqual(['clock-a', 'status-a'])
+      await ws.next((m) => m.channel === 'device' && m.data?.screenId === 'tab-a')
+
+      // tab-b's instances, channels and connections are gone with it.
+      expect((await conn(token, 'clock', 'clock-b')).status).toBe(404)
+      expect((await conn(token, 'clock', 'clock-a')).status).toBe(403)
+      ws.send({ type: 'subscribe', channel: 'dock' })
+      expect((await ws.next((m) => m.type === 'error' && m.id === undefined)).error).toBeTruthy()
+      const probe = await command(ws, 'service-status', 'probe', { instanceId: 'status-b' })
+      const none = await command(ws, 'service-status', 'probe', { instanceId: 'status-nope' })
+      expect(probe).toEqual(none)
+      expect((await command(ws, 'calendar:ics-b', 'nope', {})).type).toBe('error')
+    } finally {
+      ws.close()
+    }
   })
 
   it('resolves a command only against the instances of its own screen', async () => {
