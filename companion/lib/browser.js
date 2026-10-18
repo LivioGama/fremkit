@@ -7,6 +7,9 @@ const NAMES = [
   [/edge/i, 'Microsoft Edge'],
   [/opera/i, 'Opera'],
   [/brave/i, 'Brave'],
+  // Arc and Vivaldi are not known to put their own brand in the list today (they report Chrome's
+  // or Chromium's), so their users see "Chrome" or "Chromium". Kept for the day they do: the
+  // output is always one of the server's names whatever the brands say.
   [/vivaldi/i, 'Vivaldi'],
   [/^arc$/i, 'Arc'],
   [/google chrome/i, 'Chrome'],

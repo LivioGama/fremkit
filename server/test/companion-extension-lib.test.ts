@@ -619,6 +619,8 @@ describe('browserName', () => {
     expect(browserName(undefined)).toBe('Chromium')
   })
 
+  // Synthetic brands, Arc's and Vivaldi's included: this proves the mapping stays within the
+  // server's list, not that those browsers report such a brand (they are not known to).
   it('only ever gives a name the server takes', () => {
     const brands = (...names: string[]) => names.map((brand) => ({ brand, version: '130' }))
     const seen = new Set<string>()
