@@ -13,6 +13,14 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **Widget health in the editor.** A widget that cannot work — not installed, its connection
+  deleted, incomplete or refusing its credentials, its data source out of reach, no connection
+  chosen yet, or an update waiting — wears a red or orange dot on its tile in the editor, with
+  the reason in its tooltip. Select it and the reason sits above its settings with the button
+  that fixes it (open the connection, open the setting, install, update…); its right-click menu
+  starts with **Fix:**. The pages list and the screens selector mark where such a widget is, and
+  the top bar counts them: click the count to list them all. It follows the dashboard live; a
+  widget whose page has not been on screen since Fremkit started has nothing to report yet.
 - **A theme for the night.** Under the theme list, pick another theme for the night and when it
   takes over: at sunrise and sunset where you are, or at fixed times — the same choice as the
   screen brightness's day and night, and its place is offered when it has one. The dashboard,

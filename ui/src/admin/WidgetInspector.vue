@@ -12,6 +12,8 @@ import BaseSegmented from '../shared/ui/BaseSegmented.vue'
 import BackgroundPicker from './BackgroundPicker.vue'
 import CopySettingsFrom from './CopySettingsFrom.vue'
 import MissingWidget from './MissingWidget.vue'
+import HealthBanner from './HealthBanner.vue'
+import { useHealth } from './useHealth'
 import SettingsForm from './SettingsForm.vue'
 import WidgetPermissions from './WidgetPermissions.vue'
 import { pick, useI18n } from '../shared/i18n'
@@ -27,6 +29,12 @@ import { fieldsInScope, type AccentMode, type WidgetBackground } from '../shared
 const s = useAdminStore()
 const { t, locale } = useI18n()
 const inst = computed(() => s.selected.value)
+const health = useHealth()
+/** A missing widget has its own notice below, with the install button: the banner would repeat it. */
+const wellness = computed(() => {
+  const h = inst.value ? health.of(inst.value.instanceId) : null
+  return h && h.level !== 'ok' && h.problems[0]?.code !== 'missing' ? h : null
+})
 const manifest = computed(() => (inst.value ? s.state.manifests[inst.value.widgetId] : undefined))
 /**
  * What the widget's manifest asks for, beside what it may do.
@@ -155,6 +163,7 @@ function moveToPage(): void {
       <BaseIcon :name="manifest?.icon ?? 'layout-grid'" :size="20" />
       <strong>{{ manifest ? pick(manifest.name) : inst.widgetId }}</strong>
     </div>
+    <HealthBanner v-if="wellness" :health="wellness" @action="health.run(inst!.instanceId, $event)" />
     <p v-if="alsoOn" class="hint shared"><BaseIcon name="monitor" :size="14" />{{ t('admin.inspector.widget.alsoOn', { screens: alsoOn }) }}</p>
     <MissingWidget v-if="!manifest" :widget-id="inst.widgetId" />
 

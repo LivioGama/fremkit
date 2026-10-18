@@ -76,7 +76,10 @@ export function navWidgetMenu(s: AdminStore, instanceId: string, ui: MenuUi): Me
   // Reordering is within a side, as the panel's arrows do it; the ends of a side are disabled.
   const side = navItemsOf(scr).filter((x) => x.slot === item.slot)
   const at = side.findIndex((x) => x.instanceId === instanceId)
+  const fix = ui.fix?.(instanceId)
   return tidy([
+    fix && { label: fix.label, run: fix.run },
+    fix && SEPARATOR,
     {
       label: t('admin.menu.settings'),
       run: () => {
