@@ -9,6 +9,9 @@
 #                                  ios/Local.xcconfig (copy ios/Local.example.xcconfig). Arguments
 #                                  after `install` go to the app, e.g.
 #                                  -FremkitSeedLink 'fremkit://pair?…' (Debug builds only).
+#                                  The link carries the code's secret, which pairs past the
+#                                  wrong-code limit: use a fresh one (it pairs once, for 5
+#                                  minutes) and expect it in shell history.
 #
 # Build output goes to ios/build/ (git-ignored); the full log of the last xcodebuild run is
 # ios/build/xcodebuild.log.
