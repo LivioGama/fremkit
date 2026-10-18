@@ -22,6 +22,8 @@ import { isOwnContext } from '../../companion/lib/sender.js'
 // @ts-expect-error plain JS module
 import { grantToReturn } from '../../companion/lib/grant.js'
 // @ts-expect-error plain JS module
+import { withVolumeHint } from '../../companion/lib/volume.js'
+// @ts-expect-error plain JS module
 import { approvalTooFast, MIN_APPROVAL_MS } from '../../companion/lib/approval.js'
 import { isLocalSdp, parseExtensionMessage, PROOF_LABEL as SERVER_PROOF_LABEL, PROTOCOL } from '../src/companion/protocol.js'
 import { HELLO_TIMEOUT_MS } from '../src/companion/socket.js'
@@ -807,5 +809,32 @@ describe('approvalTooFast (an approval no hand on the Edge could give)', () => {
     for (const acceptedAt of [undefined, null, '1000', Number.NaN, Infinity]) {
       expect(approvalTooFast(acceptedAt, 5_000), String(acceptedAt)).toBe(true)
     }
+  })
+})
+
+describe('withVolumeHint (the volume set through YouTube)', () => {
+  const state = (volume: number) => ({ paused: false, currentTime: 1, duration: 60, volume, muted: false })
+
+  it('shows the volume set while the element keeps what it read right after', () => {
+    const share = { volumeHint: { element: 0.42, value: 0.8 } }
+    expect(withVolumeHint(share, state(0.42))).toEqual(state(0.8))
+    expect(withVolumeHint(share, state(0.4205))).toEqual(state(0.8))
+    expect(share.volumeHint).toEqual({ element: 0.42, value: 0.8 })
+  })
+
+  it('drops its hint once the element has another volume, and shows the element\'s from then on', () => {
+    const share: { volumeHint: { element: number; value: number } | null } = { volumeHint: { element: 0.42, value: 0.8 } }
+    expect(withVolumeHint(share, state(0.3))).toEqual(state(0.3))
+    expect(share.volumeHint).toBeNull()
+    // Back to the old reading: the hint is gone for good.
+    expect(withVolumeHint(share, state(0.42))).toEqual(state(0.42))
+  })
+
+  it('leaves a state alone without a hint, and a missing state as it is', () => {
+    expect(withVolumeHint({ volumeHint: null }, state(0.5))).toEqual(state(0.5))
+    expect(withVolumeHint({}, state(0.5))).toEqual(state(0.5))
+    const share = { volumeHint: { element: 0.42, value: 0.8 } }
+    expect(withVolumeHint(share, null)).toBeNull()
+    expect(share.volumeHint).toEqual({ element: 0.42, value: 0.8 })
   })
 })

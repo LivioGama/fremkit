@@ -14,6 +14,7 @@ import { closeOutcome, refusalOf } from './lib/link.js'
 import { idleDelay } from './lib/presence.js'
 import { isOwnContext } from './lib/sender.js'
 import * as protocol from './lib/protocol.js'
+import { withVolumeHint } from './lib/volume.js'
 import { cleanFrames, cleanState, control, embeddedPlayer, pickVideo, survey, youtubeVolume } from './lib/video.js'
 
 /** Fremkit's local server. The extension never talks to anything else. */
@@ -535,15 +536,6 @@ async function runControl(share, action, args = null) {
   } catch {
     return null
   }
-}
-
-/** The volume set through YouTube's player, as long as the element still has what it was given. */
-function withVolumeHint(share, state) {
-  const hint = share.volumeHint
-  if (!state || !hint) return state
-  if (Math.abs(state.volume - hint.element) < 1e-3) return { ...state, volume: hint.value }
-  share.volumeHint = null
-  return state
 }
 
 /** The tab's URL and title, as Chrome reports them while the extension holds the tab's grant. */
