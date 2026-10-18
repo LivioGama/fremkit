@@ -213,8 +213,15 @@ the door is narrow.
 four-character code on the Edge and in the admin, and you press Allow. The extension then collects
 its token with a `POST` (Chrome sends no `Origin` on an extension's `GET` to `127.0.0.1`, which is
 why it is not a `GET`). The token is 32 random bytes; only its `sha256` is stored, compared in
-constant time. A code lasts two minutes, one request waits at a time, and five requests a minute
-are accepted in total. An approved request that is never collected is removed when it expires.
+constant time. A code lasts two minutes, and one request waits at a time: while it waits, a
+request from another install is answered 409 and does not take its place; only the same install
+can replace its own. Five requests a minute are accepted in total, three per install, and an
+install whose request was refused is turned away for a minute. Allow and Refuse send the code they
+showed, and the server answers 409 when it is not the waiting request's, so an answer never lands
+on a request swapped in after you read the code; Allow is also held off for two seconds whenever
+the request on show changes. The name shown is one of a closed list of browser names (Chrome,
+Edge, Brave, Arc, Opera, Vivaldi, Chromium). An approved request that is never collected is
+removed when it expires.
 Removing the extension in **Screen → Devices** closes its socket and its token stops working.
 
 **The routes that skip the secret**, decided by the route the server matched, like the widgets'
@@ -252,7 +259,12 @@ site's frames only when you allow that site.
 **What a local program can do.** A process running as you can read the access secret and anything
 else; it is out of scope, as under *Known limits*. One running as another account, or anything that
 reaches the port without reading your files, cannot pair without you being at the Edge to allow it.
-Nor can it learn a linked extension's token by holding port 4242 in Fremkit's place: it cannot
+It can, however, post a pairing request: an `Origin` header is only a header to a program that
+is not a browser, and the per-install limits count an install id it picks. Fremkit cannot tell
+such a request from yours, which is why the code matters: the one in your popup must be the one on
+the Edge, and the server only approves the code that was on show. A program that keeps a request
+of its own waiting can hold pairing up (you then see a request you did not start: refuse it), but
+it cannot swap its request in under your Allow. Nor can it learn a linked extension's token by holding port 4242 in Fremkit's place: it cannot
 answer the challenge, so the token is never sent, and without the token it never sees an offer to
 answer, which is what keeps the video from it. The extension also drops the answer's candidates
 that are not loopback or a `.local` name, as defence in depth only: WebRTC learns the receiver's
