@@ -156,6 +156,22 @@ reaches a screen. The bridge provides `Fremkit.esc()`, `Fremkit.el()` and `Fremk
 the widgets here use them. See the Security section of
 [docs/writing-widgets.md](docs/writing-widgets.md).
 
+### A paired device
+
+Off by default: until you switch it on in the admin, nothing listens beyond `127.0.0.1`. Turned
+on, a second listener answers on port 4243, **TLS only**, with a self-signed key the iPad app pins
+(the hash of its public key travels in the pairing QR code, and the app shows four words from it
+to compare when you pair without the camera). A device holds a random token that the Mac stores as
+a hash; revoking the device, or resetting the certificate, ends it at once, open WebSocket
+included. Pairing needs a single-use code, valid five minutes, and wrong guesses are rate-limited.
+
+The remote listener is an **allow-list**, decided by the socket a request arrived on rather than
+by a header: the dashboard's page and its code, the routes a dashboard reads, `/ws`, the widget
+proxy, and the device's own `GET /api/devices/me` and `POST /api/devices/me/brightness`. Everything
+else, the admin and every route that writes the configuration or reads a secret, answers 404. A
+paired socket may subscribe to and command only what the widgets of its own screen declare. See
+[docs/devices.md](docs/devices.md).
+
 ## What Fremkit reads on your Mac
 
 Transcripts, the clipboard, Dock badges, a keychain item — the full list, with who reads what and

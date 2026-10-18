@@ -110,3 +110,25 @@ to match), `"touch": false`, `"fence": false`, `"dock": false` and a `display` n
 it off the touch panel, off the Edge and from asking for any permission. Sparkle's own settings
 go to the `dev.fremkit.helper` defaults domain, shared with the installed helper: delete the
 `SU*` keys it leaves there afterwards.
+
+## The iPad app
+
+The iPad app (`ios/`) is released apart from the Mac app and the DMG: it goes to TestFlight, and
+nothing in `scripts/release.sh` touches it. Signing values are the owner's and stay out of the
+repository, in the git-ignored `ios/Local.xcconfig` (a copy of `ios/Local.example.xcconfig`:
+`DEVELOPMENT_TEAM` and `FREMKIT_BUNDLE_ID`).
+
+1. Raise `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `ios/Fremkit.xcconfig`: App Store
+   Connect refuses a build number it has already seen.
+2. `scripts/build-ios.sh test`, then archive with that configuration (Xcode, not the Command Line
+   Tools; `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` if `xcode-select` points
+   elsewhere):
+
+   ```bash
+   xcodebuild -project ios/Fremkit.xcodeproj -scheme Fremkit -configuration Release \
+     -destination 'generic/platform=iOS' -archivePath ios/build/Fremkit.xcarchive \
+     -allowProvisioningUpdates archive
+   ```
+
+3. Open the archive in Xcode's **Organizer** (Window → Organizer) and **Distribute App** to App
+   Store Connect. The upload is done by the owner, with the owner's Apple account.

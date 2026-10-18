@@ -44,7 +44,7 @@ tagged `vX.Y.Z`.
 - **Pair an iPad** (Mac side). **Screen → Devices** turns on an encrypted listener on the local
   network, shows a pairing QR code, lists the paired devices with the screen each shows, and
   unpairs one after you confirm. An iPad screen is created from the paired iPad, at its exact size. The
-  iPad app comes next.
+  iPad app is below; [docs/devices.md](docs/devices.md) walks through it.
 - **Screen brightness.** A new built-in *Brightness* widget sets the brightness of the screen
   the dashboard is on, from a tile or from the bar (− / +, and a slider in its popover); the
   helper's menu has the same slider. It works over DDC/CI on Apple silicon Macs; a display that

@@ -32,6 +32,8 @@ The name is the Fremen survival kit from *Dune*.
   *from the registry*, meeting controls, CleanShot X actions, Azure DevOps builds, GitHub
   notifications and Actions, a Bambu Lab printer, Homey devices and flows, a Synology NAS.
   Twenty ship with Fremkit; the rest are one press away in the admin.
+- **An iPad app** that shows a screen of the dashboard from your Mac over the local network,
+  paired by QR code and revocable from the admin. See [docs/devices.md](docs/devices.md).
 - **Compact widgets** in the navigation bar, with a full-size popover on touch.
 - **Per-tile appearance** — background colour, opacity, background image, accent colour and how
   much of the tile the accent paints.
@@ -426,6 +428,7 @@ itself (Sparkle's system profile is off).
 | A shortcut button to a NAS or a router has no icon | Expected: favicons of private and local addresses are not fetched. The button still works |
 | The admin shows an old version of itself | Reopen it, or Cmd+R in its window; it keeps one web view for the helper's lifetime |
 | Widgets break after pulling a new version | Restart the server: the widget bridge is read once, at start |
+| The iPad app does not list the Mac | The network may not relay Bonjour: scan the QR code the admin shows, or put both on the same Wi-Fi — [details](docs/devices.md#troubleshooting) |
 | The disk map shows locked folders | Give "Fremkit" (or "Fremkit Helper" for a source install) Full Disk Access, or leave them unmeasured |
 | The disk map says "du (no helper)" | Expected under `pnpm dev`: the bundled `fremkit-scan` is only there under the helper |
 

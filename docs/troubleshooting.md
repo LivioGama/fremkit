@@ -25,6 +25,7 @@ and "Notifications: active" above the toggles, and *Log…* opens the supervised
 | Printer unreachable (`EHOSTUNREACH`) while `ping` and `curl` work | Local Network not granted to the app that runs the server | Allow it under Privacy & Security → Local Network |
 | "Server: external" | Something already answers port 4242, so the helper steps aside | Expected under `pnpm dev`; otherwise stop the stray server, or turn *Manage the server* off |
 | Brightness: "not adjustable on this display (DDC)" | The display does not answer DDC/CI on this cable or this Mac | See [Brightness says not adjustable](#brightness-says-not-adjustable) |
+| The iPad app does not list the Mac | The router or access point does not relay Bonjour (mDNS) between Ethernet and Wi-Fi, or between bands or VLANs; or the Mac is on both Wi-Fi and Ethernet | Scan the QR code instead (it carries the address), or put both on the same Wi-Fi — [details](#the-ipad-app-does-not-find-the-mac) |
 | The disk map says folders could not be read | macOS privacy protection (TCC) refuses the scan some folders | Give Fremkit (or Fremkit Helper, from a source install) **Full Disk Access**, then scan again — [details](#the-disk-map-says-folders-could-not-be-read) |
 | The disk map is slow and shows no files, "du (no helper)" | The server runs without the helper, or the helper predates the disk map | Rebuild and reinstall the helper — [details](#the-disk-map-uses-du) |
 
@@ -351,6 +352,29 @@ and reload the other.
 
 `DELETE /api/connections/<id>` answers 409 and names the widgets that still point at the
 connection. Remove them, or change their `connection` setting first.
+
+## The iPad app does not find the Mac
+
+Pairing is described in [devices.md](devices.md). The app lists Macs by Bonjour
+(`_fremkit._tcp`), and there is no field for typing an address, so a Mac that is not listed has a
+network reason:
+
+- The router or access point does not relay Bonjour (mDNS) between Ethernet and Wi-Fi, between
+  bands, or between VLANs (a guest network does this on purpose). Scan the **QR code** in the
+  admin instead: it carries the address and the key, and needs no Bonjour. Or put the Mac and the
+  iPad on the same Wi-Fi.
+- The Mac is on both Wi-Fi and Ethernet, so its name answers on an interface the iPad cannot
+  reach. Same remedies, or switch Wi-Fi off on the Mac.
+- **Local Network** was refused on the iPad: Settings → Privacy & Security → Local Network →
+  Fremkit. Without it the app sees nothing, and neither does its web view.
+- The macOS firewall asked whether Fremkit may accept incoming connections and was answered no:
+  System Settings → Network → Firewall → Options.
+- Pairing is switched off (admin, *Screen → Devices*), or port 4243 is held by another
+  application: the admin says so.
+
+An iPad that was paired and now shows the welcome screen was removed in the admin, or the
+certificate was reset: pair again. One that cannot reach its Mac finds it again by itself when the
+Mac wakes or changes address.
 
 ## Brightness says not adjustable
 
