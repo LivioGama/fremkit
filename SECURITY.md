@@ -267,18 +267,18 @@ injects into a page cannot read it, and listens only to its own pages.
 **What a local program can do.** A process running as you can read the access secret and anything
 else; it is out of scope, as under *Known limits*. One running as another account, or anything that
 reaches the port without reading your files, cannot pair without you being at the Edge to allow it.
-It can, however, post a pairing request: an `Origin` header is only a header to a program that
-is not a browser, and the per-install limits count an install id it picks. Fremkit cannot tell
-such a request from yours, which is why the code matters: the one in your popup must be the one on
-the Edge, and the server only approves the code that was on show. A program that keeps a request
-of its own waiting can hold pairing up (you then see a request you did not start: refuse it), but
-it cannot swap its request in under your Allow. Nor can it learn a linked extension's token by holding port 4242 in Fremkit's place: it cannot
-answer the challenge, so the token is never sent, and without the token it never sees an offer to
-answer, which is what keeps the video from it. The extension also drops the answer's candidates
-that are not loopback or a `.local` name, as defence in depth only: WebRTC learns the receiver's
-address from its incoming checks whatever the answer lists. Such a program can make the extension
-show itself removed (an unproven refusal), but the token stays until you pair again. Pairing with
-it gives it a token it made up itself, never the real one.
+It can, however, post a pairing request: an `Origin` header is only a header to a program that is
+not a browser, and the per-install limits count an install id it picks. Fremkit cannot tell such a
+request from yours, which is why the code matters: the one in your popup must be the one on the
+Edge, and the server only approves the code that was on show. A program that keeps a request of its
+own waiting can hold pairing up (you then see a request you did not start: refuse it), but it cannot
+swap its request in under your Allow. Nor can it learn a linked extension's token by holding port
+4242 in Fremkit's place: it cannot answer the challenge, so the token is never sent, and without the
+token it never sees an offer to answer, which is what keeps the video from it. The extension also
+drops the answer's candidates that are not loopback or a `.local` name, as defence in depth only:
+WebRTC learns the receiver's address from its incoming checks whatever the answer lists. Such a
+program can make the extension show itself removed (an unproven refusal), but the token stays until
+you pair again. Pairing with it gives it a token it made up itself, never the real one.
 
 ## What Fremkit reads on your Mac
 

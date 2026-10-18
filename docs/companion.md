@@ -23,8 +23,8 @@ Store, load it unpacked:
 
 The extension's ID is fixed by the `key` in its manifest: `lnckeodobpbbmfbdlpnegjpchgkehdlk`. That
 is the ID the store listing will have (publication is pending), so a link made with the unpacked
-copy keeps working when you switch to the store version. The server accepts any extension origin, and what makes
-one yours is that you allowed it on the Edge.
+copy keeps working when you switch to the store version. The server accepts any extension origin,
+and what makes one yours is that you allowed it on the Edge.
 
 ## Link it to Fremkit
 
@@ -38,8 +38,8 @@ The code is valid for two minutes, and Fremkit takes at most five pairing reques
 all extensions together, and three from any one install. One request waits at a time: pressing
 *Connect* again in the same browser replaces your own, but another extension asking meanwhile is
 told *Another pairing request is already waiting on the Edge*. A refused request makes that browser
-wait a minute before asking again. The extension's name on the Edge is the browser's (Chrome, Microsoft
-Edge, Brave, Arc, Opera, Vivaldi or Chromium), never a text of its choosing.
+wait a minute before asking again. The extension's name on the Edge is the browser's (Chrome,
+Microsoft Edge, Brave, Arc, Opera, Vivaldi or Chromium), never a text of its choosing.
 
 **Compare the codes.** Any program on this Mac can post a pairing request; Fremkit cannot tell it
 from yours. What protects you is that the code in your popup is the one on the Edge: Allow and

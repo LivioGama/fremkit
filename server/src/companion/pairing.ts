@@ -50,11 +50,12 @@ interface PairRequest {
  * A browser extension asking to pair, and the user's answer.
  *
  * One request waits for an answer at a time, and nothing else takes its place: a new request from
- * the same install replaces it (the extension asking again after its popup reopened), one from
- * any other install is turned away as `busy` until the waiting one is answered or expires. The
- * answer names the code it was given for, so a request swapped in after the user read the code is
- * never the one approved. Once answered, a request is kept until it expires, two minutes after it was made, so the extension can collect the answer —
- * the token of an approved one exactly once. A token nobody collected goes when the request does, and so does its device record.
+ * the same install replaces it (the extension asking again after its popup reopened), one from any
+ * other install is turned away as `busy` until the waiting one is answered or expires. The answer
+ * names the code it was given for, so a request swapped in after the user read the code is never
+ * the one approved. Once answered, a request is kept until it expires, two minutes after it was
+ * made, so the extension can collect the answer — the token of an approved one exactly once. A
+ * token nobody collected goes when the request does, and so does its device record.
  *
  * Requests are counted globally, like wrong pairing codes: an origin is only a name the asker
  * picks, so a per-origin count would limit nothing. The per-install count and the cooldown after a
