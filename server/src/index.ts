@@ -38,6 +38,8 @@ try {
 const demo = process.env.FREMKIT_DEMO === '1' || process.argv.includes('--demo')
 // A demo never takes the live server's port by default: it runs beside it.
 const port = Number(process.env.FREMKIT_PORT) || (demo ? 4250 : 4242)
+// The WebSocket's origin check reads the port from the environment (ws/routes.ts).
+if (demo && !process.env.FREMKIT_PORT) process.env.FREMKIT_PORT = String(port)
 
 /**
  * Where the config, the backgrounds and the caches live. `<checkout>/data` unless told otherwise;
