@@ -3,8 +3,8 @@ import { mkdtemp, mkdir, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ManifestSchema } from '../src/widgets/manifest.js'
-import { SDK_VERSION } from '../src/bridge/sdk.js'
-import { channelProblem, idProblem, nameFromId, parseSize, scaffoldWidget, type ScaffoldOptions } from '../src/widgets/scaffold.js'
+import { SDK_GENERATIONS, SDK_VERSION } from '../src/bridge/sdk.js'
+import { TEMPLATE_SDK, channelProblem, idProblem, nameFromId, parseSize, scaffoldWidget, type ScaffoldOptions } from '../src/widgets/scaffold.js'
 import { checkWidgetFolder } from '../src/widgets/check.js'
 
 const base: ScaffoldOptions = {
@@ -33,7 +33,11 @@ describe('the scaffold', () => {
     it(`writes ${label} that validates and passes widget:check`, async () => {
       const files = scaffoldWidget(options)
       const manifest = ManifestSchema.parse(JSON.parse(files['manifest.json']))
-      expect(manifest.sdk).toBe(SDK_VERSION)
+      expect(manifest.sdk).toBe(TEMPLATE_SDK)
+      // Declaring a generation means using nothing newer: every member the page calls must be in it.
+      const allowed = new Set(Object.entries(SDK_GENERATIONS).filter(([g]) => Number(g) <= TEMPLATE_SDK).flatMap(([, m]) => m))
+      const used = [...files['index.html'].matchAll(/Fremkit\.([a-zA-Z]+)/g)].map((m) => m[1])
+      expect(used.filter((m) => !allowed.has(m))).toEqual([])
       expect(manifest.compact).toEqual({ width: 4 })
       const result = await checkWidgetFolder(await write(files))
       expect(result.errors).toEqual([])

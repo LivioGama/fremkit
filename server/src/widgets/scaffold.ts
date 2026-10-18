@@ -8,7 +8,6 @@
  */
 
 import { WIDGET_ID_RE } from '../config/schema.js'
-import { SDK_VERSION } from '../bridge/sdk.js'
 import { WIDGET_CATEGORIES, type WidgetCategory } from './manifest.js'
 
 export interface ScaffoldOptions {
@@ -64,6 +63,9 @@ export function nameFromId(id: string): string {
 
 export const PLACEHOLDER_DESCRIPTION = { fr: 'À décrire en une ligne', en: 'Describe it in one line' }
 
+/** Every bridge member the templates below call is in generation 1 (`server/src/bridge/sdk.ts`). */
+export const TEMPLATE_SDK = 1
+
 export function manifestFor(o: ScaffoldOptions): Record<string, unknown> {
   // The smallest size the layout below still reads at, never more than what it is dropped at.
   const minSize: [number, number] = [Math.min(4, o.size[0]), Math.min(2, o.size[1])]
@@ -71,7 +73,9 @@ export function manifestFor(o: ScaffoldOptions): Record<string, unknown> {
     id: o.id,
     name: o.name,
     version: '0.1.0',
-    sdk: SDK_VERSION,
+    // The lowest generation the template uses (all of it is generation 1), as
+    // docs/writing-widgets.md asks: declaring the newest would refuse older Fremkits for nothing.
+    sdk: TEMPLATE_SDK,
     ...(o.author ? { author: o.author } : {}),
     license: 'MIT',
     description: o.description,
