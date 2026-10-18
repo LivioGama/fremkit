@@ -1,0 +1,205 @@
+import XCTest
+@testable import FremkitKit
+
+final class HTTPProberTests: XCTestCase {
+    private let me = #"{"id":"d1","name":"iPad","screenId":"s1","brightness":{"target":40,"seq":3}}"#
+
+    func testOkOnA200WithTheDeviceRecord() async throws {
+        StubProtocol.answer("192.0.2.21", with: .status(200, me))
+        let outcome = await HTTPProber(configuration: StubProtocol.configuration).probe(host: "192.0.2.21", port: 4243, mac: sampleMac)
+        XCTAssertEqual(outcome, .ok(sampleInfo))
+
+        let seen = try XCTUnwrap(StubProtocol.requests(to: "192.0.2.21").first)
+        XCTAssertEqual(seen.request.url?.absoluteString, "https://192.0.2.21:4243/api/devices/me")
+        XCTAssertEqual(seen.request.httpMethod, "GET")
+        XCTAssertEqual(seen.request.value(forHTTPHeaderField: "Cookie"), "fremkit_device=device-token")
+        XCTAssertEqual(seen.request.timeoutInterval, 5)
+    }
+
+    func testOkWithoutAScreenOrABrightness() async {
+        StubProtocol.answer("192.0.2.22", with: .status(200, #"{"id":"d1","name":"iPad","screenId":null,"brightness":null}"#))
+        let outcome = await HTTPProber(configuration: StubProtocol.configuration).probe(host: "192.0.2.22", port: 4243, mac: sampleMac)
+        XCTAssertEqual(outcome, .ok(DeviceInfo(id: "d1", name: "iPad", screenId: nil, brightness: nil)))
+    }
+
+    func testUnauthorizedOnA401() async {
+        StubProtocol.answer("192.0.2.23", with: .status(401, #"{"error":"no"}"#))
+        let outcome = await HTTPProber(configuration: StubProtocol.configuration).probe(host: "192.0.2.23", port: 4243, mac: sampleMac)
+        XCTAssertEqual(outcome, .unauthorized)
+    }
+
+    func testUnreachableOnA500() async {
+        StubProtocol.answer("192.0.2.24", with: .status(500, "{}"))
+        let outcome = await HTTPProber(configuration: StubProtocol.configuration).probe(host: "192.0.2.24", port: 4243, mac: sampleMac)
+        XCTAssertEqual(outcome, .unreachable)
+    }
+
+    func testUnreachableOnATimeout() async {
+        StubProtocol.answer("192.0.2.25", with: .failure(.timedOut))
+        let outcome = await HTTPProber(configuration: StubProtocol.configuration).probe(host: "192.0.2.25", port: 4243, mac: sampleMac)
+        XCTAssertEqual(outcome, .unreachable)
+    }
+
+    func testUnreachableOnA200ThatIsNotADeviceRecord() async {
+        StubProtocol.answer("192.0.2.26", with: .status(200, "<html></html>"))
+        let outcome = await HTTPProber(configuration: StubProtocol.configuration).probe(host: "192.0.2.26", port: 4243, mac: sampleMac)
+        XCTAssertEqual(outcome, .unreachable)
+    }
+
+    func testPinMismatchWhenThePinRejectsTheKey() async {
+        let outcome = await HTTPProber(transport: { _, _ in .pinRejected }).probe(host: "192.0.2.27", port: 4243, mac: sampleMac)
+        XCTAssertEqual(outcome, .pinMismatch)
+    }
+
+    func testPinsTheMacsKeyForTheProbedHostAndTheMacsOwnNames() async {
+        let policies = Recorder<PinPolicy>()
+        _ = await HTTPProber(transport: { _, policy in policies.add(policy); return .failed })
+            .probe(host: "198.51.100.7", port: 4243, mac: sampleMac)
+        XCTAssertEqual(policies.items, [PinPolicy(keyHash: SPKIFixture.keyHash, hosts: ["198.51.100.7", "studio.local", "192.0.2.10"])])
+    }
+
+    func testBracketsAnIPv6Host() {
+        XCTAssertEqual(Endpoint.url(host: "2001:db8::1", port: 4243, path: "/api/devices/me")?.absoluteString,
+                       "https://[2001:db8::1]:4243/api/devices/me")
+        XCTAssertEqual(Endpoint.url(host: "fe80::1%en0", port: 4243, path: "/x")?.absoluteString, "https://[fe80::1%25en0]:4243/x")
+        XCTAssertEqual(Endpoint.url(host: "studio.local", port: 4243, path: "/x")?.absoluteString, "https://studio.local:4243/x")
+    }
+}
+
+final class Recorder<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [T] = []
+    func add(_ item: T) { lock.withLock { stored.append(item) } }
+    var items: [T] { lock.withLock { stored } }
+}
+
+final class PairClientTests: XCTestCase {
+    private let viewport = Viewport(width: 1180, height: 820)
+
+    private func pair(_ client: PairClient, hosts: [String]) async throws -> PairedMac {
+        try await client.pair(hosts: hosts, port: 4243, keyHash: SPKIFixture.keyHash, code: "ABCDEFGH", name: "iPad",
+                              viewport: viewport, macName: "studio")
+    }
+
+    func testPairsAndBuildsTheRecord() async throws {
+        StubProtocol.answer("192.0.2.31", with: .status(200, #"{"token":"tok-1","deviceId":"d9"}"#))
+        let mac = try await pair(PairClient(configuration: StubProtocol.configuration), hosts: ["studio.local", "192.0.2.31"])
+        XCTAssertEqual(mac, PairedMac(host: "studio.local", address: "192.0.2.31", port: 4243, keyHash: SPKIFixture.keyHash,
+                                      token: "tok-1", deviceId: "d9", name: "studio"))
+
+        let seen = try XCTUnwrap(StubProtocol.requests(to: "192.0.2.31").first)
+        XCTAssertEqual(seen.request.url?.absoluteString, "https://192.0.2.31:4243/api/pair")
+        XCTAssertEqual(seen.request.httpMethod, "POST")
+        XCTAssertEqual(seen.request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let body = try XCTUnwrap(seen.body)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["code"] as? String, "ABCDEFGH")
+        XCTAssertEqual(json["name"] as? String, "iPad")
+        XCTAssertEqual(json["viewport"] as? [String: Int], ["width": 1180, "height": 820])
+    }
+
+    func testKeepsTheLinksAddressWhenTheNameAnswers() async throws {
+        let client = PairClient(transport: { request, _ in
+            request.url?.host == "studio.local" ? .response(status: 200, body: Data(#"{"token":"t","deviceId":"d"}"#.utf8)) : .failed
+        })
+        let mac = try await pair(client, hosts: ["studio.local", "192.0.2.32"])
+        XCTAssertEqual(mac.host, "studio.local")
+        XCTAssertEqual(mac.address, "192.0.2.32")
+    }
+
+    func testRejectedCarriesTheServersMessage() async {
+        StubProtocol.answer("192.0.2.33", with: .status(403, #"{"error":"Code expiré"}"#))
+        do {
+            _ = try await pair(PairClient(configuration: StubProtocol.configuration), hosts: ["192.0.2.33"])
+            XCTFail("paired")
+        } catch {
+            XCTAssertEqual(error as? PairError, .rejected("Code expiré"))
+        }
+    }
+
+    func testLimitedCarriesTheServersMessage() async {
+        StubProtocol.answer("192.0.2.34", with: .status(429, #"{"error":"Too many tries"}"#))
+        do {
+            _ = try await pair(PairClient(configuration: StubProtocol.configuration), hosts: ["192.0.2.34"])
+            XCTFail("paired")
+        } catch {
+            XCTAssertEqual(error as? PairError, .limited("Too many tries"))
+        }
+    }
+
+    func testUnreachableWhenNoHostAnswers() async {
+        StubProtocol.answer("192.0.2.35", with: .failure(.timedOut))
+        do {
+            _ = try await pair(PairClient(configuration: StubProtocol.configuration), hosts: ["192.0.2.35", "192.0.2.36"])
+            XCTFail("paired")
+        } catch {
+            XCTAssertEqual(error as? PairError, .unreachable)
+        }
+        XCTAssertEqual(StubProtocol.requests(to: "192.0.2.36").count, 1)
+    }
+
+    func testWrongMacWhenAHostFailsThePinAndNoneAnswers() async {
+        let client = PairClient(transport: { request, _ in request.url?.host == "studio.local" ? .pinRejected : .failed })
+        do {
+            _ = try await pair(client, hosts: ["studio.local", "192.0.2.37"])
+            XCTFail("paired")
+        } catch {
+            XCTAssertEqual(error as? PairError, .wrongMac)
+        }
+    }
+
+    func testMovesPastAWrongMacToTheRightOne() async throws {
+        let client = PairClient(transport: { request, _ in
+            switch request.url?.host {
+            case "studio.local": .failed
+            case "192.0.2.38": .pinRejected
+            default: .response(status: 200, body: Data(#"{"token":"t","deviceId":"d"}"#.utf8))
+            }
+        })
+        let mac = try await pair(client, hosts: ["studio.local", "192.0.2.38", "198.51.100.38"])
+        XCTAssertEqual(mac.address, "198.51.100.38")
+        XCTAssertEqual(mac.host, "studio.local")
+    }
+
+    func testPinsEveryHostItTries() async {
+        let policies = Recorder<PinPolicy>()
+        _ = try? await pair(PairClient(transport: { _, policy in policies.add(policy); return .failed }), hosts: ["studio.local", "192.0.2.39"])
+        XCTAssertEqual(policies.items.map(\.keyHash), [SPKIFixture.keyHash, SPKIFixture.keyHash])
+        XCTAssertEqual(policies.items.first?.hosts, ["studio.local", "192.0.2.39"])
+    }
+
+    func testErrorsNeverCarryTheToken() {
+        let errors: [PairError] = [.rejected("m"), .limited("m"), .wrongMac, .unreachable, .invalidRequest]
+        for error in errors { XCTAssertFalse("\(error)".contains("tok")) }
+    }
+
+    func testViewportClampsToTheServersBounds() {
+        XCTAssertEqual(Viewport(width: 0, height: 20000), Viewport(width: 1, height: 10000))
+    }
+}
+
+final class BrightnessReporterTests: XCTestCase {
+    func testBuildsTheReportRequest() throws {
+        let reporter = BrightnessReporter(mac: sampleMac, host: "192.0.2.10")
+        let request = try XCTUnwrap(reporter.request(brightness: 0.426, applied: 7))
+        XCTAssertEqual(request.url?.absoluteString, "https://192.0.2.10:4243/api/devices/me/brightness")
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), "fremkit_device=device-token")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Int])
+        XCTAssertEqual(json, ["value": 43, "applied": 7])
+    }
+
+    func testOmitsAppliedWhenNothingWasApplied() throws {
+        let request = try XCTUnwrap(BrightnessReporter(mac: sampleMac, host: "studio.local").request(brightness: 1, applied: nil))
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Int])
+        XCTAssertEqual(json, ["value": 100])
+    }
+
+    func testClampsTheValue() {
+        XCTAssertEqual(BrightnessReporter.value(for: -0.2), 0)
+        XCTAssertEqual(BrightnessReporter.value(for: 1.7), 100)
+        XCTAssertEqual(BrightnessReporter.value(for: 0.005), 1)
+        XCTAssertEqual(BrightnessReporter.value(for: .nan), 0)
+    }
+}

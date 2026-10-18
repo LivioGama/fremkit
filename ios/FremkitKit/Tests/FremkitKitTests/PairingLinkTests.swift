@@ -1,0 +1,89 @@
+import XCTest
+@testable import FremkitKit
+
+final class PairingLinkTests: XCTestCase {
+    static let key = "Y4nRTFWKfvKwllWID7DQPMgZIF8SqUUvgWkQZsK_ArQ"
+
+    private func link(_ query: String) -> PairingLink? {
+        PairingLink(url: URL(string: "fremkit://pair?\(query)")!)
+    }
+
+    private let valid = "h=studio.local&a=192.0.2.10&p=4243&c=ABCDEFGH&k=\(PairingLinkTests.key)"
+
+    func testParsesAValidLink() throws {
+        let parsed = try XCTUnwrap(link(valid))
+        XCTAssertEqual(parsed, PairingLink(host: "studio.local", address: "192.0.2.10", port: 4243, code: "ABCDEFGH", keyHash: Self.key))
+    }
+
+    func testAcceptsAnIPv6Address() throws {
+        let parsed = try XCTUnwrap(link("h=studio.local&a=2001:db8::1&p=4243&c=ABCDEFGH&k=\(Self.key)"))
+        XCTAssertEqual(parsed.address, "2001:db8::1")
+    }
+
+    func testNormalisesALowercaseCodeWithADash() throws {
+        let parsed = try XCTUnwrap(link("h=studio.local&a=192.0.2.10&p=4243&c=abcd-efgh&k=\(Self.key)"))
+        XCTAssertEqual(parsed.code, "ABCDEFGH")
+    }
+
+    func testRefusesALinkMissingAnyField() {
+        for name in ["h", "a", "p", "c", "k"] {
+            let query = valid.split(separator: "&").filter { !$0.hasPrefix("\(name)=") }.joined(separator: "&")
+            XCTAssertNil(link(query), "a link without \(name) parsed")
+        }
+    }
+
+    func testRefusesABadPort() {
+        for port in ["0", "65536", "-1", "abc", "42%2043", ""] {
+            XCTAssertNil(link("h=studio.local&a=192.0.2.10&p=\(port)&c=ABCDEFGH&k=\(Self.key)"), "port \(port) parsed")
+        }
+        XCTAssertNotNil(link("h=studio.local&a=192.0.2.10&p=65535&c=ABCDEFGH&k=\(Self.key)"))
+    }
+
+    func testRefusesABadKey() {
+        for key in [String(Self.key.dropLast()), Self.key + "A", String(Self.key.dropLast()) + "=", String(Self.key.dropLast()) + "+",
+                    String(Self.key.dropLast()) + "R"] {
+            XCTAssertNil(link("h=studio.local&a=192.0.2.10&p=4243&c=ABCDEFGH&k=\(key)"), "key \(key) parsed")
+        }
+    }
+
+    func testRefusesAHostThatIsNotLocal() {
+        for host in ["studio.example.com", ".local", "studio", "stu%20dio.local", "studio/x.local"] {
+            XCTAssertNil(link("h=\(host)&a=192.0.2.10&p=4243&c=ABCDEFGH&k=\(Self.key)"), "host \(host) parsed")
+        }
+    }
+
+    func testRefusesAnAddressThatIsNotAnIPLiteral() {
+        for address in ["studio.local", "192.0.2", "192.0.2.300", "example.com", ""] {
+            XCTAssertNil(link("h=studio.local&a=\(address)&p=4243&c=ABCDEFGH&k=\(Self.key)"), "address \(address) parsed")
+        }
+    }
+
+    func testRefusesAnotherSchemeOrAction() {
+        XCTAssertNil(PairingLink(url: URL(string: "https://pair?\(valid)")!))
+        XCTAssertNil(PairingLink(url: URL(string: "fremkit://unpair?\(valid)")!))
+    }
+
+    func testRefusesABadCode() {
+        XCTAssertNil(link("h=studio.local&a=192.0.2.10&p=4243&c=ABCDEFG0&k=\(Self.key)"))
+    }
+}
+
+final class NormaliseCodeTests: XCTestCase {
+    func testUppercasesAndDropsSpacesAndDashes() {
+        XCTAssertEqual(normaliseCode(" abcd-efgh "), "ABCDEFGH")
+        XCTAssertEqual(normaliseCode("AB CD EF 23"), "ABCDEF23")
+    }
+
+    func testRefusesCharactersOutsideTheAlphabet() {
+        XCTAssertNil(normaliseCode("ABCDEFG0"))
+        XCTAssertNil(normaliseCode("ABCDEFGI"))
+        XCTAssertNil(normaliseCode("ABCDEFG1"))
+        XCTAssertNil(normaliseCode("ABCDÉFGH"))
+    }
+
+    func testRefusesTheWrongLength() {
+        XCTAssertNil(normaliseCode("ABCDEFG"))
+        XCTAssertNil(normaliseCode("ABCDEFGHJ"))
+        XCTAssertNil(normaliseCode(""))
+    }
+}
