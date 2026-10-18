@@ -100,6 +100,9 @@ tagged `vX.Y.Z`.
   private IPv6 ranges and one more way of spelling `..` in a connection's path are refused too.
 - **The Dock widget opens only what is in your Dock.** Asking it to bring forward an app that is
   not in the Dock is now refused.
+- **A Bambu printer's access code stays off the command line.** When the printer was off, the
+  camera preview of an X1 or H2 could retry with the access code visible to other accounts on the
+  Mac; it no longer does, whatever the printer's state.
 
 ## 0.4.1 — 2026-10-16
 
