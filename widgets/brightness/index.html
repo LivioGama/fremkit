@@ -5,12 +5,11 @@
   [hidden]{display:none!important}
   .wrap{box-sizing:border-box;height:100%;padding:clamp(8px,3vh,16px) clamp(10px,3vw,18px);display:flex;flex-direction:column;justify-content:center;gap:clamp(6px,2vh,12px)}
   .ctrl{display:flex;align-items:center;gap:clamp(8px,2.4vw,16px)}
-  /* 56 px: the − and + are hit while glancing at the strip. */
   button{flex:0 0 auto;font:inherit;border:0;border-radius:12px;background:var(--surface-3, #252a32);color:var(--text, #e6e8eb);
-         min-width:56px;height:56px;padding:0 12px;font-size:calc(26px * var(--text-scale, 1));line-height:1;cursor:pointer;touch-action:manipulation}
+         cursor:pointer;touch-action:manipulation}
   button:active{background:var(--accent, #d9b36a);color:var(--on-accent, #0b0d10)}
   button:disabled{opacity:.35}
-  .slider{position:relative;flex:1;height:clamp(24px,9vh,48px);min-height:24px;border-radius:999px;background:var(--surface-3, #252a32);overflow:hidden;touch-action:none;cursor:pointer}
+  .slider{position:relative;flex:1;height:clamp(44px,14vh,64px);min-height:44px;border-radius:999px;background:var(--surface-3, #252a32);overflow:hidden;touch-action:none;cursor:pointer}
   .slider>i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--accent, #d9b36a)}
   .slider.off{opacity:.35;cursor:default}
   .lvl{flex:0 0 auto;min-width:3ch;text-align:right;font-size:calc(clamp(18px,8vh,34px) * var(--text-scale, 1));font-weight:600;font-variant-numeric:tabular-nums}
@@ -28,29 +27,30 @@
   html.accent-fill .slider>i{background:var(--on-surface,#0b0d10)}
   html.on-light button,html.accent-fill button{background:rgba(128,128,128,.25);color:var(--on-surface,#0b0d10)}
 
-  /* Compact, in the bar: − ☀ 62 +, sized off the bar's height. */
+  /* Compact, in the bar: ☀ and a track to slide along, sized off the bar's height. */
   .cwrap{display:none}
   html.compact .wrap{display:none}
-  html.compact .cwrap{display:flex;box-sizing:border-box;height:100%;align-items:center;justify-content:center;gap:calc(var(--h,80px) * .08);padding:0 4px}
-  html.compact.slot-left .cwrap{justify-content:flex-start}
-  html.compact.slot-right .cwrap{justify-content:flex-end}
-  html.compact .cwrap button{min-width:44px;height:min(44px, calc(var(--h,80px) * .8));font-size:calc(calc(var(--h,80px) * .3) * var(--text-scale, 1));border-radius:10px;padding:0 8px}
-  .cval{display:flex;align-items:center;gap:calc(var(--h,80px) * .06);font-size:calc(calc(var(--h,80px) * .28) * var(--text-scale, 1));font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
-  .cval.off{opacity:.45}
+  /* The whole cell takes the finger; the track only shows the level. */
+  html.compact .cwrap{display:flex;box-sizing:border-box;height:100%;align-items:center;gap:calc(var(--h,80px) * .12);padding:0 calc(var(--h,80px) * .15);touch-action:none;cursor:pointer}
+  html.compact .cwrap.off{opacity:.45;cursor:default}
+  .track{position:relative;flex:1;min-width:40px;height:max(8px, calc(var(--h,80px) * .16));border-radius:999px;background:var(--surface-3, #252a32);overflow:hidden}
+  .track>i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--accent, #d9b36a)}
+  html.on-light .track,html.accent-fill .track{background:rgba(128,128,128,.35)}
+  html.accent-fill .track>i{background:var(--on-surface,#0b0d10)}
+  .cval{display:flex;align-items:center;font-size:calc(calc(var(--h,80px) * .28) * var(--text-scale, 1));font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .cnum{min-width:2.4ch;justify-content:flex-end}
 </style></head><body>
 <div class="wrap">
   <div class="ctrl">
-    <button id="down" aria-label="-">−</button>
     <div class="slider" id="slider"><i id="fill"></i></div>
-    <button id="up" aria-label="+">+</button>
     <span class="lvl" id="lvl">--</span>
   </div>
   <div class="status"><span class="note" id="note"></span><button id="auto" hidden></button></div>
 </div>
-<div class="cwrap">
-  <button id="cdown" aria-label="-">−</button>
-  <span class="cval" id="cval"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.6" y1="4.6" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.4" y2="19.4"/><line x1="4.6" y1="19.4" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.4" y2="4.6"/></svg><span id="cnum">--</span></span>
-  <button id="cup" aria-label="+">+</button>
+<div class="cwrap" id="cslider">
+  <span class="cval"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.6" y1="4.6" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.4" y2="19.4"/><line x1="4.6" y1="19.4" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.4" y2="4.6"/></svg></span>
+  <div class="track"><i id="cfill"></i></div>
+  <span class="cval cnum" id="cnum">--</span>
 </div>
 <script>
   var L = {
@@ -78,8 +78,7 @@
   Fremkit.whenReady(function () {
     var $ = function (id) { return document.getElementById(id) }
     var slider = $('slider'), fill = $('fill'), lvl = $('lvl'), note = $('note'), auto = $('auto')
-    var cnum = $('cnum'), cval = $('cval')
-    var buttons = [$('down'), $('up'), $('cdown'), $('cup')]
+    var cslider = $('cslider'), cfill = $('cfill'), cnum = $('cnum')
     // Which screen this tile drives: the one the host says it is drawn on, else the kiosk's.
     var screenId = Fremkit.screen
     var cur = null, level = null, dragging = false, holdUntil = 0
@@ -92,7 +91,7 @@
     function show(v) {
       var text = v === null ? '--' : String(Math.round(v))
       lvl.textContent = text; cnum.textContent = text
-      fill.style.width = (v === null ? 0 : v) + '%'
+      fill.style.width = cfill.style.width = (v === null ? 0 : v) + '%'
     }
     function statusText(s) {
       if (!s) return Fremkit.t(L.waiting)
@@ -114,8 +113,7 @@
       var s = cur
       var ok = !!(s && s.available)
       slider.classList.toggle('off', !ok)
-      cval.classList.toggle('off', !ok)
-      buttons.forEach(function (b) { b.disabled = !ok })
+      cslider.classList.toggle('off', !ok)
       note.textContent = statusText(s)
       auto.hidden = !(ok && s.overridden)
       auto.textContent = Fremkit.t(L.resume)
@@ -141,50 +139,60 @@
       lastSent = now; pending = null
       Fremkit.sendCommand('brightness', 'set', payload({ value: v })).catch(function () {})
     }
-    function step(sign) {
-      if (!cur || !cur.available) return
-      var size = Number(Fremkit.settings.step) || 10
-      var v = Math.max(0, Math.min(100, Math.round((level === null ? 50 : level) + sign * size)))
-      level = v; show(v); send(v, true)
-    }
-    $('down').onclick = $('cdown').onclick = function () { step(-1) }
-    $('up').onclick = $('cup').onclick = function () { step(1) }
     auto.onclick = function () { Fremkit.sendCommand('brightness', 'resume', payload({})).catch(function () {}) }
 
-    function levelAt(x) {
-      var r = slider.getBoundingClientRect()
-      return Math.max(0, Math.min(100, Math.round((x - r.left) / r.width * 100)))
+    function clamp(v) { return Math.max(0, Math.min(100, Math.round(v))) }
+    function set(v, force) { level = v; show(v); send(v, force) }
+
+    /**
+     * One finger on a surface sets the level. The tile's slider is absolute: where the finger is
+     * is the level. The bar's is relative, from wherever the finger lands: the cell is small, so a
+     * touch must not jump the level, only a slide moves it, by the slide's share of the track.
+     */
+    function slide(surface, track, relative) {
+      var startX = 0, startLevel = 0, moved = false
+      function at(x) {
+        var r = track.getBoundingClientRect()
+        if (!relative) return clamp((x - r.left) / r.width * 100)
+        return clamp(startLevel + (x - startX) / Math.max(r.width, 1) * 100)
+      }
+      surface.addEventListener('pointerdown', function (e) {
+        if (!cur || !cur.available) return
+        dragging = true; moved = false; surface.setPointerCapture(e.pointerId)
+        startX = e.clientX; startLevel = level === null ? 50 : level
+        if (!relative) set(at(e.clientX))
+      })
+      surface.addEventListener('pointermove', function (e) {
+        if (!dragging) return
+        if (relative && !moved && Math.abs(e.clientX - startX) < 4) return
+        moved = true; set(at(e.clientX))
+      })
+      function stop(e) {
+        if (!dragging) return
+        dragging = false
+        if (!relative || moved) set(at(e.clientX), true)
+      }
+      surface.addEventListener('pointerup', stop); surface.addEventListener('pointercancel', stop)
+      // The Edge's touch driver turns a quick drag into wheel events at the finger's position, with
+      // no pointer event at all: follow the finger when it moves, and step for a real mouse wheel.
+      // Swallowing them keeps the stage from taking the same gesture for a swipe between pages.
+      var wheelX = null, wheelIdle = null
+      surface.addEventListener('wheel', function (e) {
+        e.preventDefault()
+        if (!cur || !cur.available) return
+        var base = level === null ? 50 : level, v
+        if (wheelX !== null && Math.abs(e.clientX - wheelX) > 0.5) {
+          var r = track.getBoundingClientRect()
+          v = relative ? clamp(base + (e.clientX - wheelX) / Math.max(r.width, 1) * 100) : at(e.clientX)
+        } else v = clamp(base - (e.deltaY + e.deltaX) / 10)
+        wheelX = e.clientX; dragging = true
+        set(v)
+        clearTimeout(wheelIdle)
+        wheelIdle = setTimeout(function () { wheelX = null; dragging = false; send(level, true) }, 200)
+      }, { passive: false })
     }
-    slider.addEventListener('pointerdown', function (e) {
-      if (!cur || !cur.available) return
-      dragging = true; slider.setPointerCapture(e.pointerId)
-      var v = levelAt(e.clientX); level = v; show(v); send(v)
-    })
-    slider.addEventListener('pointermove', function (e) {
-      if (!dragging) return
-      var v = levelAt(e.clientX); level = v; show(v); send(v)
-    })
-    function stop(e) {
-      if (!dragging) return
-      dragging = false
-      var v = levelAt(e.clientX); level = v; show(v); send(v, true)
-    }
-    slider.addEventListener('pointerup', stop); slider.addEventListener('pointercancel', stop)
-    // The Edge's touch driver turns a quick drag into wheel events at the finger's position, with
-    // no pointer event at all: follow the finger when it moves, and step for a real mouse wheel.
-    // Swallowing them keeps the stage from taking the same gesture for a swipe between pages.
-    var wheelX = null, wheelIdle = null
-    slider.addEventListener('wheel', function (e) {
-      e.preventDefault()
-      if (!cur || !cur.available) return
-      var v
-      if (wheelX !== null && Math.abs(e.clientX - wheelX) > 0.5) v = levelAt(e.clientX)
-      else v = Math.max(0, Math.min(100, Math.round((level === null ? 50 : level) - (e.deltaY + e.deltaX) / 10)))
-      wheelX = e.clientX; dragging = true
-      level = v; show(v); send(v)
-      clearTimeout(wheelIdle)
-      wheelIdle = setTimeout(function () { wheelX = null; dragging = false; send(level, true) }, 200)
-    }, { passive: false })
+    slide(slider, slider, false)
+    slide(cslider, cslider.querySelector('.track'), true)
 
     function sizeVars() {
       if (Fremkit.size && Fremkit.size.px) document.documentElement.style.setProperty('--h', Fremkit.size.px.height + 'px')

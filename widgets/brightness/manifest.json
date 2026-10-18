@@ -9,8 +9,4 @@
   "defaultSize": [12, 4],
   "compact": { "width": 5 },
   "subscriptions": ["brightness"],
-  "commands": ["brightness"],
-  "settingsSchema": {
-    "step": { "type": "number", "default": 10,
-              "label": { "fr": "Pas des boutons − / +", "en": "Step of the − / + buttons" } }
-  } }
+  "commands": ["brightness"] }

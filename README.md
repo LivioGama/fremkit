@@ -302,7 +302,7 @@ above state lines such as "Server: running" and "Touch: active".
 | Widget | Shows | Connection | Compact |
 |---|---|---|---|
 | `battery` | The Mac's battery and its Bluetooth peripherals | — | ● |
-| `brightness` | The brightness of the screen it is on: slider, − / +, and what drives it (day/night, follow the Mac) | — | ● |
+| `brightness` | The brightness of the screen it is on: a slider to slide, in the bar too, and what drives it (day/night, follow the Mac) | — | ● |
 | `calendar` | The next events of one or more published calendars | ICS calendar | ● |
 | `claude-sessions` | Live Claude Code sessions; a touch goes to the session's window, and it can chime when one starts waiting | — | — |
 | `claude-usage` | Claude 5 h / 7 day limits and today's tokens | — | ● |
