@@ -30,6 +30,37 @@ beforeEach(async () => {
 })
 afterEach(async () => { await app.close() })
 
+describe('the host pages', () => {
+  it('carry a CSP that keeps widget frames on /widgets/ and the page unframeable', async () => {
+    const ui = join(dir, 'ui')
+    await mkdir(ui, { recursive: true })
+    await writeFile(join(ui, 'index.html'), '<!doctype html><title>dashboard</title>')
+    await writeFile(join(ui, 'admin.html'), '<!doctype html><title>admin</title>')
+    await writeFile(join(ui, 'app.js'), 'x')
+    const served = await buildApp({ accessToken: null, dataDir: join(dir, 'data'), widgetsDir: join(dir, 'widgets'), uiDist: ui, port: 4301 })
+    try {
+      for (const url of ['/', '/index.html', '/admin', '/admin/', '/admin.html']) {
+        const res = await served.inject({ url, headers: { host: '127.0.0.1:4301' } })
+        expect(res.statusCode, url).toBe(200)
+        const csp = String(res.headers['content-security-policy'])
+        expect(csp, url).toContain('frame-src http://127.0.0.1:4301/widgets/')
+        expect(csp, url).toContain("connect-src 'self' ws://127.0.0.1:4301")
+        expect(csp, url).toContain("script-src 'self'")
+        expect(csp, url).not.toContain("script-src 'self' 'unsafe-inline'")
+        for (const d of ["frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'"]) expect(csp, url).toContain(d)
+      }
+      // Under localhost the page's origin is localhost, and so are its frames.
+      const viaName = await served.inject({ url: '/', headers: { host: 'localhost:4301' } })
+      expect(String(viaName.headers['content-security-policy'])).toContain('frame-src http://localhost:4301/widgets/')
+      // Not a page: no host CSP, and the widgets keep their own.
+      expect((await served.inject({ url: '/app.js', headers: { host: '127.0.0.1:4301' } })).headers['content-security-policy']).toBeUndefined()
+      expect((await served.inject({ url: '/widgets/clock/index.html', headers: { host: '127.0.0.1:4301' } })).headers['content-security-policy']).toBe(widgetCsp(4301))
+    } finally {
+      await served.close()
+    }
+  })
+})
+
 describe('config routes', () => {
   it('GET /api/config returns the default config', async () => {
     const res = await app.inject({ url: '/api/config' })

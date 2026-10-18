@@ -84,6 +84,9 @@ tagged `vX.Y.Z`.
   gone before any widget code runs, and a second page of a widget runs no script at all. A
   built-in widget that needs a peer on this Mac can be given a narrow, local-only WebRTC; a
   widget from the registry never can.
+- **A widget can no longer send data away by navigating its own frame.** The dashboard and the
+  admin now carry a Content-Security-Policy that lets a frame load only a widget page, and that
+  no other site can frame them in.
 
 ## 0.4.1 — 2026-10-16
 
