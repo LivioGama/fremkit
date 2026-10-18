@@ -9,7 +9,7 @@ final class SubframeTests: XCTestCase {
     func testAllowsTheMacsWidgets() {
         XCTAssertTrue(allowed("https://studio.local:4243/widgets/clock/index.html"))
         XCTAssertTrue(allowed("https://STUDIO.local:4243/widgets/clock/index.html?x=1#y"))
-        XCTAssertTrue(allowed("https://studio.local.:4243/widgets/clock/"))
+        XCTAssertTrue(allowed("https://studio.local.:4243/widgets/clock/", host: "studio.local."))
         XCTAssertTrue(allowed("https://192.0.2.10:4243/widgets/clock/index.html", host: "192.0.2.10"))
         XCTAssertTrue(allowed("https://[fe80::1%25en0]:4243/widgets/clock/index.html", host: "fe80::1%en0"))
         XCTAssertTrue(allowed("https://example.local/widgets/clock/index.html", host: "example.local", port: 443))
@@ -35,9 +35,52 @@ final class SubframeTests: XCTestCase {
             "data:text/html,hi",
             "javascript:alert(1)",
             "blob:https://studio.local:4243/1234",
+            // Where the earlier rule and the Mac's `WidgetFrames` disagreed; the Mac's answer wins.
+            "https://studio.local.:4243/widgets/clock/",
+            "https://studio.local:4243/%77idgets/clock/index.html",
+            "https://studio.local:4243/widgets/clock/a%2Ejs",
         ] {
             XCTAssertFalse(allowed(url), url)
         }
         XCTAssertFalse(Dashboard.allowsSubframe(nil, host: "studio.local", port: 4243))
+    }
+
+    // `WidgetFramesTests` (native/Tests/FremkitCoreTests), case for case, on the iPad's origin:
+    // `http://127.0.0.1:4242` becomes `https://studio.local:4243`, and its other-origin cases
+    // (another port, another name for the same host, another scheme) keep their meaning.
+
+    func testWidgetFramesAllowsAWidgetDocumentOnTheSameOrigin() {
+        for candidate in ["https://studio.local:4243/widgets/clock/index.html",
+                          "https://studio.local:4243/widgets/clock/",
+                          "https://studio.local:4243/widgets/clock/index.html?x=1#y"] {
+            XCTAssertTrue(allowed(candidate), candidate)
+        }
+    }
+
+    func testWidgetFramesRefusesEverythingElse() {
+        for candidate in ["https://attacker.example/?d=secret",
+                          "https://studio.local:4242/widgets/clock/index.html",
+                          "https://192.0.2.10:4243/widgets/clock/index.html",
+                          "http://studio.local:4243/widgets/clock/index.html",
+                          "https://studio.local:4243/admin",
+                          "https://studio.local:4243/",
+                          "https://studio.local:4243/widgets/",
+                          "https://studio.local:4243/widgetsx/clock/index.html",
+                          "https://studio.local:4243/widgets/../admin",
+                          "https://studio.local:4243/widgets/%2e%2e/admin",
+                          "https://studio.local:4243/widgets/./clock",
+                          "about:blank", "about:srcdoc",
+                          "data:text/html,<script>1</script>",
+                          "blob:https://studio.local:4243/0f2c",
+                          "javascript:alert(1)"] {
+            XCTAssertFalse(allowed(candidate), candidate)
+        }
+        XCTAssertFalse(Dashboard.allowsSubframe(nil, host: "studio.local", port: 4243))
+    }
+
+    func testWidgetFramesFollowsThePagesOwnOrigin() {
+        XCTAssertTrue(allowed("https://mac.local:4243/widgets/clock/index.html", host: "mac.local"))
+        XCTAssertFalse(allowed("http://127.0.0.1:4242/widgets/clock/index.html", host: "mac.local"))
+        XCTAssertFalse(allowed("https://studio.local:4243/widgets/clock/index.html", host: "mac.local"))
     }
 }
