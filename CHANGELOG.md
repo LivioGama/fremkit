@@ -13,6 +13,8 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **Pictures in the Sietch.** A registry widget that publishes a preview shows it as a thumbnail on
+  its row of the Sietch, before you install it.
 - **`pnpm widget:preview`.** Takes a widget's preview image for you: it renders the widget alone at
   its default size against a demo server, waits for it to show data, and writes `preview.webp`
   into its folder. Works on the built-ins (`--all`) and on your own widget (`--dir`). See

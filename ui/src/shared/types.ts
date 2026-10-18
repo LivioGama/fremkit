@@ -558,6 +558,11 @@ export interface MarketplaceWidget {
   /** A built-in already owns this id, so it can never be installed. */
   shadowsBuiltin: boolean
   /**
+   * The registry's URL of the widget's preview image, when it publishes one. Never loaded as is:
+   * the admin shows `/api/marketplace/preview/<id>`, which the server fetches and checks.
+   */
+  preview?: string
+  /**
    * What this version changed, as plain text from the package's changelog.
    *
    * **Rendered as text, never as markup.** The registry strips the markdown, but this is a
