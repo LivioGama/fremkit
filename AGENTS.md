@@ -167,6 +167,10 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   under `FREMKIT_WIDGET_DEV=1`, its widgets skip the consent dialog, and nothing shipped sets the
   flag. Never read it, or watch files, without that flag, and never let it shadow a built-in or
   an installed id.
+- **Editor-only channels live under `config:`.** `config:health` (`server/src/providers/health.ts`)
+  is kept from widgets by the manifest schema's reserved `config` family and from paired devices
+  because `HOST_CHANNELS` names only the literal `config`. A new channel for the editor's eyes goes
+  there too, and `HOST_CHANNELS` never grows a `config:*` entry.
 - **Every editor action goes through the admin store's `apply()`**, menus and shortcuts
   included, so it is undoable and saved. Context menus are data built for
   `ui/src/shared/ui/contextMenu.ts`; do not write a second menu component.
@@ -208,4 +212,5 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
 | the app, its signing, notarization or updates | `scripts/build-app.sh`, `scripts/release.sh`, `native/Sources/FremkitCore/ServerLaunch.swift` (checkout or bundled server), `server/src/paths.ts` (the bundle's layout), `docs/releasing.md` |
 | change the disk map | `server/src/providers/disk-map*.ts`, `native/Sources/FremkitCore/Disk*.swift`, `native/Sources/FremkitScan`, `widgets/disk-map` |
 | bug reports, diagnostics | `server/src/diagnostics/` (report, `redact.ts`, log tail), `ui/src/admin/DiagnosticsSection.vue`, the helper's `StatusMenu.swift` |
+| change what the editor says about a failing widget | `ui/src/admin/health.ts` (pure, tested), `useHealth.ts` (stores, socket, the fixes), `server/src/providers/health.ts` (the `config:health` channel) |
 | pair a device, the remote listener | `server/src/devices/`, `ui/src/admin/DevicesSection.vue` |
