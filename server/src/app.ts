@@ -226,7 +226,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // Per-screen settings from the store, reports from the helper: see brightness/service.ts.
   const brightness = new BrightnessService({ config: () => store.get() })
   const brightnessChanged = (): void => registry.refresh('brightness')
-  registry.register(createBrightnessProvider(brightness, brightnessChanged))
+  // A paired device may set only its own screen's brightness: see mayCommandBrightness. Read
+  // at command time, so a device moved to another screen (or unpaired) is judged as it is now.
+  registry.register(createBrightnessProvider(brightness, brightnessChanged, (id) => deviceService.me(id)?.screenId ?? null))
   const secrets = createSecretStore(store.get().secrets.backend, opts.dataDir)
   // v2 → v3 moved the Homey connection to the type its widget declares, and the declaration
   // calls the key `token` where the coded type called it `apiKey`. The config half of that is in

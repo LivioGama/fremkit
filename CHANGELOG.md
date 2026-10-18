@@ -41,7 +41,8 @@ tagged `vX.Y.Z`.
   this version (`pnpm helper:build && pnpm helper:install`).
 - **Only Fremkit itself sets the brightness.** A widget from the registry may show the screen's
   brightness, but one that asks to change it is refused at install: the built-in widget, the
-  admin and the helper's menu are what set it.
+  admin and the helper's menu are what set it. A paired iPad can never change the Edge's
+  brightness, only that of its own screen.
 - **Widgets know their screen.** `Fremkit.screen` names the screen a widget is drawn on, for
   widgets whose data differs from one screen to the next (widget SDK generation 3).
 

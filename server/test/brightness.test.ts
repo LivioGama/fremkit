@@ -257,6 +257,51 @@ describe('brightness provider', () => {
   })
 })
 
+describe('mayCommandBrightness and paired devices', () => {
+  const local = { loopback: true, paired: false }
+  const ipad = { loopback: false, paired: true, deviceId: 'dev-1' }
+  const bound = (screen: string | null) => (id: string) => (id === 'dev-1' ? screen : null)
+
+  it('lets a paired device drive its own device screen, and nothing else', () => {
+    const [edge, mine, other] = config([{}, { kind: 'device' }, { kind: 'device' }]).screens
+    expect(mayCommandBrightness(ipad, mine, bound('s1'))).toBe(true)
+    expect(mayCommandBrightness(ipad, other, bound('s1'))).toBe(false)
+    // Never the Edge, whatever it is bound to.
+    expect(mayCommandBrightness(ipad, edge, bound('s1'))).toBe(false)
+    expect(mayCommandBrightness(ipad, edge, bound('edge'))).toBe(false)
+  })
+  it('refuses a device bound to no screen, an unknown device, and a paired context with no id', () => {
+    const [, mine] = config([{}, { kind: 'device' }]).screens
+    expect(mayCommandBrightness(ipad, mine, bound(null))).toBe(false)
+    expect(mayCommandBrightness({ ...ipad, deviceId: 'dev-2' }, mine, bound('s1'))).toBe(false)
+    expect(mayCommandBrightness({ loopback: false, paired: true }, mine, bound('s1'))).toBe(false)
+    expect(mayCommandBrightness(ipad, mine)).toBe(false)
+  })
+  it('lets this Mac drive any screen and refuses a client that is neither local nor paired', () => {
+    const [edge, device] = config([{}, { kind: 'device' }]).screens
+    expect(mayCommandBrightness(local, edge)).toBe(true)
+    expect(mayCommandBrightness(local, device)).toBe(true)
+    expect(mayCommandBrightness({ loopback: false, paired: false }, device, bound('s1'))).toBe(false)
+    expect(mayCommandBrightness(undefined, device, bound('s1'))).toBe(false)
+  })
+  it('judges against the live config: a screen deleted, or no longer a device screen, is refused', async () => {
+    let cfg = config([{}, { kind: 'device' }])
+    const svc = new BrightnessService({ config: () => cfg })
+    svc.helperReport(report())
+    const p = createBrightnessProvider(svc, () => {}, bound('s1'))
+    // Allowed past the rule; the device screen itself cannot be driven yet.
+    await expect(p.commands!.set({ screen: 's1', value: 30 }, ipad)).rejects.toThrow(/luminosité non réglable|cannot be set/)
+    await expect(p.commands!.set({ screen: 'edge', value: 30 }, ipad)).rejects.toThrow(/machine/)
+    // No screen named means the kiosk's: the Edge, so refused.
+    await expect(p.commands!.set({ value: 30 }, ipad)).rejects.toThrow(/machine/)
+    cfg = config([{}, { kind: 'edge' }])
+    await expect(p.commands!.set({ screen: 's1', value: 30 }, ipad)).rejects.toThrow(/machine/)
+    cfg = config([{}])
+    await expect(p.commands!.set({ screen: 's1', value: 30 }, ipad)).rejects.toThrow(/écran inconnu|unknown screen/)
+    expect(svc.snapshot().screens.edge.target).toBeNull()
+  })
+})
+
 describe('POST /api/hooks/brightness', () => {
   let dataDir: string
   let app: FastifyInstance

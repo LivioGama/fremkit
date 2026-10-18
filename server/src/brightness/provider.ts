@@ -22,21 +22,23 @@ function parse<T>(schema: z.ZodType<T>, payload: unknown): T {
   return parsed.data
 }
 
+/** The screen a paired device is bound to, or null for none (or an unknown device). */
+export type DeviceScreenOf = (deviceId: string) => string | null
+
 /**
  * Whether the client that sent a command may change this screen's brightness.
  *
- * Today every client the server accepts is on this Mac or is refused: a command from a socket on
- * this machine may drive any screen, and one with no context or from elsewhere drives none.
- *
- * What device pairing plugs in here: a paired device's socket is remote (`isRemoteRequest(req)`
- * from `net/remote.ts`, carried into the `CommandContext` by the WebSocket route) and is bound to
- * one screen. Such a client must never drive an `edge` screen — the Edge sits on the user's desk —
- * and may drive only the `device` screen it is bound to, so the context it carries has to name
- * that screen and this function has to compare the two. Everything else stays refused.
+ * - A socket on this Mac (`loopback`) may drive any screen.
+ * - A paired device (`paired`) may drive only its own screen: the one `deviceScreenOf` says it
+ *   is bound to *now*, and only while that screen is a `device` screen. `screen` is read from the
+ *   live config at command time, so a screen deleted or turned into something else since the
+ *   device paired is refused. A paired device never drives the Edge.
+ * - Anything else — no context, a socket neither local nor paired — drives nothing.
  */
-export function mayCommandBrightness(ctx: CommandContext | undefined, screen: Screen): boolean {
-  void screen
-  return ctx?.loopback === true
+export function mayCommandBrightness(ctx: CommandContext | undefined, screen: Screen, deviceScreenOf: DeviceScreenOf = () => null): boolean {
+  if (ctx?.loopback === true) return true
+  if (ctx?.paired !== true || !ctx.deviceId) return false
+  return screen.kind === 'device' && deviceScreenOf(ctx.deviceId) === screen.id
 }
 
 function run<T>(fn: () => T): T {
@@ -57,12 +59,16 @@ function run<T>(fn: () => T): T {
  * a command or a helper report asks for an immediate poll through `changed`, so a slider answers
  * at once. The registry only publishes when the snapshot actually changed.
  */
-export function createBrightnessProvider(service: BrightnessService, changed: () => void = () => {}): Provider {
+export function createBrightnessProvider(
+  service: BrightnessService,
+  changed: () => void = () => {},
+  deviceScreenOf: DeviceScreenOf = () => null,
+): Provider {
   const after = <T>(result: T): T => { changed(); return result }
   /** Fails closed: a caller with no context is treated as remote. */
   const guard = (screen: string | undefined, ctx: CommandContext | undefined): void => {
     run(() => {
-      if (!mayCommandBrightness(ctx, service.screenOf(screen))) throw new Error(tr(undefined, 'provider.localOnly'))
+      if (!mayCommandBrightness(ctx, service.screenOf(screen), deviceScreenOf)) throw new Error(tr(undefined, 'provider.localOnly'))
     })
   }
   return {
