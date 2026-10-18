@@ -8,7 +8,7 @@ import fastifyWebsocket from '@fastify/websocket'
 import WebSocket from 'ws'
 import { DeviceStore } from '../src/devices/store.js'
 import { CompanionSession } from '../src/companion/session.js'
-import { CompanionSockets, HELLO_TIMEOUT_MS, companionSocket } from '../src/companion/socket.js'
+import { CompanionSockets, HELLO_TIMEOUT_MS, MAX_PENDING_SOCKETS, TRY_AGAIN_LATER_CLOSE_CODE, companionSocket } from '../src/companion/socket.js'
 import { PROOF_LABEL, PROTOCOL, proofMac } from '../src/companion/protocol.js'
 import { MAX_WS_PAYLOAD_BYTES } from '../src/ws/hub.js'
 import { buildApp } from '../src/app.js'
@@ -127,6 +127,44 @@ describe('companion socket', () => {
 
   it('waits 5 s for the handshake by default', () => {
     expect(HELLO_TIMEOUT_MS).toBe(5_000)
+  })
+
+  it('closes a ninth socket still short of hello with 1013, and takes one again once a slot frees', async () => {
+    expect(MAX_PENDING_SOCKETS).toBe(8)
+    expect(TRY_AGAIN_LATER_CLOSE_CODE).toBe(1013)
+    // A server whose handshake timeout cannot run out under the test.
+    await app.close()
+    const sockets = new CompanionSockets()
+    const quiet = new CompanionSession({ send: (id, msg) => sockets.send(id, msg), changed: () => undefined, canShare: () => true })
+    app = Fastify()
+    await app.register(fastifyWebsocket, { options: { maxPayload: MAX_WS_PAYLOAD_BYTES } })
+    await app.register(companionSocket, { store, session: quiet, sockets, helloTimeoutMs: 60_000 })
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    port = (app.server.address() as { port: number }).port
+
+    const { token } = await paired()
+    const waiting = await Promise.all(Array.from({ length: MAX_PENDING_SOCKETS }, () => connect()))
+    const ninth = await connect()
+    expect(await ninth.closed).toEqual({ code: 1013 })
+    expect(ninth.messages).toEqual([])
+
+    // One of them leaves: its slot is free again, and a full handshake goes through.
+    waiting[0].ws.close()
+    await waiting[0].closed
+    await expect.poll(async () => {
+      const c = await connect()
+      const code = await Promise.race([c.closed.then((e) => e.code), new Promise((r) => setTimeout(() => r('open'), 50))])
+      c.ws.close()
+      return code
+    }).toBe('open')
+    // A socket that finished hello no longer counts: the cap is on sockets that proved nothing.
+    for (const c of waiting.slice(1)) c.ws.close()
+    await Promise.all(waiting.slice(1).map((c) => c.closed))
+    const done = await hello(token)
+    const more = await Promise.all(Array.from({ length: MAX_PENDING_SOCKETS }, () => connect()))
+    const over = await connect()
+    expect(await over.closed).toEqual({ code: 1013 })
+    for (const c of [done, ...more]) c.ws.close()
   })
 
   it('no challenge within the timeout (200 ms here) closes 1008', async () => {

@@ -17,6 +17,9 @@
  * keeps its token. A frame over the 64 KiB cap is refused by `ws` itself, with 1009, before any
  * of it is buffered.
  *
+ * At most `MAX_PENDING_SOCKETS` sockets may be mid-handshake at once; one more is closed with 1013
+ * (try again later) as soon as it is upgraded.
+ *
  * Each record holds one socket: a second one for it replaces the first. What the extension says
  * goes to the `CompanionSession`; what the session says comes back through `CompanionSockets`.
  */
@@ -30,6 +33,16 @@ import type { CompanionSession } from './session.js'
 
 /** How long a new socket has to finish the handshake: challenge, then hello. */
 export const HELLO_TIMEOUT_MS = 5_000
+
+/**
+ * Sockets that have not finished the handshake, at most, at once. Before hello a socket has proven
+ * nothing, so this keeps any local process from holding open sockets by the thousand; an honest
+ * extension opens one at a time and finishes in milliseconds.
+ */
+export const MAX_PENDING_SOCKETS = 8
+
+/** "Try again later": what a socket over `MAX_PENDING_SOCKETS` is closed with, right after upgrade. */
+export const TRY_AGAIN_LATER_CLOSE_CODE = 1013
 
 /** How often the session is asked to clear a share that went quiet. */
 export const TICK_MS = 1_000
@@ -117,12 +130,25 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
     unsubscribe()
   })
 
+  /** Sockets between upgrade and a hello accepted (or their close). */
+  let pending = 0
+
   /** This Mac's only: the remote allow-list leaves it out too, this is in case it ever grows. */
   const localOnly = async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
     if (isRemoteRequest(req)) return reply.callNotFound()
   }
 
   app.get('/companion/ws', { websocket: true, onRequest: localOnly }, (socket, req) => {
+    if (pending >= MAX_PENDING_SOCKETS) return closeSocket(socket, TRY_AGAIN_LATER_CLOSE_CODE)
+    pending += 1
+    let counted = true
+    /** Leaves the pending count, once: on hello accepted, on refusal or on close. */
+    const settle = (): void => {
+      if (!counted) return
+      counted = false
+      pending -= 1
+    }
+
     const origin = req.headers.origin
     let deviceId: string | null = null
     /** The record the challenge named, once the proof is sent: hello must carry its token. */
@@ -133,6 +159,7 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
       if (closed) return
       closed = true
       clearTimeout(timer)
+      settle()
       if (deviceId !== null && sockets.release(deviceId, socket)) session.disconnect(deviceId)
       closeSocket(socket, code)
     }
@@ -143,6 +170,7 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
     socket.on('close', () => {
       closed = true
       clearTimeout(timer)
+      settle()
       if (deviceId !== null && sockets.release(deviceId, socket)) session.disconnect(deviceId)
     })
 
@@ -178,6 +206,7 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
           return refuse(DEVICE_CLOSE_CODE)
         }
         clearTimeout(timer)
+        settle()
         deviceId = record.id
         sockets.attach(deviceId, socket)
         store.touch(deviceId).catch(() => undefined)

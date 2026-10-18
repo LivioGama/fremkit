@@ -14,6 +14,13 @@ export const MAX_RECEIVERS = 4
 /** A share whose extension said nothing (`tab.started`, `tab.meta`) for this long is over. */
 export const STALE_MS = 10_000
 
+/**
+ * A share's `tab.meta` refreshes are published at most once per this many ms (4 per second): the
+ * latest one is kept and published on the trailing edge. The extension sends one a second and one
+ * per control, so this only bites a sender that floods.
+ */
+export const META_PUBLISH_MS = 250
+
 export interface CompanionState {
   protocol: typeof PROTOCOL
   extensions: { connected: number; paired: number }
@@ -50,6 +57,8 @@ interface Share {
   lastSeen: number
   /** Taken back through a `hello` (the server restarted under it), not started by a `tab.started`. */
   resumed: boolean
+  /** When a `tab.meta` of this share was last published. */
+  metaPublishedAt?: number
 }
 
 interface Receiver {
@@ -70,6 +79,8 @@ export class CompanionSession {
   /** The name of every extension that ever connected, so a share outliving its socket keeps one. */
   private readonly names = new Map<string, string>()
   private share: Share | null = null
+  /** The trailing publish of a `tab.meta` that came too soon after the last one. */
+  private metaTimer: ReturnType<typeof setTimeout> | null = null
   /** In registration order, so the first entry of an instance is its oldest. */
   private readonly receivers = new Map<string, Receiver>()
 
@@ -129,7 +140,7 @@ export class CompanionSession {
         if (!share) return
         share.meta = msg.meta
         share.lastSeen = this.now()
-        return this.changed()
+        return this.publishMeta(share)
       }
       case 'tab.offer': {
         if (!this.shareOf(deviceId, msg.sessionId)) return
@@ -241,6 +252,7 @@ export class CompanionSession {
       this.send(deviceId, { type: 'tab.refused', sessionId: session.sessionId, reason: 'noWidget' })
       return
     }
+    this.clearMetaTimer()
     this.share = { deviceId, sessionId: session.sessionId, meta: session.meta, lastSeen: this.now(), resumed: current?.resumed ?? true }
     this.send(deviceId, { type: 'tab.accepted', sessionId: session.sessionId })
     // Receivers that re-announced themselves first, or are still waiting on an offer, ask now.
@@ -267,6 +279,7 @@ export class CompanionSession {
       // The widget frames keep their receiver ids: an offer from the previous tab is worthless,
       // so each one is asked again of the new sharer, after it heard it was accepted.
       for (const r of this.receivers.values()) r.offer = null
+      this.clearMetaTimer()
       this.share = { deviceId, sessionId, meta, lastSeen: this.now(), resumed: false }
       this.send(deviceId, { type: 'tab.accepted', sessionId })
       for (const receiverId of this.receivers.keys()) this.send(deviceId, { type: 'tab.view', receiverId })
@@ -274,6 +287,29 @@ export class CompanionSession {
     }
     this.send(deviceId, { type: 'tab.accepted', sessionId })
     this.changed()
+  }
+
+  /** Publishes a share's new meta now, or on the trailing edge of `META_PUBLISH_MS`. */
+  private publishMeta(share: Share): void {
+    // Already due: that publish reads `share.meta` when it fires, so it carries this one.
+    if (this.metaTimer !== null) return
+    const wait = (share.metaPublishedAt ?? -Infinity) + META_PUBLISH_MS - this.now()
+    if (wait <= 0) {
+      share.metaPublishedAt = this.now()
+      return this.changed()
+    }
+    this.metaTimer = setTimeout(() => {
+      this.metaTimer = null
+      if (this.share !== share) return
+      share.metaPublishedAt = this.now()
+      this.changed()
+    }, wait)
+    this.metaTimer.unref?.()
+  }
+
+  private clearMetaTimer(): void {
+    if (this.metaTimer !== null) clearTimeout(this.metaTimer)
+    this.metaTimer = null
   }
 
   /** The current share, when this device's message is about it; null otherwise. */
@@ -291,6 +327,7 @@ export class CompanionSession {
   }
 
   private endShare(): void {
+    this.clearMetaTimer()
     this.share = null
     this.receivers.clear()
     this.changed()

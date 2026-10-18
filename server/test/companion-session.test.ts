@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { CompanionSession } from '../src/companion/session.js'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CompanionSession, META_PUBLISH_MS } from '../src/companion/session.js'
 import type { ServerMessage, TabMeta } from '../src/companion/protocol.js'
 
 const META: TabMeta = { title: 'A video', host: 'video.example.com', currentTime: 12, duration: 300, paused: false, muted: false, volume: 1 }
@@ -332,5 +332,84 @@ describe('CompanionSession', () => {
     expect(t.session.snapshot()).toMatchObject({ extensions: { connected: 1 }, tab: { state: 'sharing', sessionId: S1 } })
     t.session.revoke('a')
     expect(t.session.snapshot()).toMatchObject({ extensions: { connected: 0 }, tab: { state: 'idle' } })
+  })
+})
+
+describe('CompanionSession tab.meta throttle', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  function sharing() {
+    vi.useFakeTimers()
+    let changes = 0
+    const session = new CompanionSession({
+      now: () => Date.now(),
+      send: () => undefined,
+      changed: () => { changes++ },
+      canShare: () => true,
+    })
+    session.connect('a', 'Chrome')
+    session.onMessage('a', { type: 'hello', token: TOKEN, installId: INSTALL, protocol: 2 })
+    session.onMessage('a', { type: 'tab.started', sessionId: S1, meta: META })
+    const meta = (currentTime: number, sessionId = S1) => session.onMessage('a', { type: 'tab.meta', sessionId, meta: { ...META, currentTime } })
+    return { session, meta, changes: () => changes }
+  }
+
+  it('publishes at most 4 refreshes a second, the latest on the trailing edge', () => {
+    expect(META_PUBLISH_MS).toBe(250)
+    const t = sharing()
+    const base = t.changes()
+    // A flood: 100 refreshes within one second.
+    for (let i = 0; i < 100; i++) {
+      t.meta(i)
+      vi.advanceTimersByTime(10)
+    }
+    vi.advanceTimersByTime(META_PUBLISH_MS)
+    const published = t.changes() - base
+    expect(published).toBeGreaterThanOrEqual(4)
+    expect(published).toBeLessThanOrEqual(5)
+    // Nothing is lost: the last one sent is the one shown.
+    expect(t.session.snapshot().tab.meta?.currentTime).toBe(99)
+  })
+
+  it('publishes the first refresh at once, and coalesces the rest into one trailing publish', () => {
+    const t = sharing()
+    vi.advanceTimersByTime(META_PUBLISH_MS)
+    const base = t.changes()
+    t.meta(1)
+    expect(t.changes()).toBe(base + 1)
+    t.meta(2)
+    t.meta(3)
+    t.meta(4)
+    expect(t.changes()).toBe(base + 1)
+    vi.advanceTimersByTime(META_PUBLISH_MS - 1)
+    expect(t.changes()).toBe(base + 1)
+    vi.advanceTimersByTime(1)
+    expect(t.changes()).toBe(base + 2)
+    expect(t.session.snapshot().tab.meta?.currentTime).toBe(4)
+    // Once a quarter second has gone by, the next one is published at once again.
+    vi.advanceTimersByTime(META_PUBLISH_MS)
+    t.meta(5)
+    expect(t.changes()).toBe(base + 3)
+  })
+
+  it('drops the trailing publish of a share that ended', () => {
+    const t = sharing()
+    vi.advanceTimersByTime(META_PUBLISH_MS)
+    t.meta(1)
+    t.meta(2)
+    t.session.onMessage('a', { type: 'tab.stopped', sessionId: S1 })
+    const after = t.changes()
+    vi.advanceTimersByTime(META_PUBLISH_MS * 4)
+    expect(t.changes()).toBe(after)
+    expect(t.session.snapshot().tab.state).toBe('idle')
+  })
+
+  it('a refresh for another session is not published', () => {
+    const t = sharing()
+    vi.advanceTimersByTime(META_PUBLISH_MS)
+    const base = t.changes()
+    t.meta(1, S2)
+    vi.advanceTimersByTime(META_PUBLISH_MS)
+    expect(t.changes()).toBe(base)
   })
 })
