@@ -171,6 +171,9 @@
   "pairRevoked": {
     "message": "This extension is no longer allowed. Link it again to use it."
   },
+  "pairRemovedWarning": {
+    "message": "If you did not remove this browser in Fremkit, do not reconnect: another program may be answering instead of Fremkit."
+  },
   "optionsTitle": {
     "message": "Fremkit Companion — Settings"
   },

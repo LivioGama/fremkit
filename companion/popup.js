@@ -107,6 +107,9 @@ function renderPairing() {
     $('digits').textContent = pending.code
     $('valid').textContent = t('pairValid', `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`)
   }
+  // Shown removed with the token kept: the 4401 came before any proof, so another program holding
+  // Fremkit's port may have sent it to get this browser to pair with it instead.
+  $('removedwarn').hidden = !(local.revoked && local.token)
   const error = pending ? null : (PAIR_ERRORS[local.pairError]?.() ?? (local.revoked ? t('pairRevoked') : null))
   $('pairerror').hidden = !error
   $('pairerror').textContent = error ?? ''
