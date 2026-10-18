@@ -145,6 +145,51 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
   browser. The widget catalogue test in `server/test/` reads the real `widgets/` folder, so a
   broken manifest fails it.
 
+## Security invariants
+
+Each line here was a real hole once. Break one only with the owner's explicit say-so.
+
+- **The browser cookie holds a session id, never the access secret.** `/auth` opens a session
+  (`AccessGate.openSession`, in memory, expiring, revocable); a session cannot mint a code
+  (`POST /api/auth/code` takes the bearer only) and is never accepted as a bearer. Browsers send a
+  host's cookies to every port, so whatever the cookie carries, assume another loopback listener
+  reads it. The helper's web views sign in with a one-time link like a browser does.
+- **Nothing presents the secret to a listener that has not proved it is ours.** The helper asks
+  `GET /auth/proof?nonce=` (HMAC of the nonce under the secret, `AccessProof.swift` /
+  `accessProof()`) before sending the bearer or loading a page from the port, and a listener that
+  cannot answer is the `foreign` state, never "external". New native code that talks to the port
+  goes through `ServerAccess.authorize`/`signInURL`, which refuse until a probe said `.ours`.
+  Each spawned server gets a fresh secret; the token file is written after `listen` and removed
+  on exit.
+- **No secret on a command line, ever.** Any account on the Mac reads every process's argv with
+  `ps`. The keychain is written through `security -i` on stdin and read with `-g`
+  (`secrets/keychain.ts`); ffmpeg gets the Bambu URL from a 0600 list file and gets no preview
+  rather than argv. Before adding an `execFile`/`spawn` that carries a credential, check what
+  `ps -axww` would show while it runs.
+- **Keychain items are filed per data folder** (`instanceService`). Only the 4242 instance may
+  adopt items under the legacy `fremkit` service; nothing else reads or deletes them.
+- **Outbound fetches to a host a widget or a page named go through `publicFetch`**
+  (`net/pinned.ts`), whose connect-time lookup refuses private addresses, so the address checked
+  is the address connected to. A plain `fetch` after `resolvesToPrivate` is a DNS-rebinding hole.
+  Declared connections reach the LAN on purpose and are the one exception.
+- **The data folder is 0700 and its files 0600.** The server runs with umask 077 and
+  `tightenDataDir` fixes older files at start; write new runtime files with `mode: 0o600` anyway.
+- **A restore and `PUT /api/config` never import security settings.** A restore keeps this
+  Mac's `secrets`, `privacy` and `marketplace.installed`; PUT replays `connections`, `secrets`
+  and `marketplace.installed` (privacy stays editable there: it is the admin's switch). Consent
+  records change only through the marketplace routes.
+- **Deleting a connection deletes every secret stored under its id**, registered type or not
+  (`SecretStore.keysOf`), and a new connection purges its id first: never adopt a stale secret.
+- **System tools by absolute path** (`/usr/bin/open`, `/usr/bin/osascript`, `/usr/sbin/scutil`…),
+  and `PATH` with `/usr/bin:/bin:/usr/sbin:/sbin` first (`system-path.ts`, `ServerLaunch`).
+  A bare name resolves through Homebrew's folder, which is not ours to trust.
+- **The admin window and the kiosk pin their main frame to their own origin**
+  (`AdminOrigin`, `KioskOrigin`), and an origin is trusted for writes only on this server's own
+  port (`allowedOrigins`).
+- **Commands that act on the Mac take their target from a closed list**: `dock.activate` only
+  for an app in the current Dock snapshot; a URL handed to `open` is the parsed `href` that was
+  checked, never the raw string.
+
 ## Gotchas learned the hard way
 
 - macOS *Local Network* privacy: LAN calls (printer, Homey) fail with `EHOSTUNREACH`
