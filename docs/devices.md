@@ -94,7 +94,9 @@ closes the listener and the iPads show that the Mac is unreachable until it is b
 Only an allow-list of routes answers on port 4243: the dashboard's page, the widgets' code, and
 what a paired dashboard reads and sends (`/api/config`, `/ws`, the proxy, the device's own
 `GET /api/devices/me` and `POST /api/devices/me/brightness`). Anything else, the admin included,
-answers 404. See [SECURITY.md](../SECURITY.md#a-paired-device).
+answers 404. What does answer is narrowed to the iPad's own screen: `/api/config` and the `config`
+channel carry that screen, its widgets, the theme and the language, and none of the connections,
+marketplace records, privacy switches or other screens. See [SECURITY.md](../SECURITY.md#a-paired-device).
 
 ## Building the app
 

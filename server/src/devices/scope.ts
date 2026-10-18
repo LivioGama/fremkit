@@ -80,3 +80,36 @@ export function widgetInScope(config: Config, scope: ScreenScope, widgetId: stri
   }
   return false
 }
+
+/**
+ * The config as a paired device reads it: what its dashboard page needs to draw its own screen
+ * and nothing more. The theme and the language, that one screen, and the instances it shows.
+ *
+ * Never the connections (their non-secret fields name hosts and accounts), the secrets backend,
+ * the marketplace records, the privacy switches, or any other screen and its widgets' settings.
+ * A device with no screen gets no screen at all, which is what its page needs to say so.
+ */
+export type DeviceConfigView = Pick<Config, 'version' | 'theme' | 'locale' | 'widgets' | 'screens'>
+
+export function deviceConfigView(config: Config, screenId: string | null): DeviceConfigView {
+  const screen = screenId === null ? undefined : config.screens.find((s) => s.id === screenId)
+  // `fromEntries` defines own properties: no instance id can reach a prototype here.
+  const widgets: Config['widgets'] = screen
+    ? Object.fromEntries([...screenInstanceIds(config, screen.id)]
+      .filter((id) => Object.hasOwn(config.widgets, id))
+      .map((id) => [id, config.widgets[id]]))
+    : {}
+  return {
+    version: config.version,
+    theme: config.theme,
+    locale: config.locale,
+    widgets,
+    screens: screen ? [screen] : [],
+  }
+}
+
+/** The config a caller in `scope` reads: all of it on this Mac, a device's view otherwise. */
+export function configForScope(config: Config, scope: ScreenScope): Config | DeviceConfigView {
+  if (scope.kind === 'all') return config
+  return deviceConfigView(config, scope.kind === 'screen' ? scope.screenId : null)
+}

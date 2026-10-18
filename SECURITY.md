@@ -172,7 +172,11 @@ else, the admin and every route that writes the configuration or reads a secret,
 paired socket may subscribe to and command only what the widgets of its own screen declare, and a
 device acts only on the instances of its own screen: the widget proxy (and so a widget's stored
 credential) and the commands that resolve an instance refuse any instance shown elsewhere, and a
-device with no screen acts on none. See
+device with no screen acts on none. The configuration it reads, over HTTP and on the WebSocket,
+is its own screen's — the theme, the language, that screen and the widgets on it — never your
+connections, the marketplace records, the privacy switches or any other screen; the widget
+catalogue comes without the scan's errors, and the list of installed applications only to a screen
+that shows a widget allowed to read it. See
 [docs/devices.md](docs/devices.md).
 
 ## What Fremkit reads on your Mac

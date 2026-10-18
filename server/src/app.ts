@@ -361,7 +361,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // which is the built-in one or the installed one depending on who owns the id.
   await app.register(fastifyStatic, { root: opts.widgetsDir, serve: false, decorateReply: true })
 
-  await app.register(configRoutes, { store, catalog })
+  await app.register(configRoutes, { store, catalog, screenOfDevice })
   await app.register(connectionRoutes, { store, catalog, types: connectionTypes, manager: connections, secrets, connCache })
   await app.register(widgetRoutes, {
     catalog,
@@ -394,7 +394,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await app.register(faviconRoutes, { dir: join(opts.dataDir, 'icons', 'favicons') })
   await app.register(claudeRoutes, { tracker, usage })
   await app.register(dockRoutes, { state: dock, appIcons })
-  await app.register(appsRoutes, { apps: installedApps })
+  await app.register(appsRoutes, { apps: installedApps, deviceMayListApps: (id) => deviceService.maySubscribe(id, 'dock') })
   await app.register(helperRoutes)
   await app.register(brightnessRoutes, { service: brightness, changed: brightnessChanged })
   await app.register(bambuRoutes, { cameras: bambuCameras })

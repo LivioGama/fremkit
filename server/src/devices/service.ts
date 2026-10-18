@@ -17,7 +17,8 @@ import type { Hub } from '../ws/hub.js'
 import { fingerprintWords } from './fingerprint.js'
 import { advertise as bonjourAdvertise, type Advertisement, type Advertiser } from './bonjour.js'
 import { ensureKey, issueCertificate, readKey, resetKey, spkiHash } from './certificate.js'
-import { screenChannels, type ChannelManifest, type ScreenChannels } from './channels.js'
+import { channelAllowed, screenChannels, type ChannelManifest, type ScreenChannels } from './channels.js'
+import { deviceConfigView } from './scope.js'
 import type { PairingCodes } from './codes.js'
 import { lanAddresses as readLanAddresses, computerName, localHostName, preferredAddress } from './host.js'
 import { REMOTE_PORT, RemoteListener } from './listener.js'
@@ -140,6 +141,9 @@ export class DeviceService {
   async init(): Promise<void> {
     this.hub.setPolicy((deviceId) => this.policyFor(deviceId))
     this.hub.setDevicePayload((deviceId) => this.me(deviceId))
+    // The config a device hears is its own screen's (devices/scope.ts), never the Mac's whole one.
+    this.hub.setHostView((deviceId, channel, data) =>
+      channel === 'config' ? deviceConfigView(data as Config, this.deviceScreenOf(deviceId)) : null)
     this.config.onChange((cfg) => this.onConfigChange(cfg))
     this.catalog.onScan(() => {
       this.manifests = null
@@ -284,6 +288,11 @@ export class DeviceService {
   deviceScreenOf(deviceId: string): string | null {
     const screenId = this.store.list().find((d) => d.id === deviceId)?.screenId ?? null
     return screenId !== null && isDeviceScreen(this.config.get(), screenId) ? screenId : null
+  }
+
+  /** Whether the widgets of a device's screen may subscribe to `channel`: what its page may ask the host for. */
+  maySubscribe(deviceId: string, channel: string): boolean {
+    return channelAllowed(this.policyFor(deviceId)?.subscriptions ?? [], channel)
   }
 
   /** Re-sends the `device` payload to every device bound to one of these screens. */

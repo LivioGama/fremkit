@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { RemoteListener } from '../src/devices/listener.js'
-import { commandScope, instanceInScope, widgetInScope, type ScreenScope } from '../src/devices/scope.js'
+import { commandScope, deviceConfigView, instanceInScope, widgetInScope, type ScreenScope } from '../src/devices/scope.js'
 import { ConfigSchema, type Config } from '../src/config/schema.js'
 import { hasOpenssl, remote, tlsMaterial, TinyWs, upgrade } from './helpers/remote.js'
 
@@ -24,6 +24,7 @@ const RAW_CONFIG = {
     'status-a': { widgetId: 'service-status', settings: { services: [] } },
     'status-b': { widgetId: 'service-status', settings: { services: [] } },
     'only-edge': { widgetId: 'edgeonly', settings: {} },
+    'docky-b': { widgetId: 'docky', settings: {} },
   },
   screens: [
     { id: 'edge', name: 'Edge', kind: 'edge', display: { cols: 64, rows: 16 }, nav: [],
@@ -39,7 +40,10 @@ const RAW_CONFIG = {
       ] }] },
     { id: 'tab-b', name: 'Tablet B', kind: 'device', display: { cols: 34, rows: 23 },
       nav: [{ instanceId: 'status-b' }],
-      pages: [{ id: 'p', name: 'P', items: [{ instanceId: 'clock-b', x: 0, y: 0, w: 8, h: 4 }] }] },
+      pages: [{ id: 'p', name: 'P', items: [
+        { instanceId: 'clock-b', x: 0, y: 0, w: 8, h: 4 },
+        { instanceId: 'docky-b', x: 8, y: 0, w: 8, h: 4 },
+      ] }] },
   ],
 }
 
@@ -78,6 +82,25 @@ describe('screen scope', () => {
   })
 })
 
+describe('deviceConfigView', () => {
+  it('keeps its screen, the instances it shows, and what drawing it takes', () => {
+    const view = deviceConfigView(config(), 'tab-b')
+    expect(Object.keys(view).sort()).toEqual(['locale', 'screens', 'theme', 'version', 'widgets'])
+    expect(view.screens.map((s) => s.id)).toEqual(['tab-b'])
+    expect(Object.keys(view.widgets).sort()).toEqual(['clock-b', 'docky-b', 'status-b'])
+  })
+  it('has no screen and no instance for a device with none, or a screen that is gone', () => {
+    for (const id of [null, 'gone']) {
+      const view = deviceConfigView(config(), id)
+      expect(view.screens).toEqual([])
+      expect(view.widgets).toEqual({})
+    }
+  })
+})
+
+/** What a device must never read in the config, whatever its screen. */
+const MAC_ONLY = ['connections', 'secrets', 'marketplace', 'privacy']
+
 describe.skipIf(!hasOpenssl)('a paired device acts on its own screen only', () => {
   let dir: string
   let app: FastifyInstance
@@ -85,6 +108,7 @@ describe.skipIf(!hasOpenssl)('a paired device acts on its own screen only', () =
   let port: number
   let tokenA: string
   let tokenNone: string
+  let tokenB: string
   const cookie = (t: string): Record<string, string> => ({ cookie: `fremkit_device=${t}` })
 
   beforeAll(async () => {
@@ -96,6 +120,7 @@ describe.skipIf(!hasOpenssl)('a paired device acts on its own screen only', () =
     }
     await widget('clock', {})
     await widget('edgeonly', {})
+    await widget('docky', { subscriptions: ['dock'] })
     await widget('service-status', { commands: ['service-status'], compact: { width: 4 } })
     await mkdir(join(dir, 'data'), { recursive: true })
     await writeFile(join(dir, 'data', 'fremkit.json'), JSON.stringify(RAW_CONFIG))
@@ -107,6 +132,7 @@ describe.skipIf(!hasOpenssl)('a paired device acts on its own screen only', () =
     app.pairing.setRemoteHosts(() => new Set([`127.0.0.1:${port}`]))
     ;({ token: tokenA } = await app.pairing.store.create('iPad A', { width: 1180, height: 820 }, 'tab-a'))
     ;({ token: tokenNone } = await app.pairing.store.create('iPad', { width: 1180, height: 820 }, null))
+    ;({ token: tokenB } = await app.pairing.store.create('iPad B', { width: 1180, height: 820 }, 'tab-b'))
   })
   afterAll(async () => {
     await listener?.stop()
@@ -147,6 +173,53 @@ describe.skipIf(!hasOpenssl)('a paired device acts on its own screen only', () =
   it('leaves the proxy alone for this Mac', async () => {
     expect((await app.inject({ method: 'POST', url: '/api/proxy/clock/conn', payload: { instanceId: 'clock-b', method: 'GET', path: '/x' } })).statusCode).toBe(403)
     expect((await app.inject({ url: '/api/proxy/edgeonly' })).statusCode).toBe(400)
+  })
+
+  it('reads its own screen of the config, and nothing of the Mac\'s', async () => {
+    const own = JSON.parse((await remote(port, { path: '/api/config', headers: cookie(tokenA) })).body)
+    for (const key of MAC_ONLY) expect(own, key).not.toHaveProperty(key)
+    expect(own.screens.map((s: { id: string }) => s.id)).toEqual(['tab-a'])
+    expect(Object.keys(own.widgets).sort()).toEqual(['clock-a', 'status-a'])
+    expect(own.locale).toBe('en')
+    expect(typeof own.theme).toBe('string')
+
+    const none = JSON.parse((await remote(port, { path: '/api/config', headers: cookie(tokenNone) })).body)
+    for (const key of MAC_ONLY) expect(none, key).not.toHaveProperty(key)
+    expect(none.screens).toEqual([])
+    expect(none.widgets).toEqual({})
+
+    // This Mac still reads all of it.
+    const local = (await app.inject({ url: '/api/config' })).json()
+    expect(local.screens).toHaveLength(3)
+    expect(local).toHaveProperty('connections')
+  })
+
+  it('hears its own screen of the config on the WebSocket', async () => {
+    const opened = await upgrade(port, { ...cookie(tokenA), origin: `https://127.0.0.1:${port}` })
+    if (!('socket' in opened)) throw new Error(`no upgrade: ${opened.status}`)
+    const ws = new TinyWs(opened.socket, opened.head)
+    try {
+      ws.send({ type: 'subscribe', channel: 'config' })
+      const msg = await ws.next((m) => m.channel === 'config')
+      for (const key of MAC_ONLY) expect(msg.data, key).not.toHaveProperty(key)
+      expect(msg.data.screens.map((s: { id: string }) => s.id)).toEqual(['tab-a'])
+    } finally {
+      ws.close()
+    }
+  })
+
+  it('reads the catalogue without its scan errors or its un-narrowed asks', async () => {
+    const res = JSON.parse((await remote(port, { path: '/api/widgets', headers: cookie(tokenA) })).body)
+    expect(res.errors).toEqual([])
+    expect(res.asks).toEqual({})
+    expect(Object.keys(res.widgets)).toContain('clock')
+  })
+
+  it('is refused the installed applications unless its screen shows a widget that may read them', async () => {
+    // Tablet A shows no widget subscribing to `dock`; tablet B does.
+    expect((await remote(port, { path: '/api/apps/installed', headers: cookie(tokenA) })).status).toBe(403)
+    expect((await remote(port, { path: '/api/apps/installed', headers: cookie(tokenNone) })).status).toBe(403)
+    expect((await remote(port, { path: '/api/apps/installed', headers: cookie(tokenB) })).status).not.toBe(403)
   })
 
   it('resolves a command only against the instances of its own screen', async () => {

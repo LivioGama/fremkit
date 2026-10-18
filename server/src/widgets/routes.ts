@@ -105,7 +105,12 @@ export async function widgetRoutes(
     sdk: SDK_VERSION,
   })
 
-  app.get('/api/widgets', async () => answer())
+  app.get('/api/widgets', async (req) => {
+    const all = answer()
+    // A paired device draws widgets and nothing else: the scan's errors quote paths on this Mac,
+    // and the un-narrowed asks are the admin's alone (see above).
+    return isRemoteRequest(req) ? { ...all, asks: {}, errors: [] } : all
+  })
 
   app.post('/api/widgets/rescan', async () => {
     await opts.catalog.scan()
