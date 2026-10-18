@@ -231,8 +231,9 @@ export class DeviceService {
   }
 
   /**
-   * A new key, so a new pin. A live code carried the old pin in its QR, so it goes too; a running
-   * listener is restarted on a certificate from the new key.
+   * A new key, so a new pin, and every device has to pair again: their records and tokens go, and
+   * so do their sockets. A live code carried the old pin in its QR, so it goes too; a running
+   * listener is switched to a certificate from the new key.
    */
   resetCertificate(): Promise<void> {
     return this.serialize(async () => {
@@ -240,6 +241,11 @@ export class DeviceService {
       this.keyHash = spkiHash(key)
       this.keyHashKnown = true
       this.codes.clear()
+      // `revokeAll`'s body, inline: it is not serialized itself, and this already is.
+      const ids = this.store.list().map((d) => d.id)
+      await this.store.removeAll()
+      for (const id of ids) this.hub.closeDevice(id)
+      this.hub.closeRemote()
       if (this.listener.running) {
         const cert = await issueCertificate(key, { host: this.dnsName(), addresses: this.certAddresses }, { exec: this.exec })
         this.listener.setCertificate(key, cert)

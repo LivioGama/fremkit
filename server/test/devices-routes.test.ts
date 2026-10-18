@@ -196,6 +196,27 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     expect(Buffer.concat(entries.map((e) => e.data)).toString('utf8')).not.toContain('tokenHash')
   })
 
+  it('resetting the certificate changes the pin and unpairs every device', async () => {
+    const { token, deviceId } = await pairWith({ width: 640, height: 480 })
+    const before = (await app.inject({ url: '/api/devices' })).json().keyHash as string
+    const closeDevice = vi.spyOn(Hub.prototype, 'closeDevice')
+    const closeRemote = vi.spyOn(Hub.prototype, 'closeRemote')
+    try {
+      const res = await app.inject({ method: 'POST', url: '/api/devices/reset-certificate' })
+      expect(res.statusCode).toBe(200)
+      expect(res.json().keyHash).toMatch(/^[A-Za-z0-9_-]{43}$/)
+      expect(res.json().keyHash).not.toBe(before)
+      expect(res.json().devices).toEqual([])
+      expect(res.json().listening).toBe(true)
+      expect((await me(token)).status).toBe(401)
+      expect(closeDevice).toHaveBeenCalledWith(deviceId)
+      expect(closeRemote).toHaveBeenCalled()
+    } finally {
+      closeDevice.mockRestore()
+      closeRemote.mockRestore()
+    }
+  })
+
   it('refuses every code after five wrong ones in a minute', async () => {
     const code = await issueCode()
     const wrong = code === 'AAAAAAAA' ? 'BBBBBBBB' : 'AAAAAAAA'
