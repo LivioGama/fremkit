@@ -101,7 +101,8 @@ what a paired dashboard reads and sends (`/api/config`, `/ws`, the proxy, the de
 `GET /api/devices/me` and `POST /api/devices/me/brightness`). Anything else, the admin included,
 answers 404. What does answer is narrowed to the iPad's own screen: `/api/config` and the `config`
 channel carry that screen, its widgets, the theme and the language, and none of the connections,
-marketplace records, privacy switches or other screens. See [SECURITY.md](../SECURITY.md#a-paired-device).
+marketplace records, privacy switches or other screens. The page itself and the widgets' files
+answer before pairing, by design: they say which widgets are installed, not how they are set up. See [SECURITY.md](../SECURITY.md#a-paired-device).
 
 ## Building the app
 
