@@ -35,6 +35,14 @@ Fremkit turns a Corsair Xeneon Edge (a 2560 × 720 touch strip) into a widget da
   Xcode project), tested with `scripts/test-helper.sh`. The bundle also carries `fremkit-scan`
   (`native/Sources/FremkitScan`), the disk map's scanner, which the server runs by the path the
   helper passes in `FREMKIT_SCANNER`; without it the server falls back to `du`.
+- `ios/` — the iPad app, which shows a paired device's screen over the pinned TLS listener
+  (4243). `ios/FremkitKit` is a Swift package holding everything that needs no UI — pairing
+  links, the key pin, the connect order, the stored pairing, the app's state machine
+  (`AppModel`) — and is tested on the Mac with `swift test`. `ios/Fremkit.xcodeproj` (one target,
+  folder-synchronized with `ios/Fremkit/`) is the thin SwiftUI + `WKWebView` shell over it. Signing
+  values live in the git-ignored `ios/Local.xcconfig` (start from `ios/Local.example.xcconfig`);
+  the simulator build needs none. Built and tested with `scripts/build-ios.sh`, which picks Xcode
+  over the Command Line Tools by itself.
 - `scripts/` — setup, dev, build/install/test of the helper, signing identity, and the
   downloadable app: `build-app.sh` (self-contained, signed `Fremkit.app` with Sparkle and the
   server as a Node single executable), `notarize.sh`, `release.sh` (builds a release and stops
@@ -65,6 +73,8 @@ pnpm --filter server exec vitest run test/<file>.test.ts
 pnpm --filter ui build            # required before the server shows a UI change
 pnpm dev                          # server + Vite with hot reload for the UI
 pnpm helper:build && pnpm helper:install && pnpm helper:test
+pnpm ios:build && pnpm ios:test   # iPad app for the simulator, unsigned; FremkitKit's tests
+FREMKIT_IOS_DEVICE=<udid> scripts/build-ios.sh install [-FremkitSeedLink 'fremkit://pair?…']
 ```
 
 **Every request needs the local access secret** (SECURITY.md): a `curl` without
@@ -182,3 +192,4 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
 | the app, its signing, notarization or updates | `scripts/build-app.sh`, `scripts/release.sh`, `native/Sources/FremkitCore/ServerLaunch.swift` (checkout or bundled server), `server/src/paths.ts` (the bundle's layout), `docs/releasing.md` |
 | change the disk map | `server/src/providers/disk-map*.ts`, `native/Sources/FremkitCore/Disk*.swift`, `native/Sources/FremkitScan`, `widgets/disk-map` |
 | pair a device, the remote listener | `server/src/devices/`, `ui/src/admin/DevicesSection.vue` |
+| change the iPad app | `ios/FremkitKit/Sources/FremkitKit/` (logic, `AppModel.swift` for the screens' state; test there), `ios/Fremkit/` (`RootView.swift`, `DashboardView.swift` for the web view, `LocalNetwork.swift` for Bonjour), `ui/src/dashboard/native.ts` (what the page tells the app), `scripts/build-ios.sh` |
