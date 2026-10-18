@@ -28,3 +28,7 @@ docs/superpowers/
 .claude/
 .idea/
 .vscode/
+
+# Playwright: what a run leaves behind (e2e/)
+test-results/
+playwright-report/

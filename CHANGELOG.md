@@ -138,6 +138,11 @@ tagged `vX.Y.Z`.
   light-tile layouts, every text in both languages — and has a running server pick it up.
   `pnpm widget:check <folder>` applies the registry's and the installer's rules to a widget
   before you open a pull request on the Sietch.
+- **End-to-end tests, for contributors.** `pnpm e2e` drives the admin and the dashboard in
+  Chromium (and WebKit when installed) against a throwaway server per worker: the library,
+  editing with the mouse and the keyboard, every right-click menu, ⌘K, undo, export and import,
+  the history, widget health, swipes and the night theme, and a security smoke test. Pull
+  requests run it in CI. See `docs/contributing.md`.
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer
@@ -152,6 +157,8 @@ tagged `vX.Y.Z`.
 - **Adding a screen** creates an Edge screen; an iPad screen is now created from a paired iPad.
 
 ### Fixed
+- **Right-clicking a widget in the bar of the editor's preview opens its menu in Safari and in
+  the Mac's admin window too.** WebKit sent the click to the widget itself, so nothing opened.
 - Escape in a right-click menu opened inside a dialog (the Screen panel's bar widgets) closes
   the menu only, not the dialog under it.
 - **The install instructions say `pnpm run setup`.** They said `pnpm setup`, which runs pnpm's

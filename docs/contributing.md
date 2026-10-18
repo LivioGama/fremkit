@@ -21,6 +21,7 @@ string goes through `ui/src/shared/locales/`, and every manifest text is either 
 server/    Fastify 5 server on 127.0.0.1:4242 — config, widget catalog, providers, connections,
            the secret store, the widget bridge and the WebSocket
 ui/        Vue 3: the dashboard (src/dashboard), the admin (src/admin), shared code (src/shared)
+e2e/       Playwright: end-to-end tests of the admin and the dashboard against a real server
 native/    The Swift helper: kiosk window, HID touch driver, mouse fence, admin window,
            Dock badges, server supervision, `fremkit-scan` (the disk map's scanner)
 widgets/   One folder per widget
@@ -42,6 +43,7 @@ pnpm start        # production: http://127.0.0.1:4242 and /admin
 pnpm open         # signs the browser in on 4242 (pnpm open /admin, pnpm open --print)
 pnpm test         # vitest, server + ui
 pnpm typecheck
+pnpm e2e          # Playwright, against the built UI: see "End-to-end tests" below
 pnpm helper:build   # native/dist/Fremkit Helper.app
 pnpm helper:install
 pnpm helper:test
@@ -240,12 +242,45 @@ extracted from installed application bundles in `data/icons/apps/`, site favicon
 to `~/Library/Logs/Fremkit/server.log`, opened by the menu's *Log…*. It is never rotated, so
 delete it by hand if it grows.
 
+## End-to-end tests
+
+`e2e/` drives the admin and the dashboard in a real browser against a real server: the library,
+adding, moving, resizing and locking tiles with the mouse and the keyboard, every context menu,
+the ⌘K palette, undo and redo, exporting a page and importing it elsewhere, the version history,
+widget health, the dashboard's swipes, backgrounds and night theme, and a security smoke test
+(nothing answers without the session, the CSP is sent, a widget frame cannot navigate away).
+
+```sh
+pnpm --filter ui build                                   # the tests use ui/dist, not the sources
+pnpm --filter e2e exec playwright install chromium-headless-shell webkit   # once
+pnpm e2e                                                 # all of it
+pnpm e2e tests/menus.spec.ts --project=chromium          # one file, one browser
+pnpm e2e --repeat-each=3                                 # what to run before calling a test stable
+```
+
+Each Playwright worker starts its own server (`e2e/fixtures/server.ts`) on a port from 4330 to
+4339, with a temporary data folder, a `file` secrets backend (never the keychain) and an empty
+registry index served locally, so nothing reaches the network; the live server on 4242 is never
+touched. Before every test the server is put back to the state the test asks for (`seed`,
+`connections`), and the browser signs in the way a person does: a one-time code from
+`POST /api/auth/code`, redeemed at `/auth`. WebKit runs too when its Playwright build is installed
+(the helper's windows are WebKit); `E2E_WEBKIT=0` leaves it out. A failure keeps a trace and the
+server's log in `e2e/test-results/`.
+
+Selectors are roles and visible text first. Where neither exists (the canvas tiles, their resize
+handles) the editor carries a `data-test` attribute; keep it when you change that markup.
+
+Beware `playwright install`: it deletes every browser build in the shared cache
+(`~/Library/Caches/ms-playwright`) that no installed Playwright version links to, which can take
+away a build some other tool on the Mac points at by path.
+
 ## Pull requests
 
 Fork, branch, and open the pull request against `main`. Every pull request runs
 `.github/workflows/ci.yml` on Ubuntu with Node 22: `pnpm install --frozen-lockfile`, then
-`pnpm typecheck`, `pnpm test` and `pnpm build`. The widget catalogue test reads the real
-`widgets/` folder, so a broken manifest fails the run.
+`pnpm typecheck`, `pnpm test` and `pnpm build`, and in a second job the end-to-end tests in
+Chromium. The widget catalogue test reads the real `widgets/` folder, so a broken manifest fails
+the run.
 
 Locale parity *is* checked: `ui/test/i18n.test.ts` fails when a key exists on one side and not the
 other. What the CI cannot see is that nothing personal — hostname, IP, organisation, serial number,

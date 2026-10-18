@@ -13,6 +13,7 @@
     "dev": "bash scripts/dev.sh",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
+    "e2e": "pnpm --filter e2e e2e",
     "typecheck": "pnpm -r typecheck",
     "start": "pnpm --filter server start",
     "kiosk": "bash scripts/kiosk.sh",
