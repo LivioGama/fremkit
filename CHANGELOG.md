@@ -88,6 +88,9 @@ tagged `vX.Y.Z`.
   the port while Fremkit was restarting is no longer shown on the Edge or as the admin; the **F**
   menu says the port is held by another program, and Fremkit takes it back once it is free. The
   key also changes every time the server starts, and is removed when it stops.
+- **Saved passwords no longer pass through a command line.** Tokens and passwords you give a
+  connection are now handed to the keychain in a way other accounts on the Mac cannot glimpse.
+  Values with accents or line breaks also read back exactly as typed.
 
 ## 0.4.1 — 2026-10-16
 
