@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { RemoteListener } from '../src/devices/listener.js'
-import { commandScope, deviceConfigView, instanceInScope, widgetInScope, type ScreenScope } from '../src/devices/scope.js'
+import { commandScope, deviceConfigView, iconInScope, instanceInScope, widgetInScope, type ScreenScope } from '../src/devices/scope.js'
 import { ConfigSchema, type Config } from '../src/config/schema.js'
 import { hasOpenssl, remote, tlsMaterial, TinyWs, upgrade } from './helpers/remote.js'
 
@@ -33,7 +33,8 @@ const RAW_CONFIG = {
     'status-a': { widgetId: 'service-status', settings: { services: [] } },
     'status-b': { widgetId: 'service-status', settings: { services: [] } },
     'only-edge': { widgetId: 'edgeonly', settings: {} },
-    'docky-b': { widgetId: 'docky', settings: {} },
+    'docky-b': { widgetId: 'docky', settings: { links: [{ url: 'https://example.com/page' }], image: 'https://example.com/i.png' } },
+    'clock-edge-link': { widgetId: 'clock', settings: { url: 'https://example.org/' } },
   },
   screens: [
     { id: 'edge', name: 'Edge', kind: 'edge', display: { cols: 64, rows: 16 }, nav: [],
@@ -43,6 +44,7 @@ const RAW_CONFIG = {
         { instanceId: 'only-edge', x: 16, y: 0, w: 8, h: 4 },
         { instanceId: 'cal-edge', x: 24, y: 0, w: 8, h: 4 },
         { instanceId: 'sc-edge', x: 32, y: 0, w: 8, h: 4 },
+        { instanceId: 'clock-edge-link', x: 40, y: 0, w: 8, h: 4 },
       ] }] },
     { id: 'tab-a', name: 'Tablet A', kind: 'device', display: { cols: 34, rows: 23 }, nav: [],
       pages: [{ id: 'p', name: 'P', items: [
@@ -92,6 +94,27 @@ describe('screen scope', () => {
     expect(commandScope({ loopback: false, paired: false }, screenOf)).toEqual({ kind: 'none' })
     expect(commandScope(undefined, screenOf)).toEqual({ kind: 'none' })
     expect(commandScope({ loopback: false, paired: true, deviceId: 'dev-a' }, () => { throw new Error('x') })).toEqual({ kind: 'none' })
+  })
+})
+
+describe('iconInScope', () => {
+  const b: ScreenScope = { kind: 'screen', screenId: 'tab-b' }
+  const at = (raw: string) => new URL(raw)
+  it('lets a device fetch only what its screen\'s settings point at', () => {
+    // The origin of a link a setting holds, at any depth.
+    expect(iconInScope(config(), b, at('https://example.com'), 'https://example.com', false)).toBe(true)
+    expect(iconInScope(config(), b, at('https://example.com/other'), 'https://example.com/other', false)).toBe(true)
+    // The exact image address only, for `?image=`.
+    expect(iconInScope(config(), b, at('https://example.com/i.png'), ' https://example.com/i.png ', true)).toBe(true)
+    expect(iconInScope(config(), b, at('https://example.com/j.png'), 'https://example.com/j.png', true)).toBe(false)
+    // Another screen's link, an unrelated site, another scheme's origin.
+    expect(iconInScope(config(), b, at('https://example.org'), 'https://example.org', false)).toBe(false)
+    expect(iconInScope(config(), b, at('https://example.net'), 'https://example.net', false)).toBe(false)
+    expect(iconInScope(config(), b, at('http://example.com'), 'http://example.com', false)).toBe(false)
+  })
+  it('lets this Mac fetch anything and a device with no screen nothing', () => {
+    expect(iconInScope(config(), { kind: 'all' }, at('https://example.net'), 'https://example.net', false)).toBe(true)
+    expect(iconInScope(config(), { kind: 'none' }, at('https://example.com'), 'https://example.com', false)).toBe(false)
   })
 })
 
@@ -240,6 +263,17 @@ describe.skipIf(!hasOpenssl)('a paired device acts on its own screen only', () =
     expect(none.sources).toEqual({})
     // This Mac still reads all of it.
     expect(Object.keys((await app.inject({ url: '/api/widgets' })).json().widgets)).toContain('edgeonly')
+  })
+
+  it('is refused a favicon its screen does not point at, and every favicon without a screen', async () => {
+    const icon = (token: string, query: string) => remote(port, { path: `/api/favicon?${query}`, headers: cookie(token) })
+    const q = (k: string, v: string) => `${k}=${encodeURIComponent(v)}`
+    // Refused before any lookup or fetch, so nothing here reaches the network.
+    expect((await icon(tokenNone, q('url', 'https://example.com'))).status).toBe(403)
+    expect((await icon(tokenA, q('url', 'https://example.com'))).status).toBe(403)
+    expect((await icon(tokenB, q('url', 'https://example.org'))).status).toBe(403)
+    expect((await icon(tokenB, q('url', 'https://example.net/x'))).status).toBe(403)
+    expect((await icon(tokenB, q('image', 'https://example.com/j.png'))).status).toBe(403)
   })
 
   it('is refused app icons on the same terms as the list', async () => {

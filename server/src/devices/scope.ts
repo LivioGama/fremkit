@@ -113,3 +113,36 @@ export function configForScope(config: Config, scope: ScreenScope): Config | Dev
   if (scope.kind === 'all') return config
   return deviceConfigView(config, scope.kind === 'screen' ? scope.screenId : null)
 }
+
+/** Every string the settings of one screen's instances hold, trimmed, at any depth. */
+export function screenSettingStrings(config: Config, screenId: string): string[] {
+  const out: string[] = []
+  const walk = (value: unknown): void => {
+    if (typeof value === 'string') out.push(value.trim())
+    else if (Array.isArray(value)) value.forEach(walk)
+    else if (value && typeof value === 'object') Object.values(value).forEach(walk)
+  }
+  for (const id of screenInstanceIds(config, screenId)) {
+    if (Object.hasOwn(config.widgets, id)) walk(config.widgets[id].settings)
+  }
+  return out
+}
+
+/**
+ * Whether a caller in `scope` may have the Mac fetch this icon: on this Mac, any; for a device,
+ * only one its own screen's settings point at — the exact image address a setting holds
+ * (`?image=`), or the origin of a link a setting holds (`?url=`, which is how the shortcuts widget
+ * asks for a site's icon). A device with no screen, none. Without this the route is a way to make
+ * the Mac fetch any public URL on a device's say-so.
+ */
+export function iconInScope(config: Config, scope: ScreenScope, target: URL, raw: string, exact: boolean): boolean {
+  if (scope.kind === 'all') return true
+  if (scope.kind === 'none') return false
+  const wanted = raw.trim()
+  return screenSettingStrings(config, scope.screenId).some((s) => {
+    if (exact) return s === wanted
+    let url: URL
+    try { url = new URL(s) } catch { return false }
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.origin === target.origin
+  })
+}

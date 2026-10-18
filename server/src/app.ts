@@ -392,7 +392,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     // then report `unauthorized` until the secrets are typed back in.
     onRestored: async (config) => { await connections.sync(config.connections); retainCameras(config) },
   })
-  await app.register(faviconRoutes, { dir: join(opts.dataDir, 'icons', 'favicons') })
+  await app.register(faviconRoutes, { dir: join(opts.dataDir, 'icons', 'favicons'), config: () => store.get(), screenOfDevice })
   await app.register(claudeRoutes, { tracker, usage })
   await app.register(dockRoutes, { state: dock, appIcons, deviceMayListApps: (id) => deviceService.maySubscribe(id, 'dock') })
   await app.register(appsRoutes, { apps: installedApps, deviceMayListApps: (id) => deviceService.maySubscribe(id, 'dock') })
