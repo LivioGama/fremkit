@@ -2,7 +2,7 @@ import { reactive, computed, watch, type ComputedRef } from 'vue'
 import { api as realApi } from '../shared/api'
 import { pick, setLocale, t } from '../shared/i18n'
 import { useSocket } from '../shared/socket'
-import type { Config, NavHeight, NavItem, Page, Placement, Screen, ScreenDisplay, Widget, WidgetInstance, WidgetManifest, WidgetPermissionSet, WidgetSource, WidgetsResponse } from '../shared/types'
+import type { Background, Config, NavHeight, NavItem, Page, Placement, Screen, ScreenDisplay, Widget, WidgetInstance, WidgetManifest, WidgetPermissionSet, WidgetSource, WidgetsResponse } from '../shared/types'
 import { DEFAULT_NAV_HEIGHT, MAX_NAV_WIDGETS, ROWS_BY_NAV_HEIGHT, compactWidth, mergeSettings, navHasRoom, navWiderClusterWidth } from '../shared/types'
 import { DEVICE_CELL, DEVICE_NAV_HEIGHT, deviceGrid, pickScreen, screensShowing, tileOf } from '../shared/screens'
 import { fits, largestFreeSpot, type Grid, type Rect } from './layout'
@@ -154,6 +154,13 @@ export interface AdminStore {
   duplicatePage(i: number): void
   removePage(i: number): void
   movePage(i: number, delta: number): void
+  /**
+   * Changes page `i`'s own background by a patch — a key set to `undefined` is dropped — or, given
+   * null, removes it so the page shows the screen's again. A background left empty is removed too.
+   */
+  setPageBackground(i: number, patch: Partial<Background> | null): void
+  /** True when a screen, a page or a widget of the config still shows the stored image `name`. */
+  backgroundInUse(name: string): boolean
   placeWidget(widgetId: string, rect: Rect): void
   addWidget(widgetId: string): void
   placeExisting(instanceId: string, rect?: Rect): void
@@ -584,7 +591,10 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
           c.widgets[id] = clone(widget)
           items.push({ ...p, instanceId: id })
         }
-        pages.splice(i + 1, 0, { id: freePageId(pages), name: t('admin.store.pageCopy', { name: src.name }), items })
+        pages.splice(i + 1, 0, {
+          id: freePageId(pages), name: t('admin.store.pageCopy', { name: src.name }), items,
+          ...(src.background ? { background: clone(src.background) } : {}),
+        })
         state.pageIndex = i + 1
         state.selectedId = null
       })
@@ -612,6 +622,24 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
         if (state.pageIndex === i) state.pageIndex = j
         else if (state.pageIndex === j) state.pageIndex = i
       })
+    },
+
+    setPageBackground(i: number, patch: Partial<Background> | null): void {
+      if (!screen.value?.pages[i]) return
+      apply((c) => {
+        const target = here(c).pages[i]
+        const next: Record<string, unknown> = patch ? { ...target.background, ...patch } : {}
+        for (const [k, v] of Object.entries(next)) if (v === undefined) delete next[k]
+        if (Object.keys(next).length) target.background = next as Background
+        else delete target.background
+      })
+    },
+
+    backgroundInUse(name: string): boolean {
+      const cfg = state.config
+      if (!cfg) return false
+      return cfg.screens.some((x) => x.display.background?.image === name || x.pages.some((p) => p.background?.image === name))
+        || Object.values(cfg.widgets).some((w) => w.background?.image === name)
     },
 
     /** A new widget and its placement, in one mutation: the server drops a widget placed nowhere. */
@@ -915,7 +943,10 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       for (const p of input.prefill?.pages ?? []) {
         const items = p.items.filter((x) => cfg.widgets[x.instanceId] && !seen.has(x.instanceId))
         for (const x of items) seen.add(x.instanceId)
-        pages.push({ id: freePageId(pages, p.id), name: p.name, items: items.map((x) => ({ ...x })) })
+        pages.push({
+          id: freePageId(pages, p.id), name: p.name, items: items.map((x) => ({ ...x })),
+          ...(p.background ? { background: clone(p.background) } : {}),
+        })
       }
       if (!pages.length) pages.push({ id: freePageId(pages), name: t('admin.store.newPage'), items: [] })
       const added: Screen = { id, name, kind: input.kind, display, nav: [], pages }

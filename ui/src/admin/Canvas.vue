@@ -9,7 +9,7 @@ import { useSwipe } from '../dashboard/useSwipe'
 import EditOverlay from './EditOverlay.vue'
 import ScreenSelector from './ScreenSelector.vue'
 import { navHeightOf, navItemsOf, type NavItem } from '../shared/types'
-import { backgroundStyle } from '../shared/background'
+import { backgroundStyle, pageBackground } from '../shared/background'
 import { useAdminStore } from './store'
 
 const s = useAdminStore()
@@ -41,12 +41,13 @@ const navH = computed(() => navHeightOf(display.value))
 const totalH = computed(() => boardH.value + navH.value)
 /**
  * The dashboard repeats its background on the root, behind the nav bar strip; the board does the
- * same, so a translucent bar shows the same thing here as it does on the screen.
+ * same, so a translucent bar shows the same thing here as it does on the screen. Like the
+ * dashboard, it follows the page shown: a page with its own background repaints the whole board.
  */
 const boardStyle = computed(() => ({
   width: boardW.value + 'px', height: totalH.value + 'px',
   transform: `scale(${scale.value})`,
-  ...backgroundStyle(display.value.background),
+  ...backgroundStyle(pageBackground(display.value, s.page.value)),
 }))
 
 const board = ref<HTMLElement>()

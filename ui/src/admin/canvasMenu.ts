@@ -18,6 +18,18 @@ export interface MenuUi {
   focusLibrarySearch(): void
 }
 
+/** The inspector section `revealSection` opens for a page's own background. */
+export const PAGE_BACKGROUND_SECTION = 'page.background'
+
+/**
+ * Shows page `i` with no widget selected, so the inspector holds the page, and opens its
+ * background section: where every "Page background…" leads.
+ */
+export function revealPageBackground(s: AdminStore, i: number, ui: MenuUi): void {
+  s.selectPage(i)
+  ui.revealSection(PAGE_BACKGROUND_SECTION)
+}
+
 /** The tile opacities the Appearance submenu offers, in percent. */
 export const OPACITY_PRESETS = [100, 80, 60, 40, 0] as const
 
@@ -139,6 +151,7 @@ export function canvasMenu(s: AdminStore, ui: MenuUi): MenuEntry[] {
     { label: t('admin.menu.addWidget'), run: () => ui.focusLibrarySearch() },
     { label: t('admin.menu.newPage'), run: () => s.addPage() },
     SEPARATOR,
+    { label: t('admin.menu.pageBackground'), run: () => revealPageBackground(s, s.state.pageIndex, ui) },
     { label: t('admin.menu.screenSettings'), run: () => s.openModal('screen') },
   ])
 }

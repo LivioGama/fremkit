@@ -13,6 +13,12 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **A background per page.** A page can have its own colour or image, shown instead of the
+  screen's while that page is on screen, with a short crossfade when you swipe between pages
+  that differ. Set it in the editor's right column when no widget is selected, or from
+  **Page background…** in the canvas's right-click menu; **Use the screen's background** puts the
+  screen's back. The screen settings name the pages that override its background. Backups carry
+  page backgrounds like any other.
 - **Right-click menus in the editor.** A right click on a widget opens a real menu, like a Mac
   app's: settings, show title, appearance (opacity presets, colours, background image, reset),
   copy and paste a widget's style, duplicate, copy and paste, move it to another page or screen,

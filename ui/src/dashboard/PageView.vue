@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Config, Page, Display, WidgetManifest } from '../shared/types'
-import { backgroundStyle } from '../shared/background'
+import { backgroundStyle, pageBackground } from '../shared/background'
 import { tileOf } from '../shared/screens'
 import WidgetFrame from './WidgetFrame.vue'
 
@@ -9,7 +9,7 @@ import WidgetFrame from './WidgetFrame.vue'
 const props = withDefaults(defineProps<{
   page: Page; config: Pick<Config, 'widgets'>; display: Display; manifests: Record<string, WidgetManifest>; edit?: boolean
   /**
-   * Whether the page paints the screen's background itself. The admin's previews do; the
+   * Whether the page paints its background — its own, else the screen's — itself. The admin's previews do; the
    * dashboard turns it off and paints it once behind the whole screen, bar included, so a
    * viewport larger than the grid shows no second, differently scaled copy.
    */
@@ -25,7 +25,7 @@ const tiles = computed(() => props.page.items.map((p) => tileOf(props.config, p)
 // root instead, sized against the same grid area, so on the Edge the two still match exactly.
 const style = computed(() => ({
   height: props.display.rows * props.display.cell + 'px',
-  ...(props.paintBackground ? backgroundStyle(props.display.background) : {}),
+  ...(props.paintBackground ? backgroundStyle(pageBackground(props.display, props.page)) : {}),
 }))
 </script>
 

@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import WidgetInspector from './WidgetInspector.vue'
+import PageInspector from './PageInspector.vue'
+import { useAdminStore } from './store'
+
+const s = useAdminStore()
 </script>
 
 <template>
   <aside class="inspector">
     <div class="body">
       <WidgetInspector />
+      <!-- With no widget selected, the inspector edits the page being shown. -->
+      <PageInspector v-if="!s.selected.value" />
     </div>
   </aside>
 </template>

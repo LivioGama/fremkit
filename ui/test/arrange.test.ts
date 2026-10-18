@@ -46,6 +46,15 @@ function assertValid(pages: Page[], cols: number, rows: number): void {
 }
 
 describe('arrangeInto', () => {
+  it('carries a page background, onto its overflow pages too', () => {
+    const background = { color: '#101820', image: 'dunes.webp' }
+    const src = screen([{ id: 'home', name: 'Home', background, items: [at('wide-a', 0, 0, 40, 6), at('wide-b', 0, 6, 40, 6)] }])
+    const out = arrangeInto(src, { cols: 40, rows: 8, navCols: 40 }, widgetsFor(['wide-a', 'wide-b']), MANIFESTS)
+    expect(out.pages).toHaveLength(2)
+    for (const page of out.pages) expect(page.background).toEqual(background)
+    // A copy, not the same object: editing the new screen's page leaves the source alone.
+    expect(out.pages[0].background).not.toBe(background)
+  })
   it('keeps reading order', () => {
     // Listed out of order: reading order is by row, then by column.
     const src = screen([{ id: 'home', name: 'Home', items: [

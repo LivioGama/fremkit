@@ -505,6 +505,55 @@ describe('pages', () => {
   })
 })
 
+describe('page backgrounds', () => {
+  it('sets, patches and clears a page background, one undo step each', async () => {
+    const { store } = make()
+    await store.load()
+    const page = () => store.state.config!.screens[0].pages[0]
+    store.setPageBackground(0, { color: '#101820' })
+    expect(page().background).toEqual({ color: '#101820' })
+    store.setPageBackground(0, { image: 'dunes.webp', fit: 'cover' })
+    expect(page().background).toEqual({ color: '#101820', image: 'dunes.webp', fit: 'cover' })
+    store.setPageBackground(0, { image: undefined, fit: undefined })
+    expect(page().background).toEqual({ color: '#101820' })
+    // Emptied, it goes away: the page shows the screen's again and the file keeps no empty object.
+    store.setPageBackground(0, { color: undefined })
+    expect(page()).not.toHaveProperty('background')
+    store.setPageBackground(0, { color: '#202020' })
+    store.setPageBackground(0, null)
+    expect(page()).not.toHaveProperty('background')
+    store.undo()
+    expect(page().background).toEqual({ color: '#202020' })
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('duplicatePage copies the background with the page', async () => {
+    const { store } = make()
+    await store.load()
+    store.setPageBackground(0, { image: 'dunes.webp' })
+    store.duplicatePage(0)
+    const [a, b] = store.state.config!.screens[0].pages
+    expect(b.background).toEqual({ image: 'dunes.webp' })
+    expect(b.background).not.toBe(a.background)
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+
+  it('knows when an image is still shown by a screen, a page or a widget', async () => {
+    const { store } = make()
+    await store.load()
+    expect(store.backgroundInUse('dunes.webp')).toBe(false)
+    store.setPageBackground(0, { image: 'dunes.webp' })
+    expect(store.backgroundInUse('dunes.webp')).toBe(true)
+    store.setPageBackground(0, null)
+    store.updateInstance('clock-1', { background: { image: 'dunes.webp' } })
+    expect(store.backgroundInUse('dunes.webp')).toBe(true)
+    store.updateInstance('clock-1', { background: undefined })
+    store.apply((c) => { c.screens[0].display.background = { image: 'dunes.webp' } })
+    expect(store.backgroundInUse('dunes.webp')).toBe(true)
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+  })
+})
+
 describe('moving a tile to another page', () => {
   /** The same fixture with an empty second page to move the clock onto. */
   const twoPages = (): Config => {

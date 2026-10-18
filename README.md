@@ -202,7 +202,7 @@ two screens is the same widget, with the same settings.
   background image, reset), copy and paste its style, duplicate, copy and paste, move to another
   page or screen, also show it on another screen, default or minimum size, lock its position (a
   locked widget is neither dragged nor resized), open its connection, about, reload, remove. On
-  the empty canvas: paste, add a widget, new page, screen settings. The menus work from the
+  the empty canvas: paste, add a widget, new page, page background, screen settings. The menus work from the
   keyboard too (arrows, Enter, Escape, type-ahead).
 - **Keyboard** — arrows move the selection by one cell, Shift+arrows resize it from the south-east corner, Delete or Backspace removes it,
   Cmd+D duplicates it, Cmd+C and Cmd+V copy it and paste a new one with the same settings on the
@@ -214,7 +214,8 @@ two screens is the same widget, with the same settings.
   quietly.
 - **Right column** — *Widget*: title, whether the frame draws it, background, accent, the widget's
   own settings, position and size, and **what the widget asks for** — the channels it reads, the
-  ones it can command, the hosts it may reach. *Page*: name and order. *Screen*: language, grid
+  ones it can command, the hosts it may reach. With no widget selected, *Page*: its own background
+  (a colour or an image shown instead of the screen's, or the screen's). *Screen*: language, grid
   (read-only), navigation bar height and opacity, which gesture opens the admin, auto-rotation
   delay, the bar's compact widgets, the screen background, the kiosk URL, backup and restore, and
   privacy.
@@ -246,7 +247,8 @@ that lets the screen background show through (0 makes the tile, border included,
 see-through — the selection outline keeps it findable while editing), a background image with a
 dimming overlay, an accent colour, and an *accent mode* saying how much of the tile that accent
 paints: **none** leaves it to the widget's own highlights, **frame** colours the title bar and the
-border, **fill** colours the whole tile. The screen itself has a background colour and image too.
+border, **fill** colours the whole tile. The screen itself has a background colour and image too,
+and a page can have its own, shown instead of the screen's while that page is on screen.
 
 **The navigation bar.** The strip at the bottom of every page, 80 px or 40 px tall, as opaque as
 you like. Its middle shows page dots by default. In *Screen → Pages in the bar*, each screen can show scrolling names instead. The sides stay available for compact widgets. **Hold or double-tap

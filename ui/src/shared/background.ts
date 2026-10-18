@@ -31,6 +31,14 @@ export function backgroundStyle(bg: Background | undefined): Record<string, stri
   return style
 }
 
+/**
+ * The background a page is shown on: its own when it has one, else its screen's. A page's own
+ * replaces the screen's whole — it is not merged with it.
+ */
+export function pageBackground(display: { background?: Background }, page: { background?: Background } | null | undefined): Background | undefined {
+  return page?.background ?? display.background
+}
+
 /** The per-layer properties of a stored image, which a two-layer paint repeats once per layer. */
 const IMAGE_KEYS = ['background-image', 'background-size', 'background-position', 'background-repeat'] as const
 
