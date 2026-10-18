@@ -4,6 +4,8 @@ import { control, cropRect, embeddedPlayer, pickVideo, placeFrame, survey } from
 // @ts-expect-error plain JS module
 import { browserName } from '../../companion/lib/browser.js'
 // @ts-expect-error plain JS module
+import { IDLE_SLACK_MS, idleDelay } from '../../companion/lib/presence.js'
+// @ts-expect-error plain JS module
 import { localCandidatesOnly } from '../../companion/lib/sdp.js'
 // @ts-expect-error plain JS module
 import * as ext from '../../companion/lib/protocol.js'
@@ -256,5 +258,16 @@ describe('browserName', () => {
     expect(browserName(brands('Brave', 'Chromium', 'Not.A/Brand'))).toBe('Brave')
     expect(browserName(brands('Chromium', 'Not.A/Brand'))).toBe('Chromium')
     expect(browserName(undefined)).toBe('Chromium')
+  })
+})
+
+describe('idleDelay', () => {
+  it('waits out the whole presence window, not a fixed slack', () => {
+    // A stop 5 s into a 30 s window: the check comes after the remaining 25 s.
+    expect(idleDelay(30_000, 5_000)).toBe(25_000 + IDLE_SLACK_MS)
+  })
+  it('checks right away once the window is over', () => {
+    expect(idleDelay(1_000, 1_000)).toBe(IDLE_SLACK_MS)
+    expect(idleDelay(1_000, 9_000)).toBe(IDLE_SLACK_MS)
   })
 })

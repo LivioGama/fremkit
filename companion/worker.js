@@ -7,6 +7,7 @@
 // pairing waiting for its answer in `local`; the share and the link state in `session`.
 
 import { browserName } from './lib/browser.js'
+import { idleDelay } from './lib/presence.js'
 import * as protocol from './lib/protocol.js'
 import { control, embeddedPlayer, pickVideo, survey } from './lib/video.js'
 
@@ -44,6 +45,8 @@ const ready = (async () => {
   if (!local.installId) await saveLocal({ installId: crypto.randomUUID() })
   // A share without its offscreen document did not survive whatever stopped the worker.
   if (session.share && !(await hasOffscreen())) await saveSession({ share: null })
+  // And a document left without a share (the worker stopped mid-start) holds a capture nobody sees.
+  if (!session.share && (await hasOffscreen())) await chrome.offscreen.closeDocument().catch(() => undefined)
   if (!local.token) await saveSession({ link: local.revoked ? 'revoked' : 'unpaired' })
   paintBadge()
   if (session.share) connect()
@@ -141,6 +144,9 @@ async function pollPairing() {
         return
       }
       if (answer?.state === 'refused' || answer?.state === 'expired') return await endPairing(answer.state)
+      // fetch and timers do not keep an MV3 worker alive; an extension API call does, so the
+      // answer is still collected when no popup and no socket are around.
+      await chrome.runtime.getPlatformInfo()
       await delay(PAIR_POLL_MS)
     }
   } finally {
@@ -178,10 +184,19 @@ const wanted = () => Boolean(local.token) && (Boolean(session.share) || Date.now
 
 function stayFor(ms) {
   presenceUntil = Math.max(presenceUntil, Date.now() + ms)
+  armIdle()
+}
+
+/** Closes the socket once nothing wants it; checks again at the end of the presence window. */
+function armIdle() {
   clearTimeout(idleTimer)
   idleTimer = setTimeout(() => {
+    idleTimer = null
     if (!wanted()) closeSocket()
-  }, ms + 100)
+    // Still wanted by the presence window alone: look again when it ends. A share re-arms this
+    // when it ends (`endShare`), so it needs no timer while it runs.
+    else if (!session.share) armIdle()
+  }, idleDelay(presenceUntil, Date.now()))
 }
 
 function send(msg) {
@@ -458,6 +473,7 @@ async function start(tabId, { fromShortcut = false } = {}) {
   const res = await toOffscreen('start', { streamId, rect: picked.rect })
   if (!res?.ok) {
     if (session.share) await endShare({ notify: true })
+    else await chrome.offscreen.closeDocument().catch(() => undefined)
     return { ok: false, error: 'capture' }
   }
   const share = {
