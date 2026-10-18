@@ -1,0 +1,25 @@
+title: "My setup: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Show how your Edge looks and what you put on it: it gives others ideas, and tells us what
+        to build next. Before posting a photo, check that the screen shows nothing private
+        (calendar entries, account names, addresses on a camera feed).
+  - type: textarea
+    id: photos
+    attributes:
+      label: Photos or screenshots
+      description: Drag images here. A photo of the desk, a screenshot of a page, or both.
+    validations:
+      required: true
+  - type: textarea
+    id: widgets
+    attributes:
+      label: Widgets and theme
+      description: Which widgets are on which page, the theme, a background. Anything you built yourself?
+  - type: textarea
+    id: wish
+    attributes:
+      label: What is missing
+      description: A widget or a feature that would make this setup better.
