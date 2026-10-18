@@ -24,6 +24,10 @@ tagged `vX.Y.Z`.
 - **Choose page names in the bar.** Each screen can keep the familiar page dots or show
   scrolling names with a current-page marker. Arrows move by a visible page, and the admin
   reserves room for compact widgets. Page taps still work with the admin gestures.
+- **Pair an iPad** (Mac side). **Écran → Appareils** turns on an encrypted listener on the local
+  network, shows a pairing QR code, lists the paired devices with the screen each shows, and
+  removes one at once. An iPad screen is created from the paired iPad, at its exact size. The
+  iPad app comes next.
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer
@@ -34,6 +38,7 @@ tagged `vX.Y.Z`.
   put it back as `data/fremkit.json`, knowing that changes made since are not in it. Rebuild
   and reinstall the helper with this version (`pnpm helper:build && pnpm helper:install`), or it
   will not recognise the new server.
+- **Adding a screen** creates an Edge screen; an iPad screen is now created from a paired iPad.
 
 ### Fixed
 - **A connection used only by the navigation bar is protected.** A widget shown only in the bar

@@ -111,6 +111,11 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
   on: build the snapshot with `withAccountEmail()` from `server/src/privacy.ts`, pass every
   snapshot it returns — the error path's `{ ...last, error }` included — through
   `gateAccountEmail()`, applied to the object that carries `email` when it is nested, and set `publishesAccountEmail: true` (see `docs/connections.md`).
+- **A new route is local-only.** The remote listener (port 4243, paired devices) answers 404 to
+  anything not in `server/src/devices/allowlist.ts`, and `server/test/devices-gate.test.ts` walks
+  every route to keep it so. Judge locality with `isLocalRequest(req)` (`server/src/net/remote.ts`),
+  never `isLoopbackAddress(req.ip)` alone: a request to 4243 from the Mac itself has a loopback
+  address.
 - **Config schema** changes go through `server/src/config/schema.ts` with a migration in the
   same commit and a test; the store never rewrites a file it could not migrate.
 - **Commits**: small, one concern each — a native fix noticed *while I was in there* is its own
@@ -176,3 +181,4 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
 | touch or the kiosk window | `native/Sources/FremkitHelper/` |
 | the app, its signing, notarization or updates | `scripts/build-app.sh`, `scripts/release.sh`, `native/Sources/FremkitCore/ServerLaunch.swift` (checkout or bundled server), `server/src/paths.ts` (the bundle's layout), `docs/releasing.md` |
 | change the disk map | `server/src/providers/disk-map*.ts`, `native/Sources/FremkitCore/Disk*.swift`, `native/Sources/FremkitScan`, `widgets/disk-map` |
+| pair a device, the remote listener | `server/src/devices/`, `ui/src/admin/DevicesSection.vue` |
