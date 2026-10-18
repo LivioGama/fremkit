@@ -18,6 +18,38 @@ const routes: { method: string; url: string }[] = []
 
 const cookie = (t: string): Record<string, string> => ({ cookie: `fremkit_device=${t}` })
 
+/** A widget and a built UI, enough for every kind of route to answer. */
+async function writeFixture(root: string): Promise<void> {
+  await mkdir(join(root, 'widgets', 'clock'), { recursive: true })
+  await writeFile(join(root, 'widgets', 'clock', 'manifest.json'), JSON.stringify({ id: 'clock', name: 'Clock', version: '1.0.0', minSize: [8, 4], defaultSize: [16, 4] }))
+  await writeFile(join(root, 'widgets', 'clock', 'index.html'), '<!doctype html><html><head><title>c</title></head><body>hi</body></html>')
+  const ui = join(root, 'ui')
+  await mkdir(join(ui, 'assets'), { recursive: true })
+  await writeFile(join(ui, 'index.html'), '<!doctype html><title>dashboard</title>')
+  await writeFile(join(ui, 'admin.html'), '<!doctype html><title>ADMIN</title>')
+  await writeFile(join(ui, 'assets', 'app.js'), 'console.log(1)')
+  await writeFile(join(ui, 'favicon.svg'), '<svg/>')
+}
+
+const concrete = (url: string): string => url.replace(/:[A-Za-z0-9_]+(\([^)]*\))?/g, 'x').replace(/\*/g, 'x')
+
+/**
+ * Sends every registered route the allow-list does not name, in every method it was registered
+ * for, to the remote listener with a valid device token, and expects 404 from each. Returns what
+ * it walked.
+ */
+async function walkRoutes(list: { method: string; url: string }[], remotePort: number, deviceToken: string) {
+  const walked: { method: string; url: string }[] = []
+  for (const r of list) {
+    const path = concrete(r.url)
+    if (remoteAccess(r.method, path) !== null) continue
+    const res = await remote(remotePort, { method: r.method, path, headers: cookie(deviceToken) })
+    expect(res.status, `${r.method} ${r.url}`).toBe(404)
+    walked.push(r)
+  }
+  return walked
+}
+
 describe('remoteAccess', () => {
   it('lets in the listed paths and nothing else', () => {
     expect(remoteAccess('POST', '/api/pair')).toBe('public')
@@ -60,20 +92,12 @@ describe('readCookie', () => {
 describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () => {
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'fremkit-gate-'))
-    await mkdir(join(dir, 'widgets', 'clock'), { recursive: true })
-    await writeFile(join(dir, 'widgets', 'clock', 'manifest.json'), JSON.stringify({ id: 'clock', name: 'Clock', version: '1.0.0', minSize: [8, 4], defaultSize: [16, 4] }))
-    await writeFile(join(dir, 'widgets', 'clock', 'index.html'), '<!doctype html><html><head><title>c</title></head><body>hi</body></html>')
-    const ui = join(dir, 'ui')
-    await mkdir(join(ui, 'assets'), { recursive: true })
-    await writeFile(join(ui, 'index.html'), '<!doctype html><title>dashboard</title>')
-    await writeFile(join(ui, 'admin.html'), '<!doctype html><title>ADMIN</title>')
-    await writeFile(join(ui, 'assets', 'app.js'), 'console.log(1)')
-    await writeFile(join(ui, 'favicon.svg'), '<svg/>')
+    await writeFixture(dir)
     app = await buildApp({
       accessToken: null,
       dataDir: join(dir, 'data'),
       widgetsDir: join(dir, 'widgets'),
-      uiDist: ui,
+      uiDist: join(dir, 'ui'),
       onRoute: (r: RouteOptions) => {
         for (const method of [r.method].flat()) routes.push({ method, url: r.url })
       },
@@ -104,13 +128,10 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
   })
 
   it('answers 404 for every registered route the allow-list does not name, even with a valid token', async () => {
-    const walked = routes.filter((r) => ['GET', 'POST', 'PUT', 'DELETE'].includes(r.method))
+    const walked = await walkRoutes(routes, port, token)
     expect(walked.length).toBeGreaterThan(40)
-    for (const r of walked) {
-      const path = r.url.replace(/:[A-Za-z0-9_]+(\([^)]*\))?/g, 'x').replace(/\*/g, 'x')
-      if (remoteAccess(r.method, path) !== null) continue
-      const res = await remote(port, { method: r.method, path, headers: cookie(token) })
-      expect(res.status, `${r.method} ${r.url}`).toBe(404)
+    for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+      expect(walked.some((r) => r.method === method), method).toBe(true)
     }
   })
 
