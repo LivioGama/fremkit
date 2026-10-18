@@ -62,10 +62,15 @@ describe('cropRect', () => {
     expect(odd.w % 2).toBe(0)
     expect(odd.h % 2).toBe(0)
   })
-  it('clamps to the frame and refuses an implausible rectangle', () => {
-    const c = cropRect({ x: 0.9, y: 0.9, w: 0.5, h: 0.5 }, 1000, 1000)
-    expect(c.sx + c.sw).toBeLessThanOrEqual(1000)
-    expect(c.sy + c.sh).toBeLessThanOrEqual(1000)
+  it('crops only the visible part of a video scrolled partly out of view', () => {
+    const left = cropRect({ x: -0.25, y: 0, w: 0.75, h: 0.5 }, 1000, 1000)
+    expect(left).toMatchObject({ sx: 0, sw: 500, sy: 0, sh: 500 })
+    const right = cropRect({ x: 0.75, y: 0.5, w: 0.5, h: 0.75 }, 1000, 1000)
+    expect(right).toMatchObject({ sx: 750, sw: 250, sy: 500, sh: 500 })
+  })
+  it('refuses an implausible rectangle', () => {
+    expect(cropRect({ x: 0.98, y: 0, w: 0.5, h: 0.5 }, 1000, 1000)).toBeNull()
+    expect(cropRect({ x: -0.5, y: 0, w: 0.52, h: 0.5 }, 1000, 1000)).toBeNull()
     expect(cropRect({ x: 0, y: 0, w: 0.01, h: 0.5 }, 1000, 1000)).toBeNull()
     expect(cropRect(null, 1000, 1000)).toBeNull()
   })
@@ -89,6 +94,23 @@ describe('localCandidatesOnly', () => {
     expect(out).not.toContain('relay')
     expect(out).toContain('\r\n')
     expect(isLocalSdp(out)).toBe(true)
+  })
+})
+
+describe('localCandidatesOnly agrees with the server isLocalSdp', () => {
+  const addresses = [
+    '127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.254', '192.168.1.20', '169.254.9.9',
+    '::1', 'fe80::1', 'febf::1', 'fc00::1', 'fd12:3456::1', 'fe80::1%en0',
+    'f3a1c2d4-0000-4000-8000-123456789abc.local',
+    '8.8.8.8', '172.15.0.1', '172.32.0.1', '192.169.0.1', '11.0.0.1', '169.253.0.1', '128.0.0.1',
+    '2001:db8::1', 'fec0::1', 'fe00::1', 'fe::1', '::', '::ffff:10.0.0.1', 'example.com', 'local',
+    '10.0.0', '10.0.0.256', '010.0.0.1', '10.999.1.1', '10.0.0.1.1', 'fe80:zz', 'fe80::1::2', 'fe80:1:2:3:4:5:6:7:8',
+    'fe80:1:2:3:4:5:6:7', 'fe80:1:2:3:4:5:6::', ':fe80::1', 'fe80::1:', 'fe80:::1', 'fe80::12345', 'fd00::1.2.3.4', 'fd00::1.2.3.400',
+  ]
+  it.each(addresses)('%s', (address) => {
+    const line = `a=candidate:1 1 udp 2122260223 ${address} 54321 typ host generation 0`
+    const offer = ['v=0', 'm=video 9 UDP/TLS/RTP/SAVPF 96', line, ''].join('\r\n')
+    expect(localCandidatesOnly(offer).includes(line), address).toBe(isLocalSdp(offer))
   })
 })
 

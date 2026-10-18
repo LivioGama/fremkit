@@ -132,11 +132,16 @@ export function pickVideo(frames) {
  */
 export function cropRect(rect, videoWidth, videoHeight, max = { w: 1920, h: 1080 }) {
   if (!rect || !videoWidth || !videoHeight || rect.w < 0.05 || rect.h < 0.05) return null
-  const sx = Math.max(0, videoWidth * rect.x)
-  const sy = Math.max(0, videoHeight * rect.y)
-  const sw = Math.min(videoWidth - sx, videoWidth * rect.w)
-  const sh = Math.min(videoHeight - sy, videoHeight * rect.h)
-  if (sw <= 0 || sh <= 0) return null
+  // Intersect with the viewport first: a video scrolled partly out of view crops only what shows.
+  const x0 = Math.max(0, rect.x)
+  const x1 = Math.min(1, rect.x + rect.w)
+  const y0 = Math.max(0, rect.y)
+  const y1 = Math.min(1, rect.y + rect.h)
+  if (x1 - x0 < 0.05 || y1 - y0 < 0.05) return null
+  const sx = videoWidth * x0
+  const sy = videoHeight * y0
+  const sw = videoWidth * (x1 - x0)
+  const sh = videoHeight * (y1 - y0)
   const scale = Math.min(1, max.w / sw, max.h / sh)
   // Even sizes: the H.264 encoder behind WebRTC wants them.
   const w = Math.round(sw * scale) & ~1
