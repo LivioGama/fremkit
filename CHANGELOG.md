@@ -13,6 +13,11 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **Demo mode.** `pnpm demo` (or `FREMKIT_DEMO=1`) starts a server that shows a full, moving
+  dashboard of invented data — calendar, CPU, music, weather, Claude sessions, GitHub and Azure
+  DevOps runs, Dock badges — without reading anything off the Mac or any account, in a data folder
+  of its own. For screenshots, App Store review of the iPad app, and trying Fremkit out. See
+  [docs/demo-mode.md](docs/demo-mode.md).
 - **Command palette.** ⌘K (or Ctrl+K, or **Commands** in the top bar) opens a search field over
   the editor that reaches everything it can do: add a widget to the page, go to a page or a
   screen, select a widget by its name, open a connection, jump to a widget's setting by its label,

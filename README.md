@@ -503,6 +503,7 @@ The rest, with the reasoning: **[docs/troubleshooting.md](docs/troubleshooting.m
 ```sh
 pnpm dev          # server on 4242 + Vite on 5173; then pnpm open --dev [/admin] to sign in
 pnpm open         # opens http://127.0.0.1:4242 signed in (pnpm open /admin for the admin)
+pnpm demo         # a demo server on :4250, invented data only: see docs/demo-mode.md
 pnpm build        # ui + server
 pnpm start        # production: http://127.0.0.1:4242 and /admin
 pnpm test         # vitest, server + ui

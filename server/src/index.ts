@@ -1,6 +1,7 @@
+import { rmSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { buildApp } from './app.js'
-import { providers } from './providers/index.js'
+import { DemoDataDirError, prepareDemoDataDir } from './demo/seed.js'
 import { shippedPaths } from './paths.js'
 import { DEFAULT_BACKGROUND } from './backgrounds/seed.js'
 import { safePath } from './system-path.js'
@@ -30,7 +31,13 @@ try {
 }
 // A second checkout (a worktree, a test bench) can run beside the live server on another port.
 // The helper passes its own configured port here; 4242 is what everything assumes otherwise.
-const port = Number(process.env.FREMKIT_PORT) || 4242
+/**
+ * Demo mode: invented data on every channel, nothing read off the Mac or any account, a data
+ * folder of its own. See docs/demo-mode.md. `pnpm demo` sets the variable; `--demo` does too.
+ */
+const demo = process.env.FREMKIT_DEMO === '1' || process.argv.includes('--demo')
+// A demo never takes the live server's port by default: it runs beside it.
+const port = Number(process.env.FREMKIT_PORT) || (demo ? 4250 : 4242)
 
 /**
  * Where the config, the backgrounds and the caches live. `<checkout>/data` unless told otherwise;
@@ -55,7 +62,7 @@ if (!configured && process.env.FREMKIT_ROOT) {
   console.error('fremkit: FREMKIT_ROOT is set but FREMKIT_DATA_DIR is not; refusing to write data inside the app')
   process.exit(1)
 }
-const dataDir = configured || `${shipped.root}/data`
+let dataDir = configured || `${shipped.root}/data`
 
 /**
  * Writing a widget (`FREMKIT_WIDGET_DEV=1`, which `pnpm dev` exports): the author's folder is read
@@ -100,11 +107,27 @@ if (access.rejected) console.error('fremkit: FREMKIT_ACCESS_TOKEN is not a valid
 const tokenFile = accessTokenPath(port)
 
 async function main(): Promise<void> {
+  if (demo) {
+    // Never the live dashboard: a temporary folder, or one the caller named that is a demo's.
+    try {
+      const prepared = await prepareDemoDataDir({ configured, liveDataDir: `${shipped.root}/data` })
+      dataDir = prepared.dir
+      if (prepared.temporary) process.on('exit', () => rmSync(prepared.dir, { recursive: true, force: true }))
+    } catch (error) {
+      if (!(error instanceof DemoDataDirError)) throw error
+      console.error(`fremkit: ${error.message}`)
+      process.exit(1)
+    }
+    console.error(`fremkit: demo mode, invented data only, data folder ${dataDir}`)
+  }
+  // Imported only outside demo mode: a demo constructs none of the real providers.
+  const providers = demo ? [] : (await import('./providers/index.js')).providers
   const app = await buildApp({
     accessToken: access.token,
     dataDir,
+    demo,
     // Keychain items from before they were filed per data folder belong to the live instance.
-    adoptLegacyKeychain: port === 4242,
+    adoptLegacyKeychain: !demo && port === 4242,
     widgetsDir: shipped.widgetsDir,
     ...(devDir ? { widgetDevDir: devDir } : {}),
     ...(registryUrl ? { registryUrl, registryDev: true } : {}),
