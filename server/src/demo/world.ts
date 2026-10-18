@@ -52,6 +52,18 @@ const HOME_EVENTS = [
   { title: 'Dinner with Sam', at: 20, minutes: 90, location: 'Bistro 12' },
 ]
 
+/** Today's events, in minutes from the start of the current hour. */
+const TODAY_WORK = [
+  { title: 'Weekly sync', in: -10, minutes: 40, location: 'Room 2' },
+  { title: 'Design review', in: 60, minutes: 60, location: 'Studio' },
+  { title: 'Release planning', in: 150, minutes: 45, location: 'Video call' },
+  { title: 'Customer demo', in: 240, minutes: 30, location: 'Video call' },
+]
+const TODAY_HOME = [
+  { title: 'Pick up the parcel', in: 100, minutes: 15, location: '' },
+  { title: 'Dinner with Sam', in: 300, minutes: 90, location: 'Bistro 12' },
+]
+
 export interface DemoEvent {
   id: string; title: string; start: number; end: number; allDay: boolean
   location?: string; calendar: string; color: string
@@ -71,14 +83,25 @@ function localMidnight(now: number, dayOffset: number): number {
 export function demoEvents(calendarId: string, color: string, now: number): DemoEvent[] {
   const events: DemoEvent[] = []
   const template = calendarId === 'demo-home' ? HOME_EVENTS : WORK_EVENTS
-  for (let day = 0; day < 7; day++) {
+  // Today is relative to now, whatever the hour: a capture taken at night still shows a busy
+  // afternoon ahead rather than one dinner. The days after follow the template's own hours.
+  const hour = Math.floor(now / 3_600_000) * 3_600_000
+  const today = calendarId === 'demo-home' ? TODAY_HOME : TODAY_WORK
+  today.forEach((ev, i) => {
+    const start = hour + ev.in * 60_000
+    events.push({
+      id: `${calendarId}-0-${i}`, title: ev.title, start, end: start + ev.minutes * 60_000, allDay: false,
+      ...(ev.location ? { location: ev.location } : {}), calendar: calendarId, color,
+    })
+  })
+  for (let day = 1; day < 7; day++) {
     const midnight = localMidnight(now, day)
     const weekday = new Date(midnight).getDay()
     const weekend = weekday === 0 || weekday === 6
     if (calendarId !== 'demo-home' && weekend) continue
     template.forEach((ev, i) => {
       // Not every event every day: a calendar that repeats itself exactly looks fake.
-      if ((day + i) % 3 === 2 && day > 0) return
+      if ((day + i) % 3 === 2) return
       const start = midnight + ev.at * 3_600_000
       events.push({
         id: `${calendarId}-${day}-${i}`,
