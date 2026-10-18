@@ -222,9 +222,11 @@ files:
 
 - `POST /api/companion/pair` and `POST /api/companion/pair/:requestId`, which each check for an
   `Origin` that is an extension's (`chrome-extension://` and 32 letters) before doing anything.
-- `GET /companion/ws`, the socket. It needs a token that belongs to an extension record whose
-  origin *and* install id match what the socket presents, and a `hello` within five seconds;
-  anything else is closed.
+- `GET /companion/ws`, the socket. The extension opens it with a `challenge` naming its record
+  and a fresh nonce; the server answers with an HMAC of that nonce keyed by the token's stored
+  `sha256`, which the extension checks before it sends its token in `hello`. The token must
+  belong to that same record, whose origin *and* install id match what the socket presents, and
+  the whole exchange must finish within five seconds; anything else is closed.
 
 Allowing and refusing a request stay behind the secret and are local-only. None of these routes
 exists on the remote listener (4243). The `companion` channel the dashboard watches is built-in
@@ -250,6 +252,10 @@ site's frames only when you allow that site.
 **What a local program can do.** A process running as you can read the access secret and anything
 else; it is out of scope, as under *Known limits*. One running as another account, or anything that
 reaches the port without reading your files, cannot pair without you being at the Edge to allow it.
+Nor can it learn a linked extension's token by holding port 4242 in Fremkit's place: it cannot
+answer the challenge, so the token is never sent, and the extension refuses an answer that points
+the video anywhere but this Mac's loopback or a `.local` name. Pairing with such a program gives
+it a token it made up itself, never the real one.
 
 ## What Fremkit reads on your Mac
 

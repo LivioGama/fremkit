@@ -39,6 +39,12 @@ all extensions together. When you allow the request the extension collects its o
 you do not type anything anywhere. See [SECURITY.md](../SECURITY.md#a-browser-extension) for what
 that credential is.
 
+Each time it connects, the extension first has the server prove that it holds this extension's
+record, and sends its credential only then: another program listening on the port in Fremkit's
+place cannot learn it, and the popup says *The server on this port is not your Fremkit*. Pairing
+itself involves no secret yet: a program posing as Fremkit while you pair can only make up a
+credential of its own, and learns nothing of the real one.
+
 Linked extensions are listed in **Screen → Devices**, where you can rename or remove them.
 Removing one closes its connection at once, and the extension goes back to showing the **Connect**
 button; link it again the same way.
@@ -85,4 +91,8 @@ access to every site at install.
 - *"Browser closed or extension inactive"* — the linked extension is not connected. Open the
   browser; if it is open, click the icon, which wakes the extension.
 - *"The video is not coming through: stop the share and start it again"*
+- *"The server on this port is not your Fremkit"* (in the extension's popup) — something else
+  answered on Fremkit's port and could not prove it is your Fremkit, so the extension kept its
+  credential to itself. Quit whatever else uses port 4242 and start Fremkit; the extension
+  keeps trying on its own.
 - *"Fremplay and Fremkit speak different versions: update Fremkit"*
