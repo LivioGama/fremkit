@@ -13,6 +13,9 @@ public enum AppState: Equatable, Sendable {
     case unreachable(name: String)
     /// The Mac answered and no longer knows this iPad.
     case unauthorized
+    /// The Mac (or something at its address) answered with a key other than the pinned one. The
+    /// pairing is kept: the app retries on its own, and the user can pair again.
+    case keyChanged(name: String)
 }
 
 /// The app's state machine, with no UI: it loads the pairing, finds the Mac with `Connector`,
@@ -96,7 +99,7 @@ public final class AppModel {
     }
 
     /// Finds the Mac again: its name, its last address, then whatever Bonjour resolved. The
-    /// unreachable and unauthorized screens stay up while it tries; the dashboard gives way to
+    /// unreachable, key-changed and unauthorized screens stay up while it tries; the dashboard gives way to
     /// `.connecting`. One attempt at a time: a call during an attempt joins it.
     @discardableResult
     public func reconnect() -> Task<Void, Never> {
@@ -169,6 +172,8 @@ public final class AppModel {
             state = .dashboard(host: host, info: info)
         case .unauthorized:
             state = .unauthorized
+        case .keyChanged:
+            state = .keyChanged(name: mac.name)
         case .unreachable:
             state = .unreachable(name: mac.name)
         }

@@ -45,9 +45,16 @@ final class ConnectorTests: XCTestCase {
     }
 
     func testIsUnreachableWhenNothingAnswers() async {
-        let prober = FakeProber(["198.51.100.7": .pinMismatch])
+        let prober = FakeProber([:])
         let result = await Connector(prober: prober).connect(mac: sampleMac, discovered: ["198.51.100.7", "198.51.100.8"])
         XCTAssertEqual(result, .unreachable)
+        XCTAssertEqual(prober.hosts, ["studio.local", "192.0.2.10", "198.51.100.7", "198.51.100.8"])
+    }
+
+    func testIsKeyChangedWhenOnlyAWrongKeyAnswered() async {
+        let prober = FakeProber(["198.51.100.7": .pinMismatch])
+        let result = await Connector(prober: prober).connect(mac: sampleMac, discovered: ["198.51.100.7", "198.51.100.8"])
+        XCTAssertEqual(result, .keyChanged)
         XCTAssertEqual(prober.hosts, ["studio.local", "192.0.2.10", "198.51.100.7", "198.51.100.8"])
     }
 

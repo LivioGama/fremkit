@@ -126,6 +126,35 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.state, .dashboard(host: "studio.local", info: sampleInfo))
     }
 
+    func testKeyChangedKeepsThePairingAndRecoversOnALaterOk() async {
+        let store = MemoryCredentialStore(sampleMac)
+        let prober = ScriptedProber(["studio.local": .pinMismatch])
+        let model = AppModel(store: store, connector: Connector(prober: prober))
+        await model.start()?.value
+        XCTAssertEqual(model.state, .keyChanged(name: "studio"))
+        XCTAssertEqual(try store.load(), sampleMac, "a wrong key never forgets the pairing")
+
+        let retry = model.reconnect()
+        XCTAssertEqual(model.state, .keyChanged(name: "studio"), "the screen stays up while it retries")
+        await retry.value
+        XCTAssertEqual(model.state, .keyChanged(name: "studio"))
+
+        prober.set("studio.local", .ok(sampleInfo))
+        await model.reconnect().value
+        XCTAssertEqual(model.state, .dashboard(host: "studio.local", info: sampleInfo))
+    }
+
+    func testAResumeOnTheDashboardLandsInKeyChanged() async {
+        let prober = ScriptedProber(["studio.local": .ok(sampleInfo)])
+        let model = AppModel(store: MemoryCredentialStore(sampleMac), connector: Connector(prober: prober))
+        await model.start()?.value
+        prober.set("studio.local", .pinMismatch)
+        await model.resume()?.value
+        // The check ends in a reconnect, which is its own task.
+        await model.reconnect().value
+        XCTAssertEqual(model.state, .keyChanged(name: "studio"))
+    }
+
     func testOneAttemptAtATime() async {
         let prober = ScriptedProber([:])
         let model = AppModel(store: MemoryCredentialStore(sampleMac), connector: Connector(prober: prober))
