@@ -94,6 +94,10 @@ tagged `vX.Y.Z`.
 - **Setting up the signing identity touches only its own key.** The setup step that lets the
   helper be rebuilt without password prompts used to loosen access to every signing key in your
   login keychain; it now changes the one key it created, and warns if it finds anything else.
+- **A widget cannot reach your network by switching addresses.** The widget proxy and the
+  site-icon fetches now check the address they actually connect to, so a site whose name points
+  somewhere public at first and at your Mac or your network a moment later is refused. Two more
+  private IPv6 ranges and one more way of spelling `..` in a connection's path are refused too.
 
 ## 0.4.1 — 2026-10-16
 

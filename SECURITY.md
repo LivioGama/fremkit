@@ -238,9 +238,11 @@ These are real and not fixed. They are here so you can decide whether they matte
   peer is not authenticated. See [docs/connections.md](docs/connections.md#synology).
 - **The Claude usage endpoint is undocumented.** `api.anthropic.com/api/oauth/usage` is not a
   published API and may change or disappear.
-- **DNS rebinding has a race no application can win.** The proxy resolves a host and judges the
-  address, then `fetch` resolves it again; a name that changes between the two is not caught.
-  What is caught is a widget simply *asking* for a private address.
+- **DNS rebinding is closed for the widget proxy and the favicons, not for declared
+  connections.** A widget's `GET` through the proxy and every favicon fetch connect through a
+  lookup that judges the very address the socket is opened on, so a name that answers a public
+  address to the check and `127.0.0.1` to the connection is refused. A declared connection
+  reaches the host *you* typed, LAN included, on purpose, and is not judged that way.
 
 ## Reporting something
 

@@ -144,6 +144,8 @@ describe('the paths a widget may even ask about', () => {
       'api/x', '/a?b=1', '/a#b', '/a/../b', '/a/./b', '/a//b', '/a\\b',
       // `%2e` is `.` and `%2f` is `/`: the service would route on a path the matcher never saw.
       '/a/%2e%2e/b', '/a%2fb', '/a%5cb', '/A/%2E%2E/b',
+      // Tomcat-style routers drop `;` parameters before resolving dot segments.
+      '/a/..;/b', '/a/.;x/b', '/a/;/b', '/a/..%3b/b', '/a/..;jsessionid=1/b',
     ]) {
       expect(checkPath(path), path).toBeNull()
     }
@@ -160,6 +162,7 @@ describe('the paths a widget may even ask about', () => {
   it('takes an ordinary one', () => {
     expect(checkPath('/api/manager/flow/flow')).toBe('/api/manager/flow/flow')
     expect(checkPath('/a/b%20c')).toBe('/a/b%20c')
+    expect(checkPath('/a;v=1/b')).toBe('/a;v=1/b')
   })
 })
 
