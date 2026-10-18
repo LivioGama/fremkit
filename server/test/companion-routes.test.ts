@@ -137,6 +137,19 @@ describe('companion routes', () => {
     expect((await collect(requestId)).json()).toEqual({ state: 'expired' })
   })
 
+  it('a GET on the collect route never hands out the token', async () => {
+    const { requestId } = (await pair(ORIGIN)).json()
+    const approved = await app.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/approve`, headers: { host: HOST, ...auth } })
+    expect(approved.statusCode).toBe(200)
+    for (const headers of [{ host: HOST, origin: ORIGIN }, { host: HOST, origin: ORIGIN, ...auth }]) {
+      const res = await app.inject({ method: 'GET', url: `/api/companion/pair/${requestId}`, headers })
+      expect([401, 404, 405]).toContain(res.statusCode)
+      expect(res.body).not.toMatch(/token/i)
+    }
+    // Nor did it use the pairing up: the extension still collects its token with a POST.
+    expect((await collect(requestId)).json()).toMatchObject({ state: 'approved', token: expect.any(String) })
+  })
+
   it('refuse answers refused, and an unknown request is 404 to approve', async () => {
     const { requestId } = (await pair(ORIGIN)).json()
     const refused = await app.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/refuse`, headers: { host: HOST, ...auth } })
