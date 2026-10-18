@@ -168,7 +168,27 @@ public final class AppModel {
         }
     }
 
-    private func finishCheck(_ outcome: ProbeOutcome, host: String, generation: Int) {
+    /// How often the dashboard asks the Mac whether it still knows this iPad (`checkAuthorization()`).
+    public static let authorizationCheckInterval: Duration = .seconds(30)
+
+    /// The dashboard's safety net: asks the Mac whether it still knows this iPad, so a revocation
+    /// shows the app's screen even when the page does not say so. Only `unauthorized` changes
+    /// anything; a Mac that does not answer is the page's to wait for, as it reconnects by itself.
+    /// Nil when not on the dashboard or while another attempt or check runs (never two at once).
+    @discardableResult
+    public func checkAuthorization() -> Task<Void, Never>? {
+        guard case let .dashboard(host, _) = state, let mac, running == nil else { return nil }
+        let generation = generation
+        isConnecting = true
+        let task = Task { [connector] in
+            let outcome = await connector.prober.probe(host: host, port: mac.port, mac: mac)
+            self.finishCheck(outcome, host: host, generation: generation, reconnectOnFailure: false)
+        }
+        running = task
+        return task
+    }
+
+    private func finishCheck(_ outcome: ProbeOutcome, host: String, generation: Int, reconnectOnFailure: Bool = true) {
         guard generation == self.generation else { return }
         running = nil
         isConnecting = false
@@ -176,7 +196,7 @@ public final class AppModel {
         switch outcome {
         case let .ok(info): state = .dashboard(host: host, info: info)
         case .unauthorized: state = .unauthorized
-        case .pinMismatch, .unreachable: reconnect()
+        case .pinMismatch, .unreachable: if reconnectOnFailure { reconnect() }
         }
     }
 

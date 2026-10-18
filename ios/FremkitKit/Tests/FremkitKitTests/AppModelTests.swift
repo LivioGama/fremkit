@@ -245,6 +245,40 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(model.mac)
     }
 
+    func testTheDashboardCheckShowsUnauthorizedOnly() async {
+        let prober = ScriptedProber(["studio.local": .ok(sampleInfo)])
+        let model = AppModel(store: MemoryCredentialStore(sampleMac), connector: Connector(prober: prober))
+        await model.start()?.value
+        XCTAssertEqual(model.state, .dashboard(host: "studio.local", info: sampleInfo))
+
+        prober.set("studio.local", .unreachable)
+        await model.checkAuthorization()?.value
+        XCTAssertEqual(model.state, .dashboard(host: "studio.local", info: sampleInfo), "an unanswered check leaves the page alone")
+        prober.set("studio.local", .pinMismatch)
+        await model.checkAuthorization()?.value
+        XCTAssertEqual(model.state, .dashboard(host: "studio.local", info: sampleInfo))
+        XCTAssertEqual(prober.hosts.filter { $0 != "studio.local" }, [], "no reconnect to other hosts")
+
+        prober.set("studio.local", .unauthorized)
+        await model.checkAuthorization()?.value
+        XCTAssertEqual(model.state, .unauthorized)
+        XCTAssertNil(model.checkAuthorization(), "only on the dashboard")
+    }
+
+    func testTheDashboardCheckNeverOverlaps() async {
+        let prober = ScriptedProber(["studio.local": .ok(sampleInfo)])
+        let model = AppModel(store: MemoryCredentialStore(sampleMac), connector: Connector(prober: prober))
+        await model.start()?.value
+        prober.hold("studio.local")
+        let first = model.checkAuthorization()
+        XCTAssertNotNil(first)
+        XCTAssertNil(model.checkAuthorization())
+        while prober.holding == 0 { await Task.yield() }
+        prober.release()
+        await first?.value
+        XCTAssertNotNil(model.checkAuthorization())
+    }
+
     func testPairingReplacesThePairingAndConnects() async {
         let other = PairedMac(host: "other.local", address: "198.51.100.20", port: 4243, keyHash: SPKIFixture.keyHash,
                               token: "other-token", deviceId: "d2", name: "other")

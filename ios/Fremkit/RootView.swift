@@ -108,6 +108,7 @@ private struct DashboardScreen: View {
     let host: String
     let mac: PairedMac
     let model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         DashboardView(host: host, port: mac.port, mac: mac,
@@ -116,6 +117,17 @@ private struct DashboardScreen: View {
                           // `screen` and `brightness` are for later: brightness is the iPad's next step.
                       },
                       onFailure: { model.dashboardFailed() })
+            .task(id: scenePhase) {
+                // The safety net for a revocation the page does not report: while the dashboard is
+                // up and the app active, ask the Mac every 30 s whether it still knows this iPad.
+                // The task ends with the dashboard and restarts with the scene phase.
+                guard scenePhase == .active else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: AppModel.authorizationCheckInterval)
+                    if Task.isCancelled { break }
+                    await model.checkAuthorization()?.value
+                }
+            }
             .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
             .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
     }
