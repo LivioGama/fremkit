@@ -103,6 +103,10 @@ let suites: [(String, () -> XCTestCase, [TestMethod])] = [
         ("testAnythingElseThatAnswersIsForeign", { ($0 as! AccessProofTests).testAnythingElseThatAnswersIsForeign() }),
         ("testNothingAnsweringIsAbsent", { ($0 as! AccessProofTests).testNothingAnsweringIsAbsent() }),
     ]),
+    ("AdminOriginTests", { AdminOriginTests() }, [
+        ("testAllowsTheAdminsOwnOriginAndTheSignInLink", { ($0 as! AdminOriginTests).testAllowsTheAdminsOwnOriginAndTheSignInLink() }),
+        ("testRefusesEverythingElseInTheMainFrame", { ($0 as! AdminOriginTests).testRefusesEverythingElseInTheMainFrame() }),
+    ]),
     ("KioskOriginTests", { KioskOriginTests() }, [
         ("testAllowsTheDashboardsOwnOrigin", { ($0 as! KioskOriginTests).testAllowsTheDashboardsOwnOrigin() }),
         ("testRefusesAnywhereElse", { ($0 as! KioskOriginTests).testRefusesAnywhereElse() }),

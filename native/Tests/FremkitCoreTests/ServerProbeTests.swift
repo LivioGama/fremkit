@@ -71,3 +71,21 @@ final class NodeVersionOrderTests: XCTestCase {
         XCTAssertTrue(NodeVersionOrder.newer("v1.0.0", "not-a-version"))
     }
 }
+
+final class AdminOriginTests: XCTestCase {
+    private let admin = URL(string: "http://127.0.0.1:4242/admin")!
+
+    func testAllowsTheAdminsOwnOriginAndTheSignInLink() {
+        XCTAssertTrue(AdminOrigin.allows(URL(string: "http://127.0.0.1:4242/admin?tab=screen"), admin: admin))
+        XCTAssertTrue(AdminOrigin.allows(URL(string: "http://127.0.0.1:4242/auth?code=x&next=/admin"), admin: admin))
+        XCTAssertTrue(AdminOrigin.allows(URL(string: "about:blank"), admin: admin))
+    }
+
+    func testRefusesEverythingElseInTheMainFrame() {
+        for candidate in ["https://example.com/", "http://127.0.0.1:4243/admin", "http://localhost:4242/admin",
+                          "file:///etc/passwd", "javascript:alert(1)", "fremkit://admin", "about:srcdoc"] {
+            XCTAssertFalse(AdminOrigin.allows(URL(string: candidate), admin: admin), candidate)
+        }
+        XCTAssertFalse(AdminOrigin.allows(nil, admin: admin))
+    }
+}

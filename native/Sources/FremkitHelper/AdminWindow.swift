@@ -182,10 +182,22 @@ final class AdminWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigationD
 
     /// A plain link to another site would replace the admin, which has no back button: it opens
     /// in the default browser instead, and the admin stays where it was.
+    ///
+    /// Then the main frame is pinned to the admin's origin, as the kiosk's is: a redirect, a
+    /// script setting `location`, or a scheme the browser is not handed (`file:`, `javascript:`,
+    /// an application's own) never loads in this window. Sub-frames are the widgets' previews,
+    /// sandboxed and under their own CSP, and are not touched here.
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        decisionHandler(openInBrowserIfExternal(navigationAction) ? .cancel : .allow)
+        if openInBrowserIfExternal(navigationAction) { decisionHandler(.cancel); return }
+        let isMainFrame = navigationAction.targetFrame?.isMainFrame != false
+        if isMainFrame, !AdminOrigin.allows(navigationAction.request.url, admin: url) {
+            NSLog("fremkit: admin window refused a navigation away from the admin")
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
     }
 
     /// Turns an attachment, or anything WebKit cannot display, into a download instead of a

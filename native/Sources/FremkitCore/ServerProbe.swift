@@ -46,8 +46,9 @@ public enum ExternalLink {
      or `https` address on another origin than the admin's own.
 
      The admin window has no address bar and no back button, so another site loaded in it would
-     replace the admin with no way back but a reload. Every other scheme is refused outright —
-     `file:`, `javascript:`, an application's own scheme — rather than handed to whatever claims it.
+     replace the admin with no way back but a reload. Any other scheme — `file:`, `javascript:`,
+     an application's own — answers false: it is not handed to whatever claims it. Nor does it
+     load in the admin: `AdminOrigin` pins the window's main frame to the admin's own origin.
      */
     public static func opensInBrowser(_ candidate: URL?, from admin: URL) -> Bool {
         guard let candidate,
@@ -56,5 +57,19 @@ public enum ExternalLink {
               candidate.host?.isEmpty == false
         else { return false }
         return !KioskOrigin.sameOrigin(candidate, as: admin)
+    }
+}
+
+/// Where the admin window's main frame may go.
+public enum AdminOrigin {
+    /**
+     True for a URL on the admin's own scheme, host and port, and for `about:blank`, which
+     WebKit loads into a fresh view before anything else. Anything else in the main frame would
+     replace the admin — and with it the only page in the window that holds a session — with
+     something that is not ours.
+     */
+    public static func allows(_ candidate: URL?, admin: URL) -> Bool {
+        if candidate?.absoluteString == "about:blank" { return true }
+        return KioskOrigin.sameOrigin(candidate, as: admin)
     }
 }
