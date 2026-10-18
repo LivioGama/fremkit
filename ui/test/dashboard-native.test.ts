@@ -49,6 +49,7 @@ describe('useNativeBridge', () => {
     unauthorized.value = true
     await nextTick()
     unauthorized.value = false
+    await nextTick()
     unauthorized.value = true
     await nextTick()
     expect(postMessage.mock.calls.filter(([m]) => m.type === 'unauthorized')).toHaveLength(1)
@@ -69,6 +70,36 @@ describe('useNativeBridge', () => {
       { type: 'screen', screenId: 'pad' },
       { type: 'screen', screenId: null },
     ])
+  })
+
+  it('posts the screen of a device already set at construction', () => {
+    const { win, postMessage } = appWindow()
+    useNativeBridge(ref(info({ screenId: 'pad' })), ref(false), win)
+    expect(postMessage).toHaveBeenCalledWith({ type: 'screen', screenId: 'pad' })
+  })
+
+  it('posts a seq lower than the last one: the server restarted', async () => {
+    const { win, postMessage } = appWindow()
+    const device = ref<DeviceInfo | null>(info({ brightness: { target: 40, seq: 5 } }))
+    useNativeBridge(device, ref(false), win)
+    device.value = info({ brightness: { target: 30, seq: 1 } })
+    await nextTick()
+    const sent = postMessage.mock.calls.map(([m]) => m).filter((m) => m.type === 'brightness')
+    expect(sent.map((m) => m.seq)).toEqual([5, 1])
+  })
+
+  it('lets no exception escape a throwing handler and keeps posting', async () => {
+    const { win, postMessage } = appWindow()
+    postMessage.mockImplementation(() => { throw new Error('gone') })
+    const unauthorized = ref(false)
+    const device = ref<DeviceInfo | null>(null)
+    useNativeBridge(device, unauthorized, win)
+    expect(() => { unauthorized.value = true }).not.toThrow()
+    await nextTick()
+    device.value = info({ screenId: 'pad' })
+    await nextTick()
+    expect(postMessage).toHaveBeenCalledWith({ type: 'unauthorized' })
+    expect(postMessage).toHaveBeenCalledWith({ type: 'screen', screenId: 'pad' })
   })
 
   it('posts a brightness target once per seq, and never a null target', async () => {

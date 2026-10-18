@@ -41,20 +41,16 @@ export function useNativeBridge(
     bridge.post({ type: 'unauthorized' })
   }, { immediate: true })
 
-  let screenSent = false
-  let lastScreen: string | null = null
-  watch(() => device.value?.screenId, () => {
-    if (!device.value) return
-    const id = device.value.screenId
-    if (screenSent && id === lastScreen) return
-    screenSent = true
-    lastScreen = id
+  // The watcher fires only when the screen id changes; no device yet is not a screen.
+  watch(() => device.value?.screenId, (id) => {
+    if (id === undefined) return
     bridge.post({ type: 'screen', screenId: id })
   }, { immediate: true })
 
-  let lastSeq = -Infinity
+  // The server's seq restarts at 0 with the server, so compare for inequality, not order.
+  let lastSeq: number | null = null
   watch(() => device.value?.brightness, (b) => {
-    if (!b || b.target === null || b.seq <= lastSeq) return
+    if (!b || b.target === null || b.seq === lastSeq) return
     lastSeq = b.seq
     bridge.post({ type: 'brightness', target: b.target, seq: b.seq })
   }, { immediate: true })
