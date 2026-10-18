@@ -183,11 +183,20 @@ const ChannelSchema = z.string().min(1).refine((channel) => {
  */
 export const BUILTIN_ONLY_CHANNELS: ReadonlySet<string> = new Set(['disk-map', 'clipboard'])
 
+/**
+ * Channels any widget may read but only a built-in one may command. `brightness` changes the
+ * screen itself: a registry widget may show the level, and the built-in widget, the admin and
+ * the helper are what set it. Refused in an installed manifest's `commands`, like the above.
+ */
+export const BUILTIN_ONLY_COMMANDS: ReadonlySet<string> = new Set(['brightness'])
+
 /** The built-in-only channels a manifest asks for, by family, in the order it names them. */
 export function builtinOnlyChannels(manifest: WidgetManifest): string[] {
   const previews = Object.values(manifest.settingsSchema ?? {}).flatMap((f) => (f.preview ? [f.preview.channel] : []))
   const asked = [...manifest.subscriptions, ...manifest.commands, ...previews]
-  return [...new Set(asked.map((c) => c.split(':')[0]).filter((family) => BUILTIN_ONLY_CHANNELS.has(family)))]
+  const read = asked.map((c) => c.split(':')[0]).filter((family) => BUILTIN_ONLY_CHANNELS.has(family))
+  const commanded = manifest.commands.map((c) => c.split(':')[0]).filter((family) => BUILTIN_ONLY_COMMANDS.has(family))
+  return [...new Set([...read, ...commanded])]
 }
 
 

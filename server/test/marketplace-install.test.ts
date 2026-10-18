@@ -109,10 +109,18 @@ describe('readPackage', () => {
       { subscriptions: ['clipboard'] },
       { commands: ['clipboard'] },
       { settingsSchema: { sound: { type: 'enum', label: 'S', options: [], preview: { channel: 'disk-map', command: 'view' } } } },
+      // `brightness` changes the screen itself: commanding it is for the built-in widget.
+      { commands: ['brightness'] },
+      { subscriptions: ['brightness'], commands: ['brightness'] },
     ]) {
       const zip = packageOf(over)
       expect(() => readPackage(zip, expected(zip))).toThrow(expect.objectContaining({ key: 'marketplace.builtinOnlyChannel' }))
     }
+  })
+
+  it('lets a widget read the brightness without commanding it', () => {
+    const zip = packageOf({ subscriptions: ['brightness'] })
+    expect(() => readPackage(zip, expected(zip))).not.toThrow()
   })
 
   it('refuses a private host in permissions.network, twice over', () => {
