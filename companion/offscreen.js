@@ -2,7 +2,7 @@
 // main video, and sends that picture to each widget frame watching, one RTCPeerConnection each.
 // The worker holds the socket and relays the signalling; this document holds the media.
 
-import { localCandidatesOnly, loopbackForMdns } from './lib/sdp.js'
+import { loopbackAnswer, offerSdp } from './lib/sdp.js'
 import { cropRect } from './lib/video.js'
 
 const FPS = 30
@@ -118,13 +118,16 @@ async function view(receiverId) {
   // Replaced or dropped while gathering: that offer answers nobody.
   if (peers.get(receiverId) !== pc) return null
   // On loopback rather than mDNS names: the widget's WebRTC level dials nothing else (lib/sdp.js).
-  return loopbackForMdns(localCandidatesOnly(pc.localDescription.sdp))
+  return offerSdp(pc.localDescription.sdp)
 }
 
 async function answer(receiverId, sdp) {
   const pc = peers.get(receiverId)
   if (pc?.signalingState !== 'have-local-offer' || typeof sdp !== 'string') return
-  await pc.setRemoteDescription({ type: 'answer', sdp })
+  // Only this Mac's loopback: the answer comes through the worker's socket, not from the widget itself.
+  const local = loopbackAnswer(sdp)
+  if (local === null) return
+  await pc.setRemoteDescription({ type: 'answer', sdp: local })
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {

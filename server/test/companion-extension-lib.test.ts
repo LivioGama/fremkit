@@ -10,7 +10,7 @@ import { IDLE_SLACK_MS, idleDelay } from '../../companion/lib/presence.js'
 // @ts-expect-error plain JS module
 import { closeOutcome, POLICY_CLOSE_CODE, REVOKED_CLOSE_CODE } from '../../companion/lib/link.js'
 // @ts-expect-error plain JS module
-import { localCandidatesOnly, loopbackForMdns } from '../../companion/lib/sdp.js'
+import { localCandidatesOnly, loopbackAnswer, loopbackForMdns, offerSdp } from '../../companion/lib/sdp.js'
 // @ts-expect-error plain JS module
 import { expectedMac, newNonce, PROOF_LABEL, sameBytes, verifyProof } from '../../companion/lib/proof.js'
 // @ts-expect-error plain JS module
@@ -178,10 +178,64 @@ describe('loopbackForMdns', () => {
 
     await new RTC({ iceServers: [] }).setRemoteDescription({ type: 'offer', sdp: localCandidatesOnly(offer(MDNS)) })
     expect(kept(remote[0])).toEqual([])
-    await new RTC({ iceServers: [] }).setRemoteDescription({ type: 'offer', sdp: loopbackForMdns(localCandidatesOnly(offer(MDNS))) })
+    await new RTC({ iceServers: [] }).setRemoteDescription({ type: 'offer', sdp: offerSdp(offer(MDNS)) })
     expect(kept(remote[1])).toEqual(['a=candidate:680590759 1 udp 2113937151 127.0.0.1 60466 typ host generation 0 network-cost 999'])
   })
 
+})
+
+describe('offerSdp (what the offscreen document sends)', () => {
+  const offer = (...lines: string[]) => ['v=0', 'm=video 9 UDP/TLS/RTP/SAVPF 96', 'c=IN IP4 0.0.0.0', ...lines, 'a=mid:0', ''].join('\r\n')
+  it('drops what is not local, then writes mDNS names on loopback', () => {
+    const mdns = 'a=candidate:1 1 udp 2113937151 0b7d1c2e-4f5a-4b6c-8d7e-9f0a1b2c3d4e.local 60466 typ host generation 0'
+    const lan = 'a=candidate:2 1 udp 2113937151 192.168.1.20 50001 typ host generation 0'
+    const srflx = 'a=candidate:3 1 udp 1677729535 203.0.113.9 50002 typ srflx raddr 0.0.0.0 rport 0'
+    const out = offerSdp(offer(mdns, lan, srflx))
+    expect(out).toBe(offer('a=candidate:1 1 udp 2113937151 127.0.0.1 60466 typ host generation 0', lan))
+    expect(isLocalSdp(out)).toBe(true)
+  })
+})
+
+describe('loopbackAnswer (what the offscreen document applies)', () => {
+  const answer = (c: string, ...lines: string[]) => ['v=0', 'm=video 9 UDP/TLS/RTP/SAVPF 96', c, ...lines, 'a=mid:0', ''].join('\r\n')
+  const cand = (address: string, typ = 'host') => `a=candidate:1 1 udp 2122260223 ${address} 54321 typ ${typ} generation 0`
+
+  it.each([
+    ['127.0.0.1', true], ['127.1.2.3', true], ['::1', true], ['::1'.toUpperCase(), true],
+    ['f3a1c2d4-0000-4000-8000-123456789abc.local', true],
+    ['192.168.1.20', false], ['10.0.0.5', false], ['169.254.9.9', false], ['fe80::1', false], ['fd12::1', false],
+    ['198.51.100.7', false], ['2001:db8::1', false], ['128.0.0.1', false], ['0.0.0.0', false], ['::', false],
+    ['127.0.0', false], ['127.0.0.256', false], ['0127.0.0.1', false], ['.local', false], ['evil.example.com', false],
+  ])('candidate %s kept: %s', (address, kept) => {
+    const out = loopbackAnswer(answer('c=IN IP4 0.0.0.0', cand(address)))
+    expect(out).not.toBeNull()
+    expect(out.includes(cand(address))).toBe(kept)
+  })
+
+  it('drops every candidate type but host, even on loopback', () => {
+    for (const typ of ['srflx', 'prflx', 'relay']) {
+      expect(loopbackAnswer(answer('c=IN IP4 0.0.0.0', cand('127.0.0.1', typ)))).toBe(answer('c=IN IP4 0.0.0.0'))
+    }
+  })
+
+  it.each([
+    ['c=IN IP4 0.0.0.0', true], ['c=IN IP4 127.0.0.1', true], ['c=IN IP4 127.9.9.9', true],
+    ['c=IN IP6 ::1', true], ['c=IN IP6 ::', true],
+    ['c=IN IP4 192.168.1.20', false], ['c=IN IP4 198.51.100.7', false], ['c=IN IP6 2001:db8::1', false],
+    ['c=IN IP6 fe80::1', false], ['c=IN IP4 example.com', false], ['c=IN IP4', false], ['c=garbage', false],
+  ])('connection line %s accepted: %s', (c, ok) => {
+    expect(loopbackAnswer(answer(c, cand('127.0.0.1'))) !== null).toBe(ok)
+  })
+
+  it('refuses the answer when any one of several c= lines points elsewhere', () => {
+    expect(loopbackAnswer(answer('c=IN IP4 0.0.0.0', 'm=application 9 UDP/DTLS/SCTP webrtc-datachannel', 'c=IN IP4 198.51.100.7'))).toBeNull()
+  })
+
+  it('keeps every other line and the line endings', () => {
+    const sdp = answer('c=IN IP4 0.0.0.0', 'a=ice-ufrag:abcd', cand('127.0.0.1'), cand('192.0.2.10'), 'a=end-of-candidates')
+    expect(loopbackAnswer(sdp)).toBe(answer('c=IN IP4 0.0.0.0', 'a=ice-ufrag:abcd', cand('127.0.0.1'), 'a=end-of-candidates'))
+    expect(loopbackAnswer(42)).toBeNull()
+  })
 })
 
 /** Bytes 0..31 as the token, 32..63 as the nonce. The same vector is in companion-socket.test.ts, run through the server's proofMac. */

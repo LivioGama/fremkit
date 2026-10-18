@@ -80,3 +80,42 @@ export function loopbackForMdns(sdp) {
     })
     .join('')
 }
+
+/** The offer the offscreen document sends: local candidates only, mDNS names on loopback. */
+export function offerSdp(sdp) {
+  return loopbackForMdns(localCandidatesOnly(sdp))
+}
+
+// The receiver is the kiosk on this Mac, behind the bridge's `local` WebRTC level: loopback, or a
+// `.local` name the browser resolves itself, is all an answer needs to say.
+function isLoopbackAddress(address) {
+  if (address.endsWith('.local') && address.length > '.local'.length) return /^[a-z0-9.-]+$/i.test(address)
+  if (isIPv4(address)) return address.startsWith('127.')
+  return address.toLowerCase() === '::1'
+}
+
+function isLoopbackCandidate(line) {
+  const fields = line.trim().split(/\s+/)
+  return fields[6] === 'typ' && fields[7] === 'host' && isLoopbackAddress(fields[4] ?? '')
+}
+
+/** `c=IN IP4 127.x.x.x` or `0.0.0.0`, `c=IN IP6 ::1` or `::`: nothing that names another host. */
+function isLoopbackConnection(line) {
+  const m = /^c=IN (IP4|IP6) ([^\s/]+)(\/\d+)*$/.exec(line.trim())
+  if (!m) return false
+  const address = m[2].toLowerCase()
+  return m[1] === 'IP4' ? address === '0.0.0.0' || (isIPv4(address) && address.startsWith('127.')) : address === '::1' || address === '::'
+}
+
+/**
+ * The receiver's answer as the offscreen document applies it: every candidate that is not a
+ * `host` one on loopback (127.0.0.0/8, ::1) or a `.local` name dropped, so a server posing as
+ * Fremkit cannot point the peer at another machine. Null when a `c=` line names an address
+ * other than loopback or the unspecified one: such an answer is refused whole.
+ */
+export function loopbackAnswer(sdp) {
+  if (typeof sdp !== 'string') return null
+  const lines = sdp.split(/(?<=\n)/)
+  if (lines.some((line) => line.startsWith('c=') && !isLoopbackConnection(line))) return null
+  return lines.filter((line) => !line.startsWith('a=candidate:') || isLoopbackCandidate(line)).join('')
+}
