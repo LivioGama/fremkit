@@ -10,7 +10,7 @@ import { arrangeInto } from './arrange'
 
 export type Mode = 'edit' | 'test'
 /** The modal dialogs opened from the top bar. Kept in the store so a widget setting can open one. */
-export type ModalName = 'screen' | 'connections' | 'marketplace' | 'about'
+export type ModalName = 'screen' | 'connections' | 'marketplace' | 'about' | 'export' | 'import'
 export type Status = 'saved' | 'saving' | 'error'
 
 /** Edits are grouped this long before one PUT of the whole config. */
@@ -260,7 +260,7 @@ export function freeInstanceId(cfg: Config, widgetId: string): string {
 }
 
 /** A page id free on that screen: `wanted` when it is, else a random one. */
-function freePageId(pages: Page[], wanted?: string): string {
+export function freePageId(pages: Page[], wanted?: string): string {
   if (wanted && !pages.some((p) => p.id === wanted)) return wanted
   let id = 'page-' + uid()
   while (pages.some((p) => p.id === id)) id = 'page-' + uid()

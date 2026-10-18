@@ -15,6 +15,7 @@ import type { MarketplaceStore } from './marketplace'
 import { navItemsOf } from '../shared/types'
 import { screensShowing } from '../shared/screens'
 import type { AdminStore } from './store'
+import { openExport, pickLayoutFile } from './share'
 
 /** What the pages list adds to a menu: the inline rename lives in the list itself. */
 export interface PageMenuUi extends MenuUi {
@@ -37,6 +38,7 @@ export function pageMenu(s: AdminStore, i: number, ui: PageMenuUi): MenuEntry[] 
       label: t('admin.menu.copyToScreen'),
       children: others.map((x): MenuItem => ({ label: x.name, run: () => s.copyPageToScreen(i, x.id) })),
     },
+    { label: t('admin.menu.exportPage'), run: () => openExport(s, { scope: 'page', screen: scr.id, page: page.id }) },
     SEPARATOR,
     { label: t('common.moveUp'), disabled: i === 0, run: () => s.movePage(i, -1) },
     { label: t('common.moveDown'), disabled: i === scr.pages.length - 1, run: () => s.movePage(i, 1) },
@@ -156,6 +158,10 @@ export function screenMenu(s: AdminStore, screenId: string, ui: ScreenMenuUi, de
   return tidy([
     { label: t('admin.screens.rename'), run: () => ui.rename(screenId) },
     { label: t('admin.menu.screenSettings'), run: () => { s.selectScreen(screenId); s.openModal('screen') } },
+    SEPARATOR,
+    { label: t('admin.menu.exportScreen'), run: () => openExport(s, { scope: 'screen', screen: screenId }) },
+    { label: t('admin.menu.exportSetup'), run: () => openExport(s, { scope: 'setup' }) },
+    { label: t('admin.menu.importLayout'), run: () => { s.selectScreen(screenId); pickLayoutFile(s) } },
     SEPARATOR,
     {
       label: t('admin.inspector.screen.remove'), danger: true, disabled: last,
