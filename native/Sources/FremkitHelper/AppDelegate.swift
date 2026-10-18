@@ -300,6 +300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .running: server = "running"
         case .stopped: server = "stopped"
         case let .restarting(seconds): server = "restarting in \(seconds) s"
+        case let .foreign(port): server = "port \(port) held by another program"
         }
         let fence: String
         switch state.fence {
