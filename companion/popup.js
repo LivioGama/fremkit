@@ -80,8 +80,11 @@ async function inspectTab() {
   video.checked = true
 }
 
+/** Linked as far as the popup shows it: a token the server has not said is removed (worker `removed`). */
+const isPaired = () => Boolean(local.token) && !local.revoked
+
 function renderLink() {
-  const paired = Boolean(local.token)
+  const paired = isPaired()
   const link = paired ? (session.link === 'unpaired' ? 'connecting' : (session.link ?? 'connecting')) : local.revoked ? 'revoked' : 'unpaired'
   const [cls, label] = LINKS[link] ?? LINKS.connecting
   $('link').className = `pill ${cls}`
@@ -152,7 +155,7 @@ function renderFremplay() {
 }
 
 function render() {
-  const paired = Boolean(local.token)
+  const paired = isPaired()
   renderLink()
   $('menu').hidden = !paired
   $('pair').hidden = paired
@@ -241,10 +244,10 @@ async function main() {
   render()
   ask('open')
   // The pairing code counts down; the share's title changes under the menu.
-  setInterval(() => !local.token && render(), 1000)
+  setInterval(() => !isPaired() && render(), 1000)
   const commands = await chrome.commands.getAll()
   renderShortcut(commands.find((c) => c.name === 'fremplay-toggle')?.shortcut)
-  if (local.token) {
+  if (isPaired()) {
     await inspectTab()
     render()
   }

@@ -299,8 +299,9 @@ describe('handshake (the socket opening)', () => {
     return { hs, sent, impostors: () => impostor, leaked: () => sent.some((s) => s.includes(token)) }
   }
 
-  it('gives the server as long as the server gives it', () => {
-    expect(PROOF_TIMEOUT_MS).toBe(HELLO_TIMEOUT_MS)
+  it('gives up on the proof before the server gives up on the whole handshake', () => {
+    expect(PROOF_TIMEOUT_MS).toBe(4_000)
+    expect(PROOF_TIMEOUT_MS).toBeLessThan(HELLO_TIMEOUT_MS)
   })
 
   it('sends a challenge the server parses, and no token', () => {
@@ -528,20 +529,42 @@ describe('closeOutcome', () => {
     expect(POLICY_CLOSE_CODE).toBe(1008)
   })
 
-  it('forgets the token only on 4401, before or after ready', () => {
-    expect(closeOutcome(4401, false)).toBe('revoked')
-    expect(closeOutcome(4401, true)).toBe('revoked')
+  it('forgets the token on 4401 only once the server proved itself, before or after ready', () => {
+    expect(closeOutcome(4401, { proven: true })).toBe('revoked')
+    expect(closeOutcome(4401, { proven: true, greeted: true })).toBe('revoked')
   })
 
-  it('keeps the token when hello is refused with 1008, and says an update is due', () => {
-    expect(closeOutcome(1008, false)).toBe('refused')
+  it('keeps the token on a 4401 before any proof, and shows the extension removed', () => {
+    expect(closeOutcome(4401, { proven: false })).toBe('removed')
+    expect(closeOutcome(4401)).toBe('removed')
   })
 
-  it('reconnects after a 1008 once greeted, or any other close', () => {
-    expect(closeOutcome(1008, true)).toBe('retry')
+  it('says an update is due on a 1008 before any proof', () => {
+    expect(closeOutcome(1008, { proven: false })).toBe('refused')
+  })
+
+  it('reconnects after a 1008 once proven (a slow server) or greeted, or any other close', () => {
+    expect(closeOutcome(1008, { proven: true })).toBe('retry')
+    expect(closeOutcome(1008, { proven: true, greeted: true })).toBe('retry')
     for (const code of [1000, 1001, 1006, 1009, 1011]) {
-      expect(closeOutcome(code, false)).toBe('retry')
-      expect(closeOutcome(code, true)).toBe('retry')
+      expect(closeOutcome(code, { proven: false })).toBe('retry')
+      expect(closeOutcome(code, { proven: true, greeted: true })).toBe('retry')
     }
+  })
+
+  it('reads the handshake as the worker does: a 4401 unpairs only after a valid proof', async () => {
+    const make = () => handshake({
+      socket: { send: () => {} }, deviceId: ID, token: PROOF_VECTOR.token, nonce: PROOF_VECTOR.nonce,
+      hello: () => ext.hello(PROOF_VECTOR.token, ID), onImpostor: () => {},
+    })
+    const before = make()
+    before.open()
+    before.cancel()
+    expect(closeOutcome(4401, { proven: before.proven })).toBe('removed')
+    const after = make()
+    after.open()
+    await after.receive({ type: 'proof', mac: PROOF_VECTOR.mac })
+    after.cancel()
+    expect(closeOutcome(4401, { proven: after.proven })).toBe('revoked')
   })
 })

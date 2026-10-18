@@ -47,7 +47,8 @@ const ready = (async () => {
   if (session.share && !(await hasOffscreen())) await saveSession({ share: null })
   // And a document left without a share (the worker stopped mid-start) holds a capture nobody sees.
   if (!session.share && (await hasOffscreen())) await chrome.offscreen.closeDocument().catch(() => undefined)
-  // A token without its device id cannot open the socket's handshake: pair again.
+  // A token without its device id cannot open the socket's handshake: pair again. Only an install
+  // from before the id was stored has one, and none left this unreleased branch, so no message.
   if (local.token && !local.deviceId) await saveLocal({ token: null })
   if (!local.token) await saveSession({ link: local.revoked ? 'revoked' : 'unpaired' })
   paintBadge()
@@ -213,8 +214,8 @@ function send(msg) {
 
 function connect() {
   if (ws || retryTimer || !local.token || !local.deviceId) return
-  // An impostor keeps its warning while the next attempts run: they meet it again, or nothing.
-  if (session.link !== 'ok' && session.link !== 'impostor') setLink('connecting')
+  // A warning stays up while the next attempts run: they meet it again, or a server that greets.
+  if (!['ok', 'impostor', 'refused', 'revoked'].includes(session.link)) setLink('connecting')
   const socket = new WebSocket(WS_URL)
   ws = socket
   greeted = false
@@ -248,13 +249,18 @@ function connect() {
     const wasGreeted = greeted
     ws = null
     greeted = false
-    const outcome = closeOutcome(event.code, wasGreeted)
-    // The record this token named is gone.
+    const outcome = closeOutcome(event.code, { proven: opening.proven, greeted: wasGreeted })
+    // The proven server says the record this token named is gone.
     if (outcome === 'revoked') {
       unpair({ revoked: true })
       return
     }
-    // Hello was not understood: retrying would only be refused again. Wait for the next click.
+    // The same answer, unproven: shown as removed, but the token stays until a new pairing.
+    if (outcome === 'removed') {
+      removed()
+      return
+    }
+    // The challenge was not understood: an update is due, unless it was an impostor talking.
     if (outcome === 'refused') {
       refused()
       return
@@ -298,15 +304,34 @@ function retry() {
   retryDelay = Math.min(RETRY_MAX_MS, retryDelay * 2)
 }
 
-/** The server would not read this extension's hello: an update is due on one side or the other. */
+/**
+ * The server would not read this extension's challenge: an update is due on one side or the
+ * other. Nothing proved who said so, so the attempts go on, on the backoff, within the presence
+ * window; a server that answers properly puts the link back to `ok`.
+ */
 async function refused() {
+  for (const waiter of readyWaiters) waiter(false)
+  readyWaiters.clear()
+  await setLink('refused')
+  if (session.share) await endShare({ notify: false, error: 'protocol' })
+  retry()
+}
+
+/**
+ * A 4401 before any proof: the real server's answer for a removed record, or anything holding the
+ * port. The extension shows itself removed and offers Connect, but keeps its token: a new pairing
+ * overwrites it, and a server that proves itself and greets it clears this (`ready`).
+ */
+async function removed() {
   failingSince = 0
   retryDelay = RETRY_FIRST_MS
   presenceUntil = 0
   for (const waiter of readyWaiters) waiter(false)
   readyWaiters.clear()
-  await setLink('refused')
-  if (session.share) await endShare({ notify: false, error: 'protocol' })
+  if (session.share) await endShare({ notify: false })
+  await saveLocal({ revoked: true })
+  await saveSession({ link: 'revoked' })
+  paintBadge()
 }
 
 /** No server for a minute: stop trying until the next click, and end a share nobody can see. */
@@ -316,8 +341,8 @@ async function giveUp() {
   presenceUntil = 0
   for (const waiter of readyWaiters) waiter(false)
   readyWaiters.clear()
-  // The last thing heard was an impostor: that is still what the user needs to know.
-  await setLink(session.link === 'impostor' ? 'impostor' : 'unreachable')
+  // The last thing heard was an impostor or a refusal: that is still what the user needs to know.
+  await setLink(['impostor', 'refused'].includes(session.link) ? session.link : 'unreachable')
   if (session.share) await endShare({ notify: false, error: 'unreachable' })
 }
 
@@ -370,6 +395,8 @@ async function onServerMessage(msg) {
   switch (msg.type) {
     case 'ready':
       greeted = true
+      // A proven server greeted this token: an unproven 4401 before was not its word.
+      if (local.revoked) await saveLocal({ revoked: false })
       failingSince = 0
       retryDelay = RETRY_FIRST_MS
       await setLink('ok')
@@ -491,7 +518,7 @@ function metaOf(previous, state, tab, frames) {
  */
 async function start(tabId, { fromShortcut = false } = {}) {
   await ready
-  if (!local.token) return { ok: false, error: 'unpaired' }
+  if (!local.token || local.revoked) return { ok: false, error: 'unpaired' }
   if (!validId(tabId)) return { ok: false, error: 'failed' }
   const frames = await surveyTab(tabId)
   if (!frames) return { ok: false, error: 'capture' }

@@ -5,8 +5,12 @@
 import { newNonce, verifyProof } from './proof.js'
 import { challenge } from './protocol.js'
 
-/** How long the server has to prove itself: the server's own handshake timeout. */
-export const PROOF_TIMEOUT_MS = 5_000
+/**
+ * How long the server has to prove itself. Shorter than the server's 5 s for the whole handshake
+ * (`HELLO_TIMEOUT_MS`, started at the upgrade): a proof that comes later would leave the hello
+ * too little time to land before the server gives up on it.
+ */
+export const PROOF_TIMEOUT_MS = 4_000
 
 /**
  * `socket` needs only `send(string)`. `hello` builds the hello message when the proof checks out
