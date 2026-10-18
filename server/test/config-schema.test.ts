@@ -89,6 +89,30 @@ describe('ScreenSchema', () => {
   })
 })
 
+describe('theme schedule', () => {
+  it('leaves a file written before it existed untouched: no key, one theme', () => {
+    expect(ConfigSchema.parse(v4())).not.toHaveProperty('themeSchedule')
+    expect(ConfigSchema.parse(DEFAULT_CONFIG)).not.toHaveProperty('themeSchedule')
+  })
+  it('fills the defaults once a night theme is named', () => {
+    expect(ConfigSchema.parse(v4({ themeSchedule: { night: 'edge' } })).themeSchedule)
+      .toEqual({ night: 'edge', schedule: 'sun', dayAt: '07:00', nightAt: '21:00' })
+  })
+  it('round-trips a filled-in schedule', () => {
+    const themeSchedule = { night: 'edge', schedule: 'fixed', latitude: 48.85, longitude: 2.35, dayAt: '06:30', nightAt: '22:15' }
+    const once = ConfigSchema.parse(v4({ theme: 'fremkit', themeSchedule }))
+    expect(ConfigSchema.parse(once)).toEqual(once)
+    expect(once.themeSchedule).toEqual(themeSchedule)
+  })
+  it('refuses a night theme that is not a slug, and times and coordinates out of range', () => {
+    const bad = [
+      {}, { night: 'Not A Slug' }, { night: 'edge', schedule: 'moon' }, { night: 'edge', dayAt: '24:00' },
+      { night: 'edge', nightAt: '7:00' }, { night: 'edge', latitude: 91 }, { night: 'edge', longitude: -181 },
+    ]
+    for (const themeSchedule of bad) expect(() => ConfigSchema.parse(v4({ themeSchedule })), JSON.stringify(themeSchedule)).toThrow()
+  })
+})
+
 describe('screen brightness settings', () => {
   it('leaves a file written before brightness existed untouched: no key, both modes off', () => {
     // The whole migration story: an absent key means "nothing automatic", so no version bump.
