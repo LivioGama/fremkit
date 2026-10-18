@@ -283,15 +283,24 @@ final class AppModelTests: XCTestCase {
         prober.set("studio.local", .unreachable)
         await model.checkAuthorization()?.value
         XCTAssertEqual(model.state, .dashboard(host: "studio.local", info: sampleInfo), "an unanswered check leaves the page alone")
-        prober.set("studio.local", .pinMismatch)
-        await model.checkAuthorization()?.value
-        XCTAssertEqual(model.state, .dashboard(host: "studio.local", info: sampleInfo))
-        XCTAssertEqual(prober.hosts.filter { $0 != "studio.local" }, [], "no reconnect to other hosts")
+        XCTAssertEqual(prober.hosts.filter { $0 != "studio.local" }, [], "an unanswered check does not reconnect to other hosts")
 
         prober.set("studio.local", .unauthorized)
         await model.checkAuthorization()?.value
         XCTAssertEqual(model.state, .unauthorized)
         XCTAssertNil(model.checkAuthorization(), "only on the dashboard")
+    }
+
+    func testAPeriodicCheckThatMeetsAWrongKeyReconnectsAndLandsInKeyChanged() async {
+        let prober = ScriptedProber(["studio.local": .ok(sampleInfo)])
+        let model = AppModel(store: MemoryCredentialStore(sampleMac), connector: Connector(prober: prober))
+        await model.start()?.value
+        prober.set("studio.local", .pinMismatch)
+        await model.checkAuthorization()?.value
+        // A reset certificate must not leave a dead dashboard up: the check reconnects.
+        XCTAssertEqual(model.state, .connecting)
+        await model.reconnect().value
+        XCTAssertEqual(model.state, .keyChanged(name: "studio"))
     }
 
     func testTheDashboardCheckNeverOverlaps() async {

@@ -215,7 +215,10 @@ public final class AppModel {
         switch outcome {
         case let .ok(info): state = .dashboard(host: host, info: info)
         case .unauthorized: state = .unauthorized
-        case .pinMismatch, .unreachable: if reconnectOnFailure { reconnect() }
+        // A wrong key reconnects even from the periodic check: the Connector then decides between
+        // the dashboard (another candidate answers) and the key-changed screen.
+        case .pinMismatch: reconnect()
+        case .unreachable: if reconnectOnFailure { reconnect() }
         }
     }
 
