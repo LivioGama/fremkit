@@ -16,6 +16,11 @@ export interface MenuUi {
   revealSection(id: string): void
   /** Puts the cursor in the widget library's search box. */
   focusLibrarySearch(): void
+  /**
+   * The fix of a widget that is not well (`useHealth`), or null when it is. A widget's menus lead
+   * with it, so the problem a badge shows is one click from its cure.
+   */
+  fix?(instanceId: string): { label: string; run: () => void } | null
 }
 
 /** The inspector section `revealSection` opens for a page's own background. */
@@ -100,7 +105,11 @@ export function widgetMenu(s: AdminStore, instanceId: string, ui: MenuUi): MenuE
   const lastPlace = s.isLastPlace(instanceId)
   const hasSettings = !!manifest && Object.keys(manifest.settingsSchema ?? {}).length > 0
 
+  const fix = ui.fix?.(instanceId)
+
   return tidy([
+    fix && { label: fix.label, run: fix.run },
+    fix && SEPARATOR,
     { label: t('admin.menu.settings'), run: () => { s.select(instanceId); ui.revealSection(hasSettings ? 'widget.settings' : '') } },
     SEPARATOR,
     { label: t('admin.menu.showTitle'), checked: widget.showTitle, run: () => s.updateInstance(instanceId, { showTitle: !widget.showTitle }) },

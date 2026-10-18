@@ -7,6 +7,7 @@ import BaseSegmented from '../shared/ui/BaseSegmented.vue'
 import { useI18n } from '../shared/i18n'
 import { useAdminStore } from './store'
 import { useMarketplaceStore } from './marketplace'
+import HealthMenu from './HealthMenu.vue'
 import type { Mode } from './store'
 
 const s = useAdminStore()
@@ -34,6 +35,7 @@ const statusTone = computed(() => (s.state.status === 'error' ? 'danger' : s.sta
     <BaseButton variant="icon" :title="t('admin.topbar.undo')" :disabled="!s.canUndo.value" @click="s.undo()"><BaseIcon name="undo-2" /></BaseButton>
     <BaseButton variant="icon" :title="t('admin.topbar.redo')" :disabled="!s.canRedo.value" @click="s.redo()"><BaseIcon name="redo-2" /></BaseButton>
     <span class="spacer" />
+    <HealthMenu />
     <BaseChip :tone="statusTone">{{ statusLabel }}</BaseChip>
     <button type="button" class="panel" :title="t('admin.topbar.openScreen')" @click="s.openModal('screen')">
       <BaseIcon name="monitor" :size="16" />{{ t('admin.tabs.screen') }}

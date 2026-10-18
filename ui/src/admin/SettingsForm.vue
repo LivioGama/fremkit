@@ -412,7 +412,7 @@ const itemText = (item: Record<string, unknown>, key: string, field: ListItemFie
       @update:model-value="emit('change', k, $event)" />
 
     <!-- Not a <BaseField>: its <label> must not wrap the "manage connections" button. -->
-    <div v-else-if="f.type === 'connection'" class="field">
+    <div v-else-if="f.type === 'connection'" class="field" :data-setting="k">
       <label class="lbl">
         {{ pick(f.label) }}
         <select :value="String(val(k) ?? '')" @change="chooseConnection(f, k, ($event.target as HTMLSelectElement).value)">
@@ -431,7 +431,7 @@ const itemText = (item: Record<string, unknown>, key: string, field: ListItemFie
     </div>
 
     <!-- Not a <BaseField>: its <label> must not wrap the per-connection checkbox labels. -->
-    <div v-else-if="f.type === 'connections'" class="field">
+    <div v-else-if="f.type === 'connections'" class="field" :data-setting="k">
       <span class="lbl">{{ pick(f.label) }}</span>
       <p v-if="!connectionRows(f, k).length" class="hint">{{ t('admin.settings.connection.empty') }}</p>
       <ul v-else class="picks">

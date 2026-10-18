@@ -14,9 +14,13 @@ import { editorFocus } from './editorFocus'
 import { pageMenu, type PageMenuUi } from './menus'
 import { dropIndex } from './pageDrag'
 import { useAdminStore } from './store'
+import HealthDot from './HealthDot.vue'
+import { pageLevel } from './health'
+import { useHealth } from './useHealth'
 
 const s = useAdminStore()
 const { t } = useI18n()
+const health = useHealth()
 const editing = ref<string | null>(null)
 // Escape unmounts the input, and that unmount fires a native blur — so the blur handler has to
 // be told the edit was abandoned, or it would commit the very text Escape just rejected.
@@ -156,6 +160,7 @@ watch(editing, async (id) => {
         <input v-if="editing === p.id" :value="p.name" 
           @click.stop @blur="commitName(i, $event)" @keydown.enter="($event.target as HTMLInputElement).blur()" @keydown.esc.stop="cancelEdit()" />
         <span v-else class="name" @dblclick.stop="startEdit(p.id)">{{ p.name }}</span>
+        <HealthDot :level="pageLevel(health.all.value, p)" :title="t('admin.health.pageDot')" class="health" />
         <span v-if="p.background" class="own-bg" :title="t('admin.inspector.page.background.own')" />
         <BaseButton variant="icon" class="more" :title="t('admin.pages.more')" :aria-label="t('admin.pages.more')"
           @click.stop="onMore($event, i)">
@@ -185,6 +190,7 @@ li.drop-before::before { top: -2px; }
 li.drop-after::after { bottom: -2px; }
 .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A page with a background of its own says so with a small accent dot. */
+.health { margin: 0 4px; }
 .own-bg { width: 6px; height: 6px; flex: 0 0 auto; margin: 0 4px; border-radius: 50%; background: var(--accent); }
 /* One control on a row, and only where the pointer is — or the keyboard, which a click's focus is not. */
 .more { visibility: hidden; }
