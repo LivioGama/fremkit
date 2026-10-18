@@ -26,6 +26,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   pairing.dispose()
+  await store.settled()
   await rm(dir, { recursive: true, force: true })
 })
 

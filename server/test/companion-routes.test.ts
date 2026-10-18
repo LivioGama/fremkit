@@ -78,6 +78,7 @@ describe('companion routes', () => {
   })
   afterAll(async () => {
     await app?.close()
+    await app?.pairing.store.settled()
     await rm(dir, { recursive: true, force: true })
   })
 

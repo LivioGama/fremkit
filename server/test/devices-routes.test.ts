@@ -95,8 +95,8 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     expect(port).toBeGreaterThan(0)
   })
   afterAll(async () => {
-    await app?.pairing.store.touch('none')
     await app?.close()
+    await app?.pairing.store.settled()
     await rm(dir, { recursive: true, force: true })
   })
 
@@ -433,6 +433,7 @@ describe('browser extensions in the device list', () => {
   })
   afterAll(async () => {
     await eapp?.close()
+    await eapp?.pairing.store.settled()
     await rm(edir, { recursive: true, force: true })
   })
 

@@ -101,6 +101,14 @@ export class DeviceStore {
     return result
   }
 
+  /**
+   * Resolves once every mutation queued so far has finished (failed ones included). For tests: a
+   * write nobody awaited (`touch` on hello, a sweep's `remove`) must land before its folder goes.
+   */
+  settled(): Promise<void> {
+    return this.queue.then(() => undefined)
+  }
+
   /** Reads the file. Missing means disabled and empty; corrupt is moved aside and starts empty. */
   async load(): Promise<void> {
     return this.enqueue(async () => {

@@ -94,6 +94,7 @@ describe('companion socket', () => {
   })
   afterEach(async () => {
     await app.close()
+    await store.settled()
     await rm(dir, { recursive: true, force: true })
   })
 
@@ -283,6 +284,7 @@ describe('companion socket in the app', () => {
   })
   afterEach(async () => {
     await full?.close()
+    await full?.pairing.store.settled()
     await rm(appDir, { recursive: true, force: true })
   })
 
