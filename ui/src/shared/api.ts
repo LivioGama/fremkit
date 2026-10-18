@@ -78,11 +78,14 @@ async function json<T>(res: Response): Promise<T> {
   return res.json()
 }
 
+/** A refused request whose status the caller may act on; `message` is the server's text. */
+export interface HttpFailure extends Error { status: number }
+
 async function empty(res: Response): Promise<void> {
   if (res.ok) return
   let msg = `HTTP ${res.status}`
   try { const b = await res.json(); if (b.errors) msg = b.errors.join('\n'); else if (b.error) msg = b.error } catch { /* no body */ }
-  throw new Error(msg)
+  throw Object.assign(new Error(msg), { status: res.status }) satisfies HttpFailure
 }
 
 export const api = {

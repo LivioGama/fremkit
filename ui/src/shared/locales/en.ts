@@ -515,6 +515,7 @@ export const en: Record<string, string> = {
   'dashboard.companion.approve': 'Allow',
   'dashboard.companion.refuse': 'Refuse',
   'dashboard.companion.failed': 'Could not answer, try again',
+  'dashboard.companion.changed': 'The request changed: check the code',
 
   // Brightness (admin → Screen)
   'brightness.admin.title': 'Brightness',

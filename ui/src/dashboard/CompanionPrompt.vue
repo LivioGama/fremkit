@@ -18,7 +18,7 @@ const { t } = useI18n()
 const expired = ref(false)
 const failed = ref(false)
 const busy = ref(false)
-/** The failure the server gave, when it said why (a changed request); otherwise the generic one. */
+/** Set when the server said the request on show changed (409); any other failure is the generic one. */
 const reason = ref('')
 const settled = useSettled(() => props.pairing.requestId, COMPANION_ALLOW_DELAY_MS)
 let timer: number | undefined
@@ -46,8 +46,8 @@ async function answer(call: (id: string, code: string) => Promise<unknown>) {
   try {
     await call(props.pairing.requestId, props.pairing.code)
   } catch (err) {
-    const message = err instanceof Error ? err.message : ''
-    reason.value = /^HTTP \d+$/.test(message) ? '' : message
+    // The screen's own words, in its language: the server's text is for the admin's banner.
+    reason.value = (err as { status?: unknown } | null)?.status === 409 ? t('dashboard.companion.changed') : ''
     failed.value = true
     busy.value = false
   }

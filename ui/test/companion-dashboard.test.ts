@@ -99,20 +99,21 @@ describe('the pairing prompt', () => {
     expect(fake.approve).toHaveBeenCalledWith('r2', 'P4Q9')
   })
 
-  it('shows a short error in the prompt when the answer fails', async () => {
-    fake.approve.mockRejectedValueOnce(new Error('HTTP 404'))
+  it('shows its own short error when the answer fails, not the server\'s sentence', async () => {
+    // What the server sends for a request that expired between the snapshot and the tap.
+    fake.approve.mockRejectedValueOnce(Object.assign(new Error('this connection request no longer exists or was already answered'), { status: 404 }))
     const w = await mountPrompt(pairing())
     await w.find('button.approve').trigger('click')
     await flushPromises()
-    expect(w.find('.error').exists()).toBe(true)
+    expect(w.find('.error').text()).toBe('Réponse impossible, réessayez')
   })
 
-  it('shows the server\'s reason when it gives one', async () => {
-    fake.approve.mockRejectedValueOnce(new Error('The request changed; check the code.'))
+  it('says the request changed when the server answers 409', async () => {
+    fake.approve.mockRejectedValueOnce(Object.assign(new Error('the request changed: check the code'), { status: 409 }))
     const w = await mountPrompt(pairing())
     await w.find('button.approve').trigger('click')
     await flushPromises()
-    expect(w.find('.error').text()).toBe('The request changed; check the code.')
+    expect(w.find('.error').text()).toBe('La demande a changé : vérifiez le code')
   })
 
   it('keeps the buttons disabled after an answer went through, until another request comes', async () => {
