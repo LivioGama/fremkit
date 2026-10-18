@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import type { ConnectionType } from '../src/connections/types.js'
 import { LineRing, LogTail, helperLogPath, readFileTail } from '../src/diagnostics/log-tail.js'
-import { buildDiagnostics, renderReport, type DiagnosticsDeps } from '../src/diagnostics/report.js'
+import { buildDiagnostics, compactLog, formatLogLine, renderReport, type DiagnosticsDeps } from '../src/diagnostics/report.js'
 import { errorCode } from '../src/providers/registry.js'
 import { CONFIG_VERSION, type Config } from '../src/config/schema.js'
 
@@ -103,7 +103,8 @@ describe('buildDiagnostics', () => {
     expect(text).toContain('| fake | coded | error: unauthorized |')
     // A connection's channel carries its id: shown as type and rank.
     expect(text).toContain('| fake #1 | yes | error: unauthorized |')
-    expect(text).toContain('| dock | no | not polled |')
+    expect(text).not.toContain('| dock |')
+    expect(text).toContain('1 other channels idle, never polled.')
     expect(text).toContain('| system | yes | ok |')
     for (const leak of [SECRET, ACCESS, 'Basement NAS', 'my-nas', 'nas.example.com', 'Example iPad', 'Example-Mac',
       '/Users/example', '192.0.2.7', 'someone@example.com', 'do-not-show', 'secretNote']) {
@@ -121,11 +122,54 @@ describe('buildDiagnostics', () => {
     const text = renderReport({
       generatedAt: 'x', version: '0', install: 'app', dev: false, node: 'v', macos: null, darwin: 'd', arch: 'a',
       configVersion: 4, theme: 't', locale: 'en', secretsBackend: 'file', screens: { edge: 1, device: 0 },
-      pages: 1, instances: 0, widgets: [], connections: [], providers: [], devices: { paired: 0, remoteAccess: false },
+      pages: 1, instances: 0, widgets: [], connections: [], providers: [], idleProviders: 0, devices: { paired: 0, remoteAccess: false },
       log: { kind: 'file', lines: ['before ``` after'] },
     })
     expect(text.match(/```/g)).toHaveLength(2)
     expect(text).toContain('server.log')
+  })
+})
+
+describe('formatLogLine', () => {
+  it('turns pino JSON into one readable line', () => {
+    const req = '{"level":30,"time":0,"pid":1,"hostname":"h","reqId":"req-1","req":{"method":"GET","url":"/api/config"},"msg":"incoming request"}'
+    expect(formatLogLine(req)).toBe('1970-01-01T00:00:00.000Z INFO req-1 incoming request GET /api/config')
+    const res = '{"level":30,"time":0,"reqId":"req-1","res":{"statusCode":200},"responseTime":1.6,"msg":"request completed"}'
+    expect(formatLogLine(res)).toBe('1970-01-01T00:00:00.000Z INFO req-1 request completed 200 2ms')
+    const err = '{"level":50,"time":0,"err":{"type":"Error","message":"boom","stack":"Error: boom\\n    at a (x.ts:1)\\n    at b (y.ts:2)"},"channel":"system","msg":"failed"}'
+    expect(formatLogLine(err)).toBe('1970-01-01T00:00:00.000Z ERROR failed Error: boom (at a (x.ts:1) / at b (y.ts:2)) {"channel":"system"}')
+  })
+
+  it('leaves anything else as it is', () => {
+    expect(formatLogLine('fremkit: plain text')).toBe('fremkit: plain text')
+    expect(formatLogLine('{not json')).toBe('{not json')
+    expect(formatLogLine('{"a":1}')).toBe('{"a":1}')
+  })
+})
+
+describe('compactLog', () => {
+  const line = (o: object): string => JSON.stringify({ level: 30, time: 0, ...o })
+  it('folds a request pair into one line and drops a quiet static fetch', () => {
+    const { lines } = compactLog({ kind: 'file', lines: [
+      line({ reqId: 'req-1', req: { method: 'GET', url: '/assets/app.js' }, msg: 'incoming request' }),
+      line({ reqId: 'req-1', res: { statusCode: 200 }, responseTime: 1, msg: 'request completed' }),
+      line({ reqId: 'req-2', req: { method: 'PUT', url: '/api/config' }, msg: 'incoming request' }),
+      line({ reqId: 'req-2', res: { statusCode: 400 }, responseTime: 3, msg: 'request completed' }),
+      line({ reqId: 'req-3', req: { method: 'GET', url: '/assets/missing.js' }, msg: 'incoming request' }),
+      line({ reqId: 'req-3', res: { statusCode: 404 }, responseTime: 1, msg: 'request completed' }),
+      'plain text',
+    ] })
+    expect(lines).toEqual([
+      '1970-01-01T00:00:00.000Z INFO req-2 request completed PUT /api/config 400 3ms',
+      '1970-01-01T00:00:00.000Z INFO req-3 request completed GET /assets/missing.js 404 1ms',
+      'plain text',
+    ])
+  })
+
+  it('keeps the last 200 lines', () => {
+    const { lines } = compactLog({ kind: 'memory', lines: Array.from({ length: 300 }, (_, i) => `l${i}`) })
+    expect(lines).toHaveLength(200)
+    expect(lines[0]).toBe('l100')
   })
 })
 

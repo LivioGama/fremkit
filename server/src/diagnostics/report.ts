@@ -10,6 +10,8 @@ import type { LogSource } from './log-tail.js'
 
 /** Lines of the server log a report carries. */
 export const LOG_LINES = 200
+/** Raw lines read to fill them: request pairs fold into one, and plain asset fetches drop out. */
+const RAW_LOG_LINES = 1000
 
 /**
  * Everything a report says, gathered first and rendered second so the rendering can be tested
@@ -35,7 +37,9 @@ export interface DiagnosticsFacts {
   instances: number
   widgets: { id: string; version: string | null; source: WidgetSource | 'missing'; instances: number }[]
   connections: { type: string; kind: 'coded' | 'declared' | 'unknown'; state: string }[]
+  /** Channels that are watched or have polled; the rest are only counted. */
   providers: { channel: string; watched: boolean; state: string }[]
+  idleProviders: number
   devices: { paired: number; remoteAccess: boolean }
   log: LogSource | null
 }
@@ -81,11 +85,12 @@ export function renderReport(f: DiagnosticsFacts): string {
   out.push('')
 
   out.push('### Providers', '')
-  if (f.providers.length === 0) out.push('None.')
+  if (f.providers.length === 0) out.push('None active.')
   else {
     out.push('| Channel | Watched | Last poll |', '|---|---|---|')
     for (const p of f.providers) out.push(`| ${p.channel} | ${p.watched ? 'yes' : 'no'} | ${p.state} |`)
   }
+  if (f.idleProviders > 0) out.push('', `${f.idleProviders} other channels idle, never polled.`)
   out.push('')
 
   if (f.log) {
@@ -97,6 +102,96 @@ export function renderReport(f: DiagnosticsFacts): string {
   }
   out.push('')
   return out.join('\n')
+}
+
+const LEVELS: Record<number, string> = { 10: 'TRACE', 20: 'DEBUG', 30: 'INFO', 40: 'WARN', 50: 'ERROR', 60: 'FATAL' }
+/** Keys every pino line carries, or that the compact form already shows. */
+const DROPPED_KEYS = new Set(['level', 'time', 'pid', 'hostname', 'msg', 'req', 'res', 'err', 'reqId', 'responseTime'])
+
+/**
+ * A pino JSON line made readable: `time LEVEL message`, the request or response it is about,
+ * an error's type and message, and whatever else the line carried, as JSON. A line that is not
+ * pino's (a `console.error`, a stack frame) is left as it is.
+ */
+export function formatLogLine(line: string): string {
+  if (!line.startsWith('{')) return line
+  let entry: Record<string, unknown>
+  try {
+    const parsed: unknown = JSON.parse(line)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return line
+    entry = parsed as Record<string, unknown>
+  } catch {
+    return line
+  }
+  if (typeof entry.level !== 'number' || typeof entry.time !== 'number') return line
+  const parts = [new Date(entry.time).toISOString(), LEVELS[entry.level] ?? String(entry.level)]
+  if (typeof entry.reqId === 'string') parts.push(entry.reqId)
+  if (typeof entry.msg === 'string') parts.push(entry.msg)
+  const req = entry.req as { method?: unknown; url?: unknown } | undefined
+  if (req && typeof req === 'object') parts.push(`${String(req.method ?? '')} ${String(req.url ?? '')}`.trim())
+  const res = entry.res as { statusCode?: unknown } | undefined
+  if (res && typeof res === 'object' && res.statusCode !== undefined) {
+    const ms = typeof entry.responseTime === 'number' ? ` ${Math.round(entry.responseTime)}ms` : ''
+    parts.push(`${String(res.statusCode)}${ms}`)
+  }
+  const err = entry.err as { type?: unknown; message?: unknown; stack?: unknown } | undefined
+  if (err && typeof err === 'object') {
+    parts.push(`${String(err.type ?? 'Error')}: ${String(err.message ?? '')}`)
+    if (typeof err.stack === 'string') {
+      // The first frames say where; the rest is node internals.
+      const frames = err.stack.split('\n').slice(1, 4).map((f) => f.trim())
+      if (frames.length) parts.push(`(${frames.join(' / ')})`)
+    }
+  }
+  const rest = Object.fromEntries(Object.entries(entry).filter(([k]) => !DROPPED_KEYS.has(k)))
+  if (Object.keys(rest).length > 0) parts.push(JSON.stringify(rest))
+  return parts.join(' ')
+}
+
+/** Paths whose successful fetch says nothing: the UI's files, the widgets', the SDK. */
+const QUIET_PATH = /^\/(?:assets\/|widgets\/|fremkit\.js$|favicon|api\/backgrounds\/|api\/favicon|api\/apps\/icon|api\/dock\/icon)/
+
+interface PinoLine { level?: unknown; reqId?: unknown; req?: { method?: unknown; url?: unknown }; res?: { statusCode?: unknown } }
+
+function parsePino(line: string): PinoLine | null {
+  if (!line.startsWith('{')) return null
+  try {
+    const parsed: unknown = JSON.parse(line)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed as PinoLine : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The log as a report shows it: each request's two lines folded into one (the URL is on the
+ * first, the status on the second), a successful fetch of a static file left out, every line made
+ * readable by `formatLogLine`, and the last `LOG_LINES` of that kept. Errors and everything that
+ * is not a request line are always kept.
+ */
+export function compactLog(source: LogSource): LogSource {
+  const pending = new Map<string, string>()
+  const out: string[] = []
+  for (const raw of source.lines) {
+    const entry = parsePino(raw)
+    const reqId = typeof entry?.reqId === 'string' ? entry.reqId : null
+    if (entry && reqId && entry.req && typeof entry.req === 'object') {
+      pending.set(reqId, `${String(entry.req.method ?? '')} ${String(entry.req.url ?? '')}`)
+      continue
+    }
+    if (entry && reqId && entry.res && typeof entry.res === 'object' && pending.has(reqId)) {
+      const request = pending.get(reqId)!
+      pending.delete(reqId)
+      const status = Number(entry.res.statusCode)
+      const path = request.split(' ')[1] ?? ''
+      if (status < 400 && QUIET_PATH.test(path)) continue
+      const merged = { ...entry, req: { method: request.split(' ')[0], url: path } } as Record<string, unknown>
+      out.push(formatLogLine(JSON.stringify(merged)))
+      continue
+    }
+    out.push(formatLogLine(raw))
+  }
+  return { kind: source.kind, lines: out.slice(-LOG_LINES) }
 }
 
 /** What a channel's last poll is reported as. */
@@ -225,7 +320,9 @@ export async function buildDiagnostics(deps: DiagnosticsDeps): Promise<string> {
 
   // A connection's channel is named after its id, which the user may have derived from a name:
   // shown as its type and rank instead.
-  const providers = deps.channels()
+  const allChannels = deps.channels()
+  const active = allChannels.filter((s) => s.watched || s.lastError !== undefined)
+  const providers = active
     .map((s) => ({
       channel: connectionChannels.get(s.channel) ?? (s.channel.includes(':') ? `${s.channel.split(':')[0]}:…` : s.channel),
       watched: s.watched,
@@ -260,8 +357,9 @@ export async function buildDiagnostics(deps: DiagnosticsDeps): Promise<string> {
     widgets,
     connections,
     providers,
+    idleProviders: allChannels.length - active.length,
     devices: { paired: pairedDevices.length, remoteAccess: deps.remoteAccess() },
-    log: deps.log ? await deps.log(LOG_LINES).catch(() => null) : null,
+    log: deps.log ? await deps.log(RAW_LOG_LINES).then(compactLog, () => null) : null,
   }
 
   // A name equal to a widget or type id would blank that id out of the tables: the id says

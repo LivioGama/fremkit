@@ -16,8 +16,8 @@ import { join } from 'node:path'
  * started. The buffer holds raw lines; nothing leaves it except through `redact()` in the report.
  */
 
-/** Lines kept in memory: a few hundred, enough for the 200 a report shows. */
-const RING_CAPACITY = 500
+/** Lines kept in memory: enough for the 200 a report shows once request pairs are folded. */
+const RING_CAPACITY = 1000
 /** How far from the end of the log file a report reads; well over 200 lines of pino JSON. */
 const FILE_TAIL_BYTES = 256 * 1024
 /** A line longer than this is cut: a report is pasted into a form, not archived. */
