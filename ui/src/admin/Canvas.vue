@@ -11,6 +11,9 @@ import ScreenSelector from './ScreenSelector.vue'
 import { navHeightOf, navItemsOf, type NavItem } from '../shared/types'
 import { backgroundStyle, pageBackground } from '../shared/background'
 import { useAdminStore } from './store'
+import { openContextMenu } from '../shared/ui/contextMenu'
+import { navWidgetMenu } from './menus'
+import { editorFocus } from './editorFocus'
 
 const s = useAdminStore()
 const host = ref<HTMLElement>()
@@ -100,7 +103,8 @@ onUnmounted(() => observer?.disconnect())
       <NavBar :pages="screen.pages" :active="s.state.pageIndex" :height="navH"
         :opacity="display.navOpacity" :nav-items="navItemsOf(screen)" :widgets="s.state.config!.widgets" :manifests="s.state.manifests"
         :cell="display.cell" :edit="s.state.mode === 'edit'" :nav-style="display.navStyle" @select="s.selectPage"
-        @swipe="go" @tap="popover.toggle" />
+        @swipe="go" @tap="popover.toggle"
+        @item-menu="(item, e) => openContextMenu(e, navWidgetMenu(s, item.instanceId, editorFocus))" />
       <!-- Test mode only: in Edit mode the overlay is inert, so no tap ever reaches here. -->
       <NavPopover v-if="popover.open.value"
         :key="popover.open.value.item.instanceId"

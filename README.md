@@ -202,13 +202,18 @@ two screens is the same widget, with the same settings.
   background image, reset), copy and paste its style, duplicate, copy and paste, move to another
   page or screen, also show it on another screen, default or minimum size, lock its position (a
   locked widget is neither dragged nor resized), open its connection, about, reload, remove. On
-  the empty canvas: paste, add a widget, new page, page background, screen settings. The menus work from the
+  the empty canvas: paste, add a widget, new page, page background, screen settings. On a page in
+  the list: rename, duplicate, page background, copy to another screen, move, delete. On a library
+  card: add to a page or to the bar, and for a Sietch widget show it there, update or uninstall it.
+  On a bar widget: settings, move left or right, remove. On a screen above the canvas: rename,
+  screen settings, delete. The menus work from the
   keyboard too (arrows, Enter, Escape, type-ahead).
 - **Keyboard** — arrows move the selection by one cell, Shift+arrows resize it from the south-east corner, Delete or Backspace removes it,
   Cmd+D duplicates it, Cmd+C and Cmd+V copy it and paste a new one with the same settings on the
   page you are on (any page, any screen), Escape deselects. Cmd+Z and Cmd+Shift+Z undo and redo
   anywhere, up to 50 steps.
-- **Left column** — the pages (rename, reorder, duplicate, delete) and the widget library, with a
+- **Left column** — the pages (drag to reorder, double-click to rename, the rest in their menu or
+  behind the "…" on hover) and the widget library, with a
   rescan button that re-reads the `widgets/` folder without restarting the server. Each card says
   in a line what that widget asks for, so a folder dropped into `widgets/` cannot ask for anything
   quietly.
