@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:net'
+import { X509Certificate } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
@@ -12,6 +13,8 @@ import { RemoteListener } from '../src/devices/listener.js'
 import { execFileAsync, type Exec } from '../src/secrets/keychain.js'
 import { Hub } from '../src/ws/hub.js'
 import { readZip } from '../src/backup/zip.js'
+import { readKey, spkiHash, TLS_KEY_SECRET } from '../src/devices/certificate.js'
+import { FileSecretStore } from '../src/secrets/file.js'
 import { hasOpenssl, remote } from './helpers/remote.js'
 
 const ADDRESS = '192.0.2.10'
@@ -197,6 +200,43 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     expect(Buffer.concat(entries.map((e) => e.data)).toString('utf8')).not.toContain('tokenHash')
   })
 
+  it('keeps the TLS key, in either form, out of the backup and the config', async () => {
+    const secrets = new FileSecretStore(join(dir, 'secrets.json'))
+    const stored = await secrets.get(TLS_KEY_SECRET)
+    const pem = await readKey(secrets)
+    expect(stored).toMatch(/^[A-Za-z0-9+/=]{40,}$/)
+    expect(pem).toContain('PRIVATE KEY')
+    // The PEM's body lines, the one-line stored form, and pieces of it long enough to mean it.
+    const pemLines = pem!.split('\n').filter((l) => l.length > 0 && !l.startsWith('-----'))
+    const needles = [stored!, stored!.slice(0, 32), stored!.slice(-32), ...pemLines, 'PRIVATE KEY', TLS_KEY_SECRET]
+
+    const backup = await app.inject({ url: '/api/backup' })
+    expect(backup.statusCode).toBe(200)
+    const entries = readZip(Buffer.from(backup.rawPayload))
+    const texts = [...entries.map((e) => e.data.toString('utf8')), ...entries.map((e) => e.data.toString('base64'))]
+    const config = await app.inject({ url: '/api/config' })
+    expect(config.statusCode).toBe(200)
+    const { token } = await pairWith({ width: 640, height: 480 })
+    const remoteConfig = await remote(port, { path: '/api/config', host: host(), headers: cookie(token) })
+    expect(remoteConfig.status).toBe(200)
+    for (const text of [...texts, config.body, remoteConfig.body]) {
+      for (const needle of needles) expect(text.includes(needle), needle.slice(0, 12)).toBe(false)
+    }
+  })
+
+  it('answers /me with the asking device only', async () => {
+    const a = await pairWith({ width: 640, height: 480 }, 'Kitchen')
+    const b = await pairWith({ width: 640, height: 480 }, 'Hall')
+    expect((await app.inject({ method: 'PATCH', url: `/api/devices/${b.deviceId}`, payload: { screenId: 'tab-a' } })).statusCode).toBe(200)
+    const meA = JSON.parse((await me(a.token)).body)
+    const meB = JSON.parse((await me(b.token)).body)
+    expect(meA).toEqual({ id: a.deviceId, name: 'Kitchen', screenId: null })
+    expect(meB).toEqual({ id: b.deviceId, name: 'Hall', screenId: 'tab-a' })
+    // Whatever the query asks for.
+    const asked = await remote(port, { path: `/api/devices/me?id=${b.deviceId}`, host: host(), headers: cookie(a.token) })
+    expect(JSON.parse(asked.body).id).toBe(a.deviceId)
+  })
+
   it('resetting the certificate changes the pin and unpairs every device', async () => {
     const { token, deviceId } = await pairWith({ width: 640, height: 480 })
     const before = (await app.inject({ url: '/api/devices' })).json().keyHash as string
@@ -283,5 +323,73 @@ describe.skipIf(!hasOpenssl)('a remote port already taken', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ enabled: false, listening: false, error: 'portInUse', message: 'the remote access port is already used by another application' })
     expect(tapp.pairing.store.enabled).toBe(false)
+  })
+})
+
+describe.skipIf(!hasOpenssl)('following a change of address', () => {
+  let adir: string
+  let aapp: FastifyInstance
+  let addresses = ['192.0.2.10']
+
+  beforeAll(async () => {
+    adir = await mkdtemp(join(tmpdir(), 'fremkit-devices-addr-'))
+    await writeFile(join(adir, 'fremkit.json'), JSON.stringify(CONFIG))
+    aapp = await buildApp({
+      accessToken: null,
+      dataDir: adir,
+      widgetsDir: join(process.cwd(), '..', 'widgets'),
+      providers: [],
+      devicesPort: 0,
+      devices: { exec, advertise: noAdvertise, lanAddresses: () => addresses, preferredAddress: async (a) => a[0] ?? null },
+    })
+  })
+  afterAll(async () => {
+    vi.useRealTimers()
+    await aapp?.close()
+    await rm(adir, { recursive: true, force: true })
+  })
+
+  it('re-issues the certificate from the same key every 30 s when the addresses move, and stops checking when off', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const setCertificate = vi.spyOn(RemoteListener.prototype, 'setCertificate')
+    try {
+      const before = vi.getTimerCount()
+      const on = await aapp.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
+      expect(on.json()).toMatchObject({ enabled: true, listening: true })
+      const aport = on.json().port as number
+      const keyHash = on.json().keyHash as string
+      expect(vi.getTimerCount()).toBe(before + 1)
+      expect((await remote(aport, { path: '/', host: `192.0.2.10:${aport}` })).status).not.toBe(421)
+      expect((await remote(aport, { path: '/', host: `198.51.100.7:${aport}` })).status).toBe(421)
+
+      // Nothing moved: the tick changes nothing.
+      vi.advanceTimersByTime(30_000)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(setCertificate).not.toHaveBeenCalled()
+
+      addresses = ['198.51.100.7']
+      vi.advanceTimersByTime(29_999)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(setCertificate).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1)
+      await expect.poll(() => setCertificate.mock.calls.length).toBe(1)
+
+      const cert = new X509Certificate(setCertificate.mock.calls[0][1])
+      expect(cert.subjectAltName).toContain('IP Address:198.51.100.7')
+      expect(cert.subjectAltName).not.toContain('192.0.2.10')
+      // Same key, so the pin every paired device holds still matches.
+      expect(spkiHash(cert.toString())).toBe(keyHash)
+      expect((await aapp.inject({ url: '/api/devices' })).json().keyHash).toBe(keyHash)
+      // The gate follows: the new authority is in, the old one out.
+      expect((await remote(aport, { path: '/', host: `198.51.100.7:${aport}` })).status).not.toBe(421)
+      expect((await remote(aport, { path: '/', host: `192.0.2.10:${aport}` })).status).toBe(421)
+
+      const off = await aapp.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: false } })
+      expect(off.json()).toMatchObject({ enabled: false, listening: false })
+      expect(vi.getTimerCount()).toBe(before)
+    } finally {
+      setCertificate.mockRestore()
+      vi.useRealTimers()
+    }
   })
 })
