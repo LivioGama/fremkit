@@ -253,6 +253,8 @@ export class DeviceService {
       if (this.listener.running) {
         const cert = await issueCertificate(key, { host: this.dnsName(), addresses: this.certAddresses }, { exec: this.exec })
         this.listener.setCertificate(key, cert)
+        // A keep-alive connection would otherwise go on over the old key, which nothing pins now.
+        this.listener.dropConnections()
       }
     })
   }

@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { CONFIG_VERSION } from '../src/config/schema.js'
 import { noAdvertise } from '../src/devices/bonjour.js'
+import { RemoteListener } from '../src/devices/listener.js'
 import { execFileAsync, type Exec } from '../src/secrets/keychain.js'
 import { Hub } from '../src/ws/hub.js'
 import { readZip } from '../src/backup/zip.js'
@@ -201,6 +202,7 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     const before = (await app.inject({ url: '/api/devices' })).json().keyHash as string
     const closeDevice = vi.spyOn(Hub.prototype, 'closeDevice')
     const closeRemote = vi.spyOn(Hub.prototype, 'closeRemote')
+    const drop = vi.spyOn(RemoteListener.prototype, 'dropConnections')
     try {
       const res = await app.inject({ method: 'POST', url: '/api/devices/reset-certificate' })
       expect(res.statusCode).toBe(200)
@@ -211,9 +213,12 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
       expect((await me(token)).status).toBe(401)
       expect(closeDevice).toHaveBeenCalledWith(deviceId)
       expect(closeRemote).toHaveBeenCalled()
+      // No keep-alive connection is left talking over the old key.
+      expect(drop).toHaveBeenCalledTimes(1)
     } finally {
       closeDevice.mockRestore()
       closeRemote.mockRestore()
+      drop.mockRestore()
     }
   })
 

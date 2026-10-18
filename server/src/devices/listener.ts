@@ -90,6 +90,15 @@ export class RemoteListener {
     this.server?.setSecureContext({ key: keyPem, cert: certPem, minVersion: 'TLSv1.2' })
   }
 
+  /**
+   * Destroys every socket the listener holds, WebSockets included, and keeps listening: used when
+   * the key is reset, so no keep-alive connection goes on talking over the old key.
+   */
+  dropConnections(): void {
+    for (const socket of this.sockets) socket.destroy()
+    this.sockets.clear()
+  }
+
   /** Closes the listener and destroys every socket it still holds, WebSockets included. */
   async stop(): Promise<void> {
     const server = this.server

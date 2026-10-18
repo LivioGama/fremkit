@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
+import { connect as tlsConnect } from 'node:tls'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
@@ -88,6 +89,28 @@ describe.skipIf(!hasOpenssl)('RemoteListener', () => {
     const closed = new Promise<void>((resolve) => ws.socket.once('close', () => resolve()))
     await listener.stop()
     await closed
+  })
+
+  it('drops every open connection on demand and keeps listening', async () => {
+    const port = await start()
+    const { token } = await app.pairing.store.create('iPad', { width: 1180, height: 820 }, null)
+    const raw = tlsConnect({ host: '127.0.0.1', port, rejectUnauthorized: false })
+    await new Promise<void>((resolve, reject) => {
+      raw.once('secureConnect', () => resolve())
+      raw.once('error', reject)
+    })
+    const ws = await upgrade(port, { cookie: `fremkit_device=${token}` })
+    expect(ws.status).toBe(101)
+    if (!('socket' in ws)) return
+    const closed = Promise.all([
+      new Promise<void>((resolve) => raw.once('close', () => resolve())),
+      new Promise<void>((resolve) => ws.socket.once('close', () => resolve())),
+    ])
+    raw.on('error', () => undefined)
+    listener.dropConnections()
+    await closed
+    expect(listener.running).toBe(true)
+    expect((await remote(port, { path: '/api/config', headers: { cookie: `fremkit_device=${token}` } })).status).toBe(200)
   })
 
   it('rejects with EADDRINUSE when the port is taken, and is left stopped', async () => {
