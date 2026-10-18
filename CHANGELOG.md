@@ -91,6 +91,9 @@ tagged `vX.Y.Z`.
 - **Saved passwords no longer pass through a command line.** Tokens and passwords you give a
   connection are now handed to the keychain in a way other accounts on the Mac cannot glimpse.
   Values with accents or line breaks also read back exactly as typed.
+- **Setting up the signing identity touches only its own key.** The setup step that lets the
+  helper be rebuilt without password prompts used to loosen access to every signing key in your
+  login keychain; it now changes the one key it created, and warns if it finds anything else.
 
 ## 0.4.1 — 2026-10-16
 
