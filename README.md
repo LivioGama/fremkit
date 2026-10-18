@@ -32,6 +32,7 @@ The name is the Fremen survival kit from *Dune*.
   *from the registry*, meeting controls, CleanShot X actions, Azure DevOps builds, GitHub
   notifications and Actions, a Bambu Lab printer, Homey devices and flows, a Synology NAS.
   Twenty ship with Fremkit; the rest are one press away in the admin.
+- **A browser extension** — *Fremkit Companion* sends the video of a Chromium tab to the Fremplay widget on the Edge, with touch controls. See [docs/companion.md](docs/companion.md).
 - **Compact widgets** in the navigation bar, with a full-size popover on touch.
 - **Per-tile appearance** — background colour, opacity, background image, accent colour and how
   much of the tile the accent paints.

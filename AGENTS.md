@@ -35,6 +35,11 @@ Fremkit turns a Corsair Xeneon Edge (a 2560 × 720 touch strip) into a widget da
   Xcode project), tested with `scripts/test-helper.sh`. The bundle also carries `fremkit-scan`
   (`native/Sources/FremkitScan`), the disk map's scanner, which the server runs by the path the
   helper passes in `FREMKIT_SCANNER`; without it the server falls back to `du`.
+- `companion/` — the Fremkit Companion browser extension (MV3, Chromium only, loaded unpacked from
+  here), which pairs with the server and sends a tab's video to `widgets/fremplay` over WebRTC.
+  Its ID is fixed by the manifest `key`. Server side: `server/src/companion/`; the routes that
+  skip the access secret are listed in `server/src/http/access.ts` (`COMPANION_ROUTES`). See
+  [docs/companion.md](docs/companion.md).
 - `scripts/` — setup, dev, build/install/test of the helper, signing identity, and the
   downloadable app: `build-app.sh` (self-contained, signed `Fremkit.app` with Sparkle and the
   server as a Node single executable), `notarize.sh`, `release.sh` (builds a release and stops
@@ -175,6 +180,7 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
 | change the marketplace | `server/src/marketplace/` (registry client, installer, consent), `ui/src/admin/marketplace.ts` and `MarketplacePanel.vue`, `docs/marketplace.md` |
 | add a connection type | **A coded type is the exception, and has to earn it.** One auth header on HTTP(S) is a `connection` the widget *declares* in its own manifest — no release of Fremkit per service; see `docs/writing-widgets.md`. Write code only for what a declaration cannot express: a session handshake, a protocol that is not HTTP, OAuth, a local binary. Nothing else counts — "it already has a provider" does not, and neither does "a picker would be nice" (a declared connection feeds no `pick`; the widget lists ids instead). Homey was coded and should not have been: two widgets on one Homey meant two connections, and a Homey invalidates the previous API key when a new one is issued, so the second key broke the first. If it does earn it: `server/src/connections/types/ics.ts` (simplest) or `github.ts` (fullest), register in `types/index.ts`, document in `docs/connections.md` |
 | add a provider | `server/src/providers/calendar.ts` (polling) or `shortcuts.ts` (commands only), register in `providers/index.ts` |
+| change the companion extension or Fremplay | `companion/`, `server/src/companion/`, `widgets/fremplay`, `docs/companion.md` |
 | change the admin | `ui/src/admin/store.ts` (state), `Canvas.vue`/`EditOverlay.vue` (editing), `SettingsForm.vue` (setting types), `ScreenInspector.vue`, `ConnectionsInspector.vue` |
 | change the dashboard | `ui/src/dashboard/App.vue`, `NavBar.vue`, `CompactWidgetFrame.vue`, `NavPopover.vue` |
 | change what widgets can do | `server/src/bridge/fremkit.js` and `ui/src/shared/useWidgetBridge.ts`, together |

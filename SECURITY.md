@@ -156,6 +156,54 @@ reaches a screen. The bridge provides `Fremkit.esc()`, `Fremkit.el()` and `Fremk
 the widgets here use them. See the Security section of
 [docs/writing-widgets.md](docs/writing-widgets.md).
 
+### A browser extension
+
+The [Fremkit Companion](docs/companion.md) extension is the one thing that talks to the server
+without the local access secret, because an extension cannot be handed it: the secret is a file in
+your account, and an extension has no way to read your files. It is let in by a different door, and
+the door is narrow.
+
+**Its credential.** An extension is linked by your approval: it asks, the server shows a
+four-character code on the Edge and in the admin, and you press Allow. The extension then collects
+its token with a `POST` (Chrome sends no `Origin` on an extension's `GET` to `127.0.0.1`, which is
+why it is not a `GET`). The token is 32 random bytes; only its `sha256` is stored, compared in
+constant time. A code lasts two minutes, one request waits at a time, and five requests a minute
+are accepted in total. An approved request that is never collected is removed when it expires.
+Removing the extension in **Screen → Devices** closes its socket and its token stops working.
+
+**The routes that skip the secret**, decided by the route the server matched, like the widgets'
+files:
+
+- `POST /api/companion/pair` and `POST /api/companion/pair/:requestId`, which each check for an
+  `Origin` that is an extension's (`chrome-extension://` and 32 letters) before doing anything.
+- `GET /companion/ws`, the socket. It needs a token that belongs to an extension record whose
+  origin *and* install id match what the socket presents, and a `hello` within five seconds;
+  anything else is closed.
+
+Allowing and refusing a request stay behind the secret and are local-only. None of these routes
+exists on the remote listener (4243). The `companion` channel the dashboard watches is built-in
+only, and paired iPads are refused it entirely.
+
+**What a web page can do.** Not pair: it has no extension `Origin`, which a page cannot forge, and
+the pairing still needs your press on the Edge. It cannot open the socket without a token, and it
+cannot read one.
+
+**What another extension can do.** It has its own `chrome-extension://` origin, so it can ask to
+pair, and the request shows its name and code on the Edge; the code is meant to be compared, and a
+request you did not make is refused. If you allow it, it is a Companion like any other, with what
+that carries below. Do not allow a request you did not start.
+
+**What a linked extension can do**, and it is little: send metadata about the video being shared
+(a title, a host, a position), and a WebRTC offer, to the Edge. It cannot read your dashboard, your
+config or your connections, call any other API, or send a command to a widget other than driving its own share. Its offer must carry
+local-network addresses only, so the video does not leave your machine, and it never goes through
+the server. The extension asks for the video of a tab, never the tab itself, and for another
+site's frames only when you allow that site.
+
+**What a local program can do.** A process running as you can read the access secret and anything
+else; it is out of scope, as under *Known limits*. One running as another account, or anything that
+reaches the port without reading your files, cannot pair without you being at the Edge to allow it.
+
 ## What Fremkit reads on your Mac
 
 Transcripts, the clipboard, Dock badges, a keychain item — the full list, with who reads what and
