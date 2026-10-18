@@ -15,19 +15,31 @@ const failed = ref(false)
 const busy = ref(false)
 let timer: number | undefined
 
-watch(() => [props.pairing.requestId, props.pairing.expiresAt], () => {
+watch(() => [props.pairing.requestId, props.pairing.expiresAt], ([id], previous) => {
   window.clearTimeout(timer)
   failed.value = false
+  // An answered request stays answered: a new one is the only thing that frees the buttons.
+  if (previous === undefined || id !== previous[0]) busy.value = false
   const left = props.pairing.expiresAt - Date.now()
   expired.value = left <= 0
   if (left > 0) timer = window.setTimeout(() => { expired.value = true }, left)
 }, { immediate: true })
 onUnmounted(() => window.clearTimeout(timer))
 
+/**
+ * Sends the answer once. On success the buttons stay disabled until the snapshot takes the prompt
+ * away: a second tap would find the request gone (404) and flash "failed" over a pairing that
+ * worked. Only a failure frees them again, to try once more.
+ */
 async function answer(call: (id: string) => Promise<unknown>) {
   if (busy.value) return
   busy.value = true; failed.value = false
-  try { await call(props.pairing.requestId) } catch { failed.value = true } finally { busy.value = false }
+  try {
+    await call(props.pairing.requestId)
+  } catch {
+    failed.value = true
+    busy.value = false
+  }
 }
 </script>
 

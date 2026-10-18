@@ -80,6 +80,33 @@ describe('the pairing prompt', () => {
     expect(w.find('.error').exists()).toBe(true)
   })
 
+  it('keeps the buttons disabled after an answer went through, until another request comes', async () => {
+    fake.approve.mockResolvedValue(undefined)
+    const w = await mountPrompt(pairing())
+    await w.find('button.approve').trigger('click')
+    await flushPromises()
+    expect(w.find('button.approve').attributes('disabled')).toBeDefined()
+    expect(w.find('button.refuse').attributes('disabled')).toBeDefined()
+    // A second tap before the snapshot hides the prompt sends nothing and shows no error.
+    await w.find('button.approve').trigger('click')
+    await flushPromises()
+    expect(fake.approve).toHaveBeenCalledTimes(1)
+    expect(w.find('.error').exists()).toBe(false)
+    // The same request with a new deadline is still answered; a new request frees the buttons.
+    await w.setProps({ pairing: pairing({ expiresAt: NOW + 60_000 }) as never })
+    expect(w.find('button.approve').attributes('disabled')).toBeDefined()
+    await w.setProps({ pairing: pairing({ requestId: 'r2' }) as never })
+    expect(w.find('button.approve').attributes('disabled')).toBeUndefined()
+  })
+
+  it('frees the buttons after a failure, to try again', async () => {
+    fake.approve.mockRejectedValueOnce(new Error('HTTP 500'))
+    const w = await mountPrompt(pairing())
+    await w.find('button.approve').trigger('click')
+    await flushPromises()
+    expect(w.find('button.approve').attributes('disabled')).toBeUndefined()
+  })
+
   it('hides at expiresAt even before the next snapshot', async () => {
     const w = await mountPrompt(pairing())
     expect(w.find('.companion-prompt').exists()).toBe(true)
