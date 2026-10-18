@@ -4,7 +4,7 @@ import fastifyWebsocket from '@fastify/websocket'
 import { homedir } from 'node:os'
 import { shippedPaths } from './paths.js'
 import { join } from 'node:path'
-import { access, mkdir } from 'node:fs/promises'
+import { access, mkdir, readFile } from 'node:fs/promises'
 import { ConfigStore } from './config/store.js'
 import { setServerLocale } from './i18n.js'
 import { ConnectionManager } from './connections/manager.js'
@@ -52,7 +52,8 @@ import { helperRoutes } from './helper/routes.js'
 import { createDockProvider } from './dock/provider.js'
 import { bambuCameras } from './bambu/cameras.js'
 import { sweepStaleCameraDirs } from './providers/bambu-rtsp.js'
-import { seedDefaultBackground } from './backgrounds/seed.js'
+import { DEFAULT_BACKGROUND, seedDefaultBackground } from './backgrounds/seed.js'
+import { isSafeBackgroundName } from './config/schema.js'
 import { backupRoutes } from './backup/routes.js'
 import { bambuRoutes } from './bambu/routes.js'
 import { createShortcutsProvider } from './providers/shortcuts.js'
@@ -82,6 +83,8 @@ import { REMOTE_PORT } from './devices/listener.js'
 import type { Advertiser } from './devices/bonjour.js'
 import type { Exec } from './secrets/keychain.js'
 import { diagnosticsRoutes } from './diagnostics/routes.js'
+import { shareRoutes } from './share/routes.js'
+import { shareRedaction } from './share/context.js'
 import type { LogTail } from './diagnostics/log-tail.js'
 import { isDeclaredType } from './connections/declared.js'
 
@@ -437,6 +440,22 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       remoteAccess: () => devices.enabled,
       accessToken: opts.accessToken,
       ...(opts.logTail ? { log: (count: number) => opts.logTail!.recent(count) } : {}),
+    },
+  })
+  await app.register(shareRoutes, {
+    deps: {
+      config: () => store.get(),
+      manifest: (id) => catalog.get(id),
+      source: (id) => catalog.entry(id)?.source,
+      readImage: (name) => (isSafeBackgroundName(name)
+        ? readFile(join(opts.dataDir, 'backgrounds', name)).catch(() => null)
+        : Promise.resolve(null)),
+      redaction: () => shareRedaction(store.get(), {
+        secretsFor: (connection) => connections.secretsFor(connection),
+        devices: () => devices.list(),
+        accessToken: opts.accessToken,
+      }),
+      shippedBackground: DEFAULT_BACKGROUND,
     },
   })
   app.addHook('onClose', async () => { await deviceService.close() })
