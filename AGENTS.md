@@ -145,6 +145,36 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
   browser. The widget catalogue test in `server/test/` reads the real `widgets/` folder, so a
   broken manifest fails it.
 
+## Security invariants
+
+Each line here was a real hole once. Break one only with the owner's explicit say-so.
+
+- **No WebRTC in a widget.** `server/src/bridge/fremkit.js` starts by making the WebRTC
+  constructors `undefined` and unrecoverable, and the server injects it ahead of everything the
+  widget wrote (`injectBridge`: after the doctype, never "after `<head>`"). The only exception is
+  the `local` level — no ICE server, loopback/this-Mac candidates only — for **built-ins** listed
+  in `WEBRTC_LOCAL_BUILTINS` (`server/src/widgets/webrtc.ts`). Never let a manifest, a consent
+  record or an installed folder reach that list; never serve a widget document that runs script
+  without the bridge (other HTML/SVG/XML files get `script-src 'none'`).
+- **Host pages carry a CSP.** `hostCsp()` in `server/src/http/headers.ts` covers every HTML page
+  the server writes (loopback and the 4243 listener, built per request from the checked Host);
+  `ui/vite.config.ts` sends the same under `pnpm dev`. `frame-src` stays `<origin>/widgets/`,
+  `frame-ancestors 'none'`, `script-src 'self'` with no `unsafe-inline`. A new page, frame or
+  external resource changes that function, not a route.
+- **Frames hold widgets only.** The kiosk and admin web views cancel any subframe navigation that
+  `WidgetFrames.allows` (`native/Sources/FremkitCore/WidgetFrames.swift`) refuses; a new web view
+  that shows widgets uses it too.
+- **A settings `preview` is a granted command.** The manifest schema requires its channel in
+  `commands`, `grantedManifest` drops one its granted commands do not cover, and `SettingsForm`
+  sends one only on a channel `commands` covers. Never add preview channels to anything on their own.
+- **The host talks to a frame over its port, never its window.** `useWidgetBridge` answers only
+  the document that said hello, over the `MessagePort` it handed it, after the nonce came back;
+  nothing but that `fremkit:connect` is posted to a frame's window. A second hello for the same
+  src disowns the frame.
+- **Check it in browsers.** After touching the bridge, the widget or host CSP, the frames or
+  `useWidgetBridge`, run `scripts/check-widget-sandbox.ts` (Chromium and WebKit through
+  Playwright; not part of `pnpm test`, which has no browser) — see its header for the command.
+
 ## Gotchas learned the hard way
 
 - macOS *Local Network* privacy: LAN calls (printer, Homey) fail with `EHOSTUNREACH`
