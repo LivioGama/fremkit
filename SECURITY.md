@@ -311,7 +311,10 @@ files:
 
 Allowing and refusing a request stay behind the secret and are local-only. None of these routes
 exists on the remote listener (4243). The `companion` channel the dashboard watches is built-in
-only, and paired iPads are refused it entirely.
+only, and paired iPads are refused it entirely. The admin's health channel (`config:health`) lists
+the companion's provider with its last error code, as it does every provider; that channel is
+local-only (no widget may declare `config:*`, and a paired device hears the literal `config` alone)
+and holds no code, token or tab data.
 
 **What a web page can do.** Not pair: it has no extension `Origin`, which a page cannot forge, and
 the pairing still needs your press on the Edge. It cannot open the socket without a token, and it
