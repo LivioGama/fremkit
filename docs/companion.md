@@ -111,7 +111,7 @@ button; link it again the same way.
 ## Send a video to the Edge
 
 Play a video, then either click the Fremkit icon and press **Envoyer sur l'Edge** (*Send to the
-Edge*), or press **⌥⇧E**. Press it again to stop. The shortcut can be changed at
+Edge*), or press **⌃⇧F** (Control-Shift-F). Press it again to stop. The shortcut can be changed at
 `chrome://extensions/shortcuts`, or from the extension's options page.
 
 - **The picture is cropped to the page's main video**: the largest video element visible in the

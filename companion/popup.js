@@ -140,7 +140,7 @@ function renderShortcut(shortcut) {
     return
   }
   hint.append(`${t('shortcut')} `)
-  // macOS gives "⌥⇧E", the others "Alt+Shift+E".
+  // macOS gives "⌃⇧F", the others "Ctrl+Shift+F".
   for (const key of shortcut.includes('+') ? shortcut.split('+') : [...shortcut]) {
     const kbd = document.createElement('kbd')
     kbd.textContent = key

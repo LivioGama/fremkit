@@ -424,7 +424,7 @@ describe('the fremplay page', () => {
     page.publish(snap({ paired: 1, connected: 0 }))
     expect(page.nodes.get('line')!.textContent).toBe('Navigateur fermé ou extension inactive')
     page.publish(snap())
-    expect(page.nodes.get('line')!.textContent).toBe('Lancez une vidéo, puis cliquez l’icône Fremkit (⌥⇧E)')
+    expect(page.nodes.get('line')!.textContent).toBe('Lancez une vidéo, puis cliquez l’icône Fremkit (⌃⇧F)')
     page.publish({ ...snap(), protocol: 3 })
     expect(page.nodes.get('line')!.textContent).toContain('mettez Fremkit à jour')
     expect(page.commands).toEqual([])
@@ -668,7 +668,7 @@ describe('the fremplay page', () => {
     await page.settle()
     page.publish(snap())
     expect(page.peers[0].closed).toBe(true)
-    expect(page.nodes.get('line')!.textContent).toBe('Lancez une vidéo, puis cliquez l’icône Fremkit (⌥⇧E)')
+    expect(page.nodes.get('line')!.textContent).toBe('Lancez une vidéo, puis cliquez l’icône Fremkit (⌃⇧F)')
   })
 
   it('compact: a live thumbnail with no tap of its own', async () => {

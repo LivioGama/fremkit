@@ -41,7 +41,9 @@ describe('the companion extension', () => {
     expect(manifest.action.default_popup).toBe('popup.html')
     expect(manifest.options_page).toBe('options.html')
     expect(manifest.default_locale).toBe('fr')
-    expect(manifest.commands['fremplay-toggle'].suggested_key.default).toBe('Alt+Shift+E')
+    expect(manifest.commands['fremplay-toggle'].suggested_key.default).toBe('Ctrl+Shift+F')
+    // Not ⌥: on a Mac, Option+Shift+letter types a character, and the browser let the page have it.
+    expect(manifest.commands['fremplay-toggle'].suggested_key.mac).toBe('MacCtrl+Shift+F')
   })
 
   it("the manifest's key is present and gives the store's extension id", () => {
