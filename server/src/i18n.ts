@@ -243,6 +243,14 @@ const fr = {
   'vercel.rateLimited': 'quota Vercel atteint ; réessayez plus tard',
   'vercel.unexpected': 'réponse Vercel inattendue (HTTP {status})',
   'vercel.connected': 'Connecté à Vercel en tant que {account}',
+  // connections/types/openai-shellsmith.ts
+  'shellsmith.unconfigured': 'connexion IA incomplète',
+  'shellsmith.unreachable': 'fournisseur IA injoignable',
+  'shellsmith.tokenRefused': 'clé API refusée',
+  'shellsmith.rateLimited': 'quota atteint ; réessayez plus tard',
+  'shellsmith.modelUnavailable': 'modèle introuvable ou inaccessible',
+  'shellsmith.unexpected': 'réponse inattendue du fournisseur (HTTP {status})',
+  'shellsmith.connected': 'Modèle IA vérifié : {model}',
 
   // providers/bambu.ts — `stg_cur`, the printer's current stage
   'bambu.stage.-1': 'Au repos',
@@ -546,6 +554,13 @@ const en: Record<MessageKey, string> = {
   'vercel.rateLimited': 'Vercel rate limit reached; try again later',
   'vercel.unexpected': 'unexpected Vercel response (HTTP {status})',
   'vercel.connected': 'Connected to Vercel as {account}',
+  'shellsmith.unconfigured': 'AI connection is incomplete',
+  'shellsmith.unreachable': 'AI provider is unreachable',
+  'shellsmith.tokenRefused': 'API key refused',
+  'shellsmith.rateLimited': 'rate limit reached; try again later',
+  'shellsmith.modelUnavailable': 'model not found or unavailable',
+  'shellsmith.unexpected': 'unexpected provider response (HTTP {status})',
+  'shellsmith.connected': 'AI model verified: {model}',
 
   'bambu.stage.-1': 'Idle',
   'bambu.stage.0': 'Printing',
