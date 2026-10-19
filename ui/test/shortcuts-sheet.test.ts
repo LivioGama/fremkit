@@ -13,6 +13,6 @@ describe('the keyboard shortcuts sheet', () => {
     expect(rows).toHaveLength(SHORTCUTS.length)
     expect(rows.map((r) => r.find('kbd').text())).toEqual(SHORTCUTS.map((s) => s.display))
     expect(wrapper.text()).toContain('Open the command palette')
-    expect(wrapper.findAll('h3').map((h) => h.text())).toEqual(['General', 'Selected widget', 'Layout'])
+    expect(wrapper.findAll('h3').map((h) => h.text())).toEqual(['General', 'Selected widgets', 'Selection', 'Layout'])
   })
 })

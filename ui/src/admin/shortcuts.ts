@@ -11,15 +11,19 @@ export type ShortcutId =
   | 'palette' | 'shortcuts' | 'undo' | 'redo'
   | 'duplicate' | 'copy' | 'paste' | 'remove' | 'deselect'
   | 'move' | 'resize' | 'nextWidget' | 'previousWidget'
+  | 'selectAll' | 'addToSelection'
 
 /** The sheet's sections, in reading order. */
-export const SHORTCUT_GROUPS = ['general', 'widget', 'layout'] as const
+export const SHORTCUT_GROUPS = ['general', 'widget', 'selection', 'layout'] as const
 export type ShortcutGroup = (typeof SHORTCUT_GROUPS)[number]
 
 export interface Shortcut {
   id: ShortcutId
   group: ShortcutGroup
-  /** The `KeyboardEvent.key` values that trigger it, compared without case. */
+  /**
+   * The `KeyboardEvent.key` values that trigger it, compared without case. Empty for a gesture the
+   * sheet lists beside the keys (Shift-click) but no key press can match.
+   */
   keys: string[]
   /** ⌘ on a Mac, Ctrl elsewhere: either one counts. */
   mod: boolean
@@ -41,6 +45,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'paste', group: 'widget', keys: ['v'], mod: true, shift: false, display: '⌘V' },
   { id: 'remove', group: 'widget', keys: ['Delete', 'Backspace'], mod: false, display: '⌫' },
   { id: 'deselect', group: 'widget', keys: ['Escape'], mod: false, display: 'Esc' },
+  { id: 'selectAll', group: 'selection', keys: ['a'], mod: true, shift: false, display: '⌘A' },
+  { id: 'addToSelection', group: 'selection', keys: [], mod: false, display: '⇧ / ⌘ Click' },
   { id: 'move', group: 'layout', keys: ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'], mod: false, shift: false, display: '← → ↑ ↓' },
   { id: 'resize', group: 'layout', keys: ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'], mod: false, shift: true, display: '⇧ ← → ↑ ↓' },
   { id: 'nextWidget', group: 'layout', keys: ['Tab'], mod: false, shift: false, display: '⇥' },

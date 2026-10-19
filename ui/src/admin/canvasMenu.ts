@@ -156,11 +156,77 @@ export function widgetMenu(s: AdminStore, instanceId: string, ui: MenuUi): MenuE
   ])
 }
 
+/**
+ * The menu of several selected tiles: what makes sense for all of them at once. Each command is
+ * one store action, so one undo step, whatever the number of tiles.
+ */
+export function selectionMenu(s: AdminStore, ids: string[]): MenuEntry[] {
+  const cfg = s.state.config
+  const scr = s.screen.value
+  const tiles = (s.page.value?.items ?? []).filter((p) => ids.includes(p.instanceId) && cfg?.widgets[p.instanceId])
+  if (!cfg || !scr || tiles.length < 2) return []
+  const list = tiles.map((p) => p.instanceId)
+  const widgets = list.map((id) => cfg.widgets[id])
+  const allShown = widgets.every((w) => w.showTitle)
+  const allLocked = tiles.every((p) => p.locked)
+  const opacities = new Set(widgets.map((w) => Math.round(surfaceOpacity(w.opacity) * 100)))
+  const styled = widgets.some((w) => STYLE_KEYS.some((k) => w[k] !== undefined))
+  // Removing deletes the widgets this screen alone shows: then the submenu is the confirmation.
+  const deletes = list.filter((id) => s.isLastPlace(id)).length
+
+  return tidy([
+    { label: t('admin.menu.showTitle'), checked: allShown, run: () => s.updateWidgets(list, { showTitle: !allShown }) },
+    {
+      label: t('admin.menu.appearance'),
+      children: [
+        ...OPACITY_PRESETS.map((p): MenuItem => ({
+          label: t('admin.menu.opacity', { percent: p }),
+          checked: opacities.size === 1 && opacities.has(p),
+          run: () => s.updateWidgets(list, { opacity: p === 100 ? undefined : p / 100 }),
+        })),
+        SEPARATOR,
+        {
+          label: t('admin.menu.resetAppearance'), disabled: !styled,
+          run: () => s.updateWidgets(list, Object.fromEntries(STYLE_KEYS.map((k) => [k, undefined]))),
+        },
+      ],
+    },
+    SEPARATOR,
+    { label: t('common.duplicate'), shortcut: KEYS.duplicate, run: () => s.duplicateTiles(list) },
+    { label: t('admin.menu.copy'), shortcut: KEYS.copy, run: () => s.copyTiles(list) },
+    { label: t('admin.menu.paste'), shortcut: KEYS.paste, disabled: !s.state.clipboard, run: () => s.pasteWidget() },
+    SEPARATOR,
+    {
+      label: t('admin.menu.moveToPage'),
+      children: tidy([
+        ...scr.pages.map((p, i): MenuItem => ({ label: p.name, disabled: i === s.state.pageIndex, run: () => s.moveTilesToPage(list, i) })),
+        SEPARATOR,
+        { label: t('admin.menu.newPage'), run: () => s.moveTilesToNewPage(list) },
+      ]),
+    },
+    { label: t('admin.menu.lock'), checked: allLocked, run: () => s.setLockedTiles(list, !allLocked) },
+    SEPARATOR,
+    !deletes
+      ? { label: t('admin.menu.removeTilesFromScreen', { n: list.length }), shortcut: KEYS.remove, run: () => s.removeTiles(list) }
+      : deletes === list.length
+        ? {
+          label: t('admin.menu.deleteEverywhere'), danger: true,
+          children: [{ label: t('admin.menu.deleteTilesConfirm', { n: list.length }), danger: true, run: () => s.removeTiles(list) }],
+        }
+        : {
+          label: t('admin.menu.removeTiles', { n: list.length }), danger: true,
+          children: [{ label: t('admin.menu.removeTilesConfirm'), danger: true, run: () => s.removeTiles(list) }],
+        },
+  ])
+}
+
 /** The menu of the canvas's empty background. */
 export function canvasMenu(s: AdminStore, ui: MenuUi): MenuEntry[] {
   if (!s.state.config) return []
+  const hasTiles = !!s.page.value?.items.length
   return tidy([
     { label: t('admin.menu.paste'), shortcut: KEYS.paste, disabled: !s.state.clipboard, run: () => s.pasteWidget() },
+    { label: t('admin.menu.selectAll'), shortcut: shortcutHint('selectAll'), disabled: !hasTiles, run: () => s.selectAll() },
     SEPARATOR,
     { label: t('admin.menu.addWidget'), run: () => ui.focusLibrarySearch() },
     { label: t('admin.menu.newPage'), run: () => s.addPage() },

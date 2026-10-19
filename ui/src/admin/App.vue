@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, provide } from 'vue'
 import { useI18n } from '../shared/i18n'
 import { useAdminStore } from './store'
-import { widgetDelete, widgetDeleteKey } from './widgetDelete'
+import { tilesDeleteKey, widgetDelete, widgetDeleteKey } from './widgetDelete'
 import Sidebar from './Sidebar.vue'
 import Canvas from './Canvas.vue'
 import Inspector from './Inspector.vue'
@@ -46,7 +46,7 @@ function inField(target: EventTarget | null): boolean {
  * should for anybody driving the editor from the keyboard.
  */
 function tabCyclesWidgets(): boolean {
-  if (s.selected.value) return true
+  if (s.state.selection.length) return true
   const active = document.activeElement
   return !active || active === document.body
 }
@@ -65,18 +65,28 @@ function onKeyDown(e: KeyboardEvent): void {
       return
   }
   const inst = s.selected.value
+  // Several tiles selected: the keys act on all of them; one, on it as they always have.
+  const ids = [...s.state.selection]
+  const group = ids.length > 1
   const editing = s.state.mode === 'edit'
   switch (shortcut.id) {
     case 'duplicate':
       e.preventDefault()
-      if (inst) s.duplicateWidget(inst.instanceId)
+      if (group) s.duplicateTiles(ids)
+      else if (inst) s.duplicateWidget(inst.instanceId)
+      return
+    case 'selectAll':
+      // Over a dialog, or in Test mode, ⌘A is the page's own.
+      if (!editing || s.state.modal) return
+      e.preventDefault()
+      s.selectAll()
       return
     // ⌘C and ⌘V work on the editor's own widget clipboard, but never over text the user has
     // selected on the page: that copy is the browser's.
     case 'copy':
-      if (!editing || hasTextSelection() || !inst) return
+      if (!editing || hasTextSelection() || !ids.length) return
       e.preventDefault()
-      s.copyWidget(inst.instanceId)
+      s.copyTiles(ids)
       return
     case 'paste':
       if (!editing || hasTextSelection() || !s.state.clipboard) return
@@ -89,12 +99,20 @@ function onKeyDown(e: KeyboardEvent): void {
       if (s.cycleSelection(shortcut.id === 'nextWidget' ? 1 : -1)) e.preventDefault()
       return
   }
-  // A dialog (this sheet, the settings window) is over the canvas: the keys are not the tile's.
-  if (!inst || !editing || s.state.modal) return
+  // A dialog (this sheet, the settings window) is over the canvas: the keys are not the tiles'.
+  if (!ids.length || !editing || s.state.modal) return
   switch (shortcut.id) {
     case 'deselect': s.select(null); return
     case 'remove': {
       e.preventDefault()
+      if (group) {
+        // The same rule for a group: at once when every widget stays on another screen, else
+        // armed first — the inspector's button shows it — and a second press confirms.
+        if (!ids.some((id) => s.isLastPlace(id))) s.removeTiles(ids)
+        else widgetDelete.ask(tilesDeleteKey(ids), () => s.removeTiles(ids))
+        return
+      }
+      if (!inst) return
       // Off this screen only: done at once, undo covers it. On its last screen the widget itself
       // goes, so the key arms the inspector's confirmation and a second press confirms it.
       const id = inst.instanceId
@@ -107,7 +125,9 @@ function onKeyDown(e: KeyboardEvent): void {
       const delta = ARROW_DELTAS[e.key]
       if (!delta) return
       e.preventDefault()
-      // A held key repeats: its steps join the first press's undo step.
+      // A held key repeats: its steps join the first press's undo step. A group moves, never resizes.
+      if (group) { if (shortcut.id === 'move') s.moveTiles(ids, delta[0], delta[1], { repeat: e.repeat }); return }
+      if (!inst) return
       s.nudgeWidget(inst.instanceId, delta[0], delta[1], { resize: shortcut.id === 'resize', repeat: e.repeat })
     }
   }

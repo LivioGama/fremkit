@@ -12,7 +12,7 @@
 import { pick, t } from '../shared/i18n'
 import { isSeparator, type MenuEntry } from '../shared/ui/contextMenu'
 import type { ConnectionSummary, ConnectionTypeInfo, SettingField } from '../shared/types'
-import { canvasMenu, widgetMenu, type MenuUi } from './canvasMenu'
+import { canvasMenu, selectionMenu, widgetMenu, type MenuUi } from './canvasMenu'
 import { libraryMenu, pageMenu, screenMenu } from './menus'
 import { describeProblem, type HealthAction, type HealthEntry } from './health'
 import type { MarketplaceStore } from './marketplace'
@@ -103,6 +103,10 @@ export function buildCommands(src: PaletteSources): Command[] {
   if (selected && s.state.mode === 'edit') {
     const menu = widgetMenu(s, selected.instanceId, { ...ui, fix: undefined, update: src.health.update })
     out.push(...fromMenu(menu, 'widget', `widget:${selected.instanceId}`))
+  }
+  // --- Several selected tiles: the group's right-click menu.
+  if (s.state.selection.length > 1 && s.state.mode === 'edit') {
+    out.push(...fromMenu(selectionMenu(s, [...s.state.selection]), 'widget', 'selection'))
   }
 
   // --- Actions: the page's, the screen's and the canvas's menus, then the top bar's buttons.

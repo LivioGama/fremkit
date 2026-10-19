@@ -203,17 +203,25 @@ each edited on its own: pick it above the canvas. The widgets are shared, so one
 two screens is the same widget, with the same settings.
 
 - **Edit / Test** — in Edit, an overlay captures the mouse: click to select, drag to move, eight
-  handles to resize. In Test the overlay steps aside and the widgets are usable, and the preview
+  handles to resize. While a widget moves, alignment guides show where its edges or its centre
+  line up with another widget's or with the screen's edges and centre (the grid already snaps, so
+  the guides only show; they never pull). Shift- or Cmd-click adds a widget to the selection (or
+  takes it out), a drag on the empty canvas draws a rectangle that selects every widget it touches,
+  Cmd+A selects the whole page, and a click on the empty canvas or Escape lets go. Several selected
+  widgets move together — by the mouse or the arrows, locked ones staying put — and are duplicated,
+  copied and pasted (in the same arrangement), locked, restyled, moved to another page or removed
+  together, each as one undo step; the inspector then shows how many and what they share. In Test the overlay steps aside and the widgets are usable, and the preview
   behaves like the screen: a horizontal swipe on the navigation bar or on free board space changes
   page, wrapping around at either end.
 - **Right click** — on a widget: settings, show title, appearance (opacity presets, colours,
   background image, reset), copy and paste its style, duplicate, copy and paste, move to another
   page or screen, also show it on another screen, default or minimum size, lock its position (a
   locked widget is neither dragged nor resized), open its connection, about, reload, remove. On
-  the empty canvas: paste, add a widget, new page, page background, screen settings. On a page in
+  the empty canvas: paste, select all, add a widget, new page, page background, screen settings. On a page in
   the list: rename, duplicate, page background, copy to another screen, move, delete. On a library
   card: add to a page or to the bar, and for a Sietch widget show it there, update or uninstall it.
-  On a bar widget: settings, move left or right, remove. On a screen above the canvas: rename,
+  On a group of selected widgets: show title, opacity, duplicate, copy and paste, move to page,
+  lock, remove. On a bar widget: settings, move left or right, remove. On a screen above the canvas: rename,
   screen settings, delete. The menus work from the
   keyboard too (arrows, Enter, Escape, type-ahead).
 - **Command palette** — Cmd+K (Ctrl+K, or *Commands* in the top bar) searches everything the
@@ -221,8 +229,8 @@ two screens is the same widget, with the same settings.
   widget, open a connection, jump to a setting, fix a widget that needs attention, and every item
   of the right-click menus — the selected widget's included, submenus and all. Its commands are
   the menus' own, so a new menu item is in the palette too. The last commands run come first.
-- **Keyboard** — Tab and Shift+Tab select the next or previous widget of the page, arrows move the
-  selection by one cell (a held arrow is one undo step), Shift+arrows resize it from the south-east
+- **Keyboard** — Tab and Shift+Tab select the next or previous widget of the page, Cmd+A all of
+  them, arrows move the selection — one widget or several — by one cell (a held arrow is one undo step), Shift+arrows resize it from the south-east
   corner — never through another widget, never a locked one — Delete or Backspace removes it,
   Cmd+D duplicates it, Cmd+C and Cmd+V copy it and paste a new one with the same settings on the
   page you are on (any page, any screen), Escape deselects. Cmd+Z and Cmd+Shift+Z undo and redo
