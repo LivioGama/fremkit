@@ -20,6 +20,7 @@ import { useNativeBridge } from './native'
 import { SCREEN_ID } from '../shared/useWidgetBridge'
 import { onWidgetReload } from '../shared/widgetDev'
 import { onScreenReload } from '../shared/screenReload'
+import { useThumper, type Side } from './thumper/useThumper'
 
 const socket = useSocket()
 const { t } = useI18n()
@@ -100,6 +101,15 @@ function select(i: number) { direction.value = i >= pageIndex.value ? 1 : -1; pa
 // the edge listeners stop propagation so a gesture starting/ending over an
 // edge isn't also processed by the bubbled stage listener.
 const stageSwipe = useSwipe(go)
+const stageEl = ref<HTMLElement>()
+// Whatever this screen shows when the call comes: the tiles of the page and the bar's widgets.
+const thumper = useThumper({
+  targets: () => [...(stageEl.value?.closest('.root')?.querySelectorAll<HTMLElement>('.stage .frame, nav .compact') ?? [])],
+})
+function edgeDown(e: PointerEvent, side: Side) { stageSwipe.down(e); thumper.down(e, side) }
+function edgeUp(e: PointerEvent) { stageSwipe.up(e); thumper.up(e) }
+function edgeCancel() { stageSwipe.cancel(); thumper.cancel() }
+function edgeWheel(e: WheelEvent) { stageSwipe.wheel(e); thumper.wheel(e) }
 /** The popover a bar widget opens when it is tapped; one at a time, against the viewport. */
 const popover = useNavPopover()
 // Changing page takes the popover with it: it belongs to the screen being left.
@@ -199,6 +209,7 @@ watch(() => config.value?.locale, (l) => setLocale(l))
     </Transition>
     <div v-if="socket.status.value !== 'open'" class="banner">{{ t('dashboard.reconnecting') }}</div>
     <div
+      ref="stageEl"
       class="stage"
       :style="{ width: gridWidth, height: display.rows * display.cell + 'px' }"
       @pointerdown="stageSwipe.down"
@@ -210,8 +221,8 @@ watch(() => config.value?.locale, (l) => setLocale(l))
         <PageView :key="page.id" :page="page" :config="config" :display="display" :manifests="manifests"
           :paint-background="false" />
       </Transition>
-      <div class="edge left" @pointerdown.stop="stageSwipe.down" @pointerup.stop="stageSwipe.up" @pointercancel.stop="stageSwipe.cancel" @wheel.stop="stageSwipe.wheel" />
-      <div class="edge right" @pointerdown.stop="stageSwipe.down" @pointerup.stop="stageSwipe.up" @pointercancel.stop="stageSwipe.cancel" @wheel.stop="stageSwipe.wheel" />
+      <div class="edge left" @pointerdown.stop="edgeDown($event, 'left')" @pointerup.stop="edgeUp" @pointercancel.stop="edgeCancel" @wheel.stop="edgeWheel" />
+      <div class="edge right" @pointerdown.stop="edgeDown($event, 'right')" @pointerup.stop="edgeUp" @pointercancel.stop="edgeCancel" @wheel.stop="edgeWheel" />
     </div>
     <NavBar class="bar" :style="{ width: gridWidth }" :pages="screen.pages" :active="pageIndex" :height="navHeightOf(display)"
       :opacity="display.navOpacity" :nav-items="navItemsOf(screen)" :widgets="config.widgets"
