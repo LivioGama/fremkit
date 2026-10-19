@@ -185,7 +185,7 @@ async function onCreated(screenId: string): Promise<void> {
       <p v-else class="ro" data-test="ipads-none">{{ t('admin.devices.none') }}</p>
 
       <div class="row">
-        <BaseButton variant="danger" :disabled="!list.length && !extensions.length" @click="confirm.ask('devices:all', () => devices.removeAll())">
+        <BaseButton variant="danger" :disabled="!list.length" @click="confirm.ask('devices:all', () => devices.removeAll())">
           {{ confirm.armed('devices:all') ? t('common.confirm') : t('admin.devices.removeAll') }}
         </BaseButton>
         <BaseButton variant="danger" @click="confirm.ask('devices:cert', () => devices.resetCertificate())">

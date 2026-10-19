@@ -84,6 +84,7 @@ whatever holds Fremkit's port also serves the dashboard, so:
   Mac, and the extension finds Fremkit again on its own.
 
 Linked extensions are listed in **Settings → Devices**, where you can rename or remove them.
+**Remove every iPad** and **Reset the certificate** leave them linked.
 Removing one closes its connection at once, and the extension goes back to showing the **Connect**
 button; link it again the same way.
 

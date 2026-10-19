@@ -769,6 +769,19 @@ describe('browser extensions in the device list', () => {
     expect((await eapp.inject({ method: 'PATCH', url: '/api/devices/nobody', headers: { host: HOST }, payload: { name: 'x' } })).statusCode).toBe(404)
   })
 
+  it.skipIf(!hasOpenssl)('remove every iPad and a certificate reset leave the extensions paired', async () => {
+    const { deviceId } = await pairExtension()
+    const kinds = async () => ((await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json().devices as { id: string; kind: string }[])
+    for (const [method, url] of [['DELETE', '/api/devices'], ['POST', '/api/devices/reset-certificate']] as const) {
+      const { device: ipad } = await eapp.pairing.store.create('iPad', { width: 1180, height: 820 }, null)
+      expect((await kinds()).map((d) => d.id)).toEqual(expect.arrayContaining([ipad.id, deviceId]))
+      expect((await eapp.inject({ method, url, headers: { host: HOST } })).statusCode, url).toBeLessThan(300)
+      const left = await kinds()
+      expect(left.some((d) => d.kind === 'ipad'), url).toBe(false)
+      expect(left.map((d) => d.id), url).toContain(deviceId)
+    }
+  })
+
   it('removes an extension like any device', async () => {
     const { deviceId } = await pairExtension()
     expect((await eapp.inject({ method: 'DELETE', url: `/api/devices/${deviceId}`, headers: { host: HOST } })).statusCode).toBe(204)

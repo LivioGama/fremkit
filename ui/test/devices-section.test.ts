@@ -186,6 +186,18 @@ describe('the devices section', () => {
       w.unmount()
     })
 
+    it('Remove every iPad and the certificate reset are the iPad part\'s: an extension alone leaves Remove every iPad off', async () => {
+      const w = await mountWith({ devices: true, companion: true }, status({ devices: [extension()] }))
+      const removeAll = w.findAll('button').find((b) => b.text() === 'Remove every iPad')
+      expect(removeAll).toBeDefined()
+      expect(removeAll?.attributes('disabled')).toBeDefined()
+      expect(w.text()).toContain('Browser extensions stay linked.')
+      w.unmount()
+      const x = await mountWith({ devices: true, companion: true }, status({ devices: [extension(), device()] }))
+      expect(x.findAll('button').find((b) => b.text() === 'Remove every iPad')?.attributes('disabled')).toBeUndefined()
+      x.unmount()
+    })
+
     it('turning labs.companion on brings the request card without a reload', async () => {
       const w = await mountWith({ devices: false, companion: false }, status({ devices: [extension()], companionRequest: REQUEST() }))
       expect(w.find('[data-test="companion-request"]').exists()).toBe(false)

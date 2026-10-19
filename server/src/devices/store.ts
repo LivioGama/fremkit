@@ -283,10 +283,17 @@ export class DeviceStore {
     })
   }
 
-  async removeAll(): Promise<void> {
+  /**
+   * Every iPad, and only iPads: what "remove every iPad" and a certificate reset take away. A
+   * browser extension has nothing to do with the TLS key and is removed from its own row. Answers
+   * the ids removed.
+   */
+  async removeIpads(): Promise<string[]> {
     return this.enqueue(async () => {
-      if (this.state.devices.length === 0) return
-      await this.commit({ ...this.state, devices: [] })
+      const ids = this.state.devices.filter((d) => d.kind === 'ipad').map((d) => d.id)
+      if (ids.length === 0) return []
+      await this.commit({ ...this.state, devices: this.state.devices.filter((d) => d.kind !== 'ipad') })
+      return ids
     })
   }
 

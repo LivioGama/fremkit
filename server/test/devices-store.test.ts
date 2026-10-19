@@ -175,7 +175,7 @@ describe('DeviceStore', () => {
     expect(await readFile(`${file}.corrupt`, 'utf8')).toBe(bad)
   })
 
-  it('updates, removes and clears devices', async () => {
+  it('updates, removes and clears the iPads', async () => {
     const file = await tempFile()
     const store = new DeviceStore(file)
     await store.load()
@@ -193,11 +193,15 @@ describe('DeviceStore', () => {
     expect(store.findByToken(b.token, 'ipad')).toBeNull()
     expect(store.list().map((d) => d.id)).toEqual([a.device.id])
 
-    await store.removeAll()
-    expect(store.list()).toEqual([])
+    const ext = await store.createExtension({ name: 'Chrome', origin: `chrome-extension://${'h'.repeat(32)}`, installId: '3a9c1d2e-5b6f-4a7b-8c9d-0e1f2a3b4c5d' })
+    expect(await store.removeIpads()).toEqual([a.device.id])
+    // The extension stays, token included: it pins no key and is removed from its own row.
+    expect(store.list().map((d) => d.id)).toEqual([ext.device.id])
+    expect(store.findByToken(ext.token, 'extension')).toMatchObject({ id: ext.device.id })
+    expect(await store.removeIpads()).toEqual([])
     const again = new DeviceStore(file)
     await again.load()
-    expect(again.list()).toEqual([])
+    expect(again.list().map((d) => d.id)).toEqual([ext.device.id])
   })
 
   it('serializes concurrent mutations', async () => {
