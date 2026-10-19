@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick } from 'vue'
 import { ref } from 'vue'
 import BaseButton from '../shared/ui/BaseButton.vue'
 import BaseCheckbox from '../shared/ui/BaseCheckbox.vue'
@@ -29,6 +29,7 @@ import { ADMIN_GESTURES, DEFAULT_ADMIN_GESTURE, DEFAULT_NAV_STYLE, NAV_HEIGHTS, 
   type AdminGesture, type Background, type Config, type NavHeight, type NavStyle, type Screen } from '../shared/types'
 import { pickScreen, screensShowing } from '../shared/screens'
 import { useAdminStore } from './store'
+import { labsDevices, labsShown, tapVersion } from './labs'
 import { openExport, pickLayoutFile } from './share'
 
 const s = useAdminStore()
@@ -95,6 +96,25 @@ function setMacmonTemperature(on: boolean): void {
  */
 function setShowAccountEmail(on: boolean): void {
   s.apply((c) => { c.privacy.showAccountEmail = on })
+}
+/**
+ * iPad pairing and extra screens, hidden until `labs.devices` is on. The switch appears after
+ * seven clicks on the version (see `labs.ts`) and stays while the flag is on, so it can be turned
+ * off again. It goes through `apply` like every setting: saved, undoable, in the history.
+ */
+const devicesOn = computed(() => labsDevices(s.state.config))
+const labsVisible = computed(() => labsShown(s.state.config))
+/**
+ * The block appears right under the version; focusing its box brings it into view and tells a
+ * screen reader what just appeared. The admin's toast is for errors, so it is not used here.
+ */
+const labsBlock = ref<HTMLElement>()
+function onVersionClick(): void {
+  if (!tapVersion()) return
+  void nextTick(() => labsBlock.value?.querySelector<HTMLInputElement>('input')?.focus())
+}
+function setLabsDevices(on: boolean): void {
+  s.apply((c) => { c.labs = { ...c.labs, devices: on } })
 }
 /**
  * Backup and restore.
@@ -350,7 +370,7 @@ function setBackground(patch: Partial<Background>): void {
 
   </BaseSection>
 
-  <BaseSection id="screen.devices" :title="t('admin.inspector.screen.devices')">
+  <BaseSection v-if="devicesOn" id="screen.devices" :title="t('admin.inspector.screen.devices')">
     <DevicesSection />
   </BaseSection>
 
@@ -440,7 +460,8 @@ function setBackground(patch: Partial<Background>): void {
   </BaseSection>
 
   <BaseSection id="screen.about" :title="t('admin.inspector.screen.about')">
-  <p class="ro">{{ t('admin.inspector.screen.about.version', { version: VERSION }) }}</p>
+  <!-- Plain text to the eye and to the keyboard: seven clicks reveal the experimental features. -->
+  <p class="ro" data-test="version" @click="onVersionClick()">{{ t('admin.inspector.screen.about.version', { version: VERSION }) }}</p>
   <p class="ro">{{ t('admin.inspector.screen.about.authors', { maintainer: MAINTAINER.handle, contributors }) }}</p>
   <!-- A new tab in a browser; the helper's admin window hands these to the default browser
        rather than replacing the admin with them. -->
@@ -453,6 +474,12 @@ function setBackground(patch: Partial<Background>): void {
   <p class="ro">{{ t('admin.inspector.screen.about.registry') }}</p>
   <p class="ro">{{ t('admin.inspector.screen.about.icons') }}</p>
   <DiagnosticsSection />
+  <div v-if="labsVisible" ref="labsBlock" data-test="labs">
+    <h3>{{ t('admin.inspector.screen.labs') }}</h3>
+    <BaseCheckbox :model-value="devicesOn" :label="t('admin.inspector.screen.labs.devices')"
+      data-test="labs-devices" @update:model-value="setLabsDevices($event)" />
+    <p class="ro">{{ t('admin.inspector.screen.labs.devices.hint') }}</p>
+  </div>
   </BaseSection>
 </template>
 

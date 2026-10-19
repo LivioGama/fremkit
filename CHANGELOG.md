@@ -14,6 +14,11 @@ tagged `vX.Y.Z`.
 
 ### Added
 
+- **iPad and extra screens are experimental until the iPad app is available.** Pairing an iPad
+  (**Screen → Devices**) and adding screens are hidden for now. To try them, click the version
+  number in **Screen → About** seven times, then tick **iPad and extra screens** under
+  **Experimental features**; untick it to hide them again. A dashboard that already has several
+  screens or an iPad screen keeps them, with the option already on.
 - **The iPad follows the brightness set for its screen.** What you set in the admin or with the
   Brightness widget, the day/night schedule included, is applied on the iPad, which reports its own
   level back, so a change in Control Center shows in the admin. When the app is closed or not open
@@ -84,8 +89,8 @@ tagged `vX.Y.Z`.
   the same settings and look on the page you are on, on any screen.
 - **Lock a widget in place.** From its menu or the inspector: a locked widget can no longer be
   dragged, resized or nudged in the editor, and wears a small padlock.
-- **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another
-  one, and give each its own layout. A pre-fill is shown as a preview first, naming the widgets
+- **Several screens per dashboard** (an experimental feature for now, see above). Add a screen
+  in the admin, empty or pre-filled from another one, and give each its own layout. A pre-fill is shown as a preview first, naming the widgets
   that do not fit the new screen, and the Screen panel gives each screen its own address. A
   widget shown on more than one screen is the same widget: edit its settings once and every
   screen follows. Removing it from one screen keeps it on the others; on its last screen the
@@ -96,8 +101,8 @@ tagged `vX.Y.Z`.
   scrolling names with a current-page marker. Arrows move by a visible page, and the admin
   reserves room for compact widgets. Page taps still work with the admin gestures
   (@FlorianBruniaux, #18).
-- **Pair an iPad** (Mac side). **Screen → Devices** turns on an encrypted listener on the local
-  network, shows a pairing QR code, lists the paired devices with the screen each shows, and
+- **Pair an iPad** (Mac side, an experimental feature for now, see above). **Screen → Devices**
+  turns on an encrypted listener on the local network, shows a pairing QR code, lists the paired devices with the screen each shows, and
   unpairs one after you confirm. An iPad screen is created from the paired iPad, at its exact size. The
   iPad app is described above; [docs/devices.md](docs/devices.md) walks through it.
 - **Screen brightness.** A new built-in *Brightness* widget sets the brightness of the screen
