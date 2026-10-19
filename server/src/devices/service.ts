@@ -20,7 +20,7 @@ import { ensureKey, issueCertificate, readKey, resetKey, spkiHash } from './cert
 import { channelAllowed, screenChannels, type ChannelConnection, type ChannelManifest, type ScreenChannels } from './channels.js'
 import { deviceConfigView } from './scope.js'
 import type { PairingCodes } from './codes.js'
-import { lanAddresses as readLanAddresses, computerName, localHostName, preferredAddress } from './host.js'
+import { lanAddresses as readLanAddresses, computerName, isPrivate, localHostName, preferredAddress } from './host.js'
 import { REMOTE_PORT, RemoteListener } from './listener.js'
 import type { DeviceStore, PublicDevice, Viewport } from './store.js'
 
@@ -49,6 +49,9 @@ export type PairingOffer = { code: string; expiresAt: number; url: string }
 export type DeviceBrightness = { target: number | null; seq: number }
 
 export type DeviceInfo = { id: string; name: string; screenId: string | null; brightness: DeviceBrightness | null }
+
+/** What `GET /api/devices/me` answers the device app: `DeviceInfo` and where else it may find the Mac. */
+export type DeviceAppInfo = DeviceInfo & { addresses: string[] }
 
 export type PairCredential = { code: string } | { secret: string }
 
@@ -327,6 +330,19 @@ export class DeviceService {
     if (!device) return null
     const brightness = device.screenId === null ? null : this.brightnessOf(device.screenId)
     return { id: device.id, name: device.name, screenId: device.screenId, brightness }
+  }
+
+  /**
+   * `me()` for the device app itself (`GET /api/devices/me`), with the Mac's LAN addresses so the
+   * app can follow the Mac when the one it uses goes away (Ethernet unplugged) and Bonjour does not
+   * answer. Only the RFC 1918 ones among those the remote listener accepts as Host right now (the
+   * certificate's addresses, which `updateHosts` lets through): never a public, CGNAT, link-local
+   * or IPv6 address, nor one the listener would answer 421. Not part of the `device` channel,
+   * which the page reads.
+   */
+  meForApp(deviceId: string): DeviceAppInfo | null {
+    const me = this.me(deviceId)
+    return me === null ? null : { ...me, addresses: this.certAddresses.filter(isPrivate) }
   }
 
   /** The screen a device is bound to, only while it is a device screen: where its brightness goes. */

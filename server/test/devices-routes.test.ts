@@ -131,7 +131,8 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     const { token, deviceId } = await pairWith({ width: 1180, height: 820 })
     const res = await me(token)
     expect(res.status).toBe(200)
-    expect(JSON.parse(res.body)).toEqual({ id: deviceId, name: 'iPad', screenId: 'ipad', brightness: { target: null, seq: 0 } })
+    // ADDRESS is a documentation address, not RFC 1918: the listener answers on it, the app is not told it.
+    expect(JSON.parse(res.body)).toEqual({ id: deviceId, name: 'iPad', screenId: 'ipad', brightness: { target: null, seq: 0 }, addresses: [] })
   })
 
   it('attaches by viewport in either orientation, and only when one screen fits', async () => {
@@ -272,8 +273,8 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     expect((await app.inject({ method: 'PATCH', url: `/api/devices/${b.deviceId}`, payload: { screenId: 'tab-a' } })).statusCode).toBe(200)
     const meA = JSON.parse((await me(a.token)).body)
     const meB = JSON.parse((await me(b.token)).body)
-    expect(meA).toEqual({ id: a.deviceId, name: 'Kitchen', screenId: null, brightness: null })
-    expect(meB).toEqual({ id: b.deviceId, name: 'Hall', screenId: 'tab-a', brightness: { target: null, seq: 0 } })
+    expect(meA).toEqual({ id: a.deviceId, name: 'Kitchen', screenId: null, brightness: null, addresses: [] })
+    expect(meB).toEqual({ id: b.deviceId, name: 'Hall', screenId: 'tab-a', brightness: { target: null, seq: 0 }, addresses: [] })
     // Whatever the query asks for.
     const asked = await remote(port, { path: `/api/devices/me?id=${b.deviceId}`, host: host(), headers: cookie(a.token) })
     expect(JSON.parse(asked.body).id).toBe(a.deviceId)
@@ -664,5 +665,69 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
       setCertificate.mockRestore()
       vi.useRealTimers()
     }
+  })
+})
+
+describe.skipIf(!hasOpenssl)('telling a paired device where else to find the Mac', () => {
+  let mdir: string
+  let mapp: FastifyInstance
+  let mport: number
+  let devicePayload: (deviceId: string) => unknown = () => null
+  // What the interfaces report, the listener's Host set included: RFC 1918 ones, documentation
+  // ranges standing for public addresses, CGNAT, link-local and IPv6. Only the first three may
+  // reach the device app.
+  const PRIVATE = ['10.20.30.40', '172.16.4.2', '192.168.1.20']
+  const OTHERS = ['192.0.2.10', '198.51.100.7', '100.100.1.1', '169.254.1.1', 'fd00::1', '2001:db8::1']
+
+  beforeAll(async () => {
+    mdir = await mkdtemp(join(tmpdir(), 'fremkit-devices-me-'))
+    await writeFile(join(mdir, 'fremkit.json'), JSON.stringify(CONFIG))
+    // Keeps what the service gives the hub for the `device` channel; the call goes through.
+    const capture = vi.spyOn(Hub.prototype, 'setDevicePayload')
+    mapp = await buildApp({
+      accessToken: null,
+      dataDir: mdir,
+      widgetsDir: join(process.cwd(), '..', 'widgets'),
+      providers: [],
+      devicesPort: 0,
+      devices: { exec, advertise: noAdvertise, lanAddresses: () => [...OTHERS, ...PRIVATE], preferredAddress: async () => '192.168.1.20' },
+    })
+    devicePayload = capture.mock.calls[0][0]
+    capture.mockRestore()
+    const on = await mapp.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
+    mport = on.json().port
+  })
+  afterAll(async () => {
+    await mapp?.close()
+    await rm(mdir, { recursive: true, force: true })
+  })
+
+  it('lists only the RFC 1918 addresses the listener answers on, to the device app only', async () => {
+    const offer = (await mapp.inject({ method: 'POST', url: '/api/devices/code' })).json()
+    const paired = await remote(mport, {
+      method: 'POST', path: '/api/pair', host: `example.local:${mport}`, headers: json,
+      body: JSON.stringify({ code: offer.code, name: 'iPad', viewport: { width: 640, height: 480 } }),
+    })
+    expect(paired.status).toBe(200)
+    const { token, deviceId } = JSON.parse(paired.body)
+
+    const res = await remote(mport, { path: '/api/devices/me', host: `example.local:${mport}`, headers: cookie(token) })
+    expect(res.status).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.addresses).toEqual(PRIVATE)
+    for (const other of OTHERS) expect(res.body).not.toContain(other)
+    // Each address listed is one the listener answers on, so the app is never sent to a 421.
+    for (const address of body.addresses) {
+      expect((await remote(mport, { path: '/api/devices/me', host: `${address}:${mport}`, headers: cookie(token) })).status).toBe(200)
+    }
+
+    // The `device` channel, which the page and so the widgets' host reads, carries none of them.
+    const payload = devicePayload(deviceId)
+    expect(payload).toMatchObject({ id: deviceId })
+    expect(payload).not.toHaveProperty('addresses')
+    for (const address of PRIVATE) expect(JSON.stringify(payload)).not.toContain(address)
+    // Without a token the gate refuses it; locally the route does not exist.
+    expect((await remote(mport, { path: '/api/devices/me', host: `example.local:${mport}` })).status).toBe(401)
+    expect((await mapp.inject({ url: '/api/devices/me' })).statusCode).toBe(404)
   })
 })

@@ -58,7 +58,7 @@ function unreachable(address: string): boolean {
 }
 
 /** RFC 1918: 10/8, 172.16/12, 192.168/16. */
-function isPrivate(address: string): boolean {
+export function isPrivate(address: string): boolean {
   const [a, b] = octets(address)
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
 }

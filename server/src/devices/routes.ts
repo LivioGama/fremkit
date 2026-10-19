@@ -92,7 +92,7 @@ export async function deviceRoutes(app: FastifyInstance, opts: DeviceRoutesOptio
     // Who is asking comes from the token the gate checked, and from nothing the request says.
     const deviceId = pairedDeviceOf(req)
     if (!isRemoteRequest(req) || deviceId === null) return reply.callNotFound()
-    const me = service.me(deviceId)
+    const me = service.meForApp(deviceId)
     if (!me) return reply.code(401).send({ error: tr(locale(), 'devices.unauthorized') })
     reply.header('cache-control', 'no-store')
     return me
