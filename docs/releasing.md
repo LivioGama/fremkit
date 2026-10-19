@@ -120,22 +120,32 @@ go to the `dev.fremkit.helper` defaults domain, shared with the installed helper
 
 ## The iPad app
 
-The iPad app (`ios/`) is released apart from the Mac app and the DMG: it goes to TestFlight, and
-nothing in `scripts/release.sh` touches it. Signing values are the owner's and stay out of the
-repository, in the git-ignored `ios/Local.xcconfig` (a copy of `ios/Local.example.xcconfig`:
-`DEVELOPMENT_TEAM` and `FREMKIT_BUNDLE_ID`).
+The iPad app (`ios/`) is released apart from the Mac app and the DMG: it goes to App Store
+Connect, then TestFlight, then the App Store, and nothing in `scripts/release.sh` touches it.
+Signing values are the owner's and stay out of the repository, in the git-ignored
+`ios/Local.xcconfig` (a copy of `ios/Local.example.xcconfig`: `DEVELOPMENT_TEAM` and
+`FREMKIT_BUNDLE_ID`). The scripts need Xcode, not the Command Line Tools; `build-ios.sh` finds it.
 
-1. Raise `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `ios/Fremkit.xcconfig`: App Store
-   Connect refuses a build number it has already seen.
-2. `scripts/build-ios.sh test`, then archive with that configuration (Xcode, not the Command Line
-   Tools; `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` if `xcode-select` points
-   elsewhere):
+### Once
 
-   ```bash
-   xcodebuild -project ios/Fremkit.xcodeproj -scheme Fremkit -configuration Release \
-     -destination 'generic/platform=iOS' -archivePath ios/build/Fremkit.xcarchive \
-     -allowProvisioningUpdates archive
-   ```
+1. In App Store Connect, **Apps → +  → New App**: platform iOS, name **Fremkit**, the bundle id of
+   `Local.xcconfig`, a SKU of your choice. Then fill what the listing needs, from
+   [ipad-app-store.md](ipad-app-store.md): description, keywords, category, the privacy policy
+   (`https://fremkit.app/privacy`), the privacy answers (**Data Not Collected**), the age rating,
+   and the notes for App Review.
+2. In Xcode, **Settings → Accounts**: sign in with the team's Apple account. `upload` signs and
+   sends through it.
 
-3. Open the archive in Xcode's **Organizer** (Window → Organizer) and **Distribute App** to App
-   Store Connect. The upload is done by the owner, with the owner's Apple account.
+### Each build
+
+1. Raise `MARKETING_VERSION` in `ios/Fremkit.xcconfig` for a new version; the build number needs
+   nothing, it is the commit count of `HEAD`.
+2. `scripts/build-ios.sh test`, then, on a clean tree, `scripts/build-ios.sh upload`. It archives
+   a Release build, exports it for App Store Connect and uploads it. Upload from `main`: a branch
+   can carry the same commit count as a build already sent, which App Store Connect refuses.
+3. The build appears under **TestFlight** once Apple has processed it (minutes to an hour).
+   Internal testers (the team) get it at once; external testers after Beta App Review. Submitting
+   for the App Store is done in App Store Connect, with the notes and video the listing asks for.
+
+`scripts/build-ios.sh archive` stops before the upload, to check a Release build without sending
+it.

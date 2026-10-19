@@ -1,6 +1,6 @@
 // The app target's settings. Signing values (team, bundle id) come from the git-ignored
 // Local.xcconfig next to this file; copy Local.example.xcconfig to start one. Without it the app
-// still builds for the simulator, unsigned, as com.example.fremkit.
+// still builds for the simulator, signed ad hoc, as com.example.fremkit.
 FREMKIT_BUNDLE_ID = com.example.fremkit
 #include? "Local.xcconfig"
 
@@ -23,6 +23,9 @@ CODE_SIGN_STYLE = Automatic
 GENERATE_INFOPLIST_FILE = YES
 INFOPLIST_FILE = Fremkit/Info.plist
 INFOPLIST_KEY_UILaunchScreen_Generation = YES
+// Only TLS through the system and PBKDF2 (CommonCrypto): exempt, so App Store Connect does not ask
+// about export compliance on every upload.
+INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO
 INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
 ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
 ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
