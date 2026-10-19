@@ -259,6 +259,9 @@ tagged `vX.Y.Z`.
   thought you had deleted no longer keeps a "to fix" badge without a clue why.
 
 ### Fixed
+- **The server no longer freezes every two seconds.** Reading the disks and the memory for the
+  CPU, memory and disk widgets stopped the whole server for about 70 ms each time; they are now read
+  without blocking, and the disks once a minute, since free space does not move faster than that.
 - **A restarted Fremkit gets the iPad port back.** A server that was told to stop could keep
   holding the remote access port for minutes, so the one replacing it said the port was used by
   another application and turned remote access off. The old one now lets go of both ports as soon

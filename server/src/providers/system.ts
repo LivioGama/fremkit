@@ -2,6 +2,7 @@ import si from 'systeminformation'
 import { uptime } from 'node:os'
 import type { Provider } from './types.js'
 import { createMacTemperatureReader } from './mac-thermals.js'
+import { cachedDisks, readMemory, type MemoryReading } from './mac-readings.js'
 
 const round = (n: number) => Math.round(n * 10) / 10
 
@@ -78,14 +79,20 @@ function uptimeSeconds(): number | null {
 export function createSystemProvider(options: {
   macmonTemperatureEnabled?: () => boolean
   readMacTemperature?: ReturnType<typeof createMacTemperatureReader>
+  /** Disks and memory; on macOS read without `systeminformation`'s blocking calls (`mac-readings.ts`). */
+  readDisks?: () => Promise<DiskReading[]>
+  readMemory?: () => Promise<Pick<MemoryReading, 'total' | 'active' | 'available' | 'swapused' | 'swaptotal'>>
 } = {}): Provider {
   const readMacTemperature = options.readMacTemperature ?? createMacTemperatureReader()
+  const mac = process.platform === 'darwin'
+  const disks = options.readDisks ?? (mac ? cachedDisks() : () => si.fsSize())
+  const memory = options.readMemory ?? (mac ? () => readMemory() : () => si.mem())
   return {
     channel: 'system',
     intervalMs: 2000,
     async poll() {
       const [load, mem, fs, net, temp] = await Promise.all([
-        si.currentLoad(), si.mem(), si.fsSize(), si.networkStats(), si.cpuTemperature(),
+        si.currentLoad(), memory(), disks(), si.networkStats(), si.cpuTemperature(),
       ])
       const measured = options.macmonTemperatureEnabled?.() ? readMacTemperature() : null
       const macmonTemp = measured?.cpuCelsius ?? null
