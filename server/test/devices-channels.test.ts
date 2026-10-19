@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { ConfigSchema, DEFAULT_CONFIG, type Config } from '../src/config/schema.js'
 import { WIDGET_DEV_CHANNEL } from '../src/widgets/dev.js'
+import { SCREEN_RELOAD_CHANNEL } from '../src/config/screen-reload.js'
 import { channelAllowed, HOST_CHANNELS, screenChannels, type ChannelManifest } from '../src/devices/channels.js'
 
 const manifests = new Map<string, ChannelManifest>([
@@ -132,7 +133,7 @@ describe('channelAllowed', () => {
     expect(channelAllowed([], 'config')).toBe(false)
   })
 
-  it('names config, the widget-reload channel and the theme in force as the only host channels', () => {
-    expect(HOST_CHANNELS).toEqual(['config', WIDGET_DEV_CHANNEL, 'theme'])
+  it('names config, the widget-reload channel, the theme in force and the screen reload as the only host channels', () => {
+    expect(HOST_CHANNELS).toEqual(['config', WIDGET_DEV_CHANNEL, 'theme', SCREEN_RELOAD_CHANNEL])
   })
 })

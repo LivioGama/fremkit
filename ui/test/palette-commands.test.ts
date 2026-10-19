@@ -117,7 +117,7 @@ describe('buildCommands', () => {
     const actions = buildCommands(sources).filter((c) => c.group === 'actions')
     const labels = actions.map((c) => c.label)
     expect(new Set(labels).size).toBe(labels.length)
-    for (const label of ['New page', 'Duplicate', 'Page background…', 'Screen settings…', 'Export screen…', 'Import a layout…',
+    for (const label of ['New page', 'Duplicate', 'Page background…', 'Screen settings…', 'Reload the dashboard', 'Export screen…', 'Import a layout…',
       'Undo', 'Redo', 'Switch to Test mode', 'Open Connections', 'Open the Sietch', 'Version history', 'Theme', 'Copy diagnostics…', 'Keyboard shortcuts']) {
       expect(labels, label).toContain(label)
     }

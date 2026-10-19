@@ -233,5 +233,7 @@ export function canvasMenu(s: AdminStore, ui: MenuUi): MenuEntry[] {
     SEPARATOR,
     { label: t('admin.menu.pageBackground'), run: () => revealPageBackground(s, s.state.pageIndex, ui) },
     { label: t('admin.menu.screenSettings'), run: () => openSettings(s, 'screen') },
+    SEPARATOR,
+    { label: t('admin.menu.reloadDashboard'), run: () => { const id = s.screen.value?.id; if (id) void s.reloadScreen(id) } },
   ])
 }

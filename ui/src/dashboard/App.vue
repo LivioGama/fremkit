@@ -19,6 +19,7 @@ import { isRemotePage, useDeviceScreen, type DeviceInfo } from './remote'
 import { useNativeBridge } from './native'
 import { SCREEN_ID } from '../shared/useWidgetBridge'
 import { onWidgetReload } from '../shared/widgetDev'
+import { onScreenReload } from '../shared/screenReload'
 
 const socket = useSocket()
 const { t } = useI18n()
@@ -83,6 +84,7 @@ let unsubCompanion: (() => void) | undefined
 const companionPairing = ref<{ requestId: string; code: string; name: string; extension?: string; expiresAt: number; turnedAway?: number } | null>(null)
 const reveal = createRevealTracker()
 let offReload: (() => void) | undefined
+let offScreenReload: (() => void) | undefined
 
 function go(delta: number) {
   if (!screen.value) return
@@ -161,6 +163,9 @@ onMounted(async () => {
       companionPairing.value = null
     })
   }
+  // The admin's "Reload the dashboard", for the screen shown here: the whole page, as the helper's
+  // status menu reloads the kiosk, so a page that went wrong comes back without a hand on it.
+  offScreenReload = onScreenReload(socket, () => screen.value?.id, () => location.reload())
   window.addEventListener('keydown', onKey)
   // A widget's manifest was saved while it is being written: the frames wait for this catalogue.
   offReload = onWidgetReload(async (reload) => {
@@ -169,7 +174,7 @@ onMounted(async () => {
 })
 // Another screen for the device: start it on its first page, which every screen has.
 if (remote) watch(() => screen.value?.id, () => { pageIndex.value = 0; popover.close() })
-onUnmounted(() => { unsub?.(); unsubCompanion?.(); offReload?.(); window.removeEventListener('keydown', onKey); window.clearInterval(cycleTimer) })
+onUnmounted(() => { unsub?.(); unsubCompanion?.(); offReload?.(); offScreenReload?.(); window.removeEventListener('keydown', onKey); window.clearInterval(cycleTimer) })
 watch(() => display.value?.autoCycleSeconds, setupCycle)
 /** The manifest of the widget a bar item names, for the popover it opens. */
 function manifestOf(item: NavItem): WidgetManifest | undefined {

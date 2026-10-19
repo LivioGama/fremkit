@@ -176,6 +176,7 @@ export function screenMenu(s: AdminStore, screenId: string, ui: ScreenMenuUi, de
   return tidy([
     { label: t('admin.screens.rename'), run: () => ui.rename(screenId) },
     { label: t('admin.menu.screenSettings'), run: () => { s.selectScreen(screenId); openSettings(s, 'screen') } },
+    { label: t('admin.menu.reloadDashboard'), run: () => { void s.reloadScreen(screenId) } },
     SEPARATOR,
     { label: t('admin.menu.exportScreen'), run: () => openExport(s, { scope: 'screen', screen: screenId }) },
     { label: t('admin.menu.exportSetup'), run: () => openExport(s, { scope: 'setup' }) },

@@ -204,6 +204,9 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   is kept from widgets by the manifest schema's reserved `config` family and from paired devices
   because `HOST_CHANNELS` names only the literal `config`. A new channel for the editor's eyes goes
   there too, and `HOST_CHANNELS` never grows a `config:*` entry.
+- **A host channel reaches a paired device only through `deviceHostView`** (`devices/service.ts`),
+  for `broadcast` and `notify` alike: a new `HOST_CHANNELS` entry gets a case there narrowing it to
+  the device's own screen (no case = never sent), and a hub test with a device on another screen.
 - **Every editor action goes through the admin store's `apply()`**, menus and shortcuts
   included, so it is undoable and saved. The canvas selection is `state.selection` (a list);
   `state.selectedId` is an accessor over it that reads null while several tiles are selected, so a

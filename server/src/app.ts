@@ -18,6 +18,7 @@ import { defaultConnectionTypes } from './connections/types/index.js'
 import type { ConnectionType } from './connections/types.js'
 import { createSecretStore } from './secrets/index.js'
 import { configRoutes } from './config/routes.js'
+import { screenReloadRoutes } from './config/screen-reload.js'
 import { WidgetCatalog } from './widgets/catalog.js'
 import { installedWidgetsDir } from './widgets/installed.js'
 import { WIDGET_DEV_CHANNEL, WidgetDevWatcher } from './widgets/dev.js'
@@ -512,6 +513,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await app.register(brightnessRoutes, { service: brightness, changed: brightnessChanged })
   await app.register(bambuRoutes, { cameras: bambuCameras })
   await app.register(wsRoutes, { hub })
+  await app.register(screenReloadRoutes, { store, notify: (channel, data) => hub.notify(channel, data) })
 
   // Built after the device service, which lists its extensions and waiting request: it reads them
   // through these closures.

@@ -8,6 +8,7 @@
 
 import type { FastifyInstance } from 'fastify'
 import type { Config } from '../config/schema.js'
+import { parseScreenReload, SCREEN_RELOAD_CHANNEL } from '../config/screen-reload.js'
 import type { ConfigStore } from '../config/store.js'
 import { grantedCatalog } from '../marketplace/consent.js'
 import { execFileAsync, type Exec } from '../secrets/keychain.js'
@@ -127,7 +128,14 @@ export function deviceHostView(channel: string, data: unknown, screenId: string 
   if (channel === 'config') return deviceConfigView(data as Config, screenId)
   if (channel === 'brightness') return deviceBrightnessView(data, screenId)
   if (channel === 'theme') return deviceThemeView(data)
+  if (channel === SCREEN_RELOAD_CHANNEL) return deviceScreenReloadView(data, screenId)
   return null
+}
+
+/** A reload reaches a device only when it names the device's own screen; any other is not its business. */
+export function deviceScreenReloadView(data: unknown, screenId: string | null): unknown {
+  const reload = parseScreenReload(data)
+  return screenId !== null && reload?.screenId === screenId ? reload : null
 }
 
 /** Whether a device screen was made for this viewport, in either orientation. */

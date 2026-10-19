@@ -184,7 +184,7 @@ describe('canvasMenu', () => {
     const s = await make()
     const u = ui()
     const menu = canvasMenu(s, u)
-    expect(items(menu).map((e) => e.label)).toEqual(['Paste', 'Select all', 'Add a widget…', 'New page', 'Page background…', 'Screen settings…'])
+    expect(items(menu).map((e) => e.label)).toEqual(['Paste', 'Select all', 'Add a widget…', 'New page', 'Page background…', 'Screen settings…', 'Reload the dashboard'])
     expect(find(menu, 'Paste').disabled).toBe(true)
     expect(find(menu, 'Select all').shortcut).toBe('⌘A')
     find(menu, 'Select all').run!()

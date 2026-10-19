@@ -43,6 +43,13 @@ watch(() => s.state.notice, (n) => {
   clearTimeout(noticeTimer)
   if (n) noticeTimer = setTimeout(() => { if (s.state.notice === n) s.dismissNotice() }, NOTICE_MS)
 })
+/** A confirmation with nothing to do about it goes sooner. */
+const INFO_MS = 4_000
+let infoTimer: ReturnType<typeof setTimeout> | undefined
+watch(() => s.state.info, (text) => {
+  clearTimeout(infoTimer)
+  if (text) infoTimer = setTimeout(() => { if (s.state.info === text) s.dismissInfo() }, INFO_MS)
+})
 // Previews are told the screen being edited, as the dashboard tells its tiles (`Fremkit.screen`).
 provide(SCREEN_ID, () => s.screen.value?.id)
 // The editor wears the theme it edits, so a tile looks here like it does on the screen.
@@ -252,6 +259,7 @@ onUnmounted(() => {
     <BaseToast v-if="s.state.toast" :message="s.state.toast" @close="s.dismissToast()" />
     <BaseToast v-else-if="s.state.notice" tone="info" icon="info" :message="noticeText" :action="t('admin.notice.go')"
       @action="s.goToNotice()" @close="s.dismissNotice()" />
+    <BaseToast v-else-if="s.state.info" tone="info" :message="s.state.info" @close="s.dismissInfo()" />
   </div>
   <p v-else class="loading">{{ t('common.loading') }}</p>
 </template>
