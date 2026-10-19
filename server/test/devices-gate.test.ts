@@ -137,6 +137,13 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
   it('answers 404 for every registered route the allow-list does not name, even with a valid token', async () => {
     const walked = await walkRoutes(routes, port, token)
     expect(walked.length).toBeGreaterThan(40)
+    // The companion's routes are among them: if they ever moved behind an option these tests
+    // leave off, the walk would silently stop covering them.
+    expect(walked.map((r) => `${r.method} ${r.url}`)).toEqual(expect.arrayContaining([
+      'POST /api/companion/pair', 'POST /api/companion/pair/:requestId',
+      'POST /api/companion/requests/:requestId/approve', 'POST /api/companion/requests/:requestId/refuse',
+      'GET /companion/ws',
+    ]))
     for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']) {
       expect(walked.some((r) => r.method === method), method).toBe(true)
     }
@@ -253,6 +260,20 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
     const opened = await upgrade(port, { ...cookie(token), origin: `https://127.0.0.1:${port}` })
     expect(opened.status).toBe(101)
     if ('socket' in opened) opened.socket.destroy()
+  })
+
+  it('refuses a browser extension\'s token as a device cookie: 401 over HTTP and on the socket', async () => {
+    const { token: extensionToken } = await app.pairing.store.createExtension({
+      name: 'Chrome', origin: `chrome-extension://${'g'.repeat(32)}`, installId: '3a9c1d2e-5b6f-4a7b-8c9d-0e1f2a3b4c5d',
+    })
+    for (const path of ['/api/config', '/api/widgets', '/api/devices/me']) {
+      expect((await remote(port, { path, headers: cookie(extensionToken) })).status, path).toBe(401)
+    }
+    expect((await remote(port, { method: 'POST', path: '/api/proxy/clock/conn', headers: { ...cookie(extensionToken), 'content-type': 'application/json' }, body: '{}' })).status).toBe(401)
+    const ws = await upgrade(port, { ...cookie(extensionToken), origin: `https://127.0.0.1:${port}` })
+    expect(ws.status).toBe(401)
+    // The iPad's token, sent the same way, still opens them: the refusal is the kind, not the cookie.
+    expect((await remote(port, { path: '/api/config', headers: cookie(token) })).status).toBe(200)
   })
 
   it('serves a `local` built-in at the `none` level through the listener, with none of the Mac\'s addresses', async () => {
