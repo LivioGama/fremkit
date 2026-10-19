@@ -11,6 +11,7 @@ import { handshake } from './lib/handshake.js'
 import { grantToReturn } from './lib/grant.js'
 import { closeOutcome, refusalOf } from './lib/link.js'
 import { confirmCode, normalizeCode } from './lib/pairProof.js'
+import { navigationClearsRect } from './lib/navigation.js'
 import { idleDelay } from './lib/presence.js'
 import { isOwnContext } from './lib/sender.js'
 import * as protocol from './lib/protocol.js'
@@ -769,6 +770,16 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   if (res.ok) return
   if (res.error !== 'noVideo') await saveSession({ lastError: res.error })
   flash(FLASHES[res.error] ?? '!')
+})
+
+// The shared tab navigates: stop cropping the old rectangle out of the new page (lib/navigation.js).
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+  await ready
+  const share = session.share
+  if (!navigationClearsRect(share, tabId, changeInfo)) return
+  share.rect = null
+  await saveSession({ share })
+  await toOffscreen('hold')
 })
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {

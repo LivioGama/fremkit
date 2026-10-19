@@ -21,6 +21,8 @@ let output = null
 let rect = null
 let timers = []
 let ticking = false
+/** Goes up on every `hold`: a tick answered from before it must not bring the old rectangle back. */
+let held = 0
 /** receiverId → its peer, oldest first. */
 const peers = new Map()
 
@@ -42,9 +44,10 @@ async function tick() {
   if (ticking || !capture) return
   ticking = true
   try {
+    const before = held
     const res = await toWorker('tick')
     if (res?.stop) stop()
-    else if (res && 'rect' in res) rect = res.rect
+    else if (res && 'rect' in res && held === before) rect = res.rect
   } finally {
     ticking = false
   }
@@ -164,6 +167,12 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       return reply(answer(msg.receiverId, msg.sdp).then(() => ({ ok: true })))
     case 'detach':
       drop(msg.receiverId)
+      respond({ ok: true })
+      return
+    // The tab is loading another page: draw nothing until the next survey finds the video.
+    case 'hold':
+      held += 1
+      rect = null
       respond({ ok: true })
       return
   }

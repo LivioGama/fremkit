@@ -26,6 +26,8 @@ import { grantToReturn } from '../../companion/lib/grant.js'
 // @ts-expect-error plain JS module
 import { withVolumeHint } from '../../companion/lib/volume.js'
 // @ts-expect-error plain JS module
+import { navigationClearsRect } from '../../companion/lib/navigation.js'
+// @ts-expect-error plain JS module
 import * as pairProof from '../../companion/lib/pairProof.js'
 import * as serverPairProof from '../src/companion/pairProof.js'
 import { CompanionPairing } from '../src/companion/pairing.js'
@@ -896,6 +898,23 @@ describe('the typed-code proof, from the extension side', () => {
       expect(got.state, JSON.stringify(answer)).not.toBe('paired')
       expect(sent.some((m) => 'mac' in m.body), JSON.stringify(answer)).toBe(false)
     }
+  })
+})
+
+describe('navigationClearsRect (the shared tab loading another page)', () => {
+  const share = { tabId: 7, rect: { x: 0, y: 0, w: 1, h: 1 } }
+
+  it('clears the rectangle when the shared tab starts loading', () => {
+    expect(navigationClearsRect(share, 7, { status: 'loading' })).toBe(true)
+    expect(navigationClearsRect(share, 7, { status: 'loading', url: 'https://example.com/next' })).toBe(true)
+  })
+
+  it('leaves it for another tab, another change, or no share', () => {
+    expect(navigationClearsRect(share, 8, { status: 'loading' })).toBe(false)
+    expect(navigationClearsRect(share, 7, { status: 'complete' })).toBe(false)
+    expect(navigationClearsRect(share, 7, { title: 'New title' })).toBe(false)
+    expect(navigationClearsRect(share, 7, undefined)).toBe(false)
+    expect(navigationClearsRect(null, 7, { status: 'loading' })).toBe(false)
   })
 })
 
