@@ -11,9 +11,10 @@ public enum ConnectResult: Equatable, Sendable {
 }
 
 /// Finds the paired Mac when it may have moved: its `.local` name, then the last address that
-/// worked, then the other addresses it last listed, then whatever Bonjour resolved. A wrong key is "not this one, next" (remembered: if
-/// nothing else answers, the key changed); a 401 from the right key ends the search, since
-/// another address would only say the same.
+/// worked, then the other addresses it last listed, then whatever Bonjour resolved. A wrong key is
+/// "not this one, next" (remembered: if nothing else answers and the Mac's own name or last address
+/// presented it, the key changed); a 401 from the right key ends the search, since another address
+/// would only say the same.
 public struct Connector: Sendable {
     public let prober: any Prober
 
@@ -23,8 +24,14 @@ public struct Connector: Sendable {
 
     /// - Parameter preferring: a host to try before all others (the one a dashboard is using, so a
     ///   page that still works stays where it is).
+    /// A wrong key ends in `.keyChanged` only when `preferring`, `mac.host` or `mac.address`
+    /// presented it: one from the Mac's other addresses or from Bonjour is only "not this one" (a
+    /// stale address another machine now holds), and alone it leaves the result `.unreachable`.
     public func connect(mac: PairedMac, discovered: [String], preferring: String? = nil) async -> ConnectResult {
-        await search(Self.candidates(mac: mac, discovered: discovered, preferring: preferring), mac: mac).result
+        let (result, wrongKey) = await search(Self.candidates(mac: mac, discovered: discovered, preferring: preferring), mac: mac)
+        let own = Set([preferring, mac.host, mac.address].compactMap { $0 }.map(PinnedSession.normalise))
+        if result == .keyChanged, wrongKey.isDisjoint(with: own) { return .unreachable }
+        return result
     }
 
     /// Looks for the Mac behind a dashboard that is using `current`: `current` first, then as

@@ -52,9 +52,23 @@ final class ConnectorTests: XCTestCase {
     }
 
     func testIsKeyChangedWhenOnlyAWrongKeyAnswered() async {
+        // The Mac's own name or its last address presenting another key: the key changed.
+        for host in ["studio.local", "192.0.2.10"] {
+            let prober = FakeProber([host: .pinMismatch])
+            let result = await Connector(prober: prober).connect(mac: sampleMac, discovered: ["198.51.100.7", "198.51.100.8"])
+            XCTAssertEqual(result, .keyChanged, host)
+            XCTAssertEqual(prober.hosts, ["studio.local", "192.0.2.10", "198.51.100.7", "198.51.100.8"])
+        }
+        // So does the host a caller prefers.
+        let preferred = FakeProber(["198.51.100.9": .pinMismatch])
+        let result = await Connector(prober: preferred).connect(mac: sampleMac, discovered: [], preferring: "198.51.100.9")
+        XCTAssertEqual(result, .keyChanged)
+    }
+
+    func testAWrongKeyOnlyFromBonjourIsNotThisMac() async {
         let prober = FakeProber(["198.51.100.7": .pinMismatch])
         let result = await Connector(prober: prober).connect(mac: sampleMac, discovered: ["198.51.100.7", "198.51.100.8"])
-        XCTAssertEqual(result, .keyChanged)
+        XCTAssertEqual(result, .unreachable)
         XCTAssertEqual(prober.hosts, ["studio.local", "192.0.2.10", "198.51.100.7", "198.51.100.8"])
     }
 

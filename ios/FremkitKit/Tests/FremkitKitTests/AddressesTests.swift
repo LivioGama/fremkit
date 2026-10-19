@@ -89,8 +89,11 @@ final class AddressesTests: XCTestCase {
         let result = await Connector(prober: prober).connect(mac: macWithAddresses, discovered: [])
         XCTAssertEqual(result, .connected(host: "172.16.4.2", info: sampleInfo))
 
-        // Alone, it never connects; behind a dashboard it is not even proof the key changed.
+        // Alone, it never connects, and is no proof the key changed: not at launch, nor behind a
+        // dashboard. The Mac is simply not found (asleep, say).
         let only = FakeProber(["192.168.1.20": .pinMismatch])
+        let connected = await Connector(prober: only).connect(mac: macWithAddresses, discovered: [])
+        XCTAssertEqual(connected, .unreachable)
         let relocated = await Connector(prober: only).relocate(mac: macWithAddresses, discovered: [], current: "192.0.2.10")
         XCTAssertEqual(relocated, .unreachable)
     }
@@ -157,6 +160,21 @@ final class AddressesTests: XCTestCase {
         XCTAssertEqual(try store.load()?.addresses, ["172.16.4.2"])
     }
 
+    func testAnUnchangedListWritesNothingToTheKeychain() async throws {
+        let store = CountingStore(sampleMac)
+        let prober = ScriptedProber(["192.0.2.10": .ok(infoWithAddresses)])
+        let model = AppModel(store: store, connector: Connector(prober: prober))
+        await model.start()?.value
+        XCTAssertEqual(store.saves, 1, "the first answer stores the addresses")
+        for _ in 0..<2 {
+            await model.checkAuthorization()?.value
+            await settle(model)
+        }
+        await model.resume()?.value
+        XCTAssertEqual(store.saves, 1, "the same list again writes nothing")
+        XCTAssertEqual(try store.load()?.addresses, ["192.168.1.20", "172.16.4.2"])
+    }
+
     func testTheDashboardMovesToAStoredAddressWhenNothingElseAnswers() async throws {
         // Connected over the Mac's Ethernet address, which also told the app the Mac's Wi-Fi one.
         let store = MemoryCredentialStore(sampleMac)
@@ -200,4 +218,16 @@ final class AddressesTests: XCTestCase {
         XCTAssertEqual(try store.load()?.keyHash, SPKIFixture.keyHash)
         XCTAssertEqual(try store.load()?.token, "device-token")
     }
+}
+
+/// A store in memory that counts its saves.
+final class CountingStore: CredentialStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: PairedMac?
+    private var count = 0
+    init(_ mac: PairedMac?) { stored = mac }
+    var saves: Int { lock.withLock { count } }
+    func load() throws -> PairedMac? { lock.withLock { stored } }
+    func save(_ mac: PairedMac) throws { lock.withLock { stored = mac; count += 1 } }
+    func clear() { lock.withLock { stored = nil } }
 }
