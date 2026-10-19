@@ -7,6 +7,13 @@ import { createMessages2FAProvider } from '../src/providers/messages-2fa.js'
 
 const dirs: string[] = []
 const APPLE_EPOCH_MS = 978_307_200_000
+const LONG_TYPEDSTREAM_VERIFIED = 'BAtzdHJlYW10eXBlZIHoA4QBQISEhBJOU0F0dHJpYnV0ZWRTdHJpbmcAhIQITlNPYmplY3QAhZKEhIQITlNTdHJpbmcBlIQBK4GjAFlvdXIgdmVyaWZpY2F0aW9uIGNvZGUgaXMgNDgzOTIxIEFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUGGhAJpSQGBowCShISEDE5TRGljdGlvbmFyeQCUhAFpAIaG'
+const LONG_TYPEDSTREAM_FIXTURE = 'BAtzdHJlYW10eXBlZIHoA4QBQISEhBJOU0F0dHJpYnV0ZWRTdHJpbmcAhIQITlNPYmplY3QAhZKEhIQITlNTdHJpbmcBlIQBK4GjAFlvdXIgdmVyaWZpY2F0aW9uIGNvZGUgaXMgNDgzOTIxIEFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUGGhAJpSQGBowCShISEDE5TRGljdGlvbmFyeQCUhAFpAIaG'
+// Synthetic Foundation NSArchiver/typedstream archive of an attributed string. Keeping this
+// fixture local and synthetic exercises the same BLOB shape used by Messages without reading
+// or retaining any user's chat database content.
+const ATTRIBUTED_TYPEDSTREAM_BASE64 = 'BAtzdHJlYW10eXBlZIHoA4QBQISEhBJOU0F0dHJpYnV0ZWRTdHJpbmcAhIQITlNPYmplY3QAhZKEhIQITlNTdHJpbmcBlIQBKyBZb3VyIHZlcmlmaWNhdGlvbiBjb2RlIGlzIDQ4MzkyMYaEAmlJASCShISEDE5TRGljdGlvbmFyeQCUhAFpAZKElpYQZXhhbXBsZUF0dHJpYnV0ZYaShJaWCXN5bnRoZXRpY4aGhg=='
+const LONG_ATTRIBUTED_TYPEDSTREAM_BASE64 = 'BAtzdHJlYW10eXBlZIHoA4QBQISEhBJOU0F0dHJpYnV0ZWRTdHJpbmcAhIQITlNPYmplY3QAhZKEhIQITlNTdHJpbmcBlIQBK4GjAEFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEgWW91ciB2ZXJpZmljYXRpb24gY29kZSBpcyA0ODM5MjGGhAJpSQGBowCShISEDE5TRGljdGlvbmFyeQCUhAFpAIaG'
 
 async function fixtureDatabase(sql: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'fremkit-messages-2fa-'))
@@ -45,6 +52,51 @@ describe('Messages 2FA provider', () => {
     await expect(provider.commands?.copyLatest(null, { loopback: true }))
       .resolves.toEqual({ ok: true })
     expect(pasteboard.write).toHaveBeenCalledWith('734206')
+  })
+
+  it('extracts and copies a synthetic Foundation typedstream attributedBody', async () => {
+    const now = Date.now()
+    const date = Math.floor((now - APPLE_EPOCH_MS - 60_000) * 1_000_000)
+    const typedstreamHex = Buffer.from(ATTRIBUTED_TYPEDSTREAM_BASE64, 'base64').toString('hex')
+    const databasePath = await fixtureDatabase(`CREATE TABLE message (text TEXT, attributedBody BLOB, is_from_me INTEGER, date INTEGER);
+      INSERT INTO message VALUES (NULL, X'${typedstreamHex}', 0, ${date});`)
+    const pasteboard = { write: vi.fn(async (_text: string) => {}) }
+    const provider = createMessages2FAProvider({ databasePath, now: () => now, pasteboard })
+
+    await expect(provider.commands?.copyLatest(null, { loopback: true }))
+      .resolves.toEqual({ ok: true })
+    expect(pasteboard.write).toHaveBeenCalledWith('483921')
+  })
+
+  it('reads typedstream lengths that use the two-byte prefix', async () => {
+    const now = Date.now()
+    const date = Math.floor((now - APPLE_EPOCH_MS - 60_000) * 1_000_000)
+    const typedstreamHex = Buffer.from(LONG_TYPEDSTREAM_VERIFIED, 'base64').toString('hex')
+    const databasePath = await fixtureDatabase(`CREATE TABLE message (text TEXT, attributedBody BLOB, is_from_me INTEGER, date INTEGER);
+      INSERT INTO message VALUES (NULL, X'${typedstreamHex}', 0, ${date});`)
+    const pasteboard = { write: vi.fn(async (_text: string) => {}) }
+    const provider = createMessages2FAProvider({ databasePath, now: () => now, pasteboard })
+
+    await expect(provider.commands?.copyLatest(null, { loopback: true }))
+      .resolves.toEqual({ ok: true })
+    expect(pasteboard.write).toHaveBeenCalledWith('483921')
+  })
+
+  it('reads a full bounded result set with large attributed bodies', async () => {
+    const now = Date.now()
+    const date = Math.floor((now - APPLE_EPOCH_MS - 60_000) * 1_000_000)
+    const databasePath = await fixtureDatabase(`CREATE TABLE message (text TEXT, attributedBody BLOB, is_from_me INTEGER, date INTEGER);
+      WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 100)
+      INSERT INTO message
+      SELECT 'Your verification code is 483921' || replace(hex(zeroblob(4064)), '00', char(1)),
+        zeroblob(${4096}), 0, ${date} - (100 - n) * 1000000000
+      FROM seq;`)
+    const pasteboard = { write: vi.fn(async (_text: string) => {}) }
+    const provider = createMessages2FAProvider({ databasePath, now: () => now, pasteboard })
+
+    await expect(provider.commands?.copyLatest(null, { loopback: true }))
+      .resolves.toEqual({ ok: true })
+    expect(pasteboard.write).toHaveBeenCalledWith('483921')
   })
 
   it('ignores outgoing, expired and unrelated numeric messages', async () => {
