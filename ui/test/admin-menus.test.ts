@@ -259,7 +259,7 @@ describe('screenMenu', () => {
     const s = await make()
     const rename = vi.fn()
     const menu = screenMenu(s, 'pad', { rename }, ['Kitchen iPad'])
-    expect(labels(menu)).toEqual(['Rename', 'Screen settings…', 'Export screen…', 'Export the whole setup…', 'Import a layout…', 'Delete this screen'])
+    expect(labels(menu)).toEqual(['Rename', 'Screen settings…', 'Reload the dashboard', 'Export screen…', 'Export the whole setup…', 'Import a layout…', 'Delete this screen'])
     find(menu, 'Rename').run!()
     expect(rename).toHaveBeenCalledWith('pad')
     find(menu, 'Screen settings').run!()

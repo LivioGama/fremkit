@@ -146,6 +146,8 @@ export const api = {
   putConfig: (cfg: Config) => fetch('/api/config', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cfg) }).then((r) => json<Config>(r)),
   getWidgets: () => fetch('/api/widgets').then((r) => json<WidgetsResponse>(r)),
   rescan: () => fetch('/api/widgets/rescan', { method: 'POST' }).then((r) => json<WidgetsResponse>(r)),
+  /** Asks every page showing screen `id` to reload (`server/src/config/screen-reload.ts`). */
+  reloadScreen: (id: string) => fetch(`/api/screens/${encodeURIComponent(id)}/reload`, { method: 'POST' }).then(empty),
   /** `data` is the raw file base64-encoded; the server answers with the name it stored it under. */
   uploadBackground: (name: string, data: string) =>
     fetch('/api/backgrounds', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, data }) })

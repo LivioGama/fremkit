@@ -218,12 +218,12 @@ two screens is the same widget, with the same settings.
   background image, reset), copy and paste its style, duplicate, copy and paste, move to another
   page or screen, also show it on another screen, default or minimum size, lock its position (a
   locked widget is neither dragged nor resized), open its connection, about, reload, remove. On
-  the empty canvas: paste, select all, add a widget, new page, page background, screen settings. On a page in
+  the empty canvas: paste, select all, add a widget, new page, page background, screen settings, reload the dashboard. On a page in
   the list: rename, duplicate, page background, copy to another screen, move, delete. On a library
   card: add to a page or to the bar, and for a Sietch widget show it there, update or uninstall it.
   On a group of selected widgets: show title, opacity, duplicate, copy and paste, move to page,
   lock, remove. On a bar widget: settings, move left or right, remove. On a screen above the canvas: rename,
-  screen settings, delete. The menus work from the
+  screen settings, reload the dashboard, export, import, delete. The menus work from the
   keyboard too (arrows, Enter, Escape, type-ahead).
 - **Command palette** — Cmd+K (Ctrl+K, or *Commands* in the top bar) searches everything the
   editor can do and runs it from the keyboard: add a widget, go to a page or a screen, select a

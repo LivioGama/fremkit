@@ -14,6 +14,10 @@ tagged `vX.Y.Z`.
 
 ### Added
 
+- **Reload a screen's dashboard from the admin.** **Reload the dashboard**, in the right-click
+  menu of the canvas (the screen being edited) and of a screen in the selector above it, and in
+  ⌘K, reloads every page showing that screen: the Edge, a browser tab, a paired iPad. Until now
+  only the helper's status menu could, and only on the Edge.
 - **iPad and extra screens are experimental until the iPad app is available.** Until you tick
   **iPad and extra screens** under **Experimental features**, the admin hides **Settings → Devices**
   and, on a dashboard with a single screen, the screen selector with its **+ Add a screen**;

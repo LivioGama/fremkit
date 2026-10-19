@@ -97,6 +97,8 @@ export interface AdminState {
    * with a way there. Not an error, so not the toast.
    */
   notice: StillShown | null
+  /** A short confirmation with nothing to act on ("Dashboard reloaded on …"); goes by itself. */
+  info: string
   /** The server cannot read data/fremkit.json: nothing may be saved until it is fixed. */
   degraded: boolean
 }
@@ -119,6 +121,8 @@ export interface AdminApi {
   getWidgets(): Promise<WidgetsResponse>
   putConfig(cfg: Config): Promise<Config>
   rescan(): Promise<WidgetsResponse>
+  /** Optional so a test's fake API need not have it; the real one does. */
+  reloadScreen?(screenId: string): Promise<void>
 }
 
 /** What `addScreen` takes: the new screen's name and kind, and what to fill it with. */
@@ -188,6 +192,7 @@ export interface AdminStore {
   setDragWidget(id: string | null): void
   dismissToast(): void
   dismissNotice(): void
+  dismissInfo(): void
   /** Takes the editor to where the notice says the widget still is, and selects it. */
   goToNotice(): void
   setNavHeight(height: NavHeight): void
@@ -283,6 +288,11 @@ export interface AdminStore {
   /** Back to the theme's look: no colours, no image, a solid surface. Settings are kept. */
   resetAppearance(instanceId: string): void
   reloadWidget(instanceId: string): void
+  /**
+   * Asks every page showing screen `screenId` — the Edge, a browser tab, a paired iPad — to reload.
+   * Not an edit of the dashboard, so neither undoable nor saved: it says it was done, or why not.
+   */
+  reloadScreen(screenId: string): Promise<void>
   openAbout(instanceId: string): void
   /** Opens Connections on an existing connection's form. */
   openConnection(connectionId: string): void
@@ -379,7 +389,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     screenId: '', pageIndex: 0, selection: [], dragWidgetId: null,
     get selectedId(): string | null { return this.selection.length === 1 ? this.selection[0] : null },
     set selectedId(id: string | null) { this.selection = id ? [id] : [] },
-    mode: 'edit', modal: null, status: 'saved', toast: '', notice: null, degraded: false,
+    mode: 'edit', modal: null, status: 'saved', toast: '', notice: null, info: '', degraded: false,
   })
   // Reactive arrays: canUndo/canRedo read their .length, and a plain array here would give
   // those computed refs no tracked dependency, so they'd never invalidate after the first read.
@@ -678,6 +688,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     setDragWidget(id: string | null): void { state.dragWidgetId = id },
     dismissToast(): void { state.toast = '' },
     dismissNotice(): void { state.notice = null },
+    dismissInfo(): void { state.info = '' },
     /** Takes the editor to where a notice says the widget still is, and selects it. */
     goToNotice(): void {
       const n = state.notice
@@ -1255,6 +1266,17 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
 
     reloadWidget(instanceId: string): void {
       state.reloads[instanceId] = (state.reloads[instanceId] ?? 0) + 1
+    },
+
+    async reloadScreen(screenId: string): Promise<void> {
+      const name = state.config?.screens.find((x) => x.id === screenId)?.name
+      if (name === undefined || !deps.api.reloadScreen) return
+      try {
+        await deps.api.reloadScreen(screenId)
+        state.info = t('admin.notice.screenReloaded', { screen: name })
+      } catch (e) {
+        state.toast = errorMessage(e)
+      }
     },
 
     /**
