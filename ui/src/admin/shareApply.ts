@@ -218,7 +218,11 @@ export function mergeLayout(
     outcome = { screenId: first!.id, pageIndex: 0, leftOut: 0 }
   } else {
     let first: Screen | null = null
-    for (const shared of layout.screens) first ??= addScreen(shared)
+    // Every screen is added; `first ??= addScreen(…)` would have stopped calling it after one.
+    for (const shared of layout.screens) {
+      const screen = addScreen(shared)
+      first ??= screen
+    }
     outcome = { screenId: first!.id, pageIndex: 0, leftOut: 0 }
   }
 
