@@ -29,6 +29,7 @@ const exec: Exec = (cmd, args) =>
 const CONFIG = {
   version: CONFIG_VERSION,
   locale: 'en',
+  labs: { devices: false, companion: true },
   secrets: { backend: 'file' },
   connections: [],
   widgets: {},
@@ -179,6 +180,15 @@ describe('companion routes', () => {
     for (const name of ['Approve this, it is safe', 'chrome', 'Firefox', 'Chrome ', 'Safari']) {
       expect((await pair(ORIGIN, { name, installId: INSTALL, salt: SALT })).statusCode).toBe(400)
     }
+  })
+
+  it('unlock is behind the access secret, and the status says whether pairing is locked', async () => {
+    expect((await app.inject({ method: 'POST', url: '/api/companion/unlock', headers: { host: HOST } })).statusCode).toBe(401)
+    // The extension cannot unlock what its guesses locked: its Origin is refused like any other.
+    expect([401, 403]).toContain((await app.inject({ method: 'POST', url: '/api/companion/unlock', headers: { host: HOST, origin: ORIGIN } })).statusCode)
+    expect((await app.inject({ method: 'POST', url: '/api/companion/unlock', headers: { host: HOST, ...auth } })).json()).toEqual({ ok: true })
+    const res = await app.inject({ method: 'GET', url: '/api/devices', headers: { host: HOST, ...auth } })
+    expect(res.json().companionLocked).toBe(false)
   })
 
   it('refuse without the access secret is 401, and there is no approve', async () => {

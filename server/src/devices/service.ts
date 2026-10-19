@@ -51,6 +51,8 @@ export type DeviceStatus = {
   devices: StatusDevice[]
   /** The extension waiting for the user's answer, or null. */
   companionRequest: CompanionRequest | null
+  /** Extension pairing locked after too many wrong codes, until unlocked here. */
+  companionLocked: boolean
 }
 
 export type PairingOffer = { code: string; expiresAt: number; url: string }
@@ -100,6 +102,7 @@ export interface DeviceServiceOptions {
    * companion is built after this service and this one must not know its code.
    */
   companionRequest?: () => CompanionRequest | null
+  companionLocked?: () => boolean
   companionConnected?: () => ReadonlySet<string>
   /** Which of the addresses the device app is told, in order; the default is `lanAppAddresses`. */
   appAddresses?: (addresses: string[]) => Promise<string[]>
@@ -155,6 +158,7 @@ export class DeviceService {
   private readonly listAppAddresses: (addresses: string[]) => Promise<string[]>
   private readonly listener: RemoteListener
   private readonly companionRequest: () => CompanionRequest | null
+  private readonly companionLocked: () => boolean
   private readonly companionConnected: () => ReadonlySet<string>
 
   /**
@@ -194,6 +198,7 @@ export class DeviceService {
     this.readAddresses = opts.lanAddresses ?? readLanAddresses
     this.pickAddress = opts.preferredAddress ?? ((addresses) => preferredAddress(addresses, this.exec))
     this.companionRequest = opts.companionRequest ?? (() => null)
+    this.companionLocked = opts.companionLocked ?? (() => false)
     this.companionConnected = opts.companionConnected ?? (() => new Set())
     this.listAppAddresses = cachedPick(opts.appAddresses ?? ((addresses) => lanAppAddresses(addresses, this.exec)))
     this.listener = new RemoteListener(opts.app, opts.listenerPort ?? REMOTE_PORT)
@@ -250,6 +255,7 @@ export class DeviceService {
       devices: this.store.list().map((d): StatusDevice => (d.kind === 'extension' ? { ...d, connected: connected.has(d.id) } : d)),
       // Picked field by field, so nothing the pairing object grows later reaches the admin.
       companionRequest: request ? { requestId: request.requestId, code: request.code, name: request.name, extension: request.extension, expiresAt: request.expiresAt } : null,
+      companionLocked: this.companionLocked(),
     }
   }
 

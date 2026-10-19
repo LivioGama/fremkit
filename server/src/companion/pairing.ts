@@ -3,6 +3,7 @@ import { CODE_ALPHABET } from '../devices/codes.js'
 import type { DeviceStore } from '../devices/store.js'
 import { pairClientMac, pairKey, pairServerMac, sameMac } from './pairProof.js'
 import { shortExtensionId } from './protocol.js'
+import { PairingLock } from './lock.js'
 
 /** Short enough to type from the Edge at a glance. */
 export const MATCH_CODE_LENGTH = 4
@@ -29,8 +30,8 @@ function sameCode(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y)
 }
 
-/** Why a request was not taken. */
-export type RequestRefusal = 'limited' | 'busy' | 'cooldown'
+/** Why a request was not taken. `locked`: too many wrong codes, until the user unlocks (lock.ts). */
+export type RequestRefusal = 'limited' | 'busy' | 'cooldown' | 'locked'
 
 /** `changed`: the request on show is not the one answered, or the code given is not its code. */
 export type AnswerResult = 'ok' | 'notFound' | 'changed'
@@ -104,12 +105,26 @@ export class CompanionPairing {
   constructor(
     private readonly store: DeviceStore,
     private readonly now: () => number = () => Date.now(),
+    /** In memory only unless given one with a file (`createCompanion` does). */
+    private readonly lock: PairingLock = new PairingLock(null),
   ) {}
+
+  /** True while pairing is locked after too many wrong codes. */
+  get locked(): boolean {
+    return this.lock.locked
+  }
+
+  /** The user's Unlock in Settings → Devices. */
+  async unlock(): Promise<void> {
+    await this.lock.unlock()
+    this.changed()
+  }
 
   /** `salt`: the extension's random `saltE`, which salts K(code) with the request id (pairProof.ts). */
   request(input: { origin: string; name: string; installId: string; salt: string }): { requestId: string; code: string; expiresAt: number } | RequestRefusal {
     const now = this.now()
     this.sweep(now)
+    if (this.lock.locked) return 'locked'
     const refused = this.refusedAt.get(input.installId)
     if (refused !== undefined && now - refused < REFUSED_COOLDOWN_MS) return 'cooldown'
     const waiting = this.waiting === null ? undefined : this.requests.get(this.waiting)
@@ -187,6 +202,8 @@ export class CompanionPairing {
       req.wrong += 1
       if (req.wrong >= MAX_WRONG_CODES) {
         this.kill(req)
+        // Counted across requests too: a guesser that asks again and again ends up locked out.
+        if (await this.lock.noteExhausted(this.now())) this.changed()
         return { state: 'exhausted' }
       }
       return { state: 'wrong' }

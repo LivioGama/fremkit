@@ -532,6 +532,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     },
     listenerPort: opts.devicesPort ?? REMOTE_PORT,
     companionRequest: () => companion?.pairing.pending() ?? null,
+    companionLocked: () => companion?.pairing.locked ?? false,
     companionConnected: () => companion?.session.connectedIds() ?? new Set(),
     ...opts.devices,
   })
@@ -585,7 +586,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
 
   // The browser extension: pairing by approval on the Edge, its socket, the share it carries and
   // the `companion` channel the dashboard watches. Closed with the app.
-  companion = await createCompanion({ app, store: devices, config: store, registry })
+  // The pairing lock lives next to devices.json: a restart must not clear it.
+  companion = await createCompanion({ app, store: devices, config: store, registry, lockPath: join(opts.dataDir, 'companion-lock.json') })
 
   if (opts.uiDist && (await access(opts.uiDist).then(() => true, () => false))) {
     await app.register(fastifyStatic, { root: opts.uiDist, prefix: '/', serve: true, decorateReply: false })

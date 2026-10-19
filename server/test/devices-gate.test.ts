@@ -142,7 +142,7 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
     expect(walked.map((r) => `${r.method} ${r.url}`)).toEqual(expect.arrayContaining([
       'POST /api/companion/pair', 'POST /api/companion/pair/:requestId',
       'POST /api/companion/pair/:requestId/confirm',
-      'POST /api/companion/requests/:requestId/refuse',
+      'POST /api/companion/requests/:requestId/refuse', 'POST /api/companion/unlock',
       'GET /companion/ws',
     ]))
     for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']) {

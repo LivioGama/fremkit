@@ -29,6 +29,8 @@ export interface CompanionRoutesOptions {
   config: Pick<ConfigStore, 'get'>
   /** The extension origins let in (`companionOrigins`). */
   origins: ReadonlySet<string>
+  /** How many browser extensions are paired. */
+  pairedExtensions: () => number
 }
 
 /**
@@ -80,6 +82,13 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
   app.post('/api/companion/pair', { onRequest: localOnly }, async (req, reply) => {
     const origin = extensionOrigin(req, opts.origins)
     if (origin === null) return fail(reply, 403, 'companion.originNotAllowed')
+    // Not a security boundary (the server does not rely on `labs.companion` for that, see
+    // docs/companion.md): with the switch off the Edge shows no prompt, so nobody would see a
+    // request at all, and a program guessing codes would do it unseen. An extension already
+    // paired keeps working, and may pair again, whatever the switch says.
+    if (opts.config.get().labs?.companion !== true && opts.pairedExtensions() === 0) {
+      return fail(reply, 409, 'companion.disabled', 'disabled')
+    }
     const parsed = PairSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.code(400).send({ errors: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`) })
@@ -93,6 +102,10 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
     if (result === 'cooldown') {
       req.log.warn({ origin }, 'companion pairing request refused: refused a moment ago')
       return fail(reply, 429, 'companion.pairCooldown', 'cooldown')
+    }
+    if (result === 'locked') {
+      req.log.warn({ origin }, 'companion pairing request refused: locked after too many wrong codes')
+      return fail(reply, 423, 'companion.pairLocked', 'locked')
     }
     if (result === 'busy') {
       req.log.warn({ origin }, 'companion pairing request refused: another one is waiting')
@@ -143,6 +156,13 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
     if (result === 'changed') return fail(reply, 409, 'companion.requestChanged')
     return null
   }
+
+  /** Settings → Devices' Unlock pairing: behind the secret like every route of the admin's. */
+  app.post('/api/companion/unlock', { onRequest: localOnly }, async (req) => {
+    await pairing.unlock()
+    req.log.info('companion pairing unlocked')
+    return { ok: true }
+  })
 
   app.post<Params>('/api/companion/requests/:requestId/refuse', { onRequest: localOnly }, async (req, reply) => {
     const failed = answered(reply, pairing.refuse(req.params.requestId, answerCode(req.body)))

@@ -11,6 +11,8 @@ import { CompanionSession } from '../src/companion/session.js'
 import type { ServerMessage, TabMeta } from '../src/companion/protocol.js'
 import { createCompanionProvider, type CompanionProvider } from '../src/companion/provider.js'
 import { createCompanion } from '../src/companion/index.js'
+import { MAX_EXHAUSTED_REQUESTS } from '../src/companion/lock.js'
+import { tr } from '../src/i18n.js'
 import type { CommandContext } from '../src/providers/types.js'
 
 const META: TabMeta = { title: 'A video', host: 'video.example.com', currentTime: 12, duration: 300, paused: false, muted: false, volume: 1 }
@@ -28,6 +30,7 @@ function configWith(where: 'page' | 'bar' | 'nowhere'): Config {
   const edge = DEFAULT_CONFIG.screens[0]
   return {
     ...DEFAULT_CONFIG,
+    labs: { devices: false, companion: true },
     widgets: {
       'clock-1': { widgetId: 'clock', showTitle: true, settings: {} },
       'play-1': { widgetId: 'fremplay', showTitle: false, settings: {} },
@@ -211,11 +214,11 @@ describe('createCompanion', () => {
 
   afterEach(async () => { await app?.close() })
 
-  async function build(config: Config = configWith('page')) {
+  async function build(config: Config = configWith('page'), lockPath?: string) {
     app = Fastify()
     await app.register(fastifyWebsocket)
     const registry = { register: vi.fn(), refresh: vi.fn() }
-    const companion = await createCompanion({ app, store, config: { get: () => config }, registry })
+    const companion = await createCompanion({ app, store, config: { get: () => config }, registry, lockPath })
     await app.ready()
     return { companion, registry }
   }
@@ -268,5 +271,47 @@ describe('createCompanion', () => {
     await store.createExtension({ name: 'Chrome', origin: ORIGIN, installId: INSTALL })
     companion.pairing.request({ origin: ORIGIN, name: 'Chrome', installId: INSTALL, salt: 'S'.repeat(43) })
     expect(registry.refresh).not.toHaveBeenCalled()
+  })
+
+  const ask = (installId: string = INSTALL) => app.inject({
+    method: 'POST', url: '/api/companion/pair', headers: { origin: ORIGIN },
+    payload: { name: 'Chrome', installId, salt: 'S'.repeat(43) },
+  })
+
+  it('refuses a request with 409 while labs.companion is off and no extension is paired', async () => {
+    const off = { ...configWith('page'), labs: { devices: false, companion: false } } as Config
+    await build(off)
+    const res = await ask()
+    expect(res.statusCode).toBe(409)
+    expect(res.json()).toEqual({ error: tr(off.locale, 'companion.disabled'), reason: 'disabled' })
+    // An extension already paired may pair again, whatever the switch says.
+    await store.createExtension({ name: 'Chrome', origin: ORIGIN, installId: INSTALL })
+    expect((await ask()).statusCode).toBe(200)
+  })
+
+  it('locks pairing after five requests refused for wrong codes, across a restart, until unlocked', async () => {
+    const lockPath = join(dir, 'companion-lock.json')
+    const { companion } = await build(configWith('page'), lockPath)
+    for (let i = 0; i < MAX_EXHAUSTED_REQUESTS; i++) {
+      const res = await ask(`6f1c2b8e-3d4a-4b5c-9d6e-${String(i).padStart(12, '0')}`)
+      expect(res.statusCode, String(i)).toBe(200)
+      const { requestId } = res.json()
+      for (let n = 0; n < 3; n++) await companion.pairing.confirm(requestId, ORIGIN, 'N'.repeat(43), 'A'.repeat(43))
+    }
+    expect(companion.pairing.locked).toBe(true)
+    const locked = await ask()
+    expect(locked.statusCode).toBe(423)
+    expect(locked.json()).toEqual({ error: tr(configWith('page').locale, 'companion.pairLocked'), reason: 'locked' })
+    // A restart reads the flag back.
+    await app.close()
+    const again = await build(configWith('page'), lockPath)
+    expect(again.companion.pairing.locked).toBe(true)
+    expect((await ask()).statusCode).toBe(423)
+    // Settings → Devices' Unlock pairing.
+    expect((await app.inject({ method: 'POST', url: '/api/companion/unlock' })).statusCode).toBe(200)
+    expect(again.companion.pairing.locked).toBe(false)
+    expect((await ask()).statusCode).toBe(200)
+    await app.close()
+    expect((await build(configWith('page'), lockPath)).companion.pairing.locked).toBe(false)
   })
 })
