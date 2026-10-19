@@ -9,7 +9,7 @@ import BaseSection from '../../shared/ui/BaseSection.vue'
 import DiagnosticsSection from '../DiagnosticsSection.vue'
 import { useI18n } from '../../shared/i18n'
 import { useAdminStore } from '../store'
-import { labsDevices, labsShown, tapVersion } from '../labs'
+import { labsCompanion, labsDevices, labsShown, tapVersion } from '../labs'
 import { CONTRIBUTORS, MAINTAINER, REGISTRY_REPOSITORY, REPOSITORY, VERSION } from '../../shared/credits'
 
 const s = useAdminStore()
@@ -21,6 +21,8 @@ const { t, locale } = useI18n()
  * off again. It goes through `apply` like every setting: saved, undoable, in the history.
  */
 const devicesOn = computed(() => labsDevices(s.state.config))
+/** The browser companion and Fremplay, behind `labs.companion` the same way. */
+const companionOn = computed(() => labsCompanion(s.state.config))
 const labsVisible = computed(() => labsShown(s.state.config))
 /**
  * The block appears right under the version; focusing its box brings it into view and tells a
@@ -33,6 +35,9 @@ function onVersionClick(): void {
 }
 function setLabsDevices(on: boolean): void {
   s.apply((c) => { c.labs = { ...c.labs, devices: on } })
+}
+function setLabsCompanion(on: boolean): void {
+  s.apply((c) => { c.labs = { devices: c.labs?.devices ?? false, ...c.labs, companion: on } })
 }
 
 /** "A, B and C" in the language in force, so a third contributor needs no new string. */
@@ -63,6 +68,9 @@ const contributors = computed(() =>
     <BaseCheckbox :model-value="devicesOn" :label="t('admin.inspector.screen.labs.devices')"
       data-test="labs-devices" @update:model-value="setLabsDevices($event)" />
     <p class="ro">{{ t('admin.inspector.screen.labs.devices.hint') }}</p>
+    <BaseCheckbox :model-value="companionOn" :label="t('admin.inspector.screen.labs.companion')"
+      data-test="labs-companion" @update:model-value="setLabsCompanion($event)" />
+    <p class="ro">{{ t('admin.inspector.screen.labs.companion.hint') }}</p>
   </div>
   </BaseSection>
 </template>

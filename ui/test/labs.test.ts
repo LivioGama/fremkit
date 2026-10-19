@@ -169,6 +169,56 @@ describe('the Devices section while pairing is in use', () => {
   })
 })
 
+describe('labs.companion', () => {
+  const withCompanion = (companion: boolean | undefined): Config =>
+    ({ ...config(false, 1), labs: { devices: false, ...(companion === undefined ? {} : { companion }) } })
+  const manifest = (id: string) => ({ id }) as unknown as import('../src/shared/types').WidgetManifest
+
+  it('reads an absent flag as off', () => {
+    expect(labs.labsCompanion(null)).toBe(false)
+    expect(labs.labsCompanion(config(true, 1))).toBe(false)
+    expect(labs.labsCompanion(withCompanion(undefined))).toBe(false)
+    expect(labs.labsCompanion(withCompanion(true))).toBe(true)
+  })
+
+  it('leaves Fremplay out of the widget lists while off, and only Fremplay', () => {
+    const manifests = { clock: manifest('clock'), fremplay: manifest('fremplay') }
+    expect(labs.widgetOffered(withCompanion(false), 'fremplay')).toBe(false)
+    expect(labs.widgetOffered(withCompanion(false), 'clock')).toBe(true)
+    expect(labs.offeredManifests(withCompanion(false), manifests).map((m) => m.id)).toEqual(['clock'])
+    expect(labs.offeredManifests(withCompanion(true), manifests).map((m) => m.id)).toEqual(['clock', 'fremplay'])
+  })
+
+  it('shows the Devices pane and the switches while on, as labs.devices does', () => {
+    expect(labs.showsDevices(withCompanion(true), status())).toBe(true)
+    expect(labs.showsDevices(withCompanion(false), status())).toBe(false)
+    expect(labs.labsShown(withCompanion(true))).toBe(true)
+    expect(labs.labsShown(withCompanion(false))).toBe(false)
+  })
+
+  it('has its own switch in About, under the same seven clicks, which writes the flag alone', async () => {
+    seed(false, 1)
+    const s = useAdminStore()
+    const wrapper = settings('about')
+    await flushPromises()
+    const version = wrapper.find('[data-test="version"]')
+    for (let i = 0; i < labs.REVEAL_TAPS - 1; i++) await version.trigger('click')
+    expect(wrapper.find('[data-test="labs-companion"]').exists()).toBe(false)
+    await version.trigger('click')
+    await flushPromises()
+    const box = wrapper.find('[data-test="labs-companion"] input')
+    expect(wrapper.text()).toMatch(/Browser companion \(Fremplay\)|Compagnon de navigateur \(Fremplay\)/)
+    expect((box.element as HTMLInputElement).checked).toBe(false)
+    await box.setValue(true)
+    expect(s.state.config!.labs).toEqual({ devices: false, companion: true })
+    expect(hasDevices(wrapper)).toBe(true)
+    await box.setValue(false)
+    expect(s.state.config!.labs).toEqual({ devices: false, companion: false })
+    expect(hasDevices(wrapper)).toBe(false)
+    wrapper.unmount()
+  })
+})
+
 describe('the seven clicks on the version', () => {
   it('reveal nothing before the seventh, then reveal once', () => {
     for (let i = 1; i < labs.REVEAL_TAPS; i++) expect(labs.tapVersion(1000 + i * 100)).toBe(false)

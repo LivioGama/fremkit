@@ -403,6 +403,8 @@ export const en: Record<string, string> = {
   'admin.inspector.screen.labs': 'Experimental features',
   'admin.inspector.screen.labs.devices': 'iPad and extra screens',
   'admin.inspector.screen.labs.devices.hint': 'Pair an iPad and add screens, until the iPad app is available. Untick to hide them again; what you already made is kept.',
+  'admin.inspector.screen.labs.companion': 'Browser companion (Fremplay)',
+  'admin.inspector.screen.labs.companion.hint': 'Link the Fremkit Companion extension and show a browser tab’s video on the Edge with the Fremplay widget. Untick to hide them again; a Fremplay widget already placed is kept.',
   'admin.inspector.screen.about.authors': 'Written by {maintainer}, with {contributors}.',
   'admin.inspector.screen.about.source': 'Source code',
   'admin.inspector.screen.about.sietch': 'Sietch',

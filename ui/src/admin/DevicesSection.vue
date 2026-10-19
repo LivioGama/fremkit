@@ -21,6 +21,7 @@ import type { PublicExtensionDevice, PublicIpadDevice } from '../shared/api'
 import type { Screen } from '../shared/types'
 import AddScreenDialog from './AddScreenDialog.vue'
 import { useDevices } from './devices'
+import { labsCompanion } from './labs'
 import { useAdminStore } from './store'
 
 const s = useAdminStore()
@@ -64,10 +65,17 @@ const countdown = computed(() => {
 
 const deviceScreens = computed<Screen[]>(() => (s.state.config?.screens ?? []).filter((x) => x.kind === 'device'))
 const list = computed<PublicIpadDevice[]>(() => (status.value?.devices ?? []).filter((d): d is PublicIpadDevice => d.kind === 'ipad'))
-const extensions = computed<PublicExtensionDevice[]>(() => (status.value?.devices ?? []).filter((d): d is PublicExtensionDevice => d.kind === 'extension'))
+const allExtensions = computed<PublicExtensionDevice[]>(() => (status.value?.devices ?? []).filter((d): d is PublicExtensionDevice => d.kind === 'extension'))
+/**
+ * The browser companion's rows and request card show only while `labs.companion` is on. The admin
+ * only: an extension paired before the switch went off still works, and "Remove all" still
+ * removes it.
+ */
+const companionOn = computed(() => labsCompanion(s.state.config))
+const extensions = computed<PublicExtensionDevice[]>(() => (companionOn.value ? allExtensions.value : []))
 /** The extension's request, until its expiry even if the next poll is still to come. */
 const request = computed(() => {
-  const r = status.value?.companionRequest ?? null
+  const r = companionOn.value ? status.value?.companionRequest ?? null : null
   return r && now.value < r.expiresAt ? r : null
 })
 /**
@@ -197,7 +205,7 @@ async function onCreated(screenId: string): Promise<void> {
     <p v-else class="ro">{{ t('admin.devices.none') }}</p>
 
     <div class="row">
-      <BaseButton variant="danger" :disabled="!list.length && !extensions.length" @click="confirm.ask('devices:all', () => devices.removeAll())">
+      <BaseButton variant="danger" :disabled="!list.length && !allExtensions.length" @click="confirm.ask('devices:all', () => devices.removeAll())">
         {{ confirm.armed('devices:all') ? t('common.confirm') : t('admin.devices.removeAll') }}
       </BaseButton>
       <BaseButton variant="danger" @click="confirm.ask('devices:cert', () => devices.resetCertificate())">

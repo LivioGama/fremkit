@@ -49,6 +49,7 @@ function config(): Config {
     version: 4,
     connections: [], secrets: { backend: 'file' }, locale: 'en',
     privacy: { claudeAccountUsage: false, showAccountEmail: false, codexAccount: false, codexHistorySources: [], macmonTemperature: false },
+    labs: { devices: true, companion: true },
     widgets: {},
     screens: [
       { id: 'edge', name: 'Edge', kind: 'edge', display: { cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0 }, nav: [], pages: [{ id: 'home', name: 'Home', items: [] }] },
@@ -100,6 +101,29 @@ describe('the devices section', () => {
     expect(wrapper.find('[data-test="fingerprint"]').text()).toBe('Fingerprint: aardvark absurd woodlark zulu')
     expect(wrapper.text()).toContain('If the iPad shows these words, it is this Mac.')
     expect(wrapper.text()).not.toContain('Someone is trying')
+    wrapper.unmount()
+  })
+
+  it('hides the extension rows and the request card while labs.companion is off, and Remove all still counts them', async () => {
+    const s = useAdminStore()
+    s.state.config = { ...config(), labs: { devices: true, companion: false } }
+    deviceApi.getDevices.mockResolvedValue(status({
+      devices: [extension()],
+      companionRequest: { requestId: 'r1', code: 'K7M2', name: 'Chrome', expiresAt: Date.now() + 60_000 },
+    }))
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="extension"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="companion-request"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('No paired device')
+    const removeAll = wrapper.findAll('button').find((b) => b.text() === 'Remove every device')
+    expect(removeAll).toBeDefined()
+    expect(removeAll?.attributes('disabled')).toBeUndefined()
+    // Turned on, both come back without a reload.
+    s.state.config = { ...config(), labs: { devices: true, companion: true } }
+    await flushPromises()
+    expect(wrapper.find('[data-test="extension"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="companion-request"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

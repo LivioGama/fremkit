@@ -204,6 +204,7 @@ describe('the dashboard and the companion channel', () => {
   const config = (): Config => ({
     version: 4, theme: 'fremkit', connections: [], secrets: { backend: 'file' }, locale: 'en',
     privacy: { claudeAccountUsage: false, showAccountEmail: false, codexAccount: false, codexHistorySources: [], macmonTemperature: false },
+    labs: { devices: false, companion: true },
     widgets: {},
     screens: [{
       id: 'edge', name: 'edge', kind: 'edge',
@@ -272,5 +273,17 @@ describe('the dashboard and the companion channel', () => {
     await nextTick()
     expect(w.find('.companion-prompt').exists()).toBe(false)
     w.unmount()
+  })
+
+  it('shows no prompt while labs.companion is off', async () => {
+    for (const labs of [{ devices: false, companion: false }, { devices: true }, undefined]) {
+      fake.config = { ...(config() as object), labs } as unknown as Config
+      vi.resetModules()
+      const w = await mountApp('http://127.0.0.1:4242/')
+      push('companion', state({ pairing: { requestId: 'r1', code: 'K7M2', name: 'Companion', expiresAt: Date.now() + 60_000 } }))
+      await nextTick()
+      expect(w.find('.companion-prompt').exists(), JSON.stringify(labs)).toBe(false)
+      w.unmount()
+    }
   })
 })

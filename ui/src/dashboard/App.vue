@@ -218,7 +218,9 @@ watch(() => config.value?.locale, (l) => setLocale(l))
       :anchor="popover.open.value.anchor"
       :screen="popover.open.value.screen"
       @root="popover.setPopoverEl" />
-    <CompanionPrompt v-if="companionPairing" :pairing="companionPairing" />
+    <!-- Experimental: only while `labs.companion` is on. The server answers the extension the same
+         either way; with the prompt hidden (and the admin's card too) no request can be allowed. -->
+    <CompanionPrompt v-if="companionPairing && config?.labs?.companion === true" :pairing="companionPairing" />
   </div>
 </template>
 
