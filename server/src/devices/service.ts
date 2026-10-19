@@ -175,6 +175,8 @@ export class DeviceService {
   private readonly listener: RemoteListener
   private readonly bindRetry: { attempts: number; delayMs: number }
   private closing = false
+  /** The background bind retry running now (`retryBind`), if any. */
+  private retrying: object | null = null
   private readonly companionRequest: () => CompanionRequest | null
   private readonly companionLocked: () => boolean
   private readonly companionConnected: () => ReadonlySet<string>
@@ -236,17 +238,15 @@ export class DeviceService {
       this.refreshAll()
     })
     if (!this.store.enabled) return
-    // Boot waits for the first try only: a port still held by the server this one replaces is
-    // tried again in the background (`bindRetry`), and the dashboard does not wait for it.
-    await new Promise<void>((resolve) => {
-      this.serialize(() => this.start({ boot: true, waiting: resolve }))
-        .catch((err: unknown) => {
-          // A failed start must not keep the dashboard from booting; the switch stays on, so the
-          // next start tries again, and the admin shows it is not listening.
-          this.app.log.warn({ err: (err as Error).message }, 'could not start the remote listener')
-        })
-        .finally(resolve)
-    })
+    // A port still held by the server this one replaces is tried again in the background
+    // (`bindRetry`): the dashboard does not wait for it.
+    try {
+      await this.serialize(() => this.start({ boot: true }))
+    } catch (err) {
+      // A failed start must not keep the dashboard from booting; the switch stays on, so the
+      // next start tries again, and the admin shows it is not listening.
+      this.app.log.warn({ err: (err as Error).message }, 'could not start the remote listener')
+    }
   }
 
   get listening(): boolean {
@@ -261,6 +261,7 @@ export class DeviceService {
   close(): Promise<void> {
     // A bind waiting to try again gives up now rather than hold the close for its retries.
     this.closing = true
+    this.retrying = null
     return this.serialize(async () => { await this.halt() })
   }
 
@@ -456,15 +457,22 @@ export class DeviceService {
   }
 
   /**
+   * Starts the listener. A port found taken is tried again in the background, `bindRetry`
+   * apart, outside the chain: this answers at once, with the switch as it was (the admin shows
+   * that until the listener binds or the retries give up), and a stop or a close asked meanwhile
+   * is not held behind the retries.
+   *
    * `boot`: the switch was left on and the server is starting. A port still taken after every
    * retry then leaves the switch on, so the next start tries again; from the admin's switch, it
-   * goes back off. `waiting` is called when the first bind found the port taken.
+   * goes back off.
    */
-  private async start(opts: { boot?: boolean; waiting?: () => void } = {}): Promise<{ enabled: boolean; error?: 'portInUse' }> {
+  private async start(opts: { boot?: boolean } = {}): Promise<{ enabled: boolean; error?: 'portInUse' }> {
     if (this.listener.running) {
       await this.store.setEnabled(true)
       return { enabled: true }
     }
+    // A retry already running for an earlier start gives way to this one.
+    this.retrying = null
     // Nothing pairs with a code from before the switch went off; `stop()` drops it already, this is
     // in case anything ever issued one while off.
     this.codes.clear()
@@ -474,13 +482,30 @@ export class DeviceService {
     this.hostName = await localHostName(this.exec)
     this.certAddresses = this.readAddresses()
     const cert = await issueCertificate(key, { host: this.dnsName(), addresses: this.certAddresses }, { exec: this.exec })
-    if (!(await this.bind(key, cert, opts.waiting))) {
-      this.error = 'portInUse'
-      this.app.log.warn({ port: this.listener.port }, 'remote listener port in use')
-      if (opts.boot) return { enabled: true, error: 'portInUse' }
-      await this.store.setEnabled(false)
-      return { enabled: false, error: 'portInUse' }
+    if (await this.tryBind(key, cert)) {
+      await this.bound()
+      return { enabled: true }
     }
+    if (this.bindRetry.attempts <= 0 || this.closing) return this.gaveUp(opts.boot === true)
+    this.app.log.info({ port: this.listener.port }, 'remote listener port taken; trying again')
+    this.error = null
+    this.retryBind(key, cert, opts.boot === true)
+    return { enabled: this.store.enabled }
+  }
+
+  /** One bind: true once listening, false when the port is taken; any other error is thrown. */
+  private async tryBind(key: string, cert: string): Promise<boolean> {
+    try {
+      await this.listener.start(key, cert)
+      return true
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err
+      return false
+    }
+  }
+
+  /** The listener is bound: let its names through, advertise it, follow the addresses. */
+  private async bound(): Promise<void> {
     this.error = null
     this.updateHosts()
     this.bonjourName = await computerName(this.exec)
@@ -489,32 +514,50 @@ export class DeviceService {
     this.timer = setInterval(() => { void this.checkAddresses() }, ADDRESS_CHECK_MS)
     this.timer.unref()
     await this.store.setEnabled(true)
-    return { enabled: true }
+  }
+
+  /** The port stayed taken: say so, and turn the switch back off unless the server is booting. */
+  private async gaveUp(boot: boolean): Promise<{ enabled: boolean; error: 'portInUse' }> {
+    this.error = 'portInUse'
+    this.app.log.warn({ port: this.listener.port }, 'remote listener port in use')
+    if (boot) return { enabled: true, error: 'portInUse' }
+    await this.store.setEnabled(false)
+    return { enabled: false, error: 'portInUse' }
   }
 
   /**
-   * Starts the listener, trying again `bindRetry.attempts` times while the port is taken. False
-   * when it never bound; any other listen error is thrown.
+   * Tries the port again `bindRetry.attempts` times, each try in the chain, the waits outside it.
+   * A stop, a close or another start since drops it (`retrying` no longer this one's).
    */
-  private async bind(key: string, cert: string, waiting?: () => void): Promise<boolean> {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await this.listener.start(key, cert)
-        return true
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err
-        if (attempt >= this.bindRetry.attempts || this.closing) return false
-        if (attempt === 0) {
-          this.app.log.info({ port: this.listener.port }, 'remote listener port taken; trying again')
-          waiting?.()
-        }
+  private retryBind(key: string, cert: string, boot: boolean): void {
+    const token = {}
+    this.retrying = token
+    const current = () => this.retrying === token && !this.closing
+    void (async () => {
+      for (let attempt = 0; attempt < this.bindRetry.attempts; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, this.bindRetry.delayMs).unref())
-        if (this.closing) return false
+        const done = await this.serialize(async () => {
+          if (!current()) return true
+          if (!(await this.tryBind(key, cert))) return false
+          this.retrying = null
+          await this.bound()
+          return true
+        })
+        if (done) return
       }
-    }
+      await this.serialize(async () => {
+        if (!current()) return
+        this.retrying = null
+        await this.gaveUp(boot)
+      })
+    })().catch((err: unknown) => {
+      if (this.retrying === token) this.retrying = null
+      this.app.log.warn({ err: (err as Error).message }, 'could not start the remote listener')
+    })
   }
 
   private async stop(): Promise<{ enabled: boolean }> {
+    this.retrying = null
     await this.halt()
     this.codes.clear()
     this.error = null
