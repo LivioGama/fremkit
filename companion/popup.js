@@ -239,7 +239,7 @@ $('connect').addEventListener('click', async () => {
   $('typed').focus()
 })
 
-$('codeform').addEventListener('submit', async (e) => {
+$('code').addEventListener('submit', async (e) => {
   e.preventDefault()
   if (busy) return
   busy = true

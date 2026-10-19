@@ -18,6 +18,16 @@ const pages = readdirSync(ROOT).filter((f) => f.endsWith('.html'))
 const scripts = readdirSync(ROOT).filter((f) => f.endsWith('.js'))
 
 describe('the companion extension', () => {
+  it('every element a page script looks up by id exists in its page', () => {
+    // popup.js once looked up `codeform` while the page called it `code`: the popup died on load.
+    for (const [page, script] of [['popup.html', 'popup.js'], ['options.html', 'options.js']]) {
+      const ids = new Set([...read(page).matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]))
+      const used = [...read(script).matchAll(/\$\('([^']+)'\)|getElementById\('([^']+)'\)/g)].map((m) => m[1] ?? m[2])
+      expect(used.length).toBeGreaterThan(0)
+      expect(used.filter((id) => !ids.has(id)), `${script} → ${page}`).toEqual([])
+    }
+  })
+
   it('the manifest asks for exactly the permitted permissions and no <all_urls>', () => {
     expect(manifest.manifest_version).toBe(3)
     expect([...manifest.permissions].sort()).toEqual(['activeTab', 'offscreen', 'scripting', 'storage', 'tabCapture'])
