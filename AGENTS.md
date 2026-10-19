@@ -224,6 +224,11 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   goes through `ServerAccess.authorize`/`signInURL`, which refuse until a probe said `.ours`.
   Each spawned server gets a fresh secret; the token file is written after `listen` and removed
   on exit.
+- **The companion takes a token only after the user typed the Edge's code and the server proved it
+  knows it.** The code goes to the Edge and the admin, never to the extension; the server's mac
+  under K(code) comes first, and the extension sends its own only when that one matched
+  (`server/src/companion/pairProof.ts`, `companion/lib/pairProof.js`, one test vector). No approve route, no
+  path that hands out a token without that exchange.
 - **No secret on a command line, ever.** Any account on the Mac reads every process's argv with
   `ps`. The keychain is written through `security -i` on stdin and read with `-g`
   (`secrets/keychain.ts`); ffmpeg gets the Bambu URL from a 0600 list file and gets no preview

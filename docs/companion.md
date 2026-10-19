@@ -11,7 +11,7 @@ It is **experimental** for now, and hidden until you turn it on: in the admin, o
 **Settings → About**, click the version number seven times (or focus it and press Enter seven
 times), and tick **Browser companion (Fremplay)** under **Experimental features**. Until then the
 admin leaves Fremplay out of the widget library and the bar's list and hides the pairing request in
-**Settings → Devices**, and the Edge shows no pairing prompt, so no request can be allowed. A
+**Settings → Devices**, and the Edge shows no pairing prompt, so no code can be typed. A
 browser already linked stays listed in **Settings → Devices** whatever the switch says, so it can
 always be renamed or removed, and a Fremplay widget already placed stays where it is.
 
@@ -38,15 +38,16 @@ Store, load it unpacked:
 The extension's ID is fixed by the `key` in its manifest: `lnckeodobpbbmfbdlpnegjpchgkehdlk`. That
 is the ID the store listing will have (publication is pending), so a link made with the unpacked
 copy keeps working when you switch to the store version. The server accepts any extension origin,
-and what makes one yours is that you allowed it on the Edge.
+and what makes one yours is that you typed the Edge's code into it.
 
 ## Link it to Fremkit
 
 1. Click the Fremkit icon and press **Connecter à Fremkit** (*Connect to Fremkit*).
-2. The popup shows a four-character code. The same code appears on the Edge, and in
-   the admin under **Settings → Devices**.
-3. Check the codes match and press **Allow** on the Edge (or in the admin). **Refuse** drops the
-   request.
+2. A four-character code appears on the Edge, and in the admin under **Settings → Devices**. The
+   popup does not show it: it asks *Tapez le code affiché sur l'Edge* (*Type the code shown on the
+   Edge*).
+3. Type the code in the popup and press **Valider** (*Confirm*). That is the approval: there is no
+   Allow button. **Refuse** on the Edge (or in the admin) drops the request.
 
 The code is valid for two minutes, and Fremkit takes at most five pairing requests a minute, from
 all extensions together, and three from any one install. One request waits at a time: pressing
@@ -55,30 +56,28 @@ told *Another pairing request is already waiting on the Edge*. A refused request
 wait a minute before asking again. The extension's name on the Edge is the browser's (Chrome,
 Microsoft Edge, Brave, Arc, Opera, Vivaldi or Chromium), never a text of its choosing.
 
-**Compare the codes.** Any program on this Mac can post a pairing request; Fremkit cannot tell it
-from yours. What protects you is that the code in your popup is the one on the Edge: Allow and
-Refuse carry the code they showed, and Fremkit turns the answer down (*The request changed; check
-the code*) if the request waiting is no longer that one. Allow also stays off for two seconds
-whenever a different request appears, so a request swapped in just as you tap is not the one
-approved.
+A wrong code is refused (*Code incorrect*); three tries and the request is refused (connect again
+for a new code). Any program on this Mac can post a pairing request, and Fremkit cannot tell it
+from yours: a request you did not start is one to refuse, not one to type a code into. Refuse
+carries the code it showed, and Fremkit turns it down (*The request changed: check the code*) if the
+request waiting is no longer that one.
 
-When you allow the request the extension collects its own credential;
-you do not type anything anywhere. See [SECURITY.md](../SECURITY.md#a-browser-extension) for what
-that credential is.
+The code never travels: the extension and Fremkit each prove they know it, Fremkit first, and only
+then does the extension take its credential. See [SECURITY.md](../SECURITY.md#a-browser-extension)
+for the exchange and what that credential is.
 
 Each time it connects, the extension first has the server prove that it holds this extension's
 record, and sends its credential only then: another program listening on the port in Fremkit's
-place cannot learn it, and the popup says *The server on this port is not your Fremkit*. Pairing
-is different: it involves no secret yet, so the extension trusts whatever answers on Fremkit's port
-at that moment. A program that already holds port 4242 when you press **Connect** (Fremkit was not
-running, or was restarting) can approve the request itself, pair the extension with itself instead
-of Fremkit, and then receive every video you share afterwards. It never learns the real credential,
-but it does not need it. Nothing the extension can check tells such a program from Fremkit, since
-whatever holds Fremkit's port also serves the dashboard, so:
+place cannot learn it, and the popup says *The server on this port is not your Fremkit*. Pairing is
+bound to the real Fremkit by the code: with the helper, the Edge only ever shows a page from a server
+that passed the helper's access proof, so a program holding port 4242 when you press **Connect**
+(Fremkit was not running, or was restarting) cannot put a code there, cannot prove it knows the one
+you type, and gets no credential. Without the helper (Fremkit run from a terminal, the dashboard in
+a plain browser window) there is no such check: whatever answers on the port also serves the page
+on the Edge, and could show a code of its own. So:
 
-- Press **Connect** only when the code the popup shows is on the Edge, and allow it there yourself.
-  The extension refuses an approval that comes back less than two seconds after its request, which
-  no hand on the Edge is fast enough for, but a program can simply wait.
+- Type a code only from the Edge, never from anywhere else, and only for a request you started.
+- On a setup without the helper, pair only while you know Fremkit itself is running.
 - If the popup says the extension was removed and you did not remove it in **Settings → Devices**,
   do not reconnect: another program may be answering instead of Fremkit. Quit it, or restart the
   Mac, and the extension finds Fremkit again on its own.
