@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runInNewContext } from 'node:vm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMessagePasteboardWriter, createMessages2FAProvider } from '../src/providers/messages-2fa.js'
 import { tr } from '../src/i18n.js'
@@ -223,9 +224,110 @@ describe('Messages 2FA provider', () => {
 })
 
 describe('Messages 2FA pasteboard expiry', () => {
+  it.each(['after-string', 'after-concealed-marker', 'after-transient-marker', 'before-final-change-count'] as const)(
+    'does not arm cleanup for a new clipboard owner when ownership changes %s',
+    async (interleave) => {
+      let changeCount = 40
+      let owned = false
+      let writes = 0
+      let value = ''
+      const board = {
+        prepareForNewContentsWithOptions: () => { owned = true; return changeCount },
+        setStringForType: (next: string) => {
+          if (!owned) return false
+          value = next
+          if (interleave === 'after-string') { owned = false; value = 'unrelated clipboard'; changeCount += 1 }
+          return true
+        },
+        setDataForType: () => {
+          if (!owned) return false
+          writes += 1
+          if (interleave === 'after-concealed-marker' && writes === 1) {
+            owned = false
+            value = 'unrelated clipboard'
+            changeCount += 1
+          }
+          if (interleave === 'after-transient-marker' && writes === 2) {
+            owned = false
+            value = 'unrelated clipboard'
+            changeCount += 1
+          }
+          return true
+        },
+        get changeCount() {
+          if (interleave === 'before-final-change-count' && writes === 2) {
+            owned = false
+            value = 'unrelated clipboard'
+            changeCount += 1
+          }
+          return changeCount
+        },
+      }
+      const executeScript = vi.fn(async (script: string, _args: string[], stdin?: string) => {
+        const context = {
+          ObjC: { import: (_framework: string) => {} },
+          $: {
+            NSFileHandle: { fileHandleWithStandardInput: { readDataToEndOfFile: Buffer.from(stdin ?? '') } },
+            NSString: { alloc: { initWithDataEncoding: (data: Buffer) => data.toString('utf8') } },
+            NSUTF8StringEncoding: 4,
+            NSPasteboard: { get generalPasteboard() { return board } },
+            NSPasteboardContentsCurrentHostOnly: 1,
+            NSPasteboardTypeString: 'public.utf8-plain-text',
+            NSData: { data: Buffer.alloc(0) },
+          },
+        }
+        return `${runInNewContext(script, context) ?? ''}\n`
+      })
+      const spawnCleanup = vi.fn(() => {
+        const child = Object.assign(new EventEmitter(), { unref: vi.fn() })
+        queueMicrotask(() => child.emit('spawn'))
+        return child as never
+      })
+      const writer = createMessagePasteboardWriter({ executeScript, spawnCleanup })
+
+      await expect(writer.write('482913')).rejects.toThrow('pasteboard write failed')
+      expect(spawnCleanup).not.toHaveBeenCalled()
+      expect(value).toBe('unrelated clipboard')
+    },
+  )
+
+  it('uses the acquired ownership count for cleanup after all marker writes succeed', async () => {
+    let changeCount = 70
+    const board = {
+      prepareForNewContentsWithOptions: () => changeCount,
+      setStringForType: () => true,
+      setDataForType: () => true,
+      get changeCount() { return changeCount },
+    }
+    const child = Object.assign(new EventEmitter(), { unref: vi.fn() })
+    const executeScript = vi.fn(async (script: string, _args: string[], stdin?: string) => {
+      const context = {
+        ObjC: { import: (_framework: string) => {} },
+        $: {
+          NSFileHandle: { fileHandleWithStandardInput: { readDataToEndOfFile: Buffer.from(stdin ?? '') } },
+          NSString: { alloc: { initWithDataEncoding: (data: Buffer) => data.toString('utf8') } },
+          NSUTF8StringEncoding: 4,
+          NSPasteboard: { get generalPasteboard() { return board } },
+          NSPasteboardContentsCurrentHostOnly: 1,
+          NSPasteboardTypeString: 'public.utf8-plain-text',
+          NSData: { data: Buffer.alloc(0) },
+        },
+      }
+      return `${runInNewContext(script, context) ?? ''}\n`
+    })
+    const spawnCleanup = vi.fn(() => {
+      queueMicrotask(() => child.emit('spawn'))
+      return child as never
+    })
+    const writer = createMessagePasteboardWriter({ executeScript, spawnCleanup })
+
+    await expect(writer.write('482913')).resolves.toBeUndefined()
+    expect(spawnCleanup).toHaveBeenCalledWith(70)
+  })
+
   it('conditionally clears the copied value if the cleanup child fails to start', async () => {
     const child = Object.assign(new EventEmitter(), { unref: vi.fn() })
-    const executeScript = vi.fn(async (script: string, _args: string[], _stdin?: string) => script.includes('String(board.changeCount)') ? '41\n' : '')
+    const executeScript = vi.fn(async (script: string, _args: string[], _stdin?: string) => script.includes('String(ownedChangeCount)') ? '41\n' : '')
     const spawnCleanup = vi.fn(() => child as never)
     const writer = createMessagePasteboardWriter({ executeScript, spawnCleanup })
     const result = writer.write('739201')
@@ -244,7 +346,7 @@ describe('Messages 2FA pasteboard expiry', () => {
 
   it('conditionally clears the copied value if a started cleanup child exits unsuccessfully', async () => {
     const child = Object.assign(new EventEmitter(), { unref: vi.fn() })
-    const executeScript = vi.fn(async (script: string, _args: string[], _stdin?: string) => script.includes('String(board.changeCount)') ? '42\n' : '')
+    const executeScript = vi.fn(async (script: string, _args: string[], _stdin?: string) => script.includes('String(ownedChangeCount)') ? '42\n' : '')
     const spawnCleanup = vi.fn(() => child as never)
     const writer = createMessagePasteboardWriter({ executeScript, spawnCleanup })
     const result = writer.write('482913')
