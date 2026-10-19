@@ -11,6 +11,7 @@ import { handshake } from './lib/handshake.js'
 import { grantToReturn } from './lib/grant.js'
 import { closeOutcome, refusalOf } from './lib/link.js'
 import { confirmCode, normalizeCode, pairingDeadline } from './lib/pairProof.js'
+import { newNonce } from './lib/proof.js'
 import { navigationClearsRect } from './lib/navigation.js'
 import { idleDelay } from './lib/presence.js'
 import { isOwnContext } from './lib/sender.js'
@@ -116,12 +117,14 @@ async function setLink(link) {
 async function pair() {
   await saveLocal({ pairError: null })
   const name = browserName(navigator.userAgentData?.brands)
+  // Ours, fresh for each request: K(code) is salted with it as well as the server's request id.
+  const salt = newNonce()
   let res
   try {
     res = await fetch(`${HTTP}/api/companion/pair`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name, installId: local.installId }),
+      body: JSON.stringify({ name, installId: local.installId, salt }),
       cache: 'no-store',
     })
   } catch {
@@ -138,7 +141,7 @@ async function pair() {
   // (lib/pairProof.js). The deadline is the server's, bounded by a request's life.
   const expiresAt = pairingDeadline(body?.expiresAt, Date.now())
   if (typeof body?.requestId !== 'string' || expiresAt === null) return saveLocal({ pairError: 'failed' })
-  await saveLocal({ pairing: { requestId: body.requestId, expiresAt }, name })
+  await saveLocal({ pairing: { requestId: body.requestId, expiresAt, salt }, name })
   pollPairing()
 }
 
@@ -183,6 +186,8 @@ async function pollPairing() {
 async function confirmTyped(typed) {
   const pending = local.pairing
   if (!pending || Date.now() > pending.expiresAt) return { ok: false, error: 'expired' }
+  // A pairing saved before the salt existed cannot be confirmed: ask again.
+  if (typeof pending.salt !== 'string') return { ok: false, error: 'expired' }
   const code = normalizeCode(typed)
   if (!code) return { ok: false, error: 'badCode' }
   if (confirming) return { ok: false, error: 'busy' }
@@ -201,7 +206,7 @@ async function confirmTyped(typed) {
         return null
       }
     }
-    const result = await confirmCode({ post, requestId: pending.requestId, code })
+    const result = await confirmCode({ post, requestId: pending.requestId, salt: pending.salt, code })
     if (result.state === 'paired') {
       await saveLocal({ token: result.token, deviceId: result.deviceId, pairing: null, pairError: null, revoked: false })
       await setLink('connecting')

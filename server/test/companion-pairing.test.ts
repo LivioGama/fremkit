@@ -17,7 +17,9 @@ let store: DeviceStore
 let clock: number
 let pairing: CompanionPairing
 
-const ask = (origin = ORIGIN, installId = INSTALL) => pairing.request({ origin, name: 'Chrome', installId })
+/** The extension's own salt for K(code), as it sends it with each request. */
+const SALT = Buffer.alloc(32, 5).toString('base64url')
+const ask = (origin = ORIGIN, installId = INSTALL) => pairing.request({ origin, name: 'Chrome', installId, salt: SALT })
 /** A fresh install each time, for tests about the global count rather than one install's. */
 let installs = 0
 const fresh = () => `6f1c2b8e-3d4a-4b5c-9d6e-${String(++installs).padStart(12, '0')}`
@@ -45,7 +47,7 @@ const NONCE_E = Buffer.alloc(32, 7).toString('base64url')
 
 /** What the extension sends for `typed`: its nonce and its proof of the code. The server's answer. */
 async function typeCode(r: { requestId: string; code: string }, typed = r.code, origin = ORIGIN) {
-  return pairing.confirm(r.requestId, origin, NONCE_E, pairClientMac(await pairKey(typed, r.requestId), r.requestId, NONCE_E))
+  return pairing.confirm(r.requestId, origin, NONCE_E, pairClientMac(await pairKey(typed, r.requestId, SALT), r.requestId, NONCE_E))
 }
 const otherCode = (code: string) => (code === 'ZZZZ' ? 'YYYY' : 'ZZZZ')
 
@@ -203,7 +205,7 @@ describe('CompanionPairing', () => {
     // The server's proof: over both nonces, under the same K, a fresh nonce of its own.
     expect(got.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(got.nonce).not.toBe(NONCE_E)
-    expect(got.mac).toBe(pairServerMac(await pairKey(r.code, r.requestId), r.requestId, NONCE_E, got.nonce))
+    expect(got.mac).toBe(pairServerMac(await pairKey(r.code, r.requestId, SALT), r.requestId, NONCE_E, got.nonce))
     expect(pairing.pending()).toBeNull()
     expect(pairing.collect(r.requestId, ORIGIN)).toEqual({ state: 'expired' })
     expect(await typeCode(r)).toEqual({ state: 'expired' })
@@ -226,6 +228,14 @@ describe('CompanionPairing', () => {
     expect(ask()).toBe('cooldown')
   })
 
+  it('K is salted with the extension\'s salt: the same code and request id under another salt is wrong', async () => {
+    const r = accepted(ask())
+    const otherSalt = Buffer.alloc(32, 6).toString('base64url')
+    const mac = pairClientMac(await pairKey(r.code, r.requestId, otherSalt), r.requestId, NONCE_E)
+    expect(await pairing.confirm(r.requestId, ORIGIN, NONCE_E, mac)).toEqual({ state: 'wrong' })
+    expect((await typeCode(r)).state).toBe('paired')
+  })
+
   it('a garbage mac counts like a wrong code', async () => {
     const r = accepted(ask())
     expect(await pairing.confirm(r.requestId, ORIGIN, NONCE_E, 'A'.repeat(43))).toEqual({ state: 'wrong' })
@@ -235,16 +245,16 @@ describe('CompanionPairing', () => {
 
   it('a mac for another nonce or another request is wrong', async () => {
     const r = accepted(ask())
-    const key = await pairKey(r.code, r.requestId)
+    const key = await pairKey(r.code, r.requestId, SALT)
     const otherNonce = Buffer.alloc(32, 8).toString('base64url')
     expect(await pairing.confirm(r.requestId, ORIGIN, NONCE_E, pairClientMac(key, r.requestId, otherNonce))).toEqual({ state: 'wrong' })
-    expect(await pairing.confirm(r.requestId, ORIGIN, NONCE_E, pairClientMac(await pairKey(r.code, INSTALL), INSTALL, NONCE_E))).toEqual({ state: 'wrong' })
+    expect(await pairing.confirm(r.requestId, ORIGIN, NONCE_E, pairClientMac(await pairKey(r.code, INSTALL, SALT), INSTALL, NONCE_E))).toEqual({ state: 'wrong' })
     expect((await typeCode(r)).state).toBe('paired')
   })
 
   it('two right proofs racing pair once', async () => {
     const r = accepted(ask())
-    const mac = pairClientMac(await pairKey(r.code, r.requestId), r.requestId, NONCE_E)
+    const mac = pairClientMac(await pairKey(r.code, r.requestId, SALT), r.requestId, NONCE_E)
     const results = await Promise.all([pairing.confirm(r.requestId, ORIGIN, NONCE_E, mac), pairing.confirm(r.requestId, ORIGIN, NONCE_E, mac)])
     expect(results.map((x) => x.state).sort()).toEqual(['expired', 'paired'])
     expect(store.list()).toHaveLength(1)
@@ -311,14 +321,15 @@ describe('CompanionPairing', () => {
  */
 describe('the typed-code proof vector', () => {
   const requestId = '3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b'
+  const saltE = Buffer.alloc(32, 3).toString('base64url')
   const nonceE = Buffer.alloc(32, 1).toString('base64url')
   const nonceS = Buffer.alloc(32, 2).toString('base64url')
 
   it('pins K(code) and the client and server macs', async () => {
     expect(PAIR_KEY_ITERATIONS).toBe(600_000)
-    const key = await pairKey('K7QM', requestId)
-    expect(key.toString('hex')).toBe('a4cf5dbd6f76bcf8117a2098cfdd2aa40310b26b00d984e897968c829796b0b8')
-    expect(pairClientMac(key, requestId, nonceE)).toBe('KbDbFhseuugQot78I5ThFuaNIbfL-lsHInSWmcDFNNg')
-    expect(pairServerMac(key, requestId, nonceE, nonceS)).toBe('zmpz29L7bwyvBl7bCYR3wAVbWK86PKl4QGHYHj3cvak')
+    const key = await pairKey('K7QM', requestId, saltE)
+    expect(key.toString('hex')).toBe('d2251f020b5813c71915e6bd6a177c5b7084cb77191490652db6e5f75cddd07b')
+    expect(pairClientMac(key, requestId, nonceE)).toBe('_huEmBB_3xIIb2oMKwKocn07PmFRHCYoUnO7oEwq6sI')
+    expect(pairServerMac(key, requestId, nonceE, nonceS)).toBe('c_VTA4VlGyCivQazYRZc3wRYoM-V_6gvDOVq6zqnuho')
   })
 })

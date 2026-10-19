@@ -40,11 +40,15 @@ export function normalizeCode(typed) {
   return code.length === CODE_LENGTH && [...code].every((c) => ALPHABET.includes(c)) ? code : null
 }
 
-/** K(code) for one request: PBKDF2-SHA256, 32 bytes. */
-export async function pairKey(code, requestId, iterations = PAIR_KEY_ITERATIONS) {
+/**
+ * K(code) for one request: PBKDF2-SHA256, 32 bytes, salted with the request id and `saltE`, the
+ * extension's own random salt sent with the request (newNonce()): the id is the server's to pick,
+ * so without it a program holding the port could reuse one id and a table built once.
+ */
+export async function pairKey(code, requestId, saltE, iterations = PAIR_KEY_ITERATIONS) {
   const subtle = globalThis.crypto.subtle
   const base = await subtle.importKey('raw', utf8(code), 'PBKDF2', false, ['deriveBits'])
-  const bits = await subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: utf8(PAIR_SALT_PREFIX + requestId), iterations }, base, 256)
+  const bits = await subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: utf8(`${PAIR_SALT_PREFIX}${requestId}|${saltE}`), iterations }, base, 256)
   return new Uint8Array(bits)
 }
 
@@ -67,7 +71,7 @@ const B64_32 = /^[A-Za-z0-9_-]{43}$/
 const LATE = Symbol('late')
 
 /**
- * One try at the typed `code` for `requestId`. `post(step, body)` sends to
+ * One try at the typed `code` for `requestId`, whose K is salted with `salt` (the extension's). `post(step, body)` sends to
  * `/api/companion/pair/<requestId>/<step>` and resolves the JSON answer, or null. `now` and `wait`
  * are the clock and the timer, for tests.
  *
@@ -77,8 +81,8 @@ const LATE = Symbol('late')
  * `exhausted` (that wrong one was the last try), `refused` or `expired` as the server says, or
  * `failed`.
  */
-export async function confirmCode({ post, requestId, code, nonce = newNonce(), now = () => Date.now(), wait = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
-  const key = await pairKey(code, requestId)
+export async function confirmCode({ post, requestId, salt, code, nonce = newNonce(), now = () => Date.now(), wait = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  const key = await pairKey(code, requestId, salt)
   const mac = await pairClientMac(key, requestId, nonce)
   const sent = now()
   const answer = await Promise.race([post('confirm', { nonce, mac }), wait(PAIR_ANSWER_MS).then(() => LATE)])

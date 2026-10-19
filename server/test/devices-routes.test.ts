@@ -702,6 +702,7 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
 describe('browser extensions in the device list', () => {
   const ORIGIN = 'chrome-extension://lnckeodobpbbmfbdlpnegjpchgkehdlk'
   const INSTALL = '3a9c1d2e-5b6f-4a7b-8c9d-0e1f2a3b4c5d'
+  const SALT = Buffer.alloc(32, 5).toString('base64url')
   const HOST = '127.0.0.1:4242'
   let edir: string
   let eapp: FastifyInstance
@@ -711,13 +712,13 @@ describe('browser extensions in the device list', () => {
     const asked = await eapp.inject({
       method: 'POST', url: '/api/companion/pair',
       headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' },
-      payload: JSON.stringify({ name: 'Chrome', installId }),
+      payload: JSON.stringify({ name: 'Chrome', installId, salt: SALT }),
     })
     const { requestId } = asked.json()
     const status = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
     expect(status.companionRequest).toMatchObject({ requestId, name: 'Chrome' })
     // The user types the Edge's code into the extension, which proves it (companion/pairProof.ts).
-    const key = await pairKey(status.companionRequest.code, requestId)
+    const key = await pairKey(status.companionRequest.code, requestId, SALT)
     const nonce = Buffer.alloc(32, 3).toString('base64url')
     const step = (verb: string, body: unknown) => eapp.inject({
       method: 'POST', url: `/api/companion/pair/${requestId}/${verb}`,
@@ -752,7 +753,7 @@ describe('browser extensions in the device list', () => {
     const asked = await eapp.inject({
       method: 'POST', url: '/api/companion/pair',
       headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' },
-      payload: JSON.stringify({ name: 'Chrome', installId: INSTALL }),
+      payload: JSON.stringify({ name: 'Chrome', installId: INSTALL, salt: SALT }),
     })
     const { requestId } = asked.json()
     const waiting = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()

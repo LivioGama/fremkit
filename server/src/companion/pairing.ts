@@ -106,7 +106,8 @@ export class CompanionPairing {
     private readonly now: () => number = () => Date.now(),
   ) {}
 
-  request(input: { origin: string; name: string; installId: string }): { requestId: string; code: string; expiresAt: number } | RequestRefusal {
+  /** `salt`: the extension's random `saltE`, which salts K(code) with the request id (pairProof.ts). */
+  request(input: { origin: string; name: string; installId: string; salt: string }): { requestId: string; code: string; expiresAt: number } | RequestRefusal {
     const now = this.now()
     this.sweep(now)
     const refused = this.refusedAt.get(input.installId)
@@ -132,7 +133,7 @@ export class CompanionPairing {
     for (let i = 0; i < MATCH_CODE_LENGTH; i++) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]
     const requestId = randomUUID()
     // Started now, ready long before anybody has typed four characters (~50 ms here).
-    const key = pairKey(code, requestId)
+    const key = pairKey(code, requestId, input.salt)
     key.catch(() => { /* surfaces on `confirm` */ })
     const req: PairRequest = {
       requestId,

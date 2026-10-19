@@ -42,6 +42,8 @@ export const COMPANION_NAMES = ['Chrome', 'Microsoft Edge', 'Brave', 'Arc', 'Ope
 const PairSchema = z.strictObject({
   name: z.enum(COMPANION_NAMES),
   installId: z.uuid(),
+  /** 32 random bytes from the extension, salting K(code) (pairProof.ts). */
+  salt: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
 })
 
 /** The code the Edge or the admin showed when the user answered. */

@@ -41,7 +41,8 @@ let app: FastifyInstance
 const auth = { authorization: `Bearer ${SECRET}` }
 
 /** A new install by default: one install may ask three times a minute, and is held back after a refusal. */
-function pair(origin: string | undefined, body: unknown = { name: 'Chrome', installId: randomUUID() }) {
+const SALT = Buffer.alloc(32, 5).toString('base64url')
+function pair(origin: string | undefined, body: unknown = { name: 'Chrome', installId: randomUUID(), salt: SALT }) {
   return app.inject({
     method: 'POST',
     url: '/api/companion/pair',
@@ -82,7 +83,7 @@ const NONCE_E = Buffer.alloc(32, 9).toString('base64url')
 
 /** The extension's proof of `typed`; the server's response. */
 async function typeCode(requestId: string, typed: string) {
-  return step(requestId, 'confirm', { nonce: NONCE_E, mac: pairClientMac(await pairKey(typed, requestId), requestId, NONCE_E) })
+  return step(requestId, 'confirm', { nonce: NONCE_E, mac: pairClientMac(await pairKey(typed, requestId, SALT), requestId, NONCE_E) })
 }
 const SOME_MAC = 'A'.repeat(43)
 
@@ -159,21 +160,24 @@ describe('companion routes', () => {
     const res = await app.inject({
       method: 'POST', url: '/api/companion/pair',
       headers: { host: 'evil.example.com', origin: ORIGIN, 'content-type': 'application/json' },
-      payload: JSON.stringify({ name: 'Chrome', installId: INSTALL }),
+      payload: JSON.stringify({ name: 'Chrome', installId: INSTALL, salt: SALT }),
     })
     expect(res.statusCode).toBe(421)
   })
 
   it('pair refuses a bad body', async () => {
-    expect((await pair(ORIGIN, { name: '', installId: INSTALL })).statusCode).toBe(400)
-    expect((await pair(ORIGIN, { name: 'x'.repeat(61), installId: INSTALL })).statusCode).toBe(400)
-    expect((await pair(ORIGIN, { name: 'Chrome', installId: 'not-a-uuid' })).statusCode).toBe(400)
-    expect((await pair(ORIGIN, { name: 'Chrome', installId: INSTALL, extra: 1 })).statusCode).toBe(400)
+    expect((await pair(ORIGIN, { name: '', installId: INSTALL, salt: SALT })).statusCode).toBe(400)
+    expect((await pair(ORIGIN, { name: 'x'.repeat(61), installId: INSTALL, salt: SALT })).statusCode).toBe(400)
+    expect((await pair(ORIGIN, { name: 'Chrome', installId: 'not-a-uuid', salt: SALT })).statusCode).toBe(400)
+    expect((await pair(ORIGIN, { name: 'Chrome', installId: INSTALL, salt: SALT, extra: 1 })).statusCode).toBe(400)
+    // The extension's salt for K(code) is required, and is 32 bytes in base64url.
+    expect((await pair(ORIGIN, { name: 'Chrome', installId: INSTALL })).statusCode).toBe(400)
+    expect((await pair(ORIGIN, { name: 'Chrome', installId: INSTALL, salt: 'short' })).statusCode).toBe(400)
   })
 
   it('pair takes only a browser name from the closed list', async () => {
     for (const name of ['Approve this, it is safe', 'chrome', 'Firefox', 'Chrome ', 'Safari']) {
-      expect((await pair(ORIGIN, { name, installId: INSTALL })).statusCode).toBe(400)
+      expect((await pair(ORIGIN, { name, installId: INSTALL, salt: SALT })).statusCode).toBe(400)
     }
   })
 
@@ -208,7 +212,7 @@ describe('companion routes', () => {
     expect(got.headers['cache-control']).toBe('no-store')
     const paired = got.json()
     expect(paired).toMatchObject({ state: 'paired' })
-    expect(paired.mac).toBe(pairServerMac(await pairKey(code, requestId), requestId, NONCE_E, paired.nonce))
+    expect(paired.mac).toBe(pairServerMac(await pairKey(code, requestId, SALT), requestId, NONCE_E, paired.nonce))
     expect(app.pairing.store.findByToken(paired.token, 'extension')).toMatchObject({ id: paired.deviceId, origin: ORIGIN })
     expect((await collect(requestId)).json()).toEqual({ state: 'expired' })
     expect((await typeCode(requestId, code)).json()).toEqual({ state: 'expired' })
@@ -274,9 +278,9 @@ describe('companion routes', () => {
 
   it('a refusal for a request its install replaced since is 409', async () => {
     const installId = randomUUID()
-    const old = (await pair(ORIGIN, { name: 'Chrome', installId })).json()
+    const old = (await pair(ORIGIN, { name: 'Chrome', installId, salt: SALT })).json()
     const oldCode = await codeOf(old.requestId)
-    const now = (await pair(ORIGIN, { name: 'Chrome', installId })).json()
+    const now = (await pair(ORIGIN, { name: 'Chrome', installId, salt: SALT })).json()
     expect(now.requestId).not.toBe(old.requestId)
     expect((await answer(old.requestId, 'refuse', { code: oldCode })).statusCode).toBe(409)
     expect((await collect(now.requestId)).json()).toEqual({ state: 'pending' })
@@ -293,9 +297,9 @@ describe('companion routes', () => {
 
   it('an install refused a moment ago is 429 cooldown', async () => {
     const installId = randomUUID()
-    const r = (await pair(ORIGIN, { name: 'Microsoft Edge', installId })).json()
+    const r = (await pair(ORIGIN, { name: 'Microsoft Edge', installId, salt: SALT })).json()
     expect((await answer(r.requestId, 'refuse', { code: await codeOf(r.requestId) })).statusCode).toBe(200)
-    const res = await pair(ORIGIN, { name: 'Microsoft Edge', installId })
+    const res = await pair(ORIGIN, { name: 'Microsoft Edge', installId, salt: SALT })
     expect(res.statusCode).toBe(429)
     expect(res.json()).toEqual({ error: 'request refused: try again in a minute', reason: 'cooldown' })
   })
@@ -318,7 +322,7 @@ describe('companion routes', () => {
     const asked = await app.inject({
       method: 'POST', url: '/api/companion/pair', remoteAddress,
       headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' },
-      payload: JSON.stringify({ name: 'Chrome', installId: INSTALL }),
+      payload: JSON.stringify({ name: 'Chrome', installId: INSTALL, salt: SALT }),
     })
     expect(asked.statusCode).toBe(404)
     expect((await app.inject({ method: 'POST', url: '/api/companion/pair/x', remoteAddress, headers: { host: HOST, origin: ORIGIN } })).statusCode).toBe(404)
@@ -333,7 +337,7 @@ describe('companion routes', () => {
     const host = `example.local:${port}`
     // A Host the listener answers to, so the 404 is the route's and not the Host check's 421.
     app.pairing.setRemoteHosts(() => new Set([host]))
-    const body = JSON.stringify({ name: 'Chrome', installId: INSTALL })
+    const body = JSON.stringify({ name: 'Chrome', installId: INSTALL, salt: SALT })
     const res = await remote(port, { method: 'POST', path: '/api/companion/pair', host, headers: { 'content-type': 'application/json', origin: ORIGIN }, body })
     expect(res.status).toBe(404)
     expect((await remote(port, { method: 'POST', path: '/api/companion/pair/x', host, headers: { origin: ORIGIN } })).status).toBe(404)

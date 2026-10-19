@@ -290,9 +290,12 @@ the door is narrow.
 **Its credential.** An extension is linked by the code you type into it: it asks, the server shows
 a four-character code on the Edge and in the admin (never to the extension), and you type that code
 into the extension's popup. Typing it is the approval; there is no Allow. The code itself never
-travels. `K = PBKDF2-HMAC-SHA256(code, "fremkit-companion-pair-code-v1:" + request id, 600,000
-rounds)` (the iPad code proof's function and cost under its own salt;
-`server/src/companion/pairProof.ts`), which the server derives when the request is made. The
+travels. `K = PBKDF2-HMAC-SHA256(code, "fremkit-companion-pair-code-v1:" + request id + "|" +
+saltE, 600,000 rounds)` (the iPad code proof's function and cost under its own salt;
+`server/src/companion/pairProof.ts`), which the server derives when the request is made. `saltE` is
+32 random bytes the extension sends with its request: the request id is the server's to choose, so
+without the extension's own salt a program holding the port could hand out one fixed id, build the
+table of K for every code once, and answer any proof in time. The
 extension proves first: it sends a fresh nonce and `HMAC-SHA256(K, "fremkit-companion-pair-client-v1|"
 + request id | nonce)`. The server checks it in constant time; a wrong one counts, and the third
 refuses the request. A right one gets the server's proof back in the same answer, its own nonce and

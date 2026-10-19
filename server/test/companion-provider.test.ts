@@ -194,7 +194,7 @@ describe('companion provider', () => {
   it('the snapshot carries the pending pairing request', async () => {
     const { provider } = setup()
     expect((await provider.poll!()).pairing).toBeNull()
-    const r = pairing.request({ origin: ORIGIN, name: 'Chrome', installId: INSTALL })
+    const r = pairing.request({ origin: ORIGIN, name: 'Chrome', installId: INSTALL, salt: 'S'.repeat(43) })
     if (typeof r === 'string') throw new Error(r)
     const snap = await provider.poll!()
     expect(snap.pairing).toEqual({ requestId: r.requestId, code: r.code, name: 'Chrome', extension: 'lnckeo', expiresAt: r.expiresAt, turnedAway: 0 })
@@ -223,7 +223,7 @@ describe('createCompanion', () => {
   it('registers the provider and the routes', async () => {
     const { companion, registry } = await build()
     expect(registry.register).toHaveBeenCalledWith(companion.provider)
-    const res = await app.inject({ method: 'POST', url: '/api/companion/pair', headers: { origin: ORIGIN }, payload: { name: 'Chrome', installId: INSTALL } })
+    const res = await app.inject({ method: 'POST', url: '/api/companion/pair', headers: { origin: ORIGIN }, payload: { name: 'Chrome', installId: INSTALL, salt: 'S'.repeat(43) } })
     expect(res.statusCode).toBe(200)
     expect(companion.pairing.pending()?.name).toBe('Chrome')
   })
@@ -231,7 +231,7 @@ describe('createCompanion', () => {
   it('refreshes the channel on every state change', async () => {
     const { companion, registry } = await build()
     registry.refresh.mockClear()
-    companion.pairing.request({ origin: ORIGIN, name: 'Chrome', installId: INSTALL })
+    companion.pairing.request({ origin: ORIGIN, name: 'Chrome', installId: INSTALL, salt: 'S'.repeat(43) })
     expect(registry.refresh).toHaveBeenCalledWith('companion')
 
     registry.refresh.mockClear()
@@ -266,7 +266,7 @@ describe('createCompanion', () => {
     await app.close()
     registry.refresh.mockClear()
     await store.createExtension({ name: 'Chrome', origin: ORIGIN, installId: INSTALL })
-    companion.pairing.request({ origin: ORIGIN, name: 'Chrome', installId: INSTALL })
+    companion.pairing.request({ origin: ORIGIN, name: 'Chrome', installId: INSTALL, salt: 'S'.repeat(43) })
     expect(registry.refresh).not.toHaveBeenCalled()
   })
 })
