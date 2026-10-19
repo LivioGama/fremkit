@@ -10,6 +10,14 @@ Anything that changes what the dashboard, the admin or a widget can do gets a li
 (`package.json`, `server/package.json`, `ui/package.json`, `server/src/version.ts`) and is
 tagged `vX.Y.Z`.
 
+## Unreleased
+
+### Added
+
+- **Recent Projects.** Remembers canonical working directories reported by Herdr panes and opens a
+  selected folder in a new pane, optionally starting Claude Code or Codex from a known executable
+  location.
+
 ## 0.5.0 — 2026-10-19
 
 ### Added
