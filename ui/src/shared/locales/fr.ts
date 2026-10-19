@@ -556,6 +556,8 @@ export const fr: Record<string, string> = {
   'admin.devices.extension.request': 'Une extension de navigateur veut se connecter',
   'admin.devices.extension.typeCode': 'Tapez ce code dans votre navigateur',
   'admin.devices.extension.id': 'extension {id}…',
+  'admin.devices.extension.locked': 'Appairage bloqué après trop de codes faux. Un navigateur que vous n’avez pas appairé a peut-être tenté sa chance ; ne débloquez que si les essais venaient de vous.',
+  'admin.devices.extension.unlock': 'Débloquer l’appairage',
   'admin.devices.extension.refuse': 'Refuser',
   'admin.devices.extension.name': 'Nom de l’extension',
   'admin.devices.extension.connected': 'connecté',

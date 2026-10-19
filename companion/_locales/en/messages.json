@@ -174,6 +174,12 @@
   "pairExhausted": {
     "message": "Too many tries: request refused. Connect again for a new code."
   },
+  "pairLocked": {
+    "message": "Pairing locked after too many wrong codes. Unlock it in Settings → Devices."
+  },
+  "pairDisabled": {
+    "message": "Turn the companion on in Fremkit's experimental features."
+  },
   "pairUnreachable": {
     "message": "Fremkit is not answering on this Mac. Is it running?"
   },

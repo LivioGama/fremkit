@@ -195,6 +195,12 @@ async function onCreated(screenId: string): Promise<void> {
 
     <section v-if="extensionsShown" class="extensions" data-test="extensions">
       <h4>{{ t('admin.devices.extensions') }}</h4>
+      <div v-if="status?.companionLocked" class="request" role="alert" data-test="companion-locked">
+        <p class="ask">{{ t('admin.devices.extension.locked') }}</p>
+        <div class="row">
+          <BaseButton variant="primary" data-test="companion-unlock" @click="devices.unlockCompanion()">{{ t('admin.devices.extension.unlock') }}</BaseButton>
+        </div>
+      </div>
       <div v-if="request" class="request" role="alertdialog" data-test="companion-request">
         <p class="ask">{{ t('admin.devices.extension.request') }}</p>
         <p class="rname" data-test="request-name">{{ request.name }}</p>

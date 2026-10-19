@@ -130,11 +130,13 @@ async function pair() {
   } catch {
     return saveLocal({ pairError: 'unreachable' })
   }
-  // 409: another extension's request waits on the Edge; 429: too many, or refused a moment ago.
-  if (res.status === 409 || res.status === 429) {
+  // 409: another extension's request waits on the Edge, or the companion is off in Fremkit;
+  // 423: pairing locked after too many wrong codes; 429: too many, or refused a moment ago.
+  if (res.status === 409 || res.status === 423 || res.status === 429) {
     const reason = (await res.json().catch(() => null))?.reason
-    const known = res.status === 409 ? ['busy'] : ['limited', 'cooldown']
-    return saveLocal({ pairError: known.includes(reason) ? reason : res.status === 409 ? 'busy' : 'limited' })
+    const known = { 409: ['busy', 'disabled'], 423: ['locked'], 429: ['limited', 'cooldown'] }[res.status]
+    const fallback = { 409: 'busy', 423: 'locked', 429: 'limited' }[res.status]
+    return saveLocal({ pairError: known.includes(reason) ? reason : fallback })
   }
   const body = res.ok ? await res.json().catch(() => null) : null
   // The code is not in the answer: it shows on the Edge only, and the user types it here

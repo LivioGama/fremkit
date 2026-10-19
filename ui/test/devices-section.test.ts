@@ -29,6 +29,7 @@ const deviceApi = vi.hoisted(() => ({
   newPairingCode: vi.fn(),
   patchDevice: vi.fn(),
   refuseCompanion: vi.fn(),
+  unlockCompanion: vi.fn(),
   deleteDevice: vi.fn(),
   deleteAllDevices: vi.fn(),
   resetDeviceCertificate: vi.fn(),
@@ -256,6 +257,20 @@ describe('the devices section', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="request-extension"]').text()).toBe('extension abcdef…')
     expect(wrapper.find('[data-test="extension-id"]').text()).toBe('extension lnckeo…')
+    wrapper.unmount()
+  })
+
+  it('offers Unlock pairing while pairing is locked, and calls it', async () => {
+    deviceApi.getDevices.mockResolvedValue(status({ devices: [extension()], companionLocked: true }))
+    deviceApi.unlockCompanion.mockResolvedValue(undefined)
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="companion-locked"]').text()).toContain('Pairing locked after too many wrong codes')
+    deviceApi.getDevices.mockResolvedValue(status({ devices: [extension()], companionLocked: false }))
+    await wrapper.find('[data-test="companion-unlock"]').trigger('click')
+    await flushPromises()
+    expect(deviceApi.unlockCompanion).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-test="companion-locked"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

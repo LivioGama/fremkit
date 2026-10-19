@@ -102,6 +102,8 @@ export interface DeviceStatus {
   devices: PublicDevice[]
   /** A browser extension waiting for an answer (the Edge shows it too); never carries a token. */
   companionRequest: CompanionRequest | null
+  /** Extension pairing locked after too many wrong codes, until unlocked in Devices. */
+  companionLocked?: boolean
 }
 /** `extension`: the first characters of the asking extension's id, to tell it from another. */
 export interface CompanionRequest { requestId: string; code: string; name: string; extension?: string; expiresAt: number }
@@ -298,6 +300,8 @@ export const api = {
    * server answers 409 when that is no longer the waiting request's code. There is no approve:
    * typing the code into the extension is the approval.
    */
+  /** Settings → Devices' Unlock pairing, after too many wrong codes locked it. */
+  unlockCompanion: () => fetch('/api/companion/unlock', { method: 'POST' }).then(empty),
   refuseCompanion: (requestId: string, code: string) =>
     fetch(`/api/companion/requests/${encodeURIComponent(requestId)}/refuse`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }),

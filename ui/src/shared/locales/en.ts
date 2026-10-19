@@ -556,6 +556,8 @@ export const en: Record<string, string> = {
   'admin.devices.extension.request': 'A browser extension wants to connect',
   'admin.devices.extension.typeCode': 'Type this code in your browser',
   'admin.devices.extension.id': 'extension {id}…',
+  'admin.devices.extension.locked': 'Pairing locked after too many wrong codes. A browser you did not pair may have been guessing; unlock only if the tries were yours.',
+  'admin.devices.extension.unlock': 'Unlock pairing',
   'admin.devices.extension.refuse': 'Refuse',
   'admin.devices.extension.name': 'Extension name',
   'admin.devices.extension.connected': 'connected',

@@ -13,7 +13,7 @@ import { api, type DeviceStatus, type PairingOffer, type PublicDevice, type Publ
 export const DEVICES_POLL_MS = 3000
 
 export type DevicesApi = Pick<typeof api,
-  'getDevices' | 'setDevicesEnabled' | 'newPairingCode' | 'patchDevice' | 'refuseCompanion' | 'deleteDevice' | 'deleteAllDevices' | 'resetDeviceCertificate'>
+  'getDevices' | 'setDevicesEnabled' | 'newPairingCode' | 'patchDevice' | 'refuseCompanion' | 'unlockCompanion' | 'deleteDevice' | 'deleteAllDevices' | 'resetDeviceCertificate'>
 
 export interface Devices {
   /** The last status read; null until the first answer. */
@@ -37,6 +37,8 @@ export interface Devices {
   rename(id: string, name: string): Promise<void>
   /** Refuses the browser extension's pairing request waiting on the Edge and here. */
   refuseCompanion(request: { requestId: string; code: string }): Promise<void>
+  /** Opens extension pairing again after too many wrong codes locked it. */
+  unlockCompanion(): Promise<void>
   remove(id: string): Promise<void>
   removeAll(): Promise<void>
   resetCertificate(): Promise<void>
@@ -108,6 +110,10 @@ export function createDevices(deviceApi: DevicesApi, pollMs = DEVICES_POLL_MS): 
     },
     async refuseCompanion({ requestId, code }) {
       await run(() => deviceApi.refuseCompanion(requestId, code))
+      await refresh()
+    },
+    async unlockCompanion() {
+      await run(() => deviceApi.unlockCompanion())
       await refresh()
     },
     async remove(id) {
