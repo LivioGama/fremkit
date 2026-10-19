@@ -32,6 +32,20 @@ export const SECRET_MIN_LENGTH = 32
  */
 export const SECRET_TOKEN_MIN_LENGTH = 8
 
+/**
+ * A one-time code copied on its own: four to eight digits, or two groups of three or four split by
+ * one space or dash (`482913`, `482 913`, `4829-1375`), and nothing else in the text.
+ *
+ * Every other rule starts at eight characters, so a six-digit code from an SMS or an
+ * authenticator went up on the Edge in full, stayed in the history and reached a paired iPad.
+ *
+ * The trade-off: a bare number of that size copied alone — a year, a postcode, an extension — is
+ * masked too, and stays copyable. Anything around the digits (`Meeting at 2026`), a phone number
+ * (more digits, more groups) and a lopsided split (`4 82913`) are left alone: masking every number
+ * in a clipboard would hide much more than it protects.
+ */
+const ONE_TIME_CODE = /^(\d{4,8}|\d{3,4}[ -]\d{3,4})$/
+
 /** Substrings that mark a text as a secret whatever its shape. Matched case-insensitively. */
 const SECRET_MARKERS = ['password', 'mot de passe', 'secret', 'bearer', 'private key', 'sk-', 'ghp_', 'github_pat_', 'xoxb-', 'api key', 'apikey']
 
@@ -149,9 +163,10 @@ export function capText(text: string): string {
 /**
  * Whether a text is treated as a secret.
  *
- * Three ways in: it names one outright, it is a long unbroken run (an API key), or it is a
- * shorter unbroken run mixing character classes — which is what an ordinary password looks like,
- * and what the length rule alone used to publish in full onto a screen on a desk.
+ * Four ways in: it names one outright, it is a one-time code (`ONE_TIME_CODE`), it is a long
+ * unbroken run (an API key), or it is a shorter unbroken run mixing character classes — which is
+ * what an ordinary password looks like, and what the length rule alone used to publish in full
+ * onto a screen on a desk.
  *
  * Deliberately generous: a false positive costs the user a preview they can still copy, a false
  * negative puts their password on the wall. Anything with whitespace in it is prose and is left
@@ -161,6 +176,8 @@ export function isSecret(text: string): boolean {
   const trimmed = text.trim()
   const lower = trimmed.toLowerCase()
   if (SECRET_MARKERS.some((marker) => lower.includes(marker))) return true
+  // Before the whitespace rule: `482 913` is a code, not prose.
+  if (ONE_TIME_CODE.test(trimmed)) return true
   if (/\s/.test(trimmed)) return false
   if (trimmed.length >= SECRET_MIN_LENGTH) return true
   if (trimmed.length < SECRET_TOKEN_MIN_LENGTH) return false
