@@ -132,7 +132,7 @@ export function isPublicRoute(method: string, routeUrl: string | undefined): boo
  *
  * An extension cannot read a file only this user can read, so it pairs instead: it asks
  * (`POST /api/companion/pair`), the Edge shows a code, the user types it into the extension, which
- * proves it (`…/:requestId/confirm`, `…/:requestId/finish`, the latter handing out the token) and
+ * proves it (`…/:requestId/confirm`, answered with the server's proof and the token) and
  * watches for a refusal (`POST /api/companion/pair/:requestId`); the socket (`/companion/ws`) then
  * asks for the token. Each of these checks the extension's origin itself, and the Host check still
  * applies. They are POSTs because Chrome sends no `Origin` on an extension's GET to a host it holds
@@ -145,7 +145,6 @@ export const COMPANION_ROUTES: ReadonlySet<string> = new Set([
   'POST /api/companion/pair',
   'POST /api/companion/pair/:requestId',
   'POST /api/companion/pair/:requestId/confirm',
-  'POST /api/companion/pair/:requestId/finish',
   'GET /companion/ws',
 ])
 

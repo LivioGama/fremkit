@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { PAIR_CLIENT_LABEL, pairKey, pairMac } from '../src/companion/pairProof.js'
+import { pairClientMac, pairKey } from '../src/companion/pairProof.js'
 import { CONFIG_VERSION, ConfigSchema } from '../src/config/schema.js'
 import { BrightnessService } from '../src/brightness/service.js'
 import { noAdvertise, type Advertiser } from '../src/devices/bonjour.js'
@@ -723,8 +723,7 @@ describe('browser extensions in the device list', () => {
       method: 'POST', url: `/api/companion/pair/${requestId}/${verb}`,
       headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' }, payload: JSON.stringify(body),
     })
-    const confirmed = (await step('confirm', { nonce })).json()
-    const paired = (await step('finish', { mac: pairMac(key, PAIR_CLIENT_LABEL, requestId, nonce, confirmed.nonce) })).json()
+    const paired = (await step('confirm', { nonce, mac: pairClientMac(key, requestId, nonce) })).json()
     expect(paired.state).toBe('paired')
     return { requestId, deviceId: paired.deviceId }
   }

@@ -1,13 +1,13 @@
 import { randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import { CODE_ALPHABET } from '../devices/codes.js'
 import type { DeviceStore } from '../devices/store.js'
-import { PAIR_CLIENT_LABEL, PAIR_SERVER_LABEL, pairKey, pairMac, sameMac } from './pairProof.js'
+import { pairClientMac, pairKey, pairServerMac, sameMac } from './pairProof.js'
 import { shortExtensionId } from './protocol.js'
 
 /** Short enough to type from the Edge at a glance. */
 export const MATCH_CODE_LENGTH = 4
-/** Confirmations one request gets, and failed ones it survives: three tries at the code. */
-export const MAX_CONFIRMATIONS = 3
+/** Wrong codes one request survives: the third refuses it. */
+export const MAX_WRONG_CODES = 3
 export const REQUEST_TTL_MS = 120_000
 /** Requests accepted per minute, from every extension together. */
 export const MAX_REQUESTS_PER_MINUTE = 5
@@ -37,16 +37,14 @@ export type AnswerResult = 'ok' | 'notFound' | 'changed'
 
 export type CollectResult = { state: 'pending' | 'refused' | 'expired' }
 
-/** The server's half of a confirmation (see pairProof.ts), or why there is none. */
-export type ConfirmResult = { state: 'confirm'; nonce: string; mac: string } | { state: 'refused' | 'expired' }
-
 /**
- * `paired` with the token, once; `wrong` when the extension's mac was not the code's (or it gave up
- * after the server's did not match the code typed); `noConfirm` when no confirmation is live.
+ * The answer to the extension's proof of the code (see pairProof.ts): `paired` with the server's
+ * own proof and the token, once; `wrong` when its mac is not the code's; `exhausted` when that
+ * wrong one was the last try, which refuses the request.
  */
-export type FinishResult =
-  | { state: 'paired'; token: string; deviceId: string }
-  | { state: 'wrong' | 'refused' | 'expired' | 'noConfirm' }
+export type ConfirmResult =
+  | { state: 'paired'; nonce: string; mac: string; token: string; deviceId: string }
+  | { state: 'wrong' | 'exhausted' | 'refused' | 'expired' }
 
 interface PairRequest {
   requestId: string
@@ -57,12 +55,9 @@ interface PairRequest {
   expiresAt: number
   /** `pairing` while the device record is being written; the extension is told `pending`. */
   state: 'pending' | 'pairing' | 'refused'
-  /** K(code), derived once on the first confirmation. */
-  key?: Promise<Buffer>
-  /** The one confirmation in flight: a new one replaces it. */
-  live: { nonceE: string; nonceS: string } | null
-  confirmations: number
-  failures: number
+  /** K(code), derived when the request is made, so the proof is answered at once. */
+  key: Promise<Buffer>
+  wrong: number
 }
 
 /**
@@ -72,8 +67,8 @@ interface PairRequest {
  * the same install replaces it (the extension asking again after its popup reopened), one from any
  * other install is turned away as `busy` until the waiting one is answered or expires. The code is
  * shown on the Edge and in the admin, never sent to the extension: the user types it there, and
- * that is the approval. The extension then confirms it (`confirm`, `finish`, see pairProof.ts) and
- * gets its token from `finish`. Three tries at the code, and the request is refused. Refusing on
+ * that is the approval. The extension then proves it (`confirm`, see pairProof.ts) and gets its
+ * token in the answer. Three wrong codes, and the request is refused. Refusing on
  * the Edge names the code it was shown for, so a request swapped in after the user read the code
  * is never the one refused; a refused request is kept until it expires, two minutes after it was
  * made, so the extension can collect the answer.
@@ -135,17 +130,20 @@ export class CompanionPairing {
     if (waiting) this.requests.delete(waiting.requestId)
     let code = ''
     for (let i = 0; i < MATCH_CODE_LENGTH; i++) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]
+    const requestId = randomUUID()
+    // Started now, ready long before anybody has typed four characters (~50 ms here).
+    const key = pairKey(code, requestId)
+    key.catch(() => { /* surfaces on `confirm` */ })
     const req: PairRequest = {
-      requestId: randomUUID(),
+      requestId,
       code,
       name: input.name,
       origin: input.origin,
       installId: input.installId,
       expiresAt: now + REQUEST_TTL_MS,
       state: 'pending',
-      live: null,
-      confirmations: 0,
-      failures: 0,
+      key,
+      wrong: 0,
     }
     this.requests.set(req.requestId, req)
     this.waiting = req.requestId
@@ -169,60 +167,38 @@ export class CompanionPairing {
   }
 
   /**
-   * The server's half of a confirmation for the extension that made the request: a fresh nonce and
-   * `macS` over the extension's `nonceE`. It replaces any confirmation in flight, and counts: past
-   * `MAX_CONFIRMATIONS`, the request is refused.
+   * The extension's proof that the user typed the Edge's code: `macE` over the request id and its
+   * nonce, under K(code). The client proves first, so whatever made the request learns only
+   * whether its guess was right: one online guess per try, three tries. A right one pairs the
+   * extension and answers the server's own proof, `macS` over both nonces, with the token; the
+   * extension takes the token only if that proof checks and came back within two seconds.
    */
-  async confirm(requestId: string, origin: string, nonceE: string): Promise<ConfirmResult> {
+  async confirm(requestId: string, origin: string, nonceE: string, macE: string): Promise<ConfirmResult> {
     this.sweep(this.now())
     const req = this.requests.get(requestId)
     if (!req || req.origin !== origin) return { state: req ? 'refused' : 'expired' }
     if (req.state !== 'pending') return { state: req.state === 'refused' ? 'refused' : 'expired' }
-    if (req.confirmations >= MAX_CONFIRMATIONS) {
-      this.kill(req)
-      return { state: 'refused' }
-    }
-    req.confirmations += 1
-    const nonceS = randomBytes(32).toString('base64url')
-    req.live = { nonceE, nonceS }
-    req.key ??= pairKey(req.code, req.requestId)
     const key = await req.key
-    if ((req.state as PairRequest['state']) !== 'pending') return { state: 'refused' }
-    return { state: 'confirm', nonce: nonceS, mac: pairMac(key, PAIR_SERVER_LABEL, requestId, nonceE, nonceS) }
-  }
-
-  /**
-   * The extension's half: `mac` is its `macE` for the live confirmation, null when it gives up
-   * because the server's mac did not match the code typed. A right one pairs the extension and
-   * hands out its token, once; a wrong one or a give-up counts, and the third refuses the request.
-   */
-  async finish(requestId: string, origin: string, mac: string | null): Promise<FinishResult> {
-    this.sweep(this.now())
-    const req = this.requests.get(requestId)
-    if (!req || req.origin !== origin) return { state: req ? 'refused' : 'expired' }
-    if (req.state !== 'pending') return { state: req.state === 'refused' ? 'refused' : 'expired' }
-    const live = req.live
-    if (live === null || req.key === undefined) return { state: 'noConfirm' }
-    // Taken off first: a confirmation is answered once, and a second finish racing this one finds none.
-    req.live = null
-    const key = await req.key
-    if ((req.state as PairRequest['state']) !== 'pending') return { state: 'refused' }
-    const right = mac !== null && sameMac(mac, pairMac(key, PAIR_CLIENT_LABEL, requestId, live.nonceE, live.nonceS))
-    if (!right) {
-      req.failures += 1
-      if (req.failures >= MAX_CONFIRMATIONS) {
+    // Refused, or paired by a proof that got here first, while K was read.
+    const now = req.state as PairRequest['state']
+    if (now !== 'pending') return { state: now === 'refused' ? 'refused' : 'expired' }
+    if (!sameMac(macE, pairClientMac(key, requestId, nonceE))) {
+      req.wrong += 1
+      if (req.wrong >= MAX_WRONG_CODES) {
         this.kill(req)
-        return { state: 'refused' }
+        return { state: 'exhausted' }
       }
       return { state: 'wrong' }
     }
-    // Off the waiting slot before the record is written, so a refuse cannot race this one.
+    // Off the waiting slot before the record is written, so neither a refuse nor a second right
+    // proof can race this one.
     req.state = 'pairing'
     this.waiting = null
     this.turnedAway = new Set()
     try {
       const { device, token } = await this.store.createExtension({ name: req.name, origin: req.origin, installId: req.installId })
-      return { state: 'paired', token, deviceId: device.id }
+      const nonceS = randomBytes(32).toString('base64url')
+      return { state: 'paired', nonce: nonceS, mac: pairServerMac(key, requestId, nonceE, nonceS), token, deviceId: device.id }
     } finally {
       this.requests.delete(requestId)
       this.changed()
@@ -241,7 +217,6 @@ export class CompanionPairing {
   /** Refuses a request: the Edge's Refuse, or the code tried too often. Its install waits a minute. */
   private kill(req: PairRequest): void {
     req.state = 'refused'
-    req.live = null
     if (this.waiting === req.requestId) {
       this.waiting = null
       this.idleSince = this.now()
@@ -292,7 +267,7 @@ export class CompanionPairing {
   private sweep(now: number): void {
     let dropped = false
     for (const [id, req] of this.requests) {
-      // A pairing still writing its record is left alone: `finish` drops it once written.
+      // A pairing still writing its record is left alone: `confirm` drops it once written.
       if (req.state !== 'pairing' && now >= req.expiresAt) {
         this.requests.delete(id)
         if (this.waiting === id) {

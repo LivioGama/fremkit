@@ -9,7 +9,7 @@ import { CONFIG_VERSION } from '../src/config/schema.js'
 import { noAdvertise } from '../src/devices/bonjour.js'
 import { generateToken, isPublicRoute, isCompanionRoute } from '../src/http/access.js'
 import { execFileAsync, type Exec } from '../src/secrets/keychain.js'
-import { PAIR_CLIENT_LABEL, PAIR_SERVER_LABEL, pairKey, pairMac } from '../src/companion/pairProof.js'
+import { pairClientMac, pairKey, pairServerMac } from '../src/companion/pairProof.js'
 import { hasOpenssl, remote } from './helpers/remote.js'
 
 const SECRET = generateToken()
@@ -62,7 +62,7 @@ function collect(requestId: string, origin: string | null = ORIGIN) {
   return app.inject({ method: 'POST', url: `/api/companion/pair/${requestId}`, headers: { host: HOST, ...(origin ? { origin } : {}) } })
 }
 
-function step(requestId: string, verb: 'confirm' | 'finish', body: unknown, origin: string | null = ORIGIN) {
+function step(requestId: string, verb: 'confirm', body: unknown, origin: string | null = ORIGIN) {
   return app.inject({
     method: 'POST', url: `/api/companion/pair/${requestId}/${verb}`,
     headers: { host: HOST, 'content-type': 'application/json', ...(origin ? { origin } : {}) },
@@ -80,22 +80,18 @@ async function codeOf(requestId: string): Promise<string> {
 
 const NONCE_E = Buffer.alloc(32, 9).toString('base64url')
 
-/** The extension's whole confirmation with `typed`; the finish's response. */
+/** The extension's proof of `typed`; the server's response. */
 async function typeCode(requestId: string, typed: string) {
-  const c = await step(requestId, 'confirm', { nonce: NONCE_E })
-  const { nonce, mac } = c.json()
-  const key = await pairKey(typed, requestId)
-  if (mac !== pairMac(key, PAIR_SERVER_LABEL, requestId, NONCE_E, nonce)) return step(requestId, 'finish', { abandon: true })
-  return step(requestId, 'finish', { mac: pairMac(key, PAIR_CLIENT_LABEL, requestId, NONCE_E, nonce) })
+  return step(requestId, 'confirm', { nonce: NONCE_E, mac: pairClientMac(await pairKey(typed, requestId), requestId, NONCE_E) })
 }
+const SOME_MAC = 'A'.repeat(43)
 
 describe('isCompanionRoute', () => {
   it('lists the routes the extension reaches without the access secret, by method', () => {
     expect(isCompanionRoute('POST', '/api/companion/pair')).toBe(true)
     expect(isCompanionRoute('post', '/api/companion/pair/:requestId')).toBe(true)
     expect(isCompanionRoute('POST', '/api/companion/pair/:requestId/confirm')).toBe(true)
-    expect(isCompanionRoute('POST', '/api/companion/pair/:requestId/finish')).toBe(true)
-    expect(isCompanionRoute('GET', '/api/companion/pair/:requestId/finish')).toBe(false)
+    expect(isCompanionRoute('GET', '/api/companion/pair/:requestId/confirm')).toBe(false)
     expect(isCompanionRoute('GET', '/companion/ws')).toBe(true)
     expect(isCompanionRoute('GET', '/api/companion/pair')).toBe(false)
     // A GET would arrive without the extension's Origin: Chrome leaves it off.
@@ -142,12 +138,11 @@ describe('companion routes', () => {
     expect((await pair(`chrome-extension://${'q'.repeat(32)}`)).statusCode).toBe(403)
   })
 
-  it('pair, collect, confirm and finish are 403 to an extension that is not Companion nor listed', async () => {
+  it('pair, collect and confirm are 403 to an extension that is not Companion nor listed', async () => {
     expect((await pair(STRANGER)).statusCode).toBe(403)
     const { requestId } = (await pair(ORIGIN)).json()
     expect((await collect(requestId, STRANGER)).statusCode).toBe(403)
-    expect((await step(requestId, 'confirm', { nonce: NONCE_E }, STRANGER)).statusCode).toBe(403)
-    expect((await step(requestId, 'finish', { abandon: true }, STRANGER)).statusCode).toBe(403)
+    expect((await step(requestId, 'confirm', { nonce: NONCE_E, mac: SOME_MAC }, STRANGER)).statusCode).toBe(403)
     // A listed one is let in like Companion (it is turned away as busy, which only a let-in origin hears).
     expect((await pair(OTHER)).statusCode).toBe(409)
     expect((await answer(requestId, 'refuse', { code: await codeOf(requestId) })).statusCode).toBe(200)
@@ -213,9 +208,10 @@ describe('companion routes', () => {
     expect(got.headers['cache-control']).toBe('no-store')
     const paired = got.json()
     expect(paired).toMatchObject({ state: 'paired' })
+    expect(paired.mac).toBe(pairServerMac(await pairKey(code, requestId), requestId, NONCE_E, paired.nonce))
     expect(app.pairing.store.findByToken(paired.token, 'extension')).toMatchObject({ id: paired.deviceId, origin: ORIGIN })
     expect((await collect(requestId)).json()).toEqual({ state: 'expired' })
-    expect((await step(requestId, 'confirm', { nonce: NONCE_E })).json()).toEqual({ state: 'expired' })
+    expect((await typeCode(requestId, code)).json()).toEqual({ state: 'expired' })
   })
 
   it('a wrong code is wrong twice, and refused the third time', async () => {
@@ -224,30 +220,26 @@ describe('companion routes', () => {
     const other = code === 'ZZZZ' ? 'YYYY' : 'ZZZZ'
     expect((await typeCode(requestId, other)).json()).toEqual({ state: 'wrong' })
     expect((await typeCode(requestId, other)).json()).toEqual({ state: 'wrong' })
-    expect((await typeCode(requestId, other)).json()).toEqual({ state: 'refused' })
+    expect((await typeCode(requestId, other)).json()).toEqual({ state: 'exhausted' })
     expect((await collect(requestId)).json()).toEqual({ state: 'refused' })
   })
 
-  it('confirm and finish check the origin and the body', async () => {
+  it('confirm checks the origin and the body', async () => {
     const { requestId } = (await pair(ORIGIN)).json()
-    expect((await step(requestId, 'confirm', { nonce: NONCE_E }, null)).statusCode).toBe(403)
-    expect((await step(requestId, 'confirm', { nonce: NONCE_E }, OTHER)).statusCode).toBe(403)
-    expect((await step(requestId, 'finish', { abandon: true }, OTHER)).statusCode).toBe(403)
-    for (const body of [{}, { nonce: 'short' }, { nonce: NONCE_E, extra: 1 }]) {
+    expect((await step(requestId, 'confirm', { nonce: NONCE_E, mac: SOME_MAC }, null)).statusCode).toBe(403)
+    expect((await step(requestId, 'confirm', { nonce: NONCE_E, mac: SOME_MAC }, OTHER)).statusCode).toBe(403)
+    for (const body of [{}, { nonce: NONCE_E }, { mac: SOME_MAC }, { nonce: 'short', mac: SOME_MAC }, { nonce: NONCE_E, mac: 'short' }, { nonce: NONCE_E, mac: SOME_MAC, extra: 1 }]) {
       expect((await step(requestId, 'confirm', body)).statusCode).toBe(400)
     }
-    for (const body of [{}, { mac: 'short' }, { abandon: false }, { mac: NONCE_E, abandon: true }]) {
-      expect((await step(requestId, 'finish', body)).statusCode).toBe(400)
-    }
-    // A finish before any confirmation answers nothing.
-    expect((await step(requestId, 'finish', { mac: NONCE_E })).statusCode).toBe(409)
-    expect((await step('not-a-uuid', 'confirm', { nonce: NONCE_E })).json()).toEqual({ state: 'expired' })
+    // None of those counted: three wrong codes are still allowed.
+    expect((await step(requestId, 'confirm', { nonce: NONCE_E, mac: SOME_MAC })).json()).toEqual({ state: 'wrong' })
+    expect((await step('not-a-uuid', 'confirm', { nonce: NONCE_E, mac: SOME_MAC })).json()).toEqual({ state: 'expired' })
     expect((await answer(requestId, 'refuse', { code: await codeOf(requestId) })).statusCode).toBe(200)
   })
 
   it('a GET on the extension routes never answers', async () => {
     const { requestId } = (await pair(ORIGIN)).json()
-    for (const url of [`/api/companion/pair/${requestId}`, `/api/companion/pair/${requestId}/confirm`, `/api/companion/pair/${requestId}/finish`]) {
+    for (const url of [`/api/companion/pair/${requestId}`, `/api/companion/pair/${requestId}/confirm`]) {
       for (const headers of [{ host: HOST, origin: ORIGIN }, { host: HOST, origin: ORIGIN, ...auth }]) {
         const res = await app.inject({ method: 'GET', url, headers })
         expect([401, 404, 405]).toContain(res.statusCode)
@@ -331,7 +323,6 @@ describe('companion routes', () => {
     expect(asked.statusCode).toBe(404)
     expect((await app.inject({ method: 'POST', url: '/api/companion/pair/x', remoteAddress, headers: { host: HOST, origin: ORIGIN } })).statusCode).toBe(404)
     expect((await app.inject({ method: 'POST', url: '/api/companion/pair/x/confirm', remoteAddress, headers: { host: HOST, origin: ORIGIN } })).statusCode).toBe(404)
-    expect((await app.inject({ method: 'POST', url: '/api/companion/pair/x/finish', remoteAddress, headers: { host: HOST, origin: ORIGIN } })).statusCode).toBe(404)
     expect((await app.inject({ method: 'POST', url: '/api/companion/requests/x/refuse', remoteAddress, headers: { host: HOST, ...auth }, payload: { code: 'AAAA' } })).statusCode).toBe(404)
   })
 
@@ -347,7 +338,6 @@ describe('companion routes', () => {
     expect(res.status).toBe(404)
     expect((await remote(port, { method: 'POST', path: '/api/companion/pair/x', host, headers: { origin: ORIGIN } })).status).toBe(404)
     expect((await remote(port, { method: 'POST', path: '/api/companion/pair/x/confirm', host, headers: { origin: ORIGIN } })).status).toBe(404)
-    expect((await remote(port, { method: 'POST', path: '/api/companion/pair/x/finish', host, headers: { origin: ORIGIN } })).status).toBe(404)
     expect((await remote(port, { method: 'POST', path: '/api/companion/requests/x/refuse', host })).status).toBe(404)
     const off = await app.inject({ method: 'PUT', url: '/api/devices/settings', headers: { host: HOST, ...auth }, payload: { enabled: false } })
     expect(off.statusCode).toBe(200)

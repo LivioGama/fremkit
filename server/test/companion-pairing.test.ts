@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DeviceStore } from '../src/devices/store.js'
 import { CODE_ALPHABET } from '../src/devices/codes.js'
-import { CompanionPairing, MAX_CONFIRMATIONS, MAX_TURNED_AWAY, REFUSED_COOLDOWN_MS, REQUEST_TTL_MS } from '../src/companion/pairing.js'
-import { PAIR_CLIENT_LABEL, PAIR_KEY_ITERATIONS, PAIR_SERVER_LABEL, pairKey, pairMac } from '../src/companion/pairProof.js'
+import { CompanionPairing, MAX_TURNED_AWAY, MAX_WRONG_CODES, REFUSED_COOLDOWN_MS, REQUEST_TTL_MS } from '../src/companion/pairing.js'
+import { PAIR_KEY_ITERATIONS, pairClientMac, pairKey, pairServerMac } from '../src/companion/pairProof.js'
 
 const ORIGIN = `chrome-extension://${'a'.repeat(32)}`
 const OTHER = `chrome-extension://${'b'.repeat(32)}`
@@ -43,16 +43,9 @@ const refuse = (r: { requestId: string; code: string }) => pairing.refuse(r.requ
 
 const NONCE_E = Buffer.alloc(32, 7).toString('base64url')
 
-/**
- * What the extension does with `typed`: confirm, check the server's mac against the code, and
- * finish with its own (or give up, when the server's does not match). The finish's answer.
- */
+/** What the extension sends for `typed`: its nonce and its proof of the code. The server's answer. */
 async function typeCode(r: { requestId: string; code: string }, typed = r.code, origin = ORIGIN) {
-  const c = await pairing.confirm(r.requestId, origin, NONCE_E)
-  if (c.state !== 'confirm') return c
-  const key = await pairKey(typed, r.requestId)
-  if (c.mac !== pairMac(key, PAIR_SERVER_LABEL, r.requestId, NONCE_E, c.nonce)) return pairing.finish(r.requestId, origin, null)
-  return pairing.finish(r.requestId, origin, pairMac(key, PAIR_CLIENT_LABEL, r.requestId, NONCE_E, c.nonce))
+  return pairing.confirm(r.requestId, origin, NONCE_E, pairClientMac(await pairKey(typed, r.requestId), r.requestId, NONCE_E))
 }
 const otherCode = (code: string) => (code === 'ZZZZ' ? 'YYYY' : 'ZZZZ')
 
@@ -202,37 +195,29 @@ describe('CompanionPairing', () => {
     expect(refuse(r)).toBe('notFound')
   })
 
-  it('typing the code pairs the extension and hands its token out once', async () => {
+  it('typing the code pairs the extension and hands its token out once, with the server\'s proof', async () => {
     const r = accepted(ask())
     const got = await typeCode(r)
     if (got.state !== 'paired') throw new Error(`expected paired, got ${got.state}`)
     expect(store.findByToken(got.token, 'extension')).toMatchObject({ id: got.deviceId, kind: 'extension', origin: ORIGIN, installId: INSTALL, name: 'Chrome' })
+    // The server's proof: over both nonces, under the same K, a fresh nonce of its own.
+    expect(got.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(got.nonce).not.toBe(NONCE_E)
+    expect(got.mac).toBe(pairServerMac(await pairKey(r.code, r.requestId), r.requestId, NONCE_E, got.nonce))
     expect(pairing.pending()).toBeNull()
     expect(pairing.collect(r.requestId, ORIGIN)).toEqual({ state: 'expired' })
     expect(await typeCode(r)).toEqual({ state: 'expired' })
     expect(store.list()).toHaveLength(1)
   })
 
-  it('the server proves the code first: its mac matches the code only', async () => {
+  it('a wrong code gets only "wrong": no server mac, no token, and the third refuses the request', async () => {
     const r = accepted(ask())
-    const c = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
-    if (c.state !== 'confirm') throw new Error(c.state)
-    expect(c.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/)
-    expect(c.nonce).not.toBe(NONCE_E)
-    expect(c.mac).toBe(pairMac(await pairKey(r.code, r.requestId), PAIR_SERVER_LABEL, r.requestId, NONCE_E, c.nonce))
-    expect(c.mac).not.toBe(pairMac(await pairKey(otherCode(r.code), r.requestId), PAIR_SERVER_LABEL, r.requestId, NONCE_E, c.nonce))
-    // A fresh nonce each time.
-    const again = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
-    expect(again.state === 'confirm' && again.nonce).not.toBe(c.nonce)
-  })
-
-  it('a wrong code pairs nothing, and the third try refuses the request', async () => {
-    const r = accepted(ask())
+    expect(MAX_WRONG_CODES).toBe(3)
     expect(await typeCode(r, otherCode(r.code))).toEqual({ state: 'wrong' })
     expect(await typeCode(r, otherCode(r.code))).toEqual({ state: 'wrong' })
     expect(store.list()).toEqual([])
     expect(pairing.pending()?.requestId).toBe(r.requestId)
-    expect(await typeCode(r, otherCode(r.code))).toEqual({ state: 'refused' })
+    expect(await typeCode(r, otherCode(r.code))).toEqual({ state: 'exhausted' })
     expect(pairing.pending()).toBeNull()
     expect(pairing.collect(r.requestId, ORIGIN)).toEqual({ state: 'refused' })
     // Even the right code is too late now, and the install waits like after a refusal.
@@ -241,59 +226,34 @@ describe('CompanionPairing', () => {
     expect(ask()).toBe('cooldown')
   })
 
-  it('a wrong mac from the extension counts like a wrong code', async () => {
+  it('a garbage mac counts like a wrong code', async () => {
     const r = accepted(ask())
-    for (let i = 1; i <= MAX_CONFIRMATIONS; i++) {
-      const c = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
-      expect(c.state).toBe('confirm')
-      expect((await pairing.finish(r.requestId, ORIGIN, 'A'.repeat(43))).state).toBe(i < MAX_CONFIRMATIONS ? 'wrong' : 'refused')
-    }
-    expect(store.list()).toEqual([])
+    expect(await pairing.confirm(r.requestId, ORIGIN, NONCE_E, 'A'.repeat(43))).toEqual({ state: 'wrong' })
+    expect(await pairing.confirm(r.requestId, ORIGIN, NONCE_E, '')).toEqual({ state: 'wrong' })
+    expect(await pairing.confirm(r.requestId, ORIGIN, NONCE_E, 'A'.repeat(43))).toEqual({ state: 'exhausted' })
   })
 
-  it('a request gets three confirmations, finished or not', async () => {
-    const r = accepted(ask())
-    for (let i = 0; i < MAX_CONFIRMATIONS; i++) expect((await pairing.confirm(r.requestId, ORIGIN, NONCE_E)).state).toBe('confirm')
-    expect(await pairing.confirm(r.requestId, ORIGIN, NONCE_E)).toEqual({ state: 'refused' })
-    expect(pairing.pending()).toBeNull()
-  })
-
-  it('one confirmation is live at a time: a new one replaces it, and a finish answers it once', async () => {
+  it('a mac for another nonce or another request is wrong', async () => {
     const r = accepted(ask())
     const key = await pairKey(r.code, r.requestId)
-    const first = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
-    const second = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
-    if (first.state !== 'confirm' || second.state !== 'confirm') throw new Error('no confirmation')
-    // The first one's mac answers a confirmation that is no longer live.
-    expect(await pairing.finish(r.requestId, ORIGIN, pairMac(key, PAIR_CLIENT_LABEL, r.requestId, NONCE_E, first.nonce))).toEqual({ state: 'wrong' })
-    // That finish used the live one up: the right mac for it now finds none.
-    expect(await pairing.finish(r.requestId, ORIGIN, pairMac(key, PAIR_CLIENT_LABEL, r.requestId, NONCE_E, second.nonce))).toEqual({ state: 'noConfirm' })
-    expect(store.list()).toEqual([])
-  })
-
-  it('a finish with no confirmation is noConfirm and counts nothing', async () => {
-    const r = accepted(ask())
-    for (let i = 0; i < 5; i++) expect(await pairing.finish(r.requestId, ORIGIN, 'A'.repeat(43))).toEqual({ state: 'noConfirm' })
+    const otherNonce = Buffer.alloc(32, 8).toString('base64url')
+    expect(await pairing.confirm(r.requestId, ORIGIN, NONCE_E, pairClientMac(key, r.requestId, otherNonce))).toEqual({ state: 'wrong' })
+    expect(await pairing.confirm(r.requestId, ORIGIN, NONCE_E, pairClientMac(await pairKey(r.code, INSTALL), INSTALL, NONCE_E))).toEqual({ state: 'wrong' })
     expect((await typeCode(r)).state).toBe('paired')
   })
 
-  it('two finishes racing on one confirmation pair once', async () => {
+  it('two right proofs racing pair once', async () => {
     const r = accepted(ask())
-    const c = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
-    if (c.state !== 'confirm') throw new Error(c.state)
-    const mac = pairMac(await pairKey(r.code, r.requestId), PAIR_CLIENT_LABEL, r.requestId, NONCE_E, c.nonce)
-    const results = await Promise.all([pairing.finish(r.requestId, ORIGIN, mac), pairing.finish(r.requestId, ORIGIN, mac)])
-    expect(results.map((x) => x.state).sort()).toEqual(['noConfirm', 'paired'])
+    const mac = pairClientMac(await pairKey(r.code, r.requestId), r.requestId, NONCE_E)
+    const results = await Promise.all([pairing.confirm(r.requestId, ORIGIN, NONCE_E, mac), pairing.confirm(r.requestId, ORIGIN, NONCE_E, mac)])
+    expect(results.map((x) => x.state).sort()).toEqual(['expired', 'paired'])
     expect(store.list()).toHaveLength(1)
   })
 
-  it('a refusal on the Edge ends a confirmation in flight', async () => {
+  it('a refusal on the Edge makes the right code too late', async () => {
     const r = accepted(ask())
-    const c = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
-    if (c.state !== 'confirm') throw new Error(c.state)
     expect(refuse(r)).toBe('ok')
-    const mac = pairMac(await pairKey(r.code, r.requestId), PAIR_CLIENT_LABEL, r.requestId, NONCE_E, c.nonce)
-    expect(await pairing.finish(r.requestId, ORIGIN, mac)).toEqual({ state: 'refused' })
+    expect(await typeCode(r)).toEqual({ state: 'refused' })
     expect(store.list()).toEqual([])
   })
 
@@ -306,11 +266,10 @@ describe('CompanionPairing', () => {
     expect(pairing.collect(r.requestId, ORIGIN)).toEqual({ state: 'expired' })
   })
 
-  it('another origin can neither confirm, finish nor collect, and leaves the request as it was', async () => {
+  it('another origin can neither confirm nor collect, and leaves the request as it was', async () => {
     const r = accepted(ask())
     expect(pairing.belongsTo(r.requestId, OTHER)).toBe(false)
-    expect(await pairing.confirm(r.requestId, OTHER, NONCE_E)).toEqual({ state: 'refused' })
-    expect(await pairing.finish(r.requestId, OTHER, null)).toEqual({ state: 'refused' })
+    expect(await typeCode(r, r.code, OTHER)).toEqual({ state: 'refused' })
     expect(pairing.collect(r.requestId, OTHER)).toEqual({ state: 'refused' })
     // The rightful owner still pairs, with all its tries.
     expect((await typeCode(r)).state).toBe('paired')
@@ -355,11 +314,11 @@ describe('the typed-code proof vector', () => {
   const nonceE = Buffer.alloc(32, 1).toString('base64url')
   const nonceS = Buffer.alloc(32, 2).toString('base64url')
 
-  it('pins K(code) and the server and client macs', async () => {
+  it('pins K(code) and the client and server macs', async () => {
     expect(PAIR_KEY_ITERATIONS).toBe(600_000)
     const key = await pairKey('K7QM', requestId)
     expect(key.toString('hex')).toBe('a4cf5dbd6f76bcf8117a2098cfdd2aa40310b26b00d984e897968c829796b0b8')
-    expect(pairMac(key, PAIR_SERVER_LABEL, requestId, nonceE, nonceS)).toBe('zmpz29L7bwyvBl7bCYR3wAVbWK86PKl4QGHYHj3cvak')
-    expect(pairMac(key, PAIR_CLIENT_LABEL, requestId, nonceE, nonceS)).toBe('m0kTJZhVO_hpRSFRV_B8N1lgNrozNintFWLnhPq00Jw')
+    expect(pairClientMac(key, requestId, nonceE)).toBe('KbDbFhseuugQot78I5ThFuaNIbfL-lsHInSWmcDFNNg')
+    expect(pairServerMac(key, requestId, nonceE, nonceS)).toBe('zmpz29L7bwyvBl7bCYR3wAVbWK86PKl4QGHYHj3cvak')
   })
 })
