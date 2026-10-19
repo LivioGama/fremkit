@@ -376,7 +376,7 @@ describe('the fremplay page', () => {
   it('says what is missing, one sentence each', async () => {
     const page = await loadPage()
     page.publish(snap({ paired: 0, connected: 0 }))
-    expect(page.nodes.get('line')!.textContent).toBe('Installez Fremkit Companion dans Chrome, puis touchez Connecter')
+    expect(page.nodes.get('line')!.textContent).toBe('Installez Fremkit Companion dans Chrome, puis cliquez Connecter dans son menu')
     expect(page.nodes.get('sub')!.textContent).toContain('docs/companion.md')
     page.publish(snap({ paired: 1, connected: 0 }))
     expect(page.nodes.get('line')!.textContent).toBe('Navigateur fermé ou extension inactive')
