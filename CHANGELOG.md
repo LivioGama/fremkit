@@ -89,7 +89,8 @@ tagged `vX.Y.Z`.
   page backgrounds like any other.
 - **Right-click menus on the rest of the editor.** On a page in the list: rename, duplicate, page
   background, copy to another screen (as new widgets with the same settings, laid out for that
-  screen), move up or down, delete. Pages now reorder by dragging, and a row shows a single "…"
+  screen), move up or down, delete. Pages now reorder by dragging, which the grip at the start of
+  each row says, and a row shows a single "…"
   on hover instead of five buttons. On a widget in the library: add it to any page, add it to the
   bar, and for a widget from the Sietch, show it there, update it or uninstall it. On a bar widget,
   in the preview or in the Screen settings: its settings, move left or right, remove. On a screen
