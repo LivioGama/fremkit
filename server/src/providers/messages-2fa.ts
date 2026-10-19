@@ -1,9 +1,10 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { CommandContext, Provider } from './types.js'
-import { pbPasteboard, type Pasteboard } from './clipboard.js'
+import type { Pasteboard } from './clipboard.js'
+import { tr } from '../i18n.js'
 
 const MESSAGES_DB = join(homedir(), 'Library', 'Messages', 'chat.db')
 const APPLE_EPOCH_MS = 978_307_200_000
@@ -15,7 +16,104 @@ const COMMAND_TIMEOUT_MS = 2_500
 const MAX_QUERY_OUTPUT_BYTES = 3 * 1024 * 1024
 const CODE_LENGTH = /^\d{4,8}$/
 const MAX_ATTRIBUTED_BODY_BYTES = 4_096
+const REQUEST_COOLDOWN_MS = 5_000
 const RequestSchema = z.null()
+
+// The code enters osascript only on stdin; the source is constant and no widget value is in argv.
+// AppKit marks it concealed/transient and limits Universal Clipboard to this Mac. It prints only
+// the pasteboard change count so a detached cleanup process can clear the code after one minute.
+const WRITE_CODE_SCRIPT = `ObjC.import('AppKit');
+ObjC.import('Foundation');
+const data = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
+const value = $.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding);
+if (!value) throw new Error('invalid input');
+const board = $.NSPasteboard.generalPasteboard;
+board.prepareForNewContentsWithOptions($.NSPasteboardContentsCurrentHostOnly);
+if (!board.setStringForType(value, $.NSPasteboardTypeString)) throw new Error('pasteboard write failed');
+board.setDataForType($.NSData.data, 'org.nspasteboard.ConcealedType');
+board.setDataForType($.NSData.data, 'org.nspasteboard.TransientType');
+String(board.changeCount);`
+
+const CLEAR_CODE_SCRIPT = `ObjC.import('AppKit');
+ObjC.import('Foundation');
+const args = $.NSProcessInfo.processInfo.arguments;
+const expected = Number(ObjC.unwrap(args.lastObject));
+$.NSThread.sleepForTimeInterval(60);
+const board = $.NSPasteboard.generalPasteboard;
+if (Number(board.changeCount) === expected) board.clearContents();`
+
+type ScriptExecutor = (script: string, args: string[], stdin?: string) => Promise<string>
+type CleanupSpawner = (changeCount: number) => ChildProcess
+
+const executeAppleScript: ScriptExecutor = (script, args, stdin) => new Promise((resolve, reject) => {
+  const child = execFile('osascript', ['-l', 'JavaScript', '-e', script, ...args], {
+    timeout: COMMAND_TIMEOUT_MS,
+    maxBuffer: 1024,
+    shell: false,
+  }, (error, stdout) => {
+    if (error) reject(new Error('pasteboard operation failed'))
+    else resolve(stdout)
+  })
+  if (stdin !== undefined) child.stdin?.end(stdin)
+})
+
+const spawnCleanup: CleanupSpawner = (changeCount) => spawn('osascript', [
+  '-l', 'JavaScript', '-e', CLEAR_CODE_SCRIPT, String(changeCount),
+], { detached: true, stdio: 'ignore' })
+
+function reportCleanupFailure(): void {
+  console.error('Messages code pasteboard cleanup failed.')
+}
+
+export function createMessagePasteboardWriter(
+  dependencies: { executeScript?: ScriptExecutor; spawnCleanup?: CleanupSpawner } = {},
+): Pick<Pasteboard, 'write'> {
+  const runScript = dependencies.executeScript ?? executeAppleScript
+  const startCleanup = dependencies.spawnCleanup ?? spawnCleanup
+  const clearIfUnchanged = async (changeCount: number): Promise<void> => {
+    await runScript(CLEAR_IF_UNCHANGED_SCRIPT, [String(changeCount)])
+  }
+
+  return {
+    write: async (text) => {
+      const stdout = await runScript(WRITE_CODE_SCRIPT, [], text)
+      const changeCount = Number(stdout.trim())
+      if (!Number.isSafeInteger(changeCount)) throw new Error('pasteboard write failed')
+
+      try {
+        const cleanup = startCleanup(changeCount)
+        await new Promise<void>((resolve, reject) => {
+          let started = false
+          cleanup.once('error', (error) => {
+            if (!started) reject(error)
+            else void clearIfUnchanged(changeCount).catch(reportCleanupFailure)
+          })
+          cleanup.once('spawn', () => {
+            started = true
+            cleanup.unref()
+            resolve()
+          })
+          cleanup.once('exit', (code) => {
+            if (code !== 0) void clearIfUnchanged(changeCount).catch(reportCleanupFailure)
+          })
+        })
+      } catch {
+        try { await clearIfUnchanged(changeCount) }
+        catch { reportCleanupFailure() }
+        throw new Error('pasteboard cleanup could not be started')
+      }
+    },
+  }
+}
+
+const CLEAR_IF_UNCHANGED_SCRIPT = `ObjC.import('AppKit');
+ObjC.import('Foundation');
+const args = $.NSProcessInfo.processInfo.arguments;
+const expected = Number(ObjC.unwrap(args.lastObject));
+const board = $.NSPasteboard.generalPasteboard;
+if (Number(board.changeCount) === expected) board.clearContents();`
+
+const messagePasteboard: Pick<Pasteboard, 'write'> = createMessagePasteboardWriter()
 
 interface MessageRow {
   text?: string
@@ -30,6 +128,7 @@ interface Messages2FAOptions {
   now?: () => number
   run?: Run
   pasteboard?: Pick<Pasteboard, 'write'>
+  enabled?: () => boolean
 }
 
 const defaultRun: Run = (file, args) => new Promise((resolve, reject) => {
@@ -53,12 +152,25 @@ function appleDateToUnixMs(value: unknown): number | undefined {
   return Number.isFinite(unixMs) ? unixMs : undefined
 }
 
+function normalize(text: string): string {
+  return text.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+}
+
 function hasVerificationContext(text: string, start: number, end: number): boolean {
-  const context = text.slice(Math.max(0, start - 70), Math.min(text.length, end + 70))
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-  return /\b(?:verification|security|authentication|authenticator|passcode|sign[ -]?in|login|one[ -]?time|otp)\b/.test(context)
+  const segmentStart = Math.max(text.lastIndexOf('.', start), text.lastIndexOf('!', start), text.lastIndexOf('?', start), text.lastIndexOf('\n', start), text.lastIndexOf('…', start)) + 1
+  const boundaries = [text.indexOf('.', end), text.indexOf('!', end), text.indexOf('?', end), text.indexOf('\n', end), text.indexOf('…', end)].filter((i) => i >= 0)
+  const segmentEnd = boundaries.length ? Math.min(...boundaries) : text.length
+  const segment = normalize(text.slice(segmentStart, segmentEnd))
+  const codeOffset = normalize(text.slice(segmentStart, start)).length
+  const beforeCode = segment.slice(0, codeOffset)
+  const context = segment
+  if (/(?:account\s+)?(?:ending|ends?\s+in|ending\s+with|last\s+digits?|se\s+termine\s+par)\s*\S{0,18}$/i.test(beforeCode)) return false
+  if (/\b\d{1,4}[/-]\d{1,2}[/-]\d{1,4}\b|\b\d{4}-\d{2}-\d{2}\b/.test(context)) {
+    const dates = [...context.matchAll(/\b\d{1,4}[/-]\d{1,2}[/-]\d{1,4}\b|\b\d{4}-\d{2}-\d{2}\b/g)]
+    if (dates.some((date) => date.index !== undefined && codeOffset >= date.index && codeOffset < date.index + date[0].length)) return false
+  }
+  const codeMarker = /\b(?:passcode|otp)\b|\byour\s+code\b|\bcode\s+is\s+your\b|\b(?:verification|security|authentication|authenticator|one[ -]?time)\s+code\b|\bcode\s+(?:de\s+)?(?:verification|security|connexion|securite|acces|confirmation)\b|\bcode\b.{0,18}\b(?:is|est)\b/
+  return codeMarker.test(context)
 }
 
 function verificationCode(text: string): string | undefined {
@@ -129,15 +241,19 @@ async function latestVerificationCode(
   run: Run,
 ): Promise<string | undefined> {
   const bounds = timestampBounds(now)
-  const query = `SELECT coalesce(text, '') AS text,
-      CASE WHEN text IS NULL OR text = '' THEN coalesce(hex(attributedBody), '') ELSE '' END AS attributedHex,
-      date FROM message
-    WHERE is_from_me = 0 AND (text IS NOT NULL OR attributedBody IS NOT NULL)
-      AND length(coalesce(text, '')) <= 4096
-      AND (attributedBody IS NULL OR length(attributedBody) <= ${MAX_ATTRIBUTED_BODY_BYTES})
-      AND ((date > 1000000000000 AND date >= ${bounds.appleNanoseconds})
-        OR (date <= 1000000000000 AND date >= ${bounds.appleSeconds}))
-    ORDER BY date DESC LIMIT ${QUERY_LIMIT};`
+  const query = `SELECT coalesce(m.text, '') AS text,
+      CASE WHEN m.text IS NULL OR m.text = '' THEN coalesce(hex(m.attributedBody), '') ELSE '' END AS attributedHex,
+      m.date FROM message AS m
+    WHERE m.is_from_me = 0 AND (m.text IS NOT NULL OR m.attributedBody IS NOT NULL)
+      AND length(coalesce(m.text, '')) <= 4096
+      AND (m.attributedBody IS NULL OR length(m.attributedBody) <= ${MAX_ATTRIBUTED_BODY_BYTES})
+      AND ((m.date > 1000000000000 AND m.date >= ${bounds.appleNanoseconds})
+        OR (m.date <= 1000000000000 AND m.date >= ${bounds.appleSeconds}))
+      AND NOT EXISTS (
+        SELECT 1 FROM chat_message_join AS cmj JOIN chat AS c ON c.ROWID = cmj.chat_id
+        WHERE cmj.message_id = m.ROWID AND c.style = 43
+      )
+    ORDER BY m.date DESC LIMIT ${QUERY_LIMIT};`
   const stdout = await run('/usr/bin/sqlite3', [
     '-readonly', '-json', '-batch',
     '-cmd', 'PRAGMA query_only=ON;',
@@ -165,21 +281,29 @@ export function createMessages2FAProvider(options: Messages2FAOptions = {}): Pro
   const databasePath = options.databasePath ?? MESSAGES_DB
   const now = options.now ?? Date.now
   const run = options.run ?? defaultRun
-  const pasteboard = options.pasteboard ?? pbPasteboard
+  const pasteboard = options.pasteboard ?? messagePasteboard
+  const enabled = options.enabled ?? (() => false)
+  let lastRequestAt: number | undefined
 
   return {
     channel: 'messages-2fa',
     commands: {
       copyLatest: async (payload: unknown, context?: CommandContext) => {
-        if (context?.loopback !== true) return { ok: false, error: 'Available only from this Mac.' }
-        if (!RequestSchema.safeParse(payload).success) return { ok: false, error: 'Invalid request.' }
-        let code: string | undefined
-        try { code = await latestVerificationCode(databasePath, now(), run) } catch {
-          return { ok: false, error: 'Messages could not be read.' }
+        if (context?.loopback !== true) return { ok: false, error: tr(undefined, 'messages2fa.localOnly') }
+        if (!enabled()) return { ok: false, error: tr(undefined, 'messages2fa.disabled') }
+        if (!RequestSchema.safeParse(payload).success) return { ok: false, error: tr(undefined, 'messages2fa.invalidRequest') }
+        const requestedAt = now()
+        if (lastRequestAt !== undefined && requestedAt - lastRequestAt < REQUEST_COOLDOWN_MS) {
+          return { ok: false, error: tr(undefined, 'messages2fa.rateLimited') }
         }
-        if (!code) return { ok: false, error: 'No recent verification code found.' }
+        lastRequestAt = requestedAt
+        let code: string | undefined
+        try { code = await latestVerificationCode(databasePath, requestedAt, run) } catch {
+          return { ok: false, error: tr(undefined, 'messages2fa.readFailed') }
+        }
+        if (!code) return { ok: false, error: tr(undefined, 'messages2fa.noneFound') }
         try { await pasteboard.write(code) } catch {
-          return { ok: false, error: 'The code could not be copied.' }
+          return { ok: false, error: tr(undefined, 'messages2fa.copyFailed') }
         }
         // Keep the OTP on the local pasteboard only; never return it over the widget bridge.
         return { ok: true }
