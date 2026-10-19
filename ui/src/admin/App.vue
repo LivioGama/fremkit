@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide } from 'vue'
+import { computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useI18n } from '../shared/i18n'
 import { useAdminStore } from './store'
 import { tilesDeleteKey, widgetDelete, widgetDeleteKey } from './widgetDelete'
@@ -27,6 +27,22 @@ import { onWidgetReload } from '../shared/widgetDev'
 
 const s = useAdminStore()
 const { t } = useI18n()
+
+/** Where a widget taken off this screen still shows; it goes by itself after a while. */
+const noticeText = computed(() => {
+  const n = s.state.notice
+  if (!n) return ''
+  if (n.count > 1) return t('admin.notice.stillShownMany', { count: n.count })
+  return n.pageName === null
+    ? t('admin.notice.stillShownBar', { name: n.name, screen: n.screenName })
+    : t('admin.notice.stillShown', { name: n.name, screen: n.screenName, page: n.pageName })
+})
+const NOTICE_MS = 10_000
+let noticeTimer: ReturnType<typeof setTimeout> | undefined
+watch(() => s.state.notice, (n) => {
+  clearTimeout(noticeTimer)
+  if (n) noticeTimer = setTimeout(() => { if (s.state.notice === n) s.dismissNotice() }, NOTICE_MS)
+})
 // Previews are told the screen being edited, as the dashboard tells its tiles (`Fremkit.screen`).
 provide(SCREEN_ID, () => s.screen.value?.id)
 // The editor wears the theme it edits, so a tile looks here like it does on the screen.
@@ -234,6 +250,8 @@ onUnmounted(() => {
     <ContextMenu />
     <CommandPalette />
     <BaseToast v-if="s.state.toast" :message="s.state.toast" @close="s.dismissToast()" />
+    <BaseToast v-else-if="s.state.notice" tone="info" icon="info" :message="noticeText" :action="t('admin.notice.go')"
+      @action="s.goToNotice()" @close="s.dismissNotice()" />
   </div>
   <p v-else class="loading">{{ t('common.loading') }}</p>
 </template>
