@@ -11,7 +11,7 @@
  *
  * So the bar is mounted and the events are dispatched as the real ones arrive, in order.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import NavBar from '../src/dashboard/NavBar.vue'
 import { pickScreen } from '../src/shared/screens'
@@ -185,6 +185,9 @@ describe('the dots fit the room kept for them', () => {
 })
 
 describe('the editor\'s right click on the bar', () => {
+  // jsdom has no `elementFromPoint`; the stub each test sets must not outlive it.
+  afterEach(() => { delete (document as { elementFromPoint?: unknown }).elementFromPoint })
+
   function editBar() {
     const wrapper = mount(NavBar, { props: { pages: PAGES, active: 0, height: 64, edit: true }, attachTo: document.body })
     const menu = (target: Element): MouseEvent => {
