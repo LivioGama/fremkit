@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick } from 'vue'
+import { computed, nextTick, onMounted, watch } from 'vue'
 import { ref } from 'vue'
 import BaseButton from '../shared/ui/BaseButton.vue'
 import BaseCheckbox from '../shared/ui/BaseCheckbox.vue'
@@ -29,7 +29,7 @@ import { ADMIN_GESTURES, DEFAULT_ADMIN_GESTURE, DEFAULT_NAV_STYLE, NAV_HEIGHTS, 
   type AdminGesture, type Background, type Config, type NavHeight, type NavStyle, type Screen } from '../shared/types'
 import { pickScreen, screensShowing } from '../shared/screens'
 import { useAdminStore } from './store'
-import { labsDevices, labsShown, tapVersion } from './labs'
+import { labsDevices, labsShown, showsDevices, tapVersion } from './labs'
 import { openExport, pickLayoutFile } from './share'
 
 const s = useAdminStore()
@@ -102,7 +102,19 @@ function setShowAccountEmail(on: boolean): void {
  * seven clicks on the version (see `labs.ts`) and stays while the flag is on, so it can be turned
  * off again. It goes through `apply` like every setting: saved, undoable, in the history.
  */
+/** The paired devices, as the admin knows them. */
+const devices = useDevices()
 const devicesOn = computed(() => labsDevices(s.state.config))
+/**
+ * The Devices section also shows while pairing is in use, flag or not (see `showsDevices`). The
+ * status is read once here — the section polls it itself once shown — and once shown it stays
+ * for as long as this panel is open, so unpairing the last device does not pull it from under
+ * the pointer.
+ */
+const devicesShown = ref(false)
+watch(() => showsDevices(s.state.config, devices.status.value), (on) => { if (on) devicesShown.value = true }, { immediate: true })
+watch(devicesOn, (on) => { if (!on) devicesShown.value = showsDevices(s.state.config, devices.status.value) })
+onMounted(() => { if (!devicesOn.value) void devices.refresh() })
 const labsVisible = computed(() => labsShown(s.state.config))
 /**
  * The block appears right under the version; focusing its box brings it into view and tells a
@@ -166,8 +178,7 @@ const onlyHere = computed(() => {
 })
 const lastScreen = computed(() => s.state.config!.screens.length <= 1)
 const removeKey = computed(() => `screen:${scr.value.id}`)
-/** The paired devices this screen is on: removing it leaves them with nothing to show. */
-const devices = useDevices()
+/** The paired devices this screen is on (`devices` is declared above): removing it leaves them with nothing to show. */
 const showingHere = computed(() => devices.showing(scr.value.id).map((d) => d.name).join(', '))
 function confirmRemoveScreen(): void {
   const id = scr.value.id
@@ -370,7 +381,7 @@ function setBackground(patch: Partial<Background>): void {
 
   </BaseSection>
 
-  <BaseSection v-if="devicesOn" id="screen.devices" :title="t('admin.inspector.screen.devices')">
+  <BaseSection v-if="devicesShown" id="screen.devices" :title="t('admin.inspector.screen.devices')">
     <DevicesSection />
   </BaseSection>
 

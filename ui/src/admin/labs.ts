@@ -9,10 +9,28 @@
  */
 import { ref } from 'vue'
 import type { Config } from '../shared/types'
+import type { DeviceStatus } from '../shared/api'
 
 /** True when iPad pairing and adding screens are shown. */
 export function labsDevices(config: Config | null | undefined): boolean {
   return config?.labs?.devices === true
+}
+
+/**
+ * True when pairing is in use on this Mac: the listener is on, or a device is paired. Read from
+ * `GET /api/devices`, since that state lives in `devices.json`, not in the config.
+ */
+export function pairingInUse(status: DeviceStatus | null | undefined): boolean {
+  return status?.enabled === true || (status?.devices.length ?? 0) > 0
+}
+
+/**
+ * The Devices section: shown with the flag on, and whenever pairing is in use whatever the flag
+ * says — the section is the only way to switch the listener off or unpair an iPad, and hiding it
+ * would leave a paired device with no way to be revoked.
+ */
+export function showsDevices(config: Config | null | undefined, status: DeviceStatus | null | undefined): boolean {
+  return labsDevices(config) || pairingInUse(status)
 }
 
 /**

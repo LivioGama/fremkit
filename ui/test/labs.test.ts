@@ -8,15 +8,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import type { Config, Screen } from '../src/shared/types'
+import type { DeviceStatus, PublicDevice } from '../src/shared/api'
 
+const getDevices = vi.hoisted(() => vi.fn())
 vi.mock('../src/shared/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/shared/api')>()
-  return { ...actual, api: { ...actual.api, getDevices: vi.fn(async () => { throw new Error('offline') }) } }
+  return { ...actual, api: { ...actual.api, getDevices } }
 })
+
+const status = (over: Partial<DeviceStatus> = {}): DeviceStatus => ({
+  enabled: false, listening: false, error: null, guessing: false, host: 'mac.example.local',
+  addresses: ['192.0.2.10'], port: 4243, keyHash: null, fingerprint: null, devices: [], ...over,
+})
+const paired: PublicDevice = {
+  id: 'dev-1', name: 'Kitchen iPad', pairedAt: '2026-10-01T08:00:00.000Z', lastSeen: null,
+  viewport: { width: 1376, height: 1032 }, screenId: null,
+}
 
 const { default: ScreenSelector } = await import('../src/admin/ScreenSelector.vue')
 const { default: ScreenInspector } = await import('../src/admin/ScreenInspector.vue')
 const { useAdminStore } = await import('../src/admin/store')
+const { useDevices } = await import('../src/admin/devices')
 const labs = await import('../src/admin/labs')
 
 const screen = (id: string, kind: Screen['kind'] = 'edge'): Screen => ({
@@ -53,6 +65,9 @@ beforeEach(() => {
     new Response(url === '/api/themes' ? '{"themes":{},"errors":[]}' : init?.body ?? '{}',
       { headers: { 'content-type': 'application/json' } })))
   labs.resetLabsReveal()
+  getDevices.mockReset()
+  getDevices.mockRejectedValue(new Error('offline'))
+  useDevices().status.value = null
 })
 
 afterEach(async () => {
@@ -88,6 +103,46 @@ describe('what the flag shows', () => {
       })
     }
   }
+})
+
+describe('the Devices section while pairing is in use', () => {
+  it('reads the status: listener on, or any paired device', () => {
+    expect(labs.pairingInUse(null)).toBe(false)
+    expect(labs.pairingInUse(status())).toBe(false)
+    expect(labs.pairingInUse(status({ enabled: true }))).toBe(true)
+    expect(labs.pairingInUse(status({ devices: [paired] }))).toBe(true)
+    expect(labs.showsDevices(config(false, 1), status())).toBe(false)
+    expect(labs.showsDevices(config(true, 1), status())).toBe(true)
+    expect(labs.showsDevices(config(false, 1), status({ devices: [paired] }))).toBe(true)
+  })
+
+  for (const [name, answer, shown] of [
+    ['the listener is on', status({ enabled: true }), true],
+    ['a device is paired with the listener off', status({ devices: [paired] }), true],
+    ['pairing is off and nothing is paired', status(), false],
+  ] as const) {
+    it(`flag off, ${name}: Devices ${shown ? 'shown' : 'hidden'}`, async () => {
+      getDevices.mockResolvedValue(answer)
+      seed(false, 1)
+      const wrapper = mount(ScreenInspector, { attachTo: document.body, global: { stubs } })
+      await flushPromises()
+      expect(getDevices).toHaveBeenCalled()
+      expect(wrapper.find('[data-section="screen.devices"]').exists()).toBe(shown)
+      wrapper.unmount()
+    })
+  }
+
+  it('stays while the panel is open after the last device is unpaired', async () => {
+    getDevices.mockResolvedValue(status({ devices: [paired] }))
+    seed(false, 1)
+    const wrapper = mount(ScreenInspector, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('[data-section="screen.devices"]').exists()).toBe(true)
+    useDevices().status.value = status()
+    await flushPromises()
+    expect(wrapper.find('[data-section="screen.devices"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
 })
 
 describe('the seven clicks on the version', () => {

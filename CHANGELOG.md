@@ -18,7 +18,8 @@ tagged `vX.Y.Z`.
   (**Screen → Devices**) and adding screens are hidden for now. To try them, click the version
   number in **Screen → About** seven times, then tick **iPad and extra screens** under
   **Experimental features**; untick it to hide them again. A dashboard that already has several
-  screens or an iPad screen keeps them, with the option already on.
+  screens or an iPad screen keeps them, with the option already on, and **Screen → Devices** stays
+  in sight whenever pairing is on or an iPad is paired, so it can always be switched off or unpaired.
 - **The iPad follows the brightness set for its screen.** What you set in the admin or with the
   Brightness widget, the day/night schedule included, is applied on the iPad, which reports its own
   level back, so a change in Control Center shows in the admin. When the app is closed or not open
