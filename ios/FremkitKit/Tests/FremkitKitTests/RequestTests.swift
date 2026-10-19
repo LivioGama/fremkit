@@ -10,7 +10,8 @@ final class HTTPProberTests: XCTestCase {
         XCTAssertEqual(outcome, .ok(sampleInfo))
 
         let seen = try XCTUnwrap(StubProtocol.requests(to: "192.0.2.21").first)
-        XCTAssertEqual(seen.request.url?.absoluteString, "https://192.0.2.21:4243/api/devices/me")
+        // `addresses=1`: the app asks for the Mac's other addresses, which the page never does.
+        XCTAssertEqual(seen.request.url?.absoluteString, "https://192.0.2.21:4243/api/devices/me?addresses=1")
         XCTAssertEqual(seen.request.httpMethod, "GET")
         XCTAssertEqual(seen.request.value(forHTTPHeaderField: "Cookie"), "fremkit_device=device-token")
         XCTAssertEqual(seen.request.timeoutInterval, 5)

@@ -92,7 +92,9 @@ export async function deviceRoutes(app: FastifyInstance, opts: DeviceRoutesOptio
     // Who is asking comes from the token the gate checked, and from nothing the request says.
     const deviceId = pairedDeviceOf(req)
     if (!isRemoteRequest(req) || deviceId === null) return reply.callNotFound()
-    const me = service.meForApp(deviceId)
+    // The device app asks for the Mac's other addresses; the dashboard page's own request does not.
+    const wantsAddresses = (req.query as { addresses?: unknown } | undefined)?.addresses === '1'
+    const me = wantsAddresses ? await service.meForApp(deviceId) : service.me(deviceId)
     if (!me) return reply.code(401).send({ error: tr(locale(), 'devices.unauthorized') })
     reply.header('cache-control', 'no-store')
     return me

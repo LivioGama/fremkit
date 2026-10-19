@@ -50,6 +50,9 @@ export type DeviceBrightness = { target: number | null; seq: number }
 
 export type DeviceInfo = { id: string; name: string; screenId: string | null; brightness: DeviceBrightness | null }
 
+/** How many addresses `meForApp` lists at most. */
+export const MAX_APP_ADDRESSES = 8
+
 /** What `GET /api/devices/me` answers the device app: `DeviceInfo` and where else it may find the Mac. */
 export type DeviceAppInfo = DeviceInfo & { addresses: string[] }
 
@@ -333,16 +336,23 @@ export class DeviceService {
   }
 
   /**
-   * `me()` for the device app itself (`GET /api/devices/me`), with the Mac's LAN addresses so the
-   * app can follow the Mac when the one it uses goes away (Ethernet unplugged) and Bonjour does not
-   * answer. Only the RFC 1918 ones among those the remote listener accepts as Host right now (the
-   * certificate's addresses, which `updateHosts` lets through): never a public, CGNAT, link-local
-   * or IPv6 address, nor one the listener would answer 421. Not part of the `device` channel,
-   * which the page reads.
+   * `me()` with the Mac's LAN addresses, for the device app, which asks for them
+   * (`GET /api/devices/me?addresses=1`) so it can follow the Mac when the one it uses goes away
+   * (Ethernet unplugged) and Bonjour does not answer. The dashboard page's own request and the
+   * `device` channel do not ask, and get `me()`. Only the RFC 1918 ones among those the remote
+   * listener accepts as Host right now (the certificate's addresses, which `updateHosts` lets
+   * through): never a public, CGNAT, link-local or IPv6 address, nor one the listener would answer
+   * 421. The one the QR code and Bonjour would carry (`pickAddress`: the default route's) comes
+   * first, then the others in order, `MAX_APP_ADDRESSES` at most: each dead one costs the app a
+   * probe.
    */
-  meForApp(deviceId: string): DeviceAppInfo | null {
+  async meForApp(deviceId: string): Promise<DeviceAppInfo | null> {
     const me = this.me(deviceId)
-    return me === null ? null : { ...me, addresses: this.certAddresses.filter(isPrivate) }
+    if (me === null) return null
+    const usable = this.certAddresses.filter(isPrivate)
+    const first = usable.length > 0 ? await this.pickAddress(usable) : null
+    const ordered = first !== null && usable.includes(first) ? [first, ...usable.filter((a) => a !== first)] : usable
+    return { ...me, addresses: ordered.slice(0, MAX_APP_ADDRESSES) }
   }
 
   /** The screen a device is bound to, only while it is a device screen: where its brightness goes. */

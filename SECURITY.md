@@ -243,10 +243,13 @@ per-connection channel (`calendar:<id>`, `github:<id>`), only the connections th
 bound to, with the same refusal as a channel that does not exist — and a
 device acts only on the instances of its own screen: the widget proxy (and so a widget's stored
 credential) and the commands that resolve an instance refuse any instance shown elsewhere, and a
-device with no screen acts on none. The device app itself, not its page, is told the Mac's private
-(RFC 1918) IPv4 addresses the listener answers on, in `GET /api/devices/me`, so it can follow the
-Mac when one goes away; the iPad keeps only private IPv4 addresses from that list and reaches them
-under the same pin as any other, so a stored address presenting another key is not the Mac. The configuration it reads, over HTTP and on the WebSocket,
+device with no screen acts on none. The device app asks for the Mac's private (RFC 1918) IPv4
+addresses the listener answers on (`GET /api/devices/me?addresses=1`, eight at most), so it can
+follow the Mac when one goes away; the dashboard page's own request and the `device` channel do not
+ask and are not told. That is not a boundary against the page, which is our own code and could ask
+too; widgets cannot reach the route at all (`connect-src 'none'`, an opaque origin). The iPad keeps
+only private IPv4 addresses from that list and reaches them under the same pin as any other, so a
+stored address presenting another key is not the Mac. The configuration it reads, over HTTP and on the WebSocket,
 is its own screen's — the theme, the language, that screen and the widgets on it — never your
 connections, the marketplace records, the privacy switches or any other screen; the widget
 catalogue lists only the widgets on its screen, without the scan's errors, and the installed

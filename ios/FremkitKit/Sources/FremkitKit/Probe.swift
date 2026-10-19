@@ -155,7 +155,8 @@ enum Endpoint {
 }
 
 /// Asks one address whether it is the paired Mac and whether it still knows this iPad:
-/// `GET https://<host>:<port>/api/devices/me` with the device cookie, 5 s timeout.
+/// `GET https://<host>:<port>/api/devices/me?addresses=1` with the device cookie, 5 s timeout. The
+/// `addresses=1` asks for the Mac's other addresses, which only the app does (the page does not).
 public struct HTTPProber: Prober {
     private let transport: Transport
 
@@ -168,7 +169,7 @@ public struct HTTPProber: Prober {
     }
 
     public func probe(host: String, port: Int, mac: PairedMac) async -> ProbeOutcome {
-        guard let request = Endpoint.request(host: host, port: port, path: "/api/devices/me", token: mac.token) else {
+        guard let request = Endpoint.request(host: host, port: port, path: "/api/devices/me?addresses=1", token: mac.token) else {
             return .unreachable
         }
         let policy = PinPolicy(keyHash: mac.keyHash, hosts: Dashboard.pinnedHosts(mac: mac, host: host))
