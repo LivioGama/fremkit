@@ -53,8 +53,8 @@ that Mac and no other, whatever the network calls it. If the Mac's address chang
 it again by itself, with the dashboard up: as soon as it sees the Mac announce its new address on
 the network, or about a minute after the old one stops answering. It tries the Mac's `.local` name,
 the last address that worked, and every other private (RFC 1918) IPv4 address the Mac last told it
-about (the app asks `GET /api/devices/me?addresses=1`; the dashboard page and the widgets are not
-told), so unplugging the Ethernet cable moves it to the Mac's Wi-Fi address even when the network's
+about on its Wi-Fi or Ethernet, never a VPN's or a virtual machine's (the app asks
+`GET /api/devices/me?addresses=1`; the dashboard page and the widgets are not told), so unplugging the Ethernet cable moves it to the Mac's Wi-Fi address even when the network's
 name lookup fails. Each of those addresses must present the pinned key, like any other; another key
 at one of them only means another machine holds it now. A Mac that answers nowhere (asleep,
 say) leaves the dashboard where it is until it comes back.

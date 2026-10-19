@@ -679,6 +679,8 @@ describe.skipIf(!hasOpenssl)('telling a paired device where else to find the Mac
     '192.168.1.20', '192.168.1.21', '192.168.1.22']
   const DEFAULT_ROUTE = '192.168.1.20'
   const OTHERS = ['192.0.2.10', '198.51.100.7', '100.100.1.1', '169.254.1.1', 'fd00::1', '2001:db8::1']
+  const VPN = '10.20.30.40'
+  const OUTSIDER = '10.99.0.1'
   const picked: string[][] = []
 
   beforeAll(async () => {
@@ -694,7 +696,10 @@ describe.skipIf(!hasOpenssl)('telling a paired device where else to find the Mac
       devicesPort: 0,
       devices: {
         exec, advertise: noAdvertise, lanAddresses: () => [...OTHERS, ...PRIVATE].sort(),
-        preferredAddress: async (a) => { picked.push(a); return a.includes(DEFAULT_ROUTE) ? DEFAULT_ROUTE : a[0] ?? null },
+        preferredAddress: async (a) => a[0] ?? null,
+        // A VPN's address is left out, and an address the listener does not answer on is dropped
+        // by the service even if the lookup names it.
+        appAddresses: async (a) => { picked.push(a); return [OUTSIDER, DEFAULT_ROUTE, ...a.filter((x) => x !== DEFAULT_ROUTE && x !== VPN)] },
       },
     })
     devicePayload = capture.mock.calls[0][0]
@@ -707,7 +712,7 @@ describe.skipIf(!hasOpenssl)('telling a paired device where else to find the Mac
     await rm(mdir, { recursive: true, force: true })
   })
 
-  it('lists the RFC 1918 addresses the listener answers on, default route first, eight at most, to the app that asks', async () => {
+  it('lists the Wi-Fi and Ethernet RFC 1918 addresses the listener answers on, default route first, eight at most, to the app that asks', async () => {
     const offer = (await mapp.inject({ method: 'POST', url: '/api/devices/code' })).json()
     const paired = await remote(mport, {
       method: 'POST', path: '/api/pair', host: `example.local:${mport}`, headers: json,
@@ -720,9 +725,11 @@ describe.skipIf(!hasOpenssl)('telling a paired device where else to find the Mac
     expect(res.status).toBe(200)
     const body = JSON.parse(res.body)
     const sorted = [...PRIVATE].sort()
-    expect(body.addresses).toEqual([DEFAULT_ROUTE, ...sorted.filter((a) => a !== DEFAULT_ROUTE)].slice(0, 8))
+    expect(body.addresses).toEqual([DEFAULT_ROUTE, ...sorted.filter((a) => a !== DEFAULT_ROUTE && a !== VPN)].slice(0, 8))
     expect(body.addresses).toHaveLength(8)
-    // The default route is picked among the private addresses only, and looked up once for two
+    expect(body.addresses).not.toContain(VPN)
+    expect(body.addresses).not.toContain(OUTSIDER)
+    // The list is looked up among the private addresses only, and once for two
     // quick asks with the same addresses (each iPad asks about every 30 s).
     expect(picked.at(-1)).toEqual(sorted)
     const lookups = picked.length

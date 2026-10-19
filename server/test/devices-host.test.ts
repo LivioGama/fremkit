@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NetworkInterfaceInfo } from 'node:os'
-import { cachedPick, defaultRouteInterface, isPrivate, lanAddresses, pickAddress, type InterfaceMap } from '../src/devices/host.js'
+import { appAddresses, cachedPick, defaultRouteInterface, isPrivate, lanAddresses, pickAddress, type InterfaceMap } from '../src/devices/host.js'
 
 const v4 = (address: string, internal = false): NetworkInterfaceInfo => ({
   address, netmask: '255.255.255.0', family: 'IPv4', mac: '00:00:00:00:00:00', internal, cidr: null,
@@ -32,6 +32,34 @@ describe('lanAddresses', () => {
       b: [v4('100.63.255.255'), v4('100.128.0.1'), v4('169.253.0.1')],
     })
     expect(list).toEqual(['100.128.0.1', '100.63.255.255', '169.253.0.1'])
+  })
+})
+
+describe('appAddresses', () => {
+  const ifaces: InterfaceMap = {
+    lo0: [v4('127.0.0.1', true)],
+    // A company VPN on 10/8 and a virtual machine's bridge: private, and still not the LAN.
+    utun3: [v4('10.10.0.5')],
+    bridge100: [v4('192.168.64.1')],
+    vmnet8: [v4('172.16.8.1')],
+    en10: [v4('192.168.1.40')],
+    en1: [v4('192.168.1.30'), v4('203.0.113.4')],
+    en0: [v4('10.20.0.31'), v4('10.20.0.30'), v6('fe80::1')],
+  }
+  const all = lanAddresses(ifaces)
+
+  it('keeps private addresses on Wi-Fi and Ethernet only, by interface number', () => {
+    expect(appAddresses(all, ifaces, null)).toEqual(['10.20.0.30', '10.20.0.31', '192.168.1.30', '192.168.1.40'])
+  })
+
+  it('puts the default route first when it is Wi-Fi or Ethernet, and never lets a VPN in by being it', () => {
+    expect(appAddresses(all, ifaces, 'en10')).toEqual(['192.168.1.40', '10.20.0.30', '10.20.0.31', '192.168.1.30'])
+    expect(appAddresses(all, ifaces, 'utun3')).toEqual(['10.20.0.30', '10.20.0.31', '192.168.1.30', '192.168.1.40'])
+  })
+
+  it('lists only addresses it was given', () => {
+    expect(appAddresses(['192.168.1.30', '10.10.0.5'], ifaces, 'en0')).toEqual(['192.168.1.30'])
+    expect(appAddresses([], ifaces, 'en0')).toEqual([])
   })
 })
 

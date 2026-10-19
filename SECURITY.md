@@ -244,7 +244,9 @@ bound to, with the same refusal as a channel that does not exist — and a
 device acts only on the instances of its own screen: the widget proxy (and so a widget's stored
 credential) and the commands that resolve an instance refuse any instance shown elsewhere, and a
 device with no screen acts on none. The device app asks for the Mac's private (RFC 1918) IPv4
-addresses the listener answers on (`GET /api/devices/me?addresses=1`, eight at most), so it can
+addresses the listener answers on, on Wi-Fi or Ethernet only (`en*`: never a VPN's `utun*`, which
+may be a company network on 10/8, nor a virtual machine's bridge), eight at most
+(`GET /api/devices/me?addresses=1`), so it can
 follow the Mac when one goes away; the dashboard page's own request and the `device` channel do not
 ask and are not told. That is not a boundary against the page, which is our own code and could ask
 too; widgets cannot reach the route at all (`connect-src 'none'`, an opaque origin). The iPad keeps
