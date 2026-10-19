@@ -189,7 +189,7 @@
     }
   },
   "optRename": {
-    "message": "Le nom se change dans l'admin : Écran → Appareils."
+    "message": "Le nom se change dans l'admin : Réglages → Appareils."
   },
   "optNotPaired": {
     "message": "Ce navigateur n'est pas relié à Fremkit. Ouvrez Fremkit dans la barre d'outils pour le relier."
@@ -198,7 +198,7 @@
     "message": "Délier ce navigateur"
   },
   "optUnpairHint": {
-    "message": "Efface la clé de ce navigateur. L'appareil reste listé dans Écran → Appareils jusqu'à ce que vous l'y retiriez."
+    "message": "Efface la clé de ce navigateur. L'appareil reste listé dans Réglages → Appareils jusqu'à ce que vous l'y retiriez."
   },
   "optShortcut": {
     "message": "Raccourci Fremplay"

@@ -189,7 +189,7 @@
     }
   },
   "optRename": {
-    "message": "The name is changed in the admin: Screen → Devices."
+    "message": "The name is changed in the admin: Settings → Devices."
   },
   "optNotPaired": {
     "message": "This browser is not linked to Fremkit. Open Fremkit in the toolbar to link it."
@@ -198,7 +198,7 @@
     "message": "Unlink this browser"
   },
   "optUnpairHint": {
-    "message": "Forgets this browser's key. The device stays listed in Screen → Devices until you remove it there."
+    "message": "Forgets this browser's key. The device stays listed in Settings → Devices until you remove it there."
   },
   "optShortcut": {
     "message": "Fremplay shortcut"

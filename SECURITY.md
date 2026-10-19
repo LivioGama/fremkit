@@ -296,7 +296,7 @@ on a request swapped in after you read the code; Allow is also held off for two 
 the request on show changes. The name shown is one of a closed list of browser names (Chrome,
 Microsoft Edge, Brave, Arc, Opera, Vivaldi, Chromium). An approved request that is never collected is
 removed when it expires.
-Removing the extension in **Screen → Devices** closes its socket and its token stops working.
+Removing the extension in **Settings → Devices** closes its socket and its token stops working.
 
 **The routes that skip the secret**, decided by the route the server matched, like the widgets'
 files:

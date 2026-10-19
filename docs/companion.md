@@ -30,7 +30,7 @@ and what makes one yours is that you allowed it on the Edge.
 
 1. Click the Fremkit icon and press **Connecter à Fremkit** (*Connect to Fremkit*).
 2. The popup shows a four-character code. The same code appears on the Edge, and in
-   the admin under **Screen → Devices**.
+   the admin under **Settings → Devices**.
 3. Check the codes match and press **Allow** on the Edge (or in the admin). **Refuse** drops the
    request.
 
@@ -65,11 +65,11 @@ whatever holds Fremkit's port also serves the dashboard, so:
 - Press **Connect** only when the code the popup shows is on the Edge, and allow it there yourself.
   The extension refuses an approval that comes back less than two seconds after its request, which
   no hand on the Edge is fast enough for, but a program can simply wait.
-- If the popup says the extension was removed and you did not remove it in **Screen → Devices**,
+- If the popup says the extension was removed and you did not remove it in **Settings → Devices**,
   do not reconnect: another program may be answering instead of Fremkit. Quit it, or restart the
   Mac, and the extension finds Fremkit again on its own.
 
-Linked extensions are listed in **Screen → Devices**, where you can rename or remove them.
+Linked extensions are listed in **Settings → Devices**, where you can rename or remove them.
 Removing one closes its connection at once, and the extension goes back to showing the **Connect**
 button; link it again the same way.
 
