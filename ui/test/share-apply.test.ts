@@ -140,4 +140,10 @@ describe('mergeLayout', () => {
     expect(cfg.screens[2].pages[0].items).toHaveLength(1)
     expect(Object.values(cfg.widgets).some((w) => w.widgetId === 'not-here')).toBe(false)
   })
+  it('adds every screen of a setup file, not only the first', () => {
+    const cfg = mine()
+    const out = mergeLayout(cfg, file('setup', [edgeScreen(), edgeScreen({ name: 'Second' })]), { screenId: 'edge', pageIndex: 0 }, choices(), MANIFESTS)
+    expect(cfg.screens.map((x) => x.name)).toEqual(['Xeneon Edge', 'Tablet', 'Desk', 'Second'])
+    expect(out.screenId).toBe(cfg.screens[2].id)
+  })
 })
