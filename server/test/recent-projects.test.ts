@@ -80,7 +80,7 @@ describe('recent projects', () => {
     expect(result).toMatchObject({ ok: true })
     expect(listPanes).not.toHaveBeenCalled()
     expect(run.mock.calls).toEqual([
-      ['/trusted/bin/herdr', ['pane', 'split', '--cwd', canonicalProject, '--direction', 'right', '--no-focus', '--env', `PATH=/trusted/bin:${safePath(process.env.PATH)}`]],
+      ['/trusted/bin/herdr', ['pane', 'split', '--cwd', canonicalProject, '--direction', 'right', '--no-focus', '--env', `PATH=${safePath(['/trusted/bin', process.env.PATH ?? ''].join(':'))}`]],
       ['/trusted/bin/herdr', ['pane', 'run', 'new', 'codex']],
     ])
   })
@@ -120,8 +120,8 @@ describe('recent projects', () => {
     expect(resolver.mock.calls).toEqual([['herdr'], ['claude'], ['herdr'], ['codex']])
     expect(run.mock.calls.filter(([, args]) => args[1] === 'run').map(([, args]) => args[3])).toEqual(['claude', 'codex'])
     expect(run.mock.calls.filter(([, args]) => args[1] === 'split').map(([, args]) => args.slice(-2))).toEqual([
-      ['--env', `PATH=/trusted/bin:${safePath(process.env.PATH)}`],
-      ['--env', `PATH=/trusted/bin:${safePath(process.env.PATH)}`],
+      ['--env', `PATH=${safePath(['/trusted/bin', process.env.PATH ?? ''].join(':'))}`],
+      ['--env', `PATH=${safePath(['/trusted/bin', process.env.PATH ?? ''].join(':'))}`],
     ])
   })
 
@@ -151,8 +151,10 @@ describe('recent projects', () => {
       const pathAssignment = splitArgs?.[splitArgs.indexOf('--env') + 1]
       expect(pathAssignment?.startsWith('PATH=')).toBe(true)
       const searchPath = pathAssignment!.slice('PATH='.length)
-      expect(searchPath.split(':').slice(0, 2)).toEqual([targetDir, '/usr/bin'])
-      expect(searchPath.split(':')).toContain(shadowDir)
+      const searchDirs = searchPath.split(':')
+      expect(searchDirs.slice(0, 4)).toEqual(['/usr/bin', '/bin', '/usr/sbin', '/sbin'])
+      expect(searchDirs.indexOf(targetDir)).toBeGreaterThan(3)
+      expect(searchDirs.indexOf(targetDir)).toBeLessThan(searchDirs.indexOf(shadowDir))
 
       const { stdout } = await execFile('claude', [], { env: { PATH: searchPath } })
       expect(stdout).toBe('validated-target')
