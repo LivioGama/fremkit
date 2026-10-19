@@ -92,8 +92,25 @@ export interface AdminState {
   reloads: Record<string, number>
   status: Status
   toast: string
+  /**
+   * Said after a widget leaves this screen while another screen still shows it: where it still is,
+   * with a way there. Not an error, so not the toast.
+   */
+  notice: StillShown | null
   /** The server cannot read data/fremkit.json: nothing may be saved until it is fixed. */
   degraded: boolean
+}
+
+/** A widget taken off this screen that another screen still shows, and where. */
+export interface StillShown {
+  /** The widget named when it is one; `count` when several went at once. */
+  name: string
+  count: number
+  instanceId: string
+  screenId: string
+  screenName: string
+  pageIndex: number | null
+  pageName: string | null
 }
 
 export interface AdminApi {
@@ -170,6 +187,9 @@ export interface AdminStore {
   closeModal(): void
   setDragWidget(id: string | null): void
   dismissToast(): void
+  dismissNotice(): void
+  /** Takes the editor to where the notice says the widget still is, and selects it. */
+  goToNotice(): void
   setNavHeight(height: NavHeight): void
   addPage(): void
   renamePage(i: number, name: string): void
@@ -359,7 +379,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     screenId: '', pageIndex: 0, selection: [], dragWidgetId: null,
     get selectedId(): string | null { return this.selection.length === 1 ? this.selection[0] : null },
     set selectedId(id: string | null) { this.selection = id ? [id] : [] },
-    mode: 'edit', modal: null, status: 'saved', toast: '', degraded: false,
+    mode: 'edit', modal: null, status: 'saved', toast: '', notice: null, degraded: false,
   })
   // Reactive arrays: canUndo/canRedo read their .length, and a plain array here would give
   // those computed refs no tracked dependency, so they'd never invalidate after the first read.
@@ -424,6 +444,22 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
   const here = (cfg: Config): Screen => cfg.screens.find((x) => x.id === screen.value!.id)!
   /** What the user calls a widget: its own title, else its manifest's name. */
   const nameOf = (w: Widget): string => w.title?.trim() || pick(state.manifests[w.widgetId]?.name) || w.widgetId
+  /**
+   * Of the widgets about to leave screen `leaving`, those another screen still shows, as a notice
+   * naming the first one's place (a page there, else that screen's bar). Read before the edit.
+   */
+  const stillShown = (cfg: Config, ids: string[], leaving: string): StillShown | null => {
+    const kept = ids.filter((id) => cfg.widgets[id] && screensShowing(cfg, id).some((x) => x.id !== leaving))
+    if (!kept.length) return null
+    const id = kept[0]
+    const where = screensShowing(cfg, id).find((x) => x.id !== leaving)!
+    const pageIndex = where.pages.findIndex((p) => p.items.some((x) => x.instanceId === id))
+    return {
+      name: nameOf(cfg.widgets[id]), count: kept.length, instanceId: id,
+      screenId: where.id, screenName: where.name,
+      pageIndex: pageIndex >= 0 ? pageIndex : null, pageName: pageIndex >= 0 ? where.pages[pageIndex].name : null,
+    }
+  }
 
   async function send(): Promise<void> {
     if (!state.config) return
@@ -641,6 +677,16 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     closeModal(): void { state.modal = null },
     setDragWidget(id: string | null): void { state.dragWidgetId = id },
     dismissToast(): void { state.toast = '' },
+    dismissNotice(): void { state.notice = null },
+    /** Takes the editor to where a notice says the widget still is, and selects it. */
+    goToNotice(): void {
+      const n = state.notice
+      state.notice = null
+      if (!n || !state.config?.widgets[n.instanceId]) return
+      store.selectScreen(n.screenId)
+      if (n.pageIndex !== null) store.selectPage(n.pageIndex)
+      state.selectedId = n.instanceId
+    },
 
     selectScreen(id: string): void {
       if (!state.config?.screens.some((x) => x.id === id)) return
@@ -1115,6 +1161,9 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
 
     removeTiles(ids: string[]): void {
       if (!ids.length) return
+      const cfg = state.config
+      const leaving = screen.value?.id ?? ''
+      const notice = cfg ? stillShown(cfg, ids, leaving) : null
       apply((c) => {
         const scr = here(c)
         for (const p of scr.pages) p.items = p.items.filter((x) => !ids.includes(x.instanceId))
@@ -1122,6 +1171,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
         dropUnplaced(c, ids)
         state.selection = state.selection.filter((id) => !ids.includes(id))
       })
+      state.notice = notice
     },
 
     moveTilesToPage(ids: string[], targetPageIndex: number): void {
@@ -1212,6 +1262,8 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
      * that was its last place and the widget itself goes: the editor asks before calling this then.
      */
     removeFromScreen(instanceId: string): void {
+      const cfg = state.config
+      const notice = cfg ? stillShown(cfg, [instanceId], screen.value?.id ?? '') : null
       apply((c) => {
         const scr = here(c)
         for (const p of scr.pages) {
@@ -1223,6 +1275,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
         dropUnplaced(c, [instanceId])
         if (state.selectedId === instanceId) state.selectedId = null
       })
+      state.notice = notice
     },
 
     isLastPlace(instanceId: string): boolean {

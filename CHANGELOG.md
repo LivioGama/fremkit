@@ -246,6 +246,9 @@ tagged `vX.Y.Z`.
   (`pnpm helper:build && pnpm helper:install`): an older helper does not recognise the new
   server, has no access secret and cannot set the brightness. The app updates both at once.
 - **Adding a screen** creates an Edge screen; an iPad screen is now created from a paired iPad.
+- **Taking a widget off a screen says where it still is.** When another screen (an iPad, say) still
+  shows it, a note names that screen and page, with **Show me** to go there — so a widget you
+  thought you had deleted no longer keeps a "to fix" badge without a clue why.
 
 ### Fixed
 - **Right-clicking a widget in the bar of the editor's preview opens its menu in Safari and in
