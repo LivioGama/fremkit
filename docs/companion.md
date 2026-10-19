@@ -15,11 +15,14 @@ admin leaves Fremplay out of the widget library and the bar's list and hides the
 browser already linked stays listed in **Settings → Devices** whatever the switch says, so it can
 always be renamed or removed, and a Fremplay widget already placed stays where it is.
 
-The switch (`labs.companion` in the config) only changes what the admin and the dashboard show. The
-server never reads it and does not rely on it for security: the companion routes, the socket's
-challenge and the refusal of the `companion` channel to paired devices guard the same way whether
-it is on or off, and an extension linked before you turned it off keeps working until you remove
-it.
+The switch (`labs.companion` in the config) changes what the admin and the dashboard show, and one
+thing on the server: while it is off and no browser is linked, a pairing request is turned down
+(*Activez le compagnon dans les fonctions expérimentales de Fremkit.* / *Turn the companion on in
+Fremkit's experimental features.*), since the Edge would show nobody the request. That is so a
+program cannot guess codes unseen, not a security boundary: the server does not rely on the switch
+for security. The companion routes, the socket's challenge and the refusal of the `companion`
+channel to paired devices guard the same way whether it is on or off, and an extension linked
+before you turned it off keeps working (and may pair again) until you remove it.
 
 ## What you need
 
@@ -40,6 +43,9 @@ is the ID the store listing will have (publication is pending), so a link made w
 copy keeps working when you switch to the store version. The server answers that extension only:
 any other extension is refused (403) before it can ask to pair, and the Edge and **Settings →
 Devices** show the first characters of the asking or linked extension's ID (*extension lnckeo…*).
+That short ID only tells extensions apart (Companion from a developer's copy). It cannot tell
+Companion from a program on this Mac that sends Companion's ID in its requests: to anything that is
+not a browser the `Origin` is just a header, so such a request shows *extension lnckeo…* too.
 
 If you work on the extension with a different `key` (so a different ID), list your ID in
 `FREMKIT_COMPANION_EXTENSION_IDS` in the server's environment: comma-separated IDs, each 32 letters
@@ -68,7 +74,10 @@ wait a minute before asking again. The extension's name on the Edge is the brows
 Microsoft Edge, Brave, Arc, Opera, Vivaldi or Chromium), never a text of its choosing.
 
 A wrong code is refused (*Code incorrect*); three tries and the request is refused (connect again
-for a new code). Any program on this Mac can post a pairing request, and Fremkit cannot tell it
+for a new code). After five requests refused that way within a day, pairing is locked: new
+requests are told *Pairing locked after too many wrong codes. Unlock it in Settings → Devices.*
+until you press **Unlock pairing** in **Settings → Devices**. The lock survives a restart of
+Fremkit. If the wrong codes were not yours, something on this Mac has been guessing. Any program on this Mac can post a pairing request, and Fremkit cannot tell it
 from yours: a request you did not start is one to refuse, not one to type a code into. Refuse
 carries the code it showed, and Fremkit turns it down (*The request changed: check the code*) if the
 request waiting is no longer that one.
