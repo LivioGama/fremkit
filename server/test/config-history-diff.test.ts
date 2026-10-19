@@ -77,4 +77,10 @@ describe('summarizeChange', () => {
     expect(s.other).toBe(true)
     expect(isEmptySummary(s)).toBe(false)
   })
+
+  it('counts the experimental features switch as a change', () => {
+    const after = base()
+    after.labs = { devices: !after.labs.devices }
+    expect(summarizeChange(base(), after).other).toBe(true)
+  })
 })

@@ -417,6 +417,20 @@ export const MarketplaceSchema = z.object({
 export type MarketplaceState = z.infer<typeof MarketplaceSchema>
 
 /**
+ * Features that ship in the code but stay out of the admin until they are ready for everyone.
+ *
+ * `devices` is pairing an iPad and adding screens: the server side works, but there is nothing to
+ * pair until the iPad app is out, so a fresh install keeps the Devices section, the screen
+ * selector and "Add a screen" out of sight. It changes what the admin *shows*, nothing the server
+ * does: the remote listener stays exactly as `devices.json` says. A config written before this
+ * existed is given a value by `adoptLabs` in `migrate.ts`, never this default.
+ */
+export const LabsSchema = z.object({
+  devices: z.boolean().default(false),
+}).prefault({})
+export type Labs = z.infer<typeof LabsSchema>
+
+/**
  * The version a config file written today carries.
  *
  * v1 → v2 halved the cell and doubled every coordinate. v2 → v3 moved the Homey connection from
@@ -437,6 +451,8 @@ export const ConfigSchema = z.object({
   /** Language of the admin and of the screen. Absent in every file written before it existed. */
   locale: LocaleSchema.default(defaultLocale()),
   privacy: PrivacySchema,
+  /** Experimental features the admin shows; see `LabsSchema`. */
+  labs: LabsSchema,
   /** Absent in every file written before the marketplace existed, which means nothing installed. */
   marketplace: MarketplaceSchema,
   /** Every widget instance, keyed by instance id, whatever the number of screens showing it. */
@@ -459,6 +475,7 @@ export const DEFAULT_CONFIG: Config = {
   secrets: { backend: defaultSecretsBackend() },
   locale: defaultLocale(),
   privacy: { claudeAccountUsage: false, showAccountEmail: false, codexAccount: false, codexHistorySources: [], macmonTemperature: false },
+  labs: { devices: false },
   marketplace: { installed: {} },
   widgets: {
     'clock-1': { widgetId: 'clock', showTitle: true, settings: {} },

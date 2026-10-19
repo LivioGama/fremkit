@@ -153,9 +153,9 @@ describe('deviceConfigView', () => {
   it('projects or deliberately withholds every top-level config key', () => {
     // A key main adds to the config is dropped from the device view without a word; this makes
     // the next one a decision. Withheld: hosts and accounts, the secrets backend, the privacy
-    // switches and the marketplace records are the Mac's own business.
+    // switches, the marketplace records and the admin's experimental features are the Mac's own business.
     const projected = ['version', 'theme', 'themeSchedule', 'locale', 'widgets', 'screens']
-    const withheld = ['connections', 'secrets', 'privacy', 'marketplace']
+    const withheld = ['connections', 'secrets', 'privacy', 'labs', 'marketplace']
     expect(Object.keys(ConfigSchema.shape).sort()).toEqual([...projected, ...withheld].sort())
   })
   it('has no screen and no instance for a device with none, or a screen that is gone', () => {
