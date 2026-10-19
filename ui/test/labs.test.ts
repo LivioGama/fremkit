@@ -86,8 +86,10 @@ describe('what the flag shows', () => {
 
   for (const devices of [false, true]) {
     for (const count of [1, 2]) {
+      // Intended: someone with several screens keeps seeing them — the selector *and* "Add a
+      // screen" — whatever the flag says. The owner's rule; only a single screen hides them.
       const selector = devices || count > 1
-      it(`flag ${devices ? 'on' : 'off'}, ${count} screen(s): selector ${selector ? 'shown' : 'hidden'}, Devices ${devices ? 'shown' : 'hidden'}`, async () => {
+      it(`flag ${devices ? 'on' : 'off'}, ${count} screen(s): selector and Add a screen ${selector ? 'shown' : 'hidden'}${!devices && count > 1 ? ' (several screens keep both, by design)' : ''}, Devices ${devices ? 'shown' : 'hidden'}`, async () => {
         seed(devices, count)
         expect(labs.showsScreens(config(devices, count))).toBe(selector)
 
@@ -162,7 +164,7 @@ describe('the seven clicks on the version', () => {
     expect(labs.tapVersion(labs.REVEAL_WINDOW_MS + 1 + (labs.REVEAL_TAPS - 1) * 100)).toBe(true)
   })
 
-  it('show the switch in About with a toast, and the switch writes the flag', async () => {
+  it('show the switch in About, focus it without a toast, and the switch writes the flag', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-19T08:00:00Z'))
     seed(false, 1)
@@ -170,9 +172,10 @@ describe('the seven clicks on the version', () => {
     const wrapper = mount(ScreenInspector, { attachTo: document.body, global: { stubs } })
     await flushPromises()
     const version = wrapper.find('[data-test="version"]')
-    // Not a control: no tab stop, no role, nothing for the keyboard to land on.
+    // The version text, not a button: no role, but a tab stop for the keyboard path.
     expect(version.element.tagName).toBe('P')
-    expect(version.attributes('tabindex')).toBeUndefined()
+    expect(version.attributes('role')).toBeUndefined()
+    expect(version.attributes('tabindex')).toBe('0')
     for (let i = 0; i < labs.REVEAL_TAPS - 1; i++) await version.trigger('click')
     expect(wrapper.find('[data-test="labs-devices"]').exists()).toBe(false)
     await version.trigger('click')
@@ -191,6 +194,19 @@ describe('the seven clicks on the version', () => {
     expect(s.state.config!.labs).toEqual({ devices: false })
     expect(wrapper.find('[data-section="screen.devices"]').exists()).toBe(false)
     // Still there once turned off in this session, so it can be turned back on.
+    expect(wrapper.find('[data-test="labs-devices"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('can be pressed from the keyboard: seven presses of Enter on the version', async () => {
+    seed(false, 1)
+    const wrapper = mount(ScreenInspector, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    const version = wrapper.find('[data-test="version"]')
+    for (let i = 0; i < labs.REVEAL_TAPS - 1; i++) await version.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.find('[data-test="labs-devices"]').exists()).toBe(false)
+    await version.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
     expect(wrapper.find('[data-test="labs-devices"]').exists()).toBe(true)
     wrapper.unmount()
   })
