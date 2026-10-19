@@ -30,7 +30,7 @@ import { navigationClearsRect } from '../../companion/lib/navigation.js'
 // @ts-expect-error plain JS module
 import * as pairProof from '../../companion/lib/pairProof.js'
 import * as serverPairProof from '../src/companion/pairProof.js'
-import { CompanionPairing } from '../src/companion/pairing.js'
+import { CompanionPairing, REQUEST_TTL_MS } from '../src/companion/pairing.js'
 import { DeviceStore } from '../src/devices/store.js'
 import { CODE_ALPHABET } from '../src/devices/codes.js'
 import { isLocalSdp, parseExtensionMessage, PROOF_LABEL as SERVER_PROOF_LABEL, PROTOCOL } from '../src/companion/protocol.js'
@@ -823,6 +823,16 @@ describe('the typed-code proof, from the extension side', () => {
     expect(Buffer.from(key).toString('hex')).toBe(v.key)
     expect(await pairProof.pairMac(key, pairProof.PAIR_SERVER_LABEL, v.requestId, v.nonceE, v.nonceS)).toBe(v.macS)
     expect(await pairProof.pairMac(key, pairProof.PAIR_CLIENT_LABEL, v.requestId, v.nonceE, v.nonceS)).toBe(v.macE)
+  })
+
+  it('bounds the server\'s deadline by a request\'s life', () => {
+    const now = 1_000_000
+    expect(pairProof.PAIR_TTL_MS).toBe(REQUEST_TTL_MS)
+    expect(pairProof.pairingDeadline(now + 60_000, now)).toBe(now + 60_000)
+    expect(pairProof.pairingDeadline(now + REQUEST_TTL_MS, now)).toBe(now + REQUEST_TTL_MS)
+    // A server that says "wait a year" is waited on for two minutes.
+    expect(pairProof.pairingDeadline(now + 365 * 86_400_000, now)).toBe(now + REQUEST_TTL_MS)
+    for (const bad of [undefined, null, '1000', Number.NaN, Infinity]) expect(pairProof.pairingDeadline(bad, now), String(bad)).toBeNull()
   })
 
   it('reads a typed code in any case, with spaces or a dash, and nothing outside the alphabet', () => {

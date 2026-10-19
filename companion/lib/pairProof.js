@@ -19,6 +19,18 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 const utf8 = (s) => new TextEncoder().encode(s)
 
+/** A pairing request's life on the server (REQUEST_TTL_MS in server/src/companion/pairing.ts). */
+export const PAIR_TTL_MS = 120_000
+
+/**
+ * When the extension stops waiting on a request: the server's `expiresAt`, but never later than a
+ * request's life from `now`, so whatever answers on the port cannot keep the poll and the worker
+ * alive for ever. Null when the server gave no usable deadline.
+ */
+export function pairingDeadline(expiresAt, now) {
+  return Number.isFinite(expiresAt) ? Math.min(expiresAt, now + PAIR_TTL_MS) : null
+}
+
 /** The code as typed, upper-cased and without spaces or dashes; null when it cannot be one. */
 export function normalizeCode(typed) {
   const code = String(typed ?? '').toUpperCase().replace(/[\s-]/g, '')

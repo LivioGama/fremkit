@@ -10,7 +10,7 @@ import { browserName } from './lib/browser.js'
 import { handshake } from './lib/handshake.js'
 import { grantToReturn } from './lib/grant.js'
 import { closeOutcome, refusalOf } from './lib/link.js'
-import { confirmCode, normalizeCode } from './lib/pairProof.js'
+import { confirmCode, normalizeCode, pairingDeadline } from './lib/pairProof.js'
 import { navigationClearsRect } from './lib/navigation.js'
 import { idleDelay } from './lib/presence.js'
 import { isOwnContext } from './lib/sender.js'
@@ -34,8 +34,6 @@ const NO_VIDEO_MS = 10_000
 /** How long a start waits for the server's answer. */
 const START_TIMEOUT_MS = 8_000
 const PAIR_POLL_MS = 1_500
-/** A pairing request's life on the server (REQUEST_TTL_MS): no server's say makes it longer. */
-const PAIR_TTL_MS = 120_000
 const FLASH_MS = 1_500
 
 const GOLD = '#d9b36a'
@@ -136,11 +134,10 @@ async function pair() {
     return saveLocal({ pairError: known.includes(reason) ? reason : res.status === 409 ? 'busy' : 'limited' })
   }
   const body = res.ok ? await res.json().catch(() => null) : null
-  if (typeof body?.requestId !== 'string' || !Number.isFinite(body.expiresAt)) return saveLocal({ pairError: 'failed' })
   // The code is not in the answer: it shows on the Edge only, and the user types it here
-  // (lib/pairProof.js). The deadline is the server's, bounded by a request's life, so whatever
-  // answers on the port cannot keep the poll and this worker alive for ever.
-  const expiresAt = Math.min(body.expiresAt, Date.now() + PAIR_TTL_MS)
+  // (lib/pairProof.js). The deadline is the server's, bounded by a request's life.
+  const expiresAt = pairingDeadline(body?.expiresAt, Date.now())
+  if (typeof body?.requestId !== 'string' || expiresAt === null) return saveLocal({ pairError: 'failed' })
   await saveLocal({ pairing: { requestId: body.requestId, expiresAt }, name })
   pollPairing()
 }
