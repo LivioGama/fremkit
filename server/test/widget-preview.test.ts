@@ -10,6 +10,7 @@ import { checkWidgetFolder } from '../src/widgets/check.js'
 import { scaffoldWidget } from '../src/widgets/scaffold.js'
 import { InstallError, readPackage, sha256 } from '../src/marketplace/install.js'
 import { writeZip } from '../src/backup/zip.js'
+import { previewSettings } from '../src/cli/preview.js'
 
 const png = (w: number, h: number): Buffer => encodePng(w, h, new Uint8Array(w * h * 4))
 
@@ -129,5 +130,20 @@ describe('setPreviewField', async () => {
   })
   it('falls back to a clean rewrite when there is no version to anchor on', () => {
     expect(JSON.parse(setPreviewField('{"id":"a"}', 'preview.webp'))).toEqual({ id: 'a', preview: 'preview.webp' })
+  })
+})
+
+describe('the settings a preview is taken with', () => {
+  const target = (id: string, settingsSchema: object): Parameters<typeof previewSettings>[0] => ({
+    id, folder: '/nowhere',
+    manifest: ManifestSchema.parse({ id, name: id, version: '1.0.0', minSize: [8, 4], defaultSize: [8, 4], settingsSchema }),
+  })
+  const connection = { type: 'connection', connectionType: 'synology', label: 'NAS' }
+  it('points an empty connection setting at a connection of its type', () => {
+    expect(previewSettings(target('nas', { connection }), [{ id: 'cal', type: 'ics' }, { id: 'demo-nas', type: 'synology' }])).toEqual({ connection: 'demo-nas' })
+  })
+  it('leaves it empty when the demo has none, and keeps the demo settings', () => {
+    expect(previewSettings(target('nas', { connection }), [{ id: 'cal', type: 'ics' }])).toEqual({})
+    expect(previewSettings(target('homey-flows', {}), [])).toEqual({ all: true })
   })
 })

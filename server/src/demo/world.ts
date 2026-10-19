@@ -37,6 +37,9 @@ export const DEMO_CALENDARS = [
   { id: 'demo-home', name: 'Home', color: '#e0a03c' },
 ] as const
 
+/** The Synology NAS the demo dashboard is connected to. Never contacted: its channel is invented. */
+export const DEMO_NAS = { id: 'demo-nas', name: 'NAS', host: '192.0.2.10', account: 'fremkit' } as const
+
 /** Hours after local midnight, and how long, for each calendar's recurring events. */
 const WORK_EVENTS = [
   { title: 'Weekly sync', at: 9.5, minutes: 30, location: 'Room 2' },

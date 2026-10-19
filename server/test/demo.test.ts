@@ -38,6 +38,9 @@ const { buildApp } = await import('../src/app.js')
 const { createDemoProviders } = await import('../src/demo/providers.js')
 const { demoConfig, prepareDemoDataDir, DEMO_MARKER, DemoDataDirError } = await import('../src/demo/seed.js')
 const { demoPublicFetch } = await import('../src/demo/fetch.js')
+const { demoConnectionFetch } = await import('../src/demo/declared.js')
+const { demoConnectionTypes } = await import('../src/demo/connections.js')
+const { defaultConnectionTypes } = await import('../src/connections/types/index.js')
 const { ConfigSchema } = await import('../src/config/schema.js')
 const { errorCode } = await import('../src/providers/registry.js')
 
@@ -109,8 +112,7 @@ describe('demo mode', () => {
     for (const p of providers) {
       if (!p.poll) continue
       const data = await p.poll()
-      // The few channels of registry widgets the demo does not act out say so with a code.
-      if (!['codex', 'codex-live', 'local-models'].includes(p.channel)) expect(errorCode(data, false), p.channel).toBeNull()
+      expect(errorCode(data, false), p.channel).toBeNull()
     }
   })
 
@@ -130,6 +132,85 @@ describe('demo mode', () => {
     expect(probe.results).toHaveLength(4)
   })
 
+  it("acts out the Sietch widgets' channels: Codex, local models, MuteDeck", async () => {
+    const config = ConfigSchema.parse(demoConfig())
+    const providers = createDemoProviders({ config: () => config })
+    const poll = async (channel: string): Promise<any> => providers.find((p) => p.channel === channel)!.poll!()
+    const codex = await poll('codex')
+    expect(codex.quotas.data.buckets[0].primary.usedPercent).toBeGreaterThan(0)
+    expect(codex.history.data.threads.length).toBeGreaterThan(1)
+    const live = await poll('codex-live')
+    // The widget matches a live session to a stored thread by id.
+    for (const s of live.sessions) expect(codex.history.data.threads.map((t: { id: string }) => t.id)).toContain(s.id)
+    expect((await poll('local-models')).loaded.data.length).toBeGreaterThan(0)
+    const mutedeck = providers.find((p) => p.channel === 'mutedeck')!
+    expect(await poll('mutedeck')).toMatchObject({ available: true, call: 'active', mute: 'active', video: 'active' })
+    await mutedeck.commands!.toggleMute({})
+    expect((await poll('mutedeck')).mute).toBe('inactive')
+    await mutedeck.commands!.leave({})
+    expect((await poll('mutedeck')).call).toBe('inactive')
+  })
+
+  it("keeps Codex behind the same privacy switches as the real provider", async () => {
+    const config = ConfigSchema.parse({ ...demoConfig(), privacy: { ...demoConfig().privacy, codexAccount: false, codexHistorySources: [] } })
+    const providers = createDemoProviders({ config: () => config })
+    expect(((await providers.find((p) => p.channel === 'codex')!.poll!()) as { error: string }).error).toBe('unconfigured')
+    expect(((await providers.find((p) => p.channel === 'codex-live')!.poll!()) as { error: string }).error).toBe('unconfigured')
+  })
+
+  it('publishes a Synology snapshot for the seeded NAS', async () => {
+    const synology = demoConnectionTypes(defaultConnectionTypes()).find((t) => t.id === 'synology')!
+    const provider = synology.createProvider!({ id: 'demo-nas', channel: 'synology:demo-nas', fields: {} } as never)
+    const snap = await provider.poll!() as { error?: string; volumes: unknown[]; disks: unknown[]; cpu: number }
+    expect(snap.error).toBeUndefined()
+    expect(snap.volumes.length).toBeGreaterThan(0)
+    expect(snap.disks.length).toBeGreaterThan(0)
+    expect(ConfigSchema.parse(demoConfig()).connections.map((c) => c.type)).toContain('synology')
+  })
+
+  it('plays a Homey and a Key Light for the declared connections, and nothing else', async () => {
+    const lan = demoConnectionFetch()
+    const devices = await (await lan('http://192.0.2.20/api/manager/devices/device')).json() as Record<string, { capabilitiesObj: Record<string, { value: unknown }> }>
+    expect(devices['demo-light-floor'].capabilitiesObj.onoff.value).toBe(false)
+    await lan('http://192.0.2.20/api/manager/devices/device/demo-light-floor/capability/onoff', { method: 'PUT', body: JSON.stringify({ value: true }) })
+    const after = await (await lan('http://192.0.2.20/api/manager/devices/device')).json() as typeof devices
+    expect(after['demo-light-floor'].capabilitiesObj.onoff.value).toBe(true)
+    expect(Object.keys(await (await lan('http://192.0.2.20/api/manager/flow/flow')).json() as object).length).toBeGreaterThan(2)
+    expect((await lan('http://192.0.2.20/api/manager/flow/flow/demo-flow-movie/trigger', { method: 'POST', body: '{}' })).status).toBe(200)
+    await lan('http://192.0.2.30:9123/elgato/lights', { method: 'PUT', body: JSON.stringify({ numberOfLights: 1, lights: [{ on: 0, brightness: 60, temperature: 200 }] }) })
+    expect((await (await lan('http://192.0.2.30:9123/elgato/lights')).json() as { lights: unknown[] }).lights[0]).toEqual({ on: 0, brightness: 60, temperature: 200 })
+    await expect(lan('https://example.com/anything')).rejects.toThrow(/no network/)
+  })
+
+  it("answers a declared connection's proxy and Test from the invented devices", async () => {
+    dir = await mkdtemp(join(tmpdir(), 'fremkit-demo-test-'))
+    const dev = join(dir, 'widgets-dev')
+    await mkdir(join(dev, 'lamp'), { recursive: true })
+    await writeFile(join(dev, 'lamp', 'index.html'), '<!doctype html><title>lamp</title>')
+    await writeFile(join(dev, 'lamp', 'manifest.json'), JSON.stringify({
+      id: 'lamp', name: { fr: 'Lampe', en: 'Lamp' }, version: '1.0.0', sdk: 1, minSize: [4, 4], defaultSize: [8, 4],
+      connection: {
+        name: { fr: 'Lampe', en: 'Lamp' }, kind: 'host', scheme: 'http',
+        fields: [{ key: 'host', label: { fr: 'Adresse', en: 'Address' }, required: true }],
+        test: { method: 'GET', path: '/elgato/accessory-info', expect: 200 },
+        requests: [{ method: 'GET', path: '/elgato/lights' }],
+      },
+      settingsSchema: { connection: { type: 'connection', connectionType: 'decl:lamp:lamp', label: { fr: 'Lampe', en: 'Lamp' } } },
+    }))
+    const { dir: dataDir } = await prepareDemoDataDir({ configured: join(dir, 'data'), liveDataDir: join(dir, 'live') })
+    app = await buildApp({ accessToken: null, dataDir, widgetsDir: WIDGETS, widgetDevDir: dev, demo: true, devicesPort: 0 })
+    const put = await app.inject({ method: 'PUT', url: '/api/connections/demo-lamp', payload: { type: 'decl:lamp:lamp', name: 'Lamp', fields: { host: '192.0.2.30:9123' } } })
+    expect(put.statusCode, put.body).toBeLessThan(300)
+    expect((await app.inject({ method: 'POST', url: '/api/connections/demo-lamp/test' })).json()).toMatchObject({ ok: true })
+    const config = (await app.inject({ url: '/api/config' })).json()
+    config.widgets['lamp-1'] = { widgetId: 'lamp', showTitle: false, settings: { connection: 'demo-lamp' } }
+    config.screens[0].pages.push({ id: 'lamp', name: 'Lamp', items: [{ instanceId: 'lamp-1', x: 0, y: 0, w: 8, h: 4 }] })
+    expect((await app.inject({ method: 'PUT', url: '/api/config', payload: config })).statusCode).toBeLessThan(300)
+    const res = await app.inject({ method: 'POST', url: '/api/proxy/lamp/conn', payload: { instanceId: 'lamp-1', method: 'GET', path: '/elgato/lights' } })
+    expect(res.statusCode, res.body).toBe(200)
+    expect(res.json().lights[0].on).toBe(1)
+  })
+
   it('seeds a dashboard the config schema accepts, with every built-in on it', async () => {
     const config = ConfigSchema.parse(demoConfig())
     const { readdir } = await import('node:fs/promises')
@@ -147,7 +228,9 @@ describe('the demo data folder', () => {
       expect(existsSync(join(prepared.dir, DEMO_MARKER))).toBe(true)
       expect(existsSync(join(prepared.dir, 'fremkit.json'))).toBe(true)
       // The calendars' required address, so the editor does not list them as broken.
-      expect(Object.keys(JSON.parse(await readFile(join(prepared.dir, 'secrets.json'), 'utf8')))).toContain('demo-work/url')
+      const stored = Object.keys(JSON.parse(await readFile(join(prepared.dir, 'secrets.json'), 'utf8')))
+      expect(stored).toContain('demo-work/url')
+      expect(stored).toContain('demo-nas/password')
     } finally {
       await rm(prepared.dir, { recursive: true, force: true })
     }

@@ -32,6 +32,7 @@ import { generateToken } from '../http/access.js'
 import { accessTokenPath } from '../http/access-file.js'
 import { ManifestSchema, PREVIEW_MAX_BYTES, PREVIEW_SCALE, PREVIEW_CELL_PX, type WidgetManifest } from '../widgets/manifest.js'
 import { DEMO_SETTINGS, prepareDemoDataDir } from '../demo/seed.js'
+import { declaredTypeId, slugText } from '../connections/declared.js'
 import type { Config } from '../config/schema.js'
 
 export class PreviewUsageError extends Error {}
@@ -70,7 +71,7 @@ export interface PreviewOptions {
 }
 
 /** A widget to capture: where its folder is, and what it says about itself. */
-interface Target { id: string; folder: string; manifest: WidgetManifest }
+export interface Target { id: string; folder: string; manifest: WidgetManifest }
 
 async function readTarget(folder: string, id: string): Promise<Target | null> {
   try {
@@ -94,12 +95,52 @@ async function findTargets(opts: PreviewOptions, builtinDir: string): Promise<Ta
   return targets
 }
 
+/** The connection a capture creates for a widget's declared type: one per widget, removed after. */
+const CONNECTION_PREFIX = 'fremkit-preview-'
+
+/**
+ * The settings a widget is captured with: the demo's (`DEMO_SETTINGS`) or its manifest defaults,
+ * with every `connection` setting still empty pointed at a connection of its type — one the demo
+ * seeded (the Synology NAS), else one the capture created for the widget's declared type. Without
+ * it a widget that reads through a connection could only ever show "pick a connection".
+ */
+export function previewSettings(target: Target, connections: { id: string; type: string }[]): Record<string, unknown> {
+  const settings: Record<string, unknown> = structuredClone(DEMO_SETTINGS[target.id] ?? {})
+  for (const [key, field] of Object.entries(target.manifest.settingsSchema)) {
+    if (field.type !== 'connection' || settings[key] !== undefined || !field.connectionType) continue
+    const found = connections.find((c) => c.type === field.connectionType)
+    if (found) settings[key] = found.id
+  }
+  return settings
+}
+
+/**
+ * A connection of the widget's declared type, unless the demo already holds one: the declared
+ * fields filled with documentation-range placeholders. The demo server answers its requests from
+ * invented devices (`demo/declared.ts`), so nothing typed here is ever dialled or sent.
+ */
+async function declaredConnection(api: (p: string, i?: RequestInit) => Promise<Response>, target: Target, existing: { type: string }[]): Promise<string | null> {
+  const decl = target.manifest.connection
+  if (!decl) return null
+  const type = declaredTypeId(target.id, slugText(decl.name))
+  if (existing.some((c) => c.type === type)) return null
+  const fields: Record<string, string> = {}
+  const secrets: Record<string, string> = {}
+  for (const f of decl.fields) {
+    if (f.secret) secrets[f.key] = 'demo'
+    else fields[f.key] = f.key === 'host' ? '192.0.2.40' : 'demo'
+  }
+  const id = CONNECTION_PREFIX + target.id
+  const res = await api(`/api/connections/${id}`, { method: 'PUT', body: JSON.stringify({ type, name: 'Demo', fields, secrets }) })
+  return res.ok ? id : null
+}
+
 /** The config the capture of one widget is made with: the server's, plus one screen of its size. */
 function withPreviewScreen(base: Config, target: Target): Config {
   const [w, h] = target.manifest.defaultSize
   const instanceId = INSTANCE_PREFIX + target.id
   const widgets = Object.fromEntries(Object.entries(base.widgets).filter(([id]) => !id.startsWith(INSTANCE_PREFIX)))
-  widgets[instanceId] = { widgetId: target.id, showTitle: false, settings: structuredClone(DEMO_SETTINGS[target.id] ?? {}) }
+  widgets[instanceId] = { widgetId: target.id, showTitle: false, settings: previewSettings(target, base.connections) }
   return {
     ...base,
     widgets,
@@ -197,6 +238,7 @@ export async function runPreview(opts: PreviewOptions): Promise<number> {
 
   const browser = await playwright.chromium.launch({ ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}) })
   let failed = 0
+  const created: string[] = []
   try {
     for (const target of targets) {
       if (!catalog.widgets[target.id]) {
@@ -204,7 +246,11 @@ export async function runPreview(opts: PreviewOptions): Promise<number> {
         failed++
         continue
       }
-      const put = await api('/api/config', { method: 'PUT', body: JSON.stringify(withPreviewScreen(original, target)) })
+      const made = await declaredConnection(api, target, original.connections)
+      if (made) created.push(made)
+      // The config again: it holds the connection just made, and a PUT keeps the server's list.
+      const current = made ? await (await api('/api/config')).json() as Config : original
+      const put = await api('/api/config', { method: 'PUT', body: JSON.stringify(withPreviewScreen(current, target)) })
       if (!put.ok) { console.log(`✗ ${target.id}: the server refused the preview screen (${put.status} ${await put.text()})`); failed++; continue }
       const result = await capture(browser, base, api, target, opts)
       if (!result.ok) { console.log(`✗ ${target.id}: ${result.error}`); failed++; continue }
@@ -224,7 +270,10 @@ export async function runPreview(opts: PreviewOptions): Promise<number> {
     }
   } finally {
     await browser.close()
-    if (opts.url) await api('/api/config', { method: 'PUT', body: JSON.stringify(withoutPreviewScreen(original)) }).catch(() => {})
+    if (opts.url) {
+      await api('/api/config', { method: 'PUT', body: JSON.stringify(withoutPreviewScreen(original)) }).catch(() => {})
+      for (const id of created) await api(`/api/connections/${id}`, { method: 'DELETE' }).catch(() => {})
+    }
     await close()
   }
   if (!opts.dryRun && failed < targets.length && !opts.url) {

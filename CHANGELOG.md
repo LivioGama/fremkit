@@ -16,6 +16,9 @@ tagged `vX.Y.Z`.
 - **See a widget before placing it.** Hovering a card of the editor's widget library (or reaching
   it with Tab) shows its preview with its name, what it does, its default size and what it may
   read, control and reach.
+- **Demo mode acts out the Sietch's widgets too**: Codex sessions and quotas, local AI models, a
+  MuteDeck meeting, a Synology NAS, a Homey's devices and flows and an Elgato Key Light all show
+  invented data, so they can be tried and get preview images without any account or device.
 - **Every built-in widget has a preview**, taken with `pnpm widget:preview` against the demo
   server, so none of it shows anybody's real data.
 - **Pictures in the Sietch.** A registry widget that publishes a preview shows it as a thumbnail on

@@ -93,7 +93,8 @@ import { isDeclaredType } from './connections/declared.js'
 import { tightenDataDir } from './data-permissions.js'
 import { createDemoProviders } from './demo/providers.js'
 import { demoConnectionTypes } from './demo/connections.js'
-import { demoPublicFetch, refuseFetch } from './demo/fetch.js'
+import { demoPublicFetch } from './demo/fetch.js'
+import { demoConnectionFetch } from './demo/declared.js'
 import { demoIcon } from './demo/icons.js'
 import { DEMO_APPS } from './demo/world.js'
 import { FileSecretStore } from './secrets/file.js'
@@ -324,9 +325,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
    * config changes — an install adds one, an uninstall takes one away, and a consent that has
    * not been given yet grants none.
    */
+  // A demo's declared connections, Test button and proxy alike, reach the invented devices of
+  // `demo/declared.ts` and never the network.
+  const connectionFetch = demo ? demoConnectionFetch() : undefined
   const syncDeclared = (): void => syncDeclaredTypes(
     connectionTypes,
     declaredFromCatalog(catalog.entries, (id) => grantedFor(catalog, store.get(), id)),
+    connectionFetch ? { fetch: connectionFetch } : {},
   )
   // Both, and both are needed. The catalogue changing is a widget arriving or leaving; the
   // config changing is the *consent record* being written, which is what turns a declaration
@@ -439,7 +444,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await app.register(proxyRoutes, {
     catalog, store, secrets, cache: connCache,
     // The proxy's checks all run; only the last step, the request itself, is answered locally.
-    ...(demo ? { publicFetch: demoPublicFetch(), fetch: refuseFetch, isPrivate: async () => false } : {}),
+    ...(demo ? { publicFetch: demoPublicFetch(), fetch: connectionFetch, isPrivate: async () => false } : {}),
   })
   const marketplaceRegistry = new Registry({
     ...(opts.registryUrl ? { url: opts.registryUrl } : {}),

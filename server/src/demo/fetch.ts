@@ -8,7 +8,7 @@ import { wander } from './world.js'
  * Handed to the proxy in place of `publicFetch`, so a widget's request goes through every check
  * the proxy makes — granted host, scheme, size — and ends here instead of on the wire. Any other
  * host gets a 503, the answer a widget already handles as "offline". The declared-connection
- * proxy gets `refuseFetch`: a demo has no credential worth sending anywhere.
+ * proxy gets `demoConnectionFetch` (`declared.ts`) instead: invented LAN devices, no network.
  */
 export function demoPublicFetch(now: () => number = Date.now): PublicFetch {
   return async (input) => {
@@ -17,11 +17,6 @@ export function demoPublicFetch(now: () => number = Date.now): PublicFetch {
     if (url.hostname === 'api.open-meteo.com' && url.pathname === '/v1/forecast') return json(forecast(url, now()))
     return new Response(JSON.stringify({ error: 'demo mode: no network' }), { status: 503, headers: { 'content-type': 'application/json' } })
   }
-}
-
-/** For the declared-connection proxy: in demo mode nothing leaves the machine. */
-export const refuseFetch: typeof fetch = async () => {
-  throw new Error('demo mode: no network')
 }
 
 function json(body: unknown): Response {
