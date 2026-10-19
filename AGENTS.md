@@ -76,7 +76,7 @@ pnpm e2e                          # Playwright on the built UI, one throwaway se
 pnpm dev                          # server + Vite with hot reload for the UI
 pnpm helper:build && pnpm helper:install && pnpm helper:test
 pnpm ios:build && pnpm ios:test   # iPad app for the simulator, unsigned; FremkitKit's tests
-FREMKIT_IOS_DEVICE=<udid> scripts/build-ios.sh install [-FremkitSeedLink 'fremkit://pair?…']
+pbpaste | FREMKIT_IOS_DEVICE=<udid> scripts/build-ios.sh install --seed   # a pairing link from stdin, never argv
 ```
 
 **Every request needs the local access secret** (SECURITY.md): a `curl` without
