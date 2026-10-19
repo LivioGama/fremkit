@@ -149,9 +149,14 @@ async function apply(): Promise<void> {
     const done = outcome.leftOut
       ? t('admin.share.import.doneLeftOut', { n: outcome.leftOut })
       : t('admin.share.import.done')
-    s.state.toast = outcome.skippedDevices
-      ? `${done} ${t('admin.share.import.devicesSkipped', { n: outcome.skippedDevices })}`
-      : done
+    // Every screen of the file was an iPad one and skipped: nothing landed, and "imported" would
+    // say otherwise.
+    const nothing = outcome.skippedDevices > 0 && outcome.skippedDevices === p.layout.screens.length
+    s.state.toast = nothing
+      ? t('admin.share.import.nothingDevices')
+      : outcome.skippedDevices
+        ? `${done} ${t('admin.share.import.devicesSkipped', { n: outcome.skippedDevices })}`
+        : done
     share.importing = null
     s.closeModal()
   } catch (e) {

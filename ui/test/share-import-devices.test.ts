@@ -29,12 +29,12 @@ function config(devices: boolean): Config {
 }
 
 /** A setup file with the Edge and a tablet, both empty. */
-function preview(): ImportPreview {
+function preview(kinds: ('edge' | 'device')[] = ['edge', 'device']): ImportPreview {
   const screen = (name: string, kind: 'edge' | 'device') => ({
     name, kind, display: { cols: 64, rows: 16, cell: 40, autoCycleSeconds: 0 }, nav: [], pages: [{ name: 'Home', items: [] }],
   })
   const layout = { format: 'fremkit-layout', version: 1, scope: 'setup', widgets: {}, catalog: {}, images: {},
-    screens: [screen('Desk', 'edge'), screen('Tablet', 'device')] } as unknown as LayoutFile
+    screens: kinds.map((k, i) => screen(k === 'edge' ? `Desk ${i}` : `Tablet ${i}`, k)) } as unknown as LayoutFile
   return {
     layout, shippedBackground: '',
     report: { scope: 'setup', screens: 2, pages: 2, tiles: 0, widgets: [], connections: [], images: [], dropped: { settings: 0, placements: 0, images: 0 } },
@@ -76,4 +76,22 @@ describe('importing a setup with an iPad screen', () => {
       wrapper.unmount()
     })
   }
+})
+
+describe('importing a file with nothing but iPad screens while they are hidden', () => {
+  it('imports nothing and says so, rather than "imported"', async () => {
+    readLayout.mockResolvedValue(preview(['device']))
+    const s = useAdminStore()
+    s.state.config = config(false)
+    s.state.manifests = {}
+    s.selectScreen('edge')
+    const before = JSON.stringify(s.state.config!.screens)
+    const wrapper = mount(ShareImportDialog, { attachTo: document.body })
+    await flushPromises()
+    await wrapper.findAll('button').at(-1)!.trigger('click')
+    await flushPromises()
+    expect(JSON.stringify(s.state.config!.screens)).toBe(before)
+    expect(s.state.toast).toMatch(/^(Nothing was imported|Rien n’a été importé)/)
+    wrapper.unmount()
+  })
 })

@@ -679,6 +679,7 @@ export const en: Record<string, string> = {
   'admin.share.import.done': 'Layout imported.',
   'admin.share.import.doneLeftOut': 'Layout imported; {n} widget(s) found no room.',
   'admin.share.import.devicesSkipped': '{n} iPad screen(s) skipped: they need Experimental features (Screen → About).',
+  'admin.share.import.nothingDevices': 'Nothing was imported: the file only has iPad screens, which need Experimental features (Screen → About).',
   'admin.share.import.tooLarge': 'This file is too large to be a layout.',
   'admin.share.import.notJson': '“{name}” is not a layout file.',
 }
