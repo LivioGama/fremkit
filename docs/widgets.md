@@ -18,6 +18,7 @@ To write your own, see [writing-widgets.md](writing-widgets.md).
 | [cpu](#cpu) | CPU load and temperature | — | 4 cells | 8 × 4 |
 | [disk](#disk) | Disk usage and available space | — | — | 16 × 4 |
 | [disk-map](#disk-map) | What fills the disk, as rings you drill into | — | 2 cells | 24 × 9 |
+| [fremplay](#fremplay) | The video of a Chrome tab, with touch controls | — | 3 cells | 28 × 16 |
 | [memory](#memory) | Memory usage, available RAM and swap | — | 4 cells | 8 × 4 |
 | [uptime](#uptime) | Time since the Mac last booted | — | — | 8 × 4 |
 | [network](#network) | Live network throughput | — | 6 cells | 12 × 4 |
@@ -205,6 +206,23 @@ beside the ring; a narrower one, and the compact rendering (2 cells), show the r
 | `root` | enum | `home` | both | `home` (the home folder) or `volume` |
 | `volume` | string | `""` | both | With `volume`: its name under `/Volumes`. Network volumes are not offered |
 | `rings` | enum | `3` | tile | Rings around the centre, 2 to 4 |
+
+## fremplay
+
+*Fremplay* — the video playing in a Chrome tab, sent by the Fremkit Companion extension, with
+its title, its site and its position. A tap shows the controls for four seconds: −10 s, play or
+pause, +10 s, volume down and up, mute, fill, bring the tab forward in Chrome, and stop sharing.
+Until a share starts the tile says what is missing: the extension, the browser, or a video.
+
+Minimum size 8 × 5, default 28 × 16 — a full page of the Edge is where it is meant to be. In the
+bar it is a live thumbnail; a tap opens the full widget in the popover.
+
+| Setting | What it does |
+|---|---|
+| **Video framing** | *Whole, with bars* (the default) shows the whole picture; *Fill, cropping* fills the tile and crops what overflows. The fill button on the Edge swaps the two for the current share only. |
+
+The picture goes from Chrome to the dashboard directly, over this Mac; the server only passes
+the connection details along.
 
 ## memory
 

@@ -82,11 +82,12 @@ screen right now" and keep the setting until the app is back.
 
 **Remove** in the Devices section revokes one iPad: its connection is closed at once, and the app
 notices within 30 seconds (it checks that the Mac still knows it) and shows "This iPad is no
-longer allowed"; **Pair again** leads to the welcome screen. **Remove every device** does it for
-all of them. **Reset the certificate** makes a new key, which removes every device too: each iPad
+longer allowed"; **Pair again** leads to the welcome screen. **Remove every iPad** does it for
+all of them. **Reset the certificate** makes a new key, which removes every iPad too: each one
 shows "This Mac's key has changed" and must be paired again with **Pair again**. The app never
 forgets a pairing by itself, and keeps retrying meanwhile, so an iPad that only met another
-machine on the Mac's old address recovers on its own. Turning the switch off
+machine on the Mac's old address recovers on its own. Neither touches a linked browser extension
+([docs/companion.md](companion.md)), which pins no key: it is removed from its own row. Turning the switch off
 closes the listener and the iPads show that the Mac is unreachable until it is back on.
 
 ## Prompts on the iPad and the Mac

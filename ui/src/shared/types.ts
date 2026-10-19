@@ -152,6 +152,8 @@ export interface Privacy {
  */
 export interface Labs {
   devices: boolean
+  /** The browser companion and Fremplay; absent in a config the admin built itself, meaning off. */
+  companion?: boolean
 }
 
 export interface Config {

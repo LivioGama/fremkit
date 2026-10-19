@@ -221,6 +221,17 @@ describe('widget routes', () => {
     expect(res.headers['content-security-policy']).toBe(WIDGET_CSP)
     expect(res.body).toBe('<!doctype html><script src="/fremkit.js"></script><html><head><title>c</title></head><body>hi</body></html>')
   })
+  it('lets only our own pages frame a widget document', async () => {
+    const res = await app.inject({ url: '/widgets/clock/index.html' })
+    const ancestors = String(res.headers['content-security-policy']).split('; ').find((d) => d.startsWith('frame-ancestors'))
+    expect(ancestors).toBe('frame-ancestors http://127.0.0.1:4242 http://localhost:4242')
+    // A second checkout's pages, on its own port, and Vite's in development.
+    expect(widgetCsp(4301)).toContain('frame-ancestors http://127.0.0.1:4301 http://localhost:4301')
+    expect(widgetCsp(4301, true)).toContain('frame-ancestors http://127.0.0.1:4301 http://localhost:4301 http://127.0.0.1:5173 http://localhost:5173')
+    // The other files of a widget carry it too.
+    const css = await app.inject({ url: '/widgets/clock/style.css' })
+    expect(String(css.headers['content-security-policy'])).toContain('frame-ancestors http://127.0.0.1:4242 http://localhost:4242')
+  })
   it('allows the bridge and a widget-owned relative script in an opaque frame', async () => {
     await writeFile(join(dir, 'widgets', 'clock', 'index.html'),
       '<html><head><script src="./app.js"></script></head><body>hi</body></html>')
@@ -316,7 +327,7 @@ describe('widget routes', () => {
       // On the list by id, but installed: the source decides, not the name.
       const installed = (await listed.inject({ url: '/widgets/synology/index.html' })).body
       expect(installed).toBe('<!doctype html><script src="/fremkit.js"></script><body>nas</body>')
-      // And with the shipped list, which is empty, nobody has it.
+      // And with the shipped list, which names only fremplay, the clock does not have it.
       expect((await app.inject({ url: '/widgets/clock/index.html' })).body).not.toContain('data-webrtc')
     } finally {
       await listed.close()

@@ -104,7 +104,11 @@ enforces that — but it can *send*, and it can embed. So:
 A widget is a folder of HTML and JavaScript. It is **untrusted code**, and it runs in a
 `sandbox="allow-scripts"` iframe *and* under a CSP served with its own files, so the two hold even
 if someone opens `/widgets/<id>/index.html` directly. The document has an opaque origin: nothing
-it does counts as coming from `http://127.0.0.1:4242`.
+it does counts as coming from `http://127.0.0.1:4242`. Its CSP also names who may frame it
+(`frame-ancestors`): the dashboard and the admin on this server's loopback origins, or, through the
+remote listener, the paired device's own `https://<mac>:4243`. Another web page gets no widget
+document to frame, so none whose bridge attributes it could read (Fremplay's lists this Mac's
+addresses) or that would take a `fremkit:connect` from it.
 
 What a widget **cannot** do:
 
@@ -118,7 +122,7 @@ What a widget **cannot** do:
   `RTCPeerConnection`, `webkitRTCPeerConnection`, `RTCDataChannel`, `RTCSessionDescription` and
   `RTCIceCandidate` undefined, non-writable and non-configurable before any widget code runs; a
   child frame that could hold a fresh copy is refused by `frame-src 'none'`. The one exception
-  is a **built-in** widget on a list in the server (`server/src/widgets/webrtc.ts`, empty today):
+  is a **built-in** widget on a list in the server (`server/src/widgets/webrtc.ts`, Fremplay alone today):
   it gets a wrapped `RTCPeerConnection` with no ICE server, ever, that drops every candidate not
   on loopback or on one of this Mac's own addresses. A widget from the registry never gets
   WebRTC — not from its manifest, not through the consent dialog.
@@ -275,6 +279,138 @@ listener accepts: an iPad needs them to show the pairing page and its widgets, a
 peer on the network which widgets are installed, nothing about how they are set up. In the iPad app, a frame inside the dashboard may load only
 the Mac's `/widgets/…`, the same rule as the Edge's kiosk. See
 [docs/devices.md](docs/devices.md).
+
+### A browser extension
+
+The [Fremkit Companion](docs/companion.md) extension is the one thing that talks to the server
+without the local access secret, because an extension cannot be handed it: the secret is a file in
+your account, and an extension has no way to read your files. It is let in by a different door, and
+the door is narrow.
+
+**Its credential.** An extension is linked by the code you type into it: it asks, the server shows
+a four-character code on the Edge and in the admin (never to the extension), and you type that code
+into the extension's popup. Typing it is the approval; there is no Allow. The code itself never
+travels. `K = PBKDF2-HMAC-SHA256(code, "fremkit-companion-pair-code-v1:" + request id + "|" +
+saltE, 600,000 rounds)` (the iPad code proof's function and cost under its own salt;
+`server/src/companion/pairProof.ts`), which the server derives when the request is made. `saltE` is
+32 random bytes the extension sends with its request: the request id is the server's to choose, so
+without the extension's own salt a program holding the port could hand out one fixed id, build the
+table of K for every code once, and answer any proof in time. The
+extension proves first: it sends a fresh nonce and `HMAC-SHA256(K, "fremkit-companion-pair-client-v1|"
++ request id | nonce)`. The server checks it in constant time; a wrong one counts, and the third
+refuses the request. A right one gets the server's proof back in the same answer, its own nonce and
+`HMAC-SHA256(K, "fremkit-companion-pair-server-v1|" + request id | both nonces)`, with the token.
+The extension keeps the token only if that proof checks against the typed code **and** came back
+within two seconds of sending its own; otherwise it drops the token and says the server on the port
+is not Fremkit. Why both rules: a program that made a request itself (see below) only ever learns
+whether a guess was right, three guesses per request. A program holding the port in Fremkit's place
+does receive the extension's proof and could search the code offline from it, but about 2^20
+four-character codes at 600,000 PBKDF2 rounds each is ~6·10^11 HMAC-SHA256 computations, minutes on
+a large GPU and hours on a CPU, and its answer had to be back in two seconds. The real server
+answers at once, K being ready. The exchange is a `POST` (Chrome sends no `Origin` on an extension's
+`GET` to `127.0.0.1`). The token is 32 random bytes; only its `sha256` is stored, compared in
+constant time. A code lasts two minutes, and one request waits at a time: while it waits, a
+request from another install is answered 409 and does not take its place; only the same install
+can replace its own. Five requests a minute are accepted in total, three per install, and an
+install whose request was refused is turned away for a minute. Refuse sends the code it showed,
+and the server answers 409 when it is not the waiting request's, so a refusal never lands on a
+request swapped in after you read the code. The name shown is one of a closed list of browser
+names (Chrome, Microsoft Edge, Brave, Arc, Opera, Vivaldi, Chromium).
+Removing the extension in **Settings → Devices** closes its socket and its token stops working.
+
+**The routes that skip the secret**, decided by the route the server matched, like the widgets'
+files:
+
+- `POST /api/companion/pair`, `POST /api/companion/pair/:requestId` (where a request stands) and
+  `POST /api/companion/pair/:requestId/confirm` (the code's proof), which each check
+  for Companion's own `Origin` (`chrome-extension://lnckeodobpbbmfbdlpnegjpchgkehdlk`, the ID its
+  manifest `key` fixes, or one a developer lists in `FREMKIT_COMPANION_EXTENSION_IDS`) before doing
+  anything.
+- `GET /companion/ws`, the socket. The extension opens it with a `challenge` naming its record
+  and a fresh nonce; the server answers with an HMAC of that nonce keyed by the token's stored
+  `sha256`, which the extension checks before it sends its token in `hello`. The token must
+  belong to that same record, whose origin *and* install id match what the socket presents, and
+  the whole exchange must finish within five seconds; anything else is closed.
+
+Refusing a request stays behind the secret and is local-only. None of these routes
+exists on the remote listener (4243). The `companion` channel the dashboard watches is built-in
+only, and paired iPads are refused it entirely. The admin's health channel (`config:health`) lists
+the companion's provider with its last error code, as it does every provider; that channel is
+local-only (no widget may declare `config:*`, and a paired device hears the literal `config` alone)
+and holds no code, token or tab data.
+
+**What a web page can do.** Not pair: it has no extension `Origin`, which a page cannot forge, and
+the pairing still needs the code from the Edge. It cannot open the socket without a token, and it
+cannot read one; its upgrade is answered 403 before any socket exists, so it cannot take a socket's
+place either. It can tell that Fremkit runs from that answer, which says no more than the HTTP
+server on port 4242 already does, and is accepted as such. At most four sockets per extension
+origin, and thirty-two in all, may be short of their hello at once (one more is closed with 1013),
+and a share's metadata refreshes reach the dashboard at most four times a second. A local process
+can forge the extension's `Origin` and keep those slots taken, renewing silent sockets every five
+seconds, so your extension's connections are turned away while it does; a process running as you has
+worse options anyway.
+
+**What another extension can do.** Not pair, nor open the socket: it has its own
+`chrome-extension://` origin, which is not Companion's, and every companion route and the socket's
+upgrade answer it 403. (A browser sets an extension's `Origin`; the extension cannot pick
+Companion's.) The Edge prompt and **Settings → Devices** also show the first six characters of the
+asking or linked extension's ID, so a developer's second copy is told from Companion at a glance.
+That is all the short ID does: a local program sending Companion's `Origin` (see below) shows the
+same six characters, so the ID never tells Companion from such a program.
+
+**What a linked extension can do**, and it is little: send metadata about the video being shared (a
+title, a host, a position), and a WebRTC offer, to the Edge. It cannot read your dashboard, your
+config or your connections, call any other API, or send a command to a widget other than driving its
+own share. Its offer may only name this Mac — host candidates on loopback, a `.local` name or one of
+the Mac's own addresses — so the kiosk is never sent to another machine on the network (an offer
+naming anything else is not relayed: that widget gets no picture while the share goes on for the
+others, and the popup says the Edge refused the video connection), and
+the video does not leave your Mac; it never goes through the server either. The picture is cropped
+to the page's main video element; a page can make that element cover the whole tab, frames from
+other sites included, but the picture only goes to your own dashboard. The extension asks for
+another site's frames only when you allow that site, after its popup has named it, and gives the
+grant back unless the share starts with a video in that site's frame. It drives the video from its
+isolated world (only YouTube's volume goes through the page's own), keeps its token in storage
+limited to its own pages and worker (`TRUSTED_CONTEXTS`, available on every browser it installs on,
+Chrome 116 and later), where code it injects into a page cannot read it, and listens only to its own
+pages.
+
+**What a local program can do.** A process running as you can read the access secret and anything
+else; it is out of scope, as under *Known limits*. One running as another account, or anything that
+reaches the port without reading your files, cannot pair without the code that is on the Edge.
+It can, however, post a pairing request: an `Origin` header is only a header to a program that is
+not a browser, and the per-install limits count an install id it picks. It cannot pair with that
+request without the code: it must prove the code first, and gets nothing but "wrong" for each of
+its three guesses, about one chance in 350,000, after which the request is refused. And it cannot
+keep asking: after five requests refused for wrong codes within a day, pairing locks (423) until
+you press **Unlock pairing** in **Settings → Devices** (`POST /api/companion/unlock`, behind the
+secret, local-only, on no allow-list). The lock is a flag in `companion-lock.json` next to
+`devices.json` as well as in memory, so restarting Fremkit does not clear it; a file that cannot be
+read counts as locked. Fifteen guesses in all is about one chance in 70,000. While
+`labs.companion` is off and no extension is linked, pairing requests are refused outright (409),
+since the Edge would show nobody the request; this keeps guessing from going unseen and is not a
+security boundary, as nothing else relies on the switch. A program that keeps a request of its own waiting can
+hold pairing up (you then see a request you did not start, and the Edge counts the other browsers
+turned away since you last answered one, a count only your answer clears, or two minutes with no
+request waiting at all: refuse it), but it cannot swap its request in under the code you type: the
+code belongs to the request it was shown for. Nor can it learn a linked extension's token by
+holding port 4242 in Fremkit's place: it cannot answer the challenge, so the token is never sent,
+and without the token it never sees an offer to answer, which is what keeps the video from it. The
+extension also drops the answer's candidates that are not loopback or a `.local` name, as defence in
+depth only: WebRTC learns the receiver's address from its incoming checks whatever the answer lists.
+Such a program can make the extension show itself removed (an unproven refusal), but the token stays
+until you pair again. Nor can it pair the extension with itself by holding port 4242 when you press
+Connect (Fremkit stopped or restarting): the extension takes a token only once the server has proved,
+within two seconds, that it knows the code you typed, and that code is on the Edge. With the helper, the Edge shows only a
+page from a server that passed `/auth/proof` (`AccessProof.swift`): one that cannot is *foreign*,
+and the kiosk never loads its page, so a program holding the port cannot put a code there, and the
+code you type from the Edge binds the pairing to the real Fremkit. Without the helper (Fremkit run
+from a terminal, the Edge showing a browser window) nothing makes that check: the page on the Edge
+is whatever answers on the port, so an impostor there can show its own code, and you would type it.
+Pair a browser-only setup only while you know Fremkit itself holds the port. The popup's removed
+state also warns not to reconnect unless you removed the browser in Fremkit yourself. The
+turned-away count is a hint, not a proof: such a program can also raise it on your own request with
+install ids it makes up.
 
 ## What Fremkit reads on your Mac
 

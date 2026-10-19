@@ -18,7 +18,7 @@ import ScrollPanel from '../../shared/ui/ScrollPanel.vue'
 import { useI18n } from '../../shared/i18n'
 import { useAdminStore } from '../store'
 import { useDevices } from '../devices'
-import { labsDevices, showsDevices } from '../labs'
+import { labsCompanion, labsDevices, showsDevices } from '../labs'
 import { APP_PANES, foldableSections, paneLabel, searchSettings, settingsPane, settingsQuery, SETTINGS_INDEX,
   type SettingsPane } from '../settingsWindow'
 import SettingsScope from './SettingsScope.vue'
@@ -42,13 +42,14 @@ const PANES: Record<SettingsPane, Component> = {
 const bare = (pane: SettingsPane): boolean => SETTINGS_INDEX.filter((e) => e.pane === pane).length <= 1
 
 /**
- * iPad pairing is hidden until `labs.devices` is on (`labs.ts`), and also shows while pairing is in
+ * iPad pairing is hidden until `labs.devices` is on (`labs.ts`), the browser companion until
+ * `labs.companion` is, and the pane also shows while pairing is in
  * use, flag or not. The status is read once here — the pane polls it itself once shown — and once
  * shown it stays for as long as the window is open, so unpairing the last device does not pull
  * the pane from under the pointer.
  */
 const devices = useDevices()
-const devicesOn = computed(() => labsDevices(s.state.config))
+const devicesOn = computed(() => labsDevices(s.state.config) || labsCompanion(s.state.config))
 const devicesShown = ref(false)
 watch(() => showsDevices(s.state.config, devices.status.value), (on) => { if (on) devicesShown.value = true }, { immediate: true })
 watch(devicesOn, (on) => { if (!on) devicesShown.value = showsDevices(s.state.config, devices.status.value) })

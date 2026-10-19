@@ -71,7 +71,7 @@ import { commandScope, instanceInScope, type ScreenOfDevice } from './devices/sc
 import { migrateHomeySecret } from './config/migrate.js'
 import { BYTES_CSP, hostCsp, isByteRoute } from './http/headers.js'
 import { isAllowedHost, isReadMethod } from './http/guard.js'
-import { AccessGate } from './http/access.js'
+import { AccessGate, isCompanionRoute } from './http/access.js'
 import { installAccessGate } from './http/access-routes.js'
 import { LOGGER_OPTIONS } from './http/logging.js'
 import { MAX_WS_PAYLOAD_BYTES } from './ws/hub.js'
@@ -85,6 +85,7 @@ import { DeviceService } from './devices/service.js'
 import { deviceRoutes } from './devices/routes.js'
 import { REMOTE_PORT } from './devices/listener.js'
 import type { Advertiser } from './devices/bonjour.js'
+import { createCompanion, type Companion } from './companion/index.js'
 import type { Exec } from './secrets/keychain.js'
 import { diagnosticsRoutes } from './diagnostics/routes.js'
 import { shareRoutes } from './share/routes.js'
@@ -411,6 +412,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     if (!isAllowedHost(req.headers.host, opts.port)) {
       return reply.code(421).send({ error: tr(store.get().locale, 'http.hostNotAllowed') })
     }
+    // The extension's routes check its `chrome-extension://` origin themselves.
+    if (isCompanionRoute(req.method, req.routeOptions.url)) return
     if (!isReadMethod(req.method) && !isOriginAllowed(req.headers.origin)) {
       return reply.code(403).send({ error: tr(store.get().locale, 'http.originNotAllowed') })
     }
@@ -421,8 +424,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   if (opts.accessToken !== null) {
     installAccessGate(app, {
       gate: new AccessGate(opts.accessToken, { port: opts.port }),
-      // A paired device has its own credential, checked by the devices gate.
-      appliesTo: (req) => !isRemoteRequest(req),
+      // A paired device has its own credential, checked by the devices gate. The browser
+      // extension pairs by the user's approval instead (see companion/routes.ts).
+      appliesTo: (req) => !isRemoteRequest(req) && !isCompanionRoute(req.method, req.routeOptions.url),
     })
   }
 
@@ -509,6 +513,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await app.register(bambuRoutes, { cameras: bambuCameras })
   await app.register(wsRoutes, { hub })
 
+  // Built after the device service, which lists its extensions and waiting request: it reads them
+  // through these closures.
+  let companion: Companion | null = null
   // After the hub and the config store, which it feeds and listens to.
   const deviceService = new DeviceService({
     app,
@@ -524,6 +531,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       return s ? { target: s.target, seq: s.seq } : null
     },
     listenerPort: opts.devicesPort ?? REMOTE_PORT,
+    companionRequest: () => companion?.pairing.pending() ?? null,
+    companionLocked: () => companion?.pairing.locked ?? false,
+    companionConnected: () => companion?.session.connectedIds() ?? new Set(),
     ...opts.devices,
   })
   // A new target for a screen reaches the devices bound to it over the `device` channel.
@@ -573,6 +583,11 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     },
   })
   app.addHook('onClose', async () => { await deviceService.close() })
+
+  // The browser extension: pairing by approval on the Edge, its socket, the share it carries and
+  // the `companion` channel the dashboard watches. Closed with the app.
+  // The pairing lock lives next to devices.json: a restart must not clear it.
+  companion = await createCompanion({ app, store: devices, config: store, registry, lockPath: join(opts.dataDir, 'companion-lock.json') })
 
   if (opts.uiDist && (await access(opts.uiDist).then(() => true, () => false))) {
     await app.register(fastifyStatic, { root: opts.uiDist, prefix: '/', serve: true, decorateReply: false })

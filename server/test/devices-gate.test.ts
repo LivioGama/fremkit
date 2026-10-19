@@ -8,6 +8,7 @@ import { RemoteListener } from '../src/devices/listener.js'
 import { remoteAccess } from '../src/devices/allowlist.js'
 import { readCookie } from '../src/http/cookies.js'
 import { generateToken } from '../src/http/access.js'
+import { hostAddresses } from '../src/widgets/webrtc.js'
 import { hasOpenssl, remote, tlsMaterial, upgrade } from './helpers/remote.js'
 
 let dir: string
@@ -24,6 +25,10 @@ async function writeFixture(root: string): Promise<void> {
   await mkdir(join(root, 'widgets', 'clock'), { recursive: true })
   await writeFile(join(root, 'widgets', 'clock', 'manifest.json'), JSON.stringify({ id: 'clock', name: 'Clock', version: '1.0.0', minSize: [8, 4], defaultSize: [16, 4] }))
   await writeFile(join(root, 'widgets', 'clock', 'index.html'), '<!doctype html><html><head><title>c</title></head><body>hi</body></html>')
+  // A built-in at WebRTC's `local` level, whose page carries the Mac's addresses when asked locally.
+  await mkdir(join(root, 'widgets', 'fremplay'), { recursive: true })
+  await writeFile(join(root, 'widgets', 'fremplay', 'manifest.json'), JSON.stringify({ id: 'fremplay', name: 'Fremplay', version: '1.0.0', minSize: [8, 4], defaultSize: [16, 4] }))
+  await writeFile(join(root, 'widgets', 'fremplay', 'index.html'), '<!doctype html><html><body>play</body></html>')
   const ui = join(root, 'ui')
   await mkdir(join(ui, 'assets'), { recursive: true })
   await writeFile(join(ui, 'index.html'), '<!doctype html><title>dashboard</title>')
@@ -132,6 +137,14 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
   it('answers 404 for every registered route the allow-list does not name, even with a valid token', async () => {
     const walked = await walkRoutes(routes, port, token)
     expect(walked.length).toBeGreaterThan(40)
+    // The companion's routes are among them: if they ever moved behind an option these tests
+    // leave off, the walk would silently stop covering them.
+    expect(walked.map((r) => `${r.method} ${r.url}`)).toEqual(expect.arrayContaining([
+      'POST /api/companion/pair', 'POST /api/companion/pair/:requestId',
+      'POST /api/companion/pair/:requestId/confirm',
+      'POST /api/companion/requests/:requestId/refuse', 'POST /api/companion/unlock',
+      'GET /companion/ws',
+    ]))
     for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']) {
       expect(walked.some((r) => r.method === method), method).toBe(true)
     }
@@ -250,6 +263,33 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
     if ('socket' in opened) opened.socket.destroy()
   })
 
+  it('refuses a browser extension\'s token as a device cookie: 401 over HTTP and on the socket', async () => {
+    const { token: extensionToken } = await app.pairing.store.createExtension({
+      name: 'Chrome', origin: `chrome-extension://${'g'.repeat(32)}`, installId: '3a9c1d2e-5b6f-4a7b-8c9d-0e1f2a3b4c5d',
+    })
+    for (const path of ['/api/config', '/api/widgets', '/api/devices/me']) {
+      expect((await remote(port, { path, headers: cookie(extensionToken) })).status, path).toBe(401)
+    }
+    expect((await remote(port, { method: 'POST', path: '/api/proxy/clock/conn', headers: { ...cookie(extensionToken), 'content-type': 'application/json' }, body: '{}' })).status).toBe(401)
+    const ws = await upgrade(port, { ...cookie(extensionToken), origin: `https://127.0.0.1:${port}` })
+    expect(ws.status).toBe(401)
+    // The iPad's token, sent the same way, still opens them: the refusal is the kind, not the cookie.
+    expect((await remote(port, { path: '/api/config', headers: cookie(token) })).status).toBe(200)
+  })
+
+  it('serves a `local` built-in at the `none` level through the listener, with none of the Mac\'s addresses', async () => {
+    const local = (await app.inject({ url: '/widgets/fremplay/index.html' })).body
+    expect(local).toContain('data-webrtc="local"')
+    expect(local).toContain('data-webrtc-hosts=')
+    for (const headers of [{}, cookie(token)]) {
+      const res = await remote(port, { path: '/widgets/fremplay/index.html', host: `example.local:${port}`, headers })
+      expect(res.status).toBe(200)
+      expect(res.body).toContain('<script src="/fremkit.js"></script>')
+      expect(res.body).not.toContain('data-webrtc')
+      for (const address of hostAddresses()) expect(res.body, address).not.toContain(address)
+    }
+  })
+
   it('builds the widget CSP from the remote origin', async () => {
     const res = await remote(port, { path: '/widgets/clock/index.html', host: `example.local:${port}` })
     expect(res.status).toBe(200)
@@ -257,6 +297,9 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
     expect(csp).toContain(`https://example.local:${port}`)
     expect(csp).not.toContain('127.0.0.1')
     expect(csp).toContain('sandbox allow-scripts')
+    // Framed by the iPad's page from this same origin, and by no other page.
+    expect(csp).toContain(`frame-ancestors https://example.local:${port}`)
+    expect(csp.split('; ').find((d) => d.startsWith('frame-ancestors'))).toBe(`frame-ancestors https://example.local:${port}`)
   })
 
   it('gives the dashboard a host CSP written for the remote origin', async () => {

@@ -8,7 +8,7 @@ import type { ConfigStore } from '../config/store.js'
 import { grantedCatalog, permissionsOf, type Permissions } from '../marketplace/consent.js'
 import { SDK_VERSION } from '../bridge/sdk.js'
 import { tr } from '../i18n.js'
-import { isRemoteRequest } from '../net/remote.js'
+import { isLocalRequest, isRemoteRequest } from '../net/remote.js'
 import { requestScope, widgetInScope, type ScreenOfDevice } from '../devices/scope.js'
 import { isIP } from 'node:net'
 import { hostAddresses, webrtcLevel, type WebRtcLevel } from './webrtc.js'
@@ -30,6 +30,13 @@ import { hostAddresses, webrtcLevel, type WebRtcLevel } from './webrtc.js'
  * `data:`/`blob:` cover what widgets generate, `i.scdn.co` covers album art the local
  * Spotify app hands us as an https URL. No `connect-src` at all: every network call goes through
  * `Fremkit.fetch`, which asks the host, which asks the proxy, which checks the manifest.
+ *
+ * `frame-ancestors`: only our own pages may frame a widget — the dashboard and the admin, on the
+ * same loopback origins (CSP has no syntax for an IPv6 literal, so a page loaded from `[::1]`
+ * frames none, as its own `frame-src` already could not), or, through the remote listener, the
+ * device origin the page came from, so a paired iPad still frames its widgets. Any other web page
+ * gets no widget document to frame, and so none to read the bridge's attributes (Fremplay's
+ * `data-webrtc-hosts`, this Mac's addresses) or to hand a `fremkit:connect` from its own window.
  */
 export function widgetCsp(port = 4242, dev = false, remoteOrigin?: string): string {
   // On the remote listener the page was loaded from `https://<host>:4243` and nothing else: the
@@ -51,6 +58,7 @@ export function widgetCsp(port = 4242, dev = false, remoteOrigin?: string): stri
     "frame-src 'none'",
     "form-action 'none'",
     "base-uri 'none'",
+    `frame-ancestors ${own}`,
   ].join('; ')
 }
 
@@ -190,7 +198,10 @@ export async function widgetRoutes(
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') return reply.code(404).send({ error: tr(undefined, 'widgets.missing') })
         throw err
       }
-      const level = webrtcLevel(id, opts.catalog.entry(id)?.source, opts.webrtcLocalBuiltins)
+      // The `local` level, and the Mac's addresses it carries, only for a page asked for on this
+      // Mac. Through the remote listener these files answer before pairing, to any LAN peer it
+      // accepts, and a device can never receive an offer anyway (`companion` is local-only).
+      const level = isLocalRequest(req) ? webrtcLevel(id, opts.catalog.entry(id)?.source, opts.webrtcLocalBuiltins) : 'none'
       return reply
         .type('text/html; charset=utf-8')
         .header('cache-control', 'no-store')

@@ -8,12 +8,12 @@
  * reader calls `refresh()` once and reads what is there.
  */
 import { ref, type Ref } from 'vue'
-import { api, type DeviceStatus, type PairingOffer, type PublicDevice } from '../shared/api'
+import { api, type DeviceStatus, type PairingOffer, type PublicDevice, type PublicIpadDevice } from '../shared/api'
 
 export const DEVICES_POLL_MS = 3000
 
 export type DevicesApi = Pick<typeof api,
-  'getDevices' | 'setDevicesEnabled' | 'newPairingCode' | 'patchDevice' | 'deleteDevice' | 'deleteAllDevices' | 'resetDeviceCertificate'>
+  'getDevices' | 'setDevicesEnabled' | 'newPairingCode' | 'patchDevice' | 'refuseCompanion' | 'unlockCompanion' | 'deleteDevice' | 'deleteAllDevices' | 'resetDeviceCertificate'>
 
 export interface Devices {
   /** The last status read; null until the first answer. */
@@ -33,11 +33,17 @@ export interface Devices {
   /** Asks for a fresh code. One request at a time: a second call while one runs joins it. */
   newCode(): Promise<void>
   attach(id: string, screenId: string | null): Promise<void>
+  /** Renames a device, an iPad or an extension. */
+  rename(id: string, name: string): Promise<void>
+  /** Refuses the browser extension's pairing request waiting on the Edge and here. */
+  refuseCompanion(request: { requestId: string; code: string }): Promise<void>
+  /** Opens extension pairing again after too many wrong codes locked it. */
+  unlockCompanion(): Promise<void>
   remove(id: string): Promise<void>
   removeAll(): Promise<void>
   resetCertificate(): Promise<void>
   /** The devices showing `screenId`. */
-  showing(screenId: string): PublicDevice[]
+  showing(screenId: string): PublicIpadDevice[]
   /** Polls while held; the returned function lets go. Polling stops when nobody holds it. */
   watch(): () => void
 }
@@ -98,6 +104,18 @@ export function createDevices(deviceApi: DevicesApi, pollMs = DEVICES_POLL_MS): 
       await run(async () => { await deviceApi.patchDevice(id, { screenId }) })
       await refresh()
     },
+    async rename(id, name) {
+      await run(async () => { await deviceApi.patchDevice(id, { name }) })
+      await refresh()
+    },
+    async refuseCompanion({ requestId, code }) {
+      await run(() => deviceApi.refuseCompanion(requestId, code))
+      await refresh()
+    },
+    async unlockCompanion() {
+      await run(() => deviceApi.unlockCompanion())
+      await refresh()
+    },
     async remove(id) {
       await run(() => deviceApi.deleteDevice(id))
       await refresh()
@@ -113,7 +131,7 @@ export function createDevices(deviceApi: DevicesApi, pollMs = DEVICES_POLL_MS): 
         offer.value = null
       })
     },
-    showing: (screenId) => status.value?.devices.filter((d) => d.screenId === screenId) ?? [],
+    showing: (screenId) => status.value?.devices.filter((d): d is PublicIpadDevice => d.kind === 'ipad' && d.screenId === screenId) ?? [],
     watch() {
       holders += 1
       if (holders === 1) {

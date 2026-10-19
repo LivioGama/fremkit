@@ -24,10 +24,16 @@ import type { PairingCodes } from './codes.js'
 import { lanAddresses as readLanAddresses, cachedPick, computerName, isPrivate, lanAppAddresses, localHostName, preferredAddress } from './host.js'
 import { REMOTE_PORT, RemoteListener } from './listener.js'
 import { deviceThemeView } from '../themes/schedule.js'
-import type { DeviceStore, PublicDevice, Viewport } from './store.js'
+import type { DeviceStore, PublicDevice, PublicExtensionDevice, PublicIpadDevice, Viewport } from './store.js'
 
 /** How often the LAN addresses are re-read while listening, to follow a DHCP change. */
 const ADDRESS_CHECK_MS = 30_000
+
+/** What the admin lists: an extension row also says whether its socket is open right now. */
+export type StatusDevice = PublicIpadDevice | (PublicExtensionDevice & { connected: boolean })
+
+/** A browser extension asking to pair, as the admin shows it: never a token. */
+export type CompanionRequest = { requestId: string; code: string; name: string; extension: string; expiresAt: number }
 
 export type DeviceStatus = {
   enabled: boolean
@@ -42,7 +48,11 @@ export type DeviceStatus = {
   keyHash: string | null
   /** Four words from the key's hash, for a person to compare with the device's screen. */
   fingerprint: string[] | null
-  devices: PublicDevice[]
+  devices: StatusDevice[]
+  /** The extension waiting for the user's answer, or null. */
+  companionRequest: CompanionRequest | null
+  /** Extension pairing locked after too many wrong codes, until unlocked here. */
+  companionLocked: boolean
 }
 
 export type PairingOffer = { code: string; expiresAt: number; url: string }
@@ -87,6 +97,13 @@ export interface DeviceServiceOptions {
   lanAddresses?: () => string[]
   /** Which of the addresses the QR code carries; the default asks the Mac's default route. */
   preferredAddress?: (addresses: string[]) => Promise<string | null>
+  /**
+   * The companion's waiting pairing request and its connected extensions, as closures: the
+   * companion is built after this service and this one must not know its code.
+   */
+  companionRequest?: () => CompanionRequest | null
+  companionLocked?: () => boolean
+  companionConnected?: () => ReadonlySet<string>
   /** Which of the addresses the device app is told, in order; the default is `lanAppAddresses`. */
   appAddresses?: (addresses: string[]) => Promise<string[]>
 }
@@ -140,6 +157,9 @@ export class DeviceService {
   /** `appAddresses` for `meForApp`, kept 30 s per address list: each iPad asks every 30 s or so. */
   private readonly listAppAddresses: (addresses: string[]) => Promise<string[]>
   private readonly listener: RemoteListener
+  private readonly companionRequest: () => CompanionRequest | null
+  private readonly companionLocked: () => boolean
+  private readonly companionConnected: () => ReadonlySet<string>
 
   /**
    * Every start, stop, certificate swap and address check goes through this one chain, so they
@@ -177,6 +197,9 @@ export class DeviceService {
     this.advertiser = opts.advertise ?? bonjourAdvertise
     this.readAddresses = opts.lanAddresses ?? readLanAddresses
     this.pickAddress = opts.preferredAddress ?? ((addresses) => preferredAddress(addresses, this.exec))
+    this.companionRequest = opts.companionRequest ?? (() => null)
+    this.companionLocked = opts.companionLocked ?? (() => false)
+    this.companionConnected = opts.companionConnected ?? (() => new Set())
     this.listAppAddresses = cachedPick(opts.appAddresses ?? ((addresses) => lanAppAddresses(addresses, this.exec)))
     this.listener = new RemoteListener(opts.app, opts.listenerPort ?? REMOTE_PORT)
   }
@@ -217,6 +240,8 @@ export class DeviceService {
   }
 
   status(): DeviceStatus {
+    const connected = this.companionConnected()
+    const request = this.companionRequest()
     return {
       enabled: this.store.enabled,
       listening: this.listener.running,
@@ -227,7 +252,10 @@ export class DeviceService {
       port: this.listener.port,
       keyHash: this.keyHash,
       fingerprint: this.keyHash === null ? null : fingerprintWords(this.keyHash),
-      devices: this.store.list(),
+      devices: this.store.list().map((d): StatusDevice => (d.kind === 'extension' ? { ...d, connected: connected.has(d.id) } : d)),
+      // Picked field by field, so nothing the pairing object grows later reaches the admin.
+      companionRequest: request ? { requestId: request.requestId, code: request.code, name: request.name, extension: request.extension, expiresAt: request.expiresAt } : null,
+      companionLocked: this.companionLocked(),
     }
   }
 
@@ -294,6 +322,8 @@ export class DeviceService {
   /** Puts a device on a device screen, or on none. Refuses any other screen. */
   async attach(id: string, screenId: string | null): Promise<PublicDevice | null | 'screenNotDevice'> {
     if (screenId !== null && !isDeviceScreen(this.config.get(), screenId)) return 'screenNotDevice'
+    // Only an iPad shows a screen: an extension record is not attachable.
+    if (!this.me(id)) return null
     const device = await this.store.update(id, { screenId })
     if (device) this.hub.refreshDevice(id)
     return device
@@ -312,15 +342,14 @@ export class DeviceService {
     return removed
   }
 
+  /** Every paired iPad; a browser extension is left, removed from its own row instead. */
   async revokeAll(): Promise<void> {
-    const ids = this.store.list().map((d) => d.id)
-    await this.store.removeAll()
-    for (const id of ids) this.hub.closeDevice(id)
+    for (const id of await this.store.removeIpads()) this.hub.closeDevice(id)
   }
 
   /**
-   * A new key, so a new pin, and every device has to pair again: their records and tokens go, and
-   * so do their sockets. A live code carried the old pin in its QR, so it goes too; a running
+   * A new key, so a new pin, and every iPad has to pair again: their records and tokens go, and
+   * so do their sockets. A browser extension pins nothing and stays paired. A live code carried the old pin in its QR, so it goes too; a running
    * listener is switched to a certificate from the new key.
    */
   resetCertificate(): Promise<void> {
@@ -330,9 +359,7 @@ export class DeviceService {
       this.keyHashKnown = true
       this.codes.clear()
       // `revokeAll`'s body, inline: it is not serialized itself, and this already is.
-      const ids = this.store.list().map((d) => d.id)
-      await this.store.removeAll()
-      for (const id of ids) this.hub.closeDevice(id)
+      for (const id of await this.store.removeIpads()) this.hub.closeDevice(id)
       this.hub.closeRemote()
       if (this.listener.running) {
         const cert = await issueCertificate(key, { host: this.dnsName(), addresses: this.certAddresses }, { exec: this.exec })
@@ -345,7 +372,8 @@ export class DeviceService {
 
   me(deviceId: string): DeviceInfo | null {
     const device = this.store.list().find((d) => d.id === deviceId)
-    if (!device) return null
+    // An extension is no device screen: it has no `me`, as before main's brightness.
+    if (device?.kind !== 'ipad') return null
     const brightness = device.screenId === null ? null : this.brightnessOf(device.screenId)
     return { id: device.id, name: device.name, screenId: device.screenId, brightness }
   }
@@ -373,7 +401,8 @@ export class DeviceService {
 
   /** The screen a device is bound to, only while it is a device screen: where its brightness goes. */
   deviceScreenOf(deviceId: string): string | null {
-    const screenId = this.store.list().find((d) => d.id === deviceId)?.screenId ?? null
+    const device = this.store.list().find((d) => d.id === deviceId)
+    const screenId = device?.kind === 'ipad' ? device.screenId : null
     return screenId !== null && isDeviceScreen(this.config.get(), screenId) ? screenId : null
   }
 
@@ -385,7 +414,7 @@ export class DeviceService {
   /** Re-sends the `device` payload to every device bound to one of these screens. */
   screensChanged(screenIds: string[]): void {
     for (const d of this.store.list()) {
-      if (d.screenId !== null && screenIds.includes(d.screenId)) this.hub.refreshDevice(d.id)
+      if (d.kind === 'ipad' && d.screenId !== null && screenIds.includes(d.screenId)) this.hub.refreshDevice(d.id)
     }
   }
 
@@ -527,7 +556,7 @@ export class DeviceService {
   private onConfigChange(cfg: Config): void {
     this.manifests = null
     for (const device of this.store.list()) {
-      if (device.screenId === null || isDeviceScreen(cfg, device.screenId)) continue
+      if (device.kind !== 'ipad' || device.screenId === null || isDeviceScreen(cfg, device.screenId)) continue
       // Conditional, inside the store's queue: an attach to another screen queued before this
       // write runs must not be undone by it.
       void this.store.detach(device.id, device.screenId)

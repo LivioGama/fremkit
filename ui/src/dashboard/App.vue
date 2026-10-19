@@ -12,6 +12,8 @@ import PageView from './PageView.vue'
 import NavBar from './NavBar.vue'
 import NavPopover from './NavPopover.vue'
 import { useSwipe } from './useSwipe'
+import CompanionPrompt from './CompanionPrompt.vue'
+import { createRevealTracker, type CompanionReveal } from './companionReveal'
 import { useNavPopover } from './useNavPopover'
 import { isRemotePage, useDeviceScreen, type DeviceInfo } from './remote'
 import { useNativeBridge } from './native'
@@ -76,6 +78,10 @@ const rootStyle = computed(() => display.value && { 'padding-bottom': navHeightO
 const gridWidth = computed(() => display.value ? display.value.cols * display.value.cell + 'px' : '0')
 let cycleTimer: number | undefined
 let unsub: (() => void) | undefined
+let unsubCompanion: (() => void) | undefined
+/** The browser extension's pairing request, while one is pending (local dashboard only). */
+const companionPairing = ref<{ requestId: string; code: string; name: string; extension?: string; expiresAt: number; turnedAway?: number } | null>(null)
+const reveal = createRevealTracker()
 let offReload: (() => void) | undefined
 
 function go(delta: number) {
@@ -139,6 +145,22 @@ onMounted(async () => {
     config.value = c as Config
     if (pageIndex.value >= (screen.value?.pages.length ?? 0)) pageIndex.value = 0
   })
+  if (!remote) {
+    unsubCompanion = socket.subscribe('companion', (data) => {
+      const snap = data as { pairing?: typeof companionPairing.value; reveal?: CompanionReveal | null }
+      companionPairing.value = snap.pairing ?? null
+      const target = reveal.observe(snap, screen.value?.id)
+      if (target !== null && target !== pageIndex.value && target < (screen.value?.pages.length ?? 0)) select(target)
+    })
+    // A reconnect replays a snapshot that must not move the page on its own. And the code on show
+    // goes with the socket: a server that restarted no longer has that request, and a program
+    // that took the port meanwhile must not get the user to type a code still on the screen.
+    watch(socket.status, (s) => {
+      if (s === 'open') return
+      reveal.reset()
+      companionPairing.value = null
+    })
+  }
   window.addEventListener('keydown', onKey)
   // A widget's manifest was saved while it is being written: the frames wait for this catalogue.
   offReload = onWidgetReload(async (reload) => {
@@ -147,7 +169,7 @@ onMounted(async () => {
 })
 // Another screen for the device: start it on its first page, which every screen has.
 if (remote) watch(() => screen.value?.id, () => { pageIndex.value = 0; popover.close() })
-onUnmounted(() => { unsub?.(); offReload?.(); window.removeEventListener('keydown', onKey); window.clearInterval(cycleTimer) })
+onUnmounted(() => { unsub?.(); unsubCompanion?.(); offReload?.(); window.removeEventListener('keydown', onKey); window.clearInterval(cycleTimer) })
 watch(() => display.value?.autoCycleSeconds, setupCycle)
 /** The manifest of the widget a bar item names, for the popover it opens. */
 function manifestOf(item: NavItem): WidgetManifest | undefined {
@@ -202,6 +224,9 @@ watch(() => config.value?.locale, (l) => setLocale(l))
       :anchor="popover.open.value.anchor"
       :screen="popover.open.value.screen"
       @root="popover.setPopoverEl" />
+    <!-- Experimental: only while `labs.companion` is on. The server answers the extension the same
+         either way; with the prompt hidden (and the admin's card too) no request can be allowed. -->
+    <CompanionPrompt v-if="companionPairing && socket.status.value === 'open' && config?.labs?.companion === true" :pairing="companionPairing" />
   </div>
 </template>
 

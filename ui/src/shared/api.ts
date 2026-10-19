@@ -63,17 +63,29 @@ export interface HistoryRestoreResult {
 }
 export type ConnectionTestResult = { ok: true; detail: string } | { ok: false; error: string }
 
-/** A paired device as `GET /api/devices` lists it: never its token, nor the token's hash. */
-export interface PublicDevice {
+/** What every paired device carries: never its token, nor the token's hash. */
+interface PublicDeviceBase {
   id: string
   name: string
   /** ISO date. */
   pairedAt: string
   /** ISO date, written at most once a minute; null until the device first connects. */
   lastSeen: string | null
+}
+export interface PublicIpadDevice extends PublicDeviceBase {
+  kind: 'ipad'
   viewport: { width: number; height: number }
   screenId: string | null
 }
+export interface PublicExtensionDevice extends PublicDeviceBase {
+  kind: 'extension'
+  origin: string
+  installId: string
+  /** Whether the extension's socket is open right now. */
+  connected: boolean
+}
+/** A paired device as `GET /api/devices` lists it. */
+export type PublicDevice = PublicIpadDevice | PublicExtensionDevice
 /** What `GET /api/devices` answers: the remote listener's state and the paired devices. */
 export interface DeviceStatus {
   enabled: boolean
@@ -88,6 +100,17 @@ export interface DeviceStatus {
   /** Four words from the key's hash, null before a key exists. */
   fingerprint: string[] | null
   devices: PublicDevice[]
+  /** A browser extension waiting for an answer (the Edge shows it too); never carries a token. */
+  companionRequest: CompanionRequest | null
+  /** Extension pairing locked after too many wrong codes, until unlocked in Devices. */
+  companionLocked?: boolean
+}
+/** `extension`: the first characters of the asking extension's id, to tell it from another. */
+export interface CompanionRequest { requestId: string; code: string; name: string; extension?: string; expiresAt: number }
+
+/** The first characters of an extension origin's id, as the server gives them with a request. */
+export function shortExtensionId(origin: string): string {
+  return origin.replace(/^chrome-extension:\/\//, '').slice(0, 6)
 }
 /** A pairing code, its expiry (epoch ms) and the QR payload carrying it. */
 export interface PairingOffer { code: string; expiresAt: number; url: string }
@@ -101,11 +124,14 @@ async function json<T>(res: Response): Promise<T> {
   return res.json()
 }
 
+/** A refused request whose status the caller may act on; `message` is the server's text. */
+export interface HttpFailure extends Error { status: number }
+
 async function empty(res: Response): Promise<void> {
   if (res.ok) return
   let msg = `HTTP ${res.status}`
   try { const b = await res.json(); if (b.errors) msg = b.errors.join('\n'); else if (b.error) msg = b.error } catch { /* no body */ }
-  throw new Error(msg)
+  throw Object.assign(new Error(msg), { status: res.status }) satisfies HttpFailure
 }
 
 export const api = {
@@ -269,6 +295,17 @@ export const api = {
   testConnection: (id: string, body: Partial<ConnectionInput>) =>
     fetch(`/api/connections/${encodeURIComponent(id)}/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => json<ConnectionTestResult>(r)),
 
+  /**
+   * Refuse the browser extension's pairing request the Edge is showing, with the code on show: the
+   * server answers 409 when that is no longer the waiting request's code. There is no approve:
+   * typing the code into the extension is the approval.
+   */
+  /** Settings → Devices' Unlock pairing, after too many wrong codes locked it. */
+  unlockCompanion: () => fetch('/api/companion/unlock', { method: 'POST' }).then(empty),
+  refuseCompanion: (requestId: string, code: string) =>
+    fetch(`/api/companion/requests/${encodeURIComponent(requestId)}/refuse`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }),
+    }).then(empty),
   getDevices: () => fetch('/api/devices').then((r) => json<DeviceStatus>(r)),
   /** Answers the status after the switch; on `portInUse` the switch stays off and `message` says why. */
   setDevicesEnabled: (enabled: boolean) =>

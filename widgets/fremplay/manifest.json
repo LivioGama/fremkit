@@ -1,0 +1,16 @@
+{ "id": "fremplay",
+  "name": { "fr": "Fremplay", "en": "Fremplay" },
+  "version": "1.0.0",
+  "description": { "fr": "La vidéo d’un onglet de Chrome, avec ses commandes", "en": "The video of a Chrome tab, with its controls" },
+  "category": "media",
+  "icon": "video", "minSize": [8, 5], "defaultSize": [28, 16],
+  "compact": { "width": 3 },
+  "subscriptions": ["companion"], "commands": ["companion"],
+  "settingsSchema": {
+    "fit": { "type": "enum", "default": "contain",
+      "label": { "fr": "Cadrage de la vidéo", "en": "Video framing" },
+      "options": [
+        { "value": "contain", "label": { "fr": "Entière, avec des bandes", "en": "Whole, with bars" } },
+        { "value": "cover", "label": { "fr": "Remplir, en rognant", "en": "Fill, cropping" } }
+      ] }
+  } }

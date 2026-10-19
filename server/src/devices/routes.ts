@@ -144,7 +144,12 @@ export async function deviceRoutes(app: FastifyInstance, opts: DeviceRoutesOptio
     const parsed = PatchSchema.safeParse(req.body ?? {})
     if (!parsed.success) return badBody(reply, parsed.error)
     const { id } = req.params
-    if (!service.me(id)) return reply.code(404).send({ errors: [tr(locale(), 'device.notFound')] })
+    const known = service.status().devices.find((d) => d.id === id)
+    if (!known) return reply.code(404).send({ errors: [tr(locale(), 'device.notFound')] })
+    // A screen is an iPad's: an extension has none to be put on.
+    if (parsed.data.screenId !== undefined && known.kind === 'extension') {
+      return reply.code(400).send({ errors: [tr(locale(), 'device.screenNotDevice')] })
+    }
     if (parsed.data.screenId !== undefined) {
       const attached = await service.attach(id, parsed.data.screenId)
       if (attached === 'screenNotDevice') {

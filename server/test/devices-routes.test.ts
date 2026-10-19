@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:net'
@@ -7,6 +8,7 @@ import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { pairClientMac, pairKey } from '../src/companion/pairProof.js'
 import { CONFIG_VERSION, ConfigSchema } from '../src/config/schema.js'
 import { BrightnessService } from '../src/brightness/service.js'
 import { noAdvertise, type Advertiser } from '../src/devices/bonjour.js'
@@ -14,6 +16,8 @@ import { RemoteListener } from '../src/devices/listener.js'
 import { fingerprintWords } from '../src/devices/fingerprint.js'
 import { execFileAsync, type Exec } from '../src/secrets/keychain.js'
 import { Hub } from '../src/ws/hub.js'
+import { DeviceStore } from '../src/devices/store.js'
+import { DeviceService } from '../src/devices/service.js'
 import { readZip } from '../src/backup/zip.js'
 import { readKey, spkiHash, TLS_KEY_SECRET } from '../src/devices/certificate.js'
 import { FileSecretStore } from '../src/secrets/file.js'
@@ -36,6 +40,7 @@ const screen = (id: string, kind: 'edge' | 'device', viewport?: { width: number;
 const CONFIG = {
   version: CONFIG_VERSION,
   locale: 'en',
+  labs: { devices: false, companion: true },
   secrets: { backend: 'file' },
   connections: [],
   widgets: {},
@@ -109,8 +114,8 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     expect(port).toBeGreaterThan(0)
   })
   afterAll(async () => {
-    await app?.pairing.store.touch('none')
     await app?.close()
+    await app?.pairing.store.settled()
     await rm(dir, { recursive: true, force: true })
   })
 
@@ -691,6 +696,131 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
     } finally {
       setCertificate.mockRestore()
       vi.useRealTimers()
+    }
+  })
+})
+
+describe('browser extensions in the device list', () => {
+  const ORIGIN = 'chrome-extension://lnckeodobpbbmfbdlpnegjpchgkehdlk'
+  const INSTALL = '3a9c1d2e-5b6f-4a7b-8c9d-0e1f2a3b4c5d'
+  const SALT = Buffer.alloc(32, 5).toString('base64url')
+  const HOST = '127.0.0.1:4242'
+  let edir: string
+  let eapp: FastifyInstance
+
+  /** A new install by default: one install may ask only three times a minute. */
+  async function pairExtension(installId: string = randomUUID()): Promise<{ requestId: string; deviceId: string }> {
+    const asked = await eapp.inject({
+      method: 'POST', url: '/api/companion/pair',
+      headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' },
+      payload: JSON.stringify({ name: 'Chrome', installId, salt: SALT }),
+    })
+    const { requestId } = asked.json()
+    const status = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
+    expect(status.companionRequest).toMatchObject({ requestId, name: 'Chrome' })
+    // The user types the Edge's code into the extension, which proves it (companion/pairProof.ts).
+    const key = await pairKey(status.companionRequest.code, requestId, SALT)
+    const nonce = Buffer.alloc(32, 3).toString('base64url')
+    const step = (verb: string, body: unknown) => eapp.inject({
+      method: 'POST', url: `/api/companion/pair/${requestId}/${verb}`,
+      headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' }, payload: JSON.stringify(body),
+    })
+    const paired = (await step('confirm', { nonce, mac: pairClientMac(key, requestId, nonce) })).json()
+    expect(paired.state).toBe('paired')
+    return { requestId, deviceId: paired.deviceId }
+  }
+
+  beforeAll(async () => {
+    edir = await mkdtemp(join(tmpdir(), 'fremkit-devices-ext-'))
+    await writeFile(join(edir, 'fremkit.json'), JSON.stringify(CONFIG))
+    eapp = await buildApp({
+      accessToken: null,
+      port: 4242,
+      dataDir: edir,
+      widgetsDir: join(process.cwd(), '..', 'widgets'),
+      providers: [],
+      devicesPort: 0,
+      devices: { exec, advertise: noAdvertise, lanAddresses: () => [ADDRESS] },
+    })
+  })
+  afterAll(async () => {
+    await eapp?.close()
+    await eapp?.pairing.store.settled()
+    await rm(edir, { recursive: true, force: true })
+  })
+
+  it('status lists extension devices and the pending request without tokens', async () => {
+    expect((await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json().companionRequest).toBeNull()
+    const asked = await eapp.inject({
+      method: 'POST', url: '/api/companion/pair',
+      headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' },
+      payload: JSON.stringify({ name: 'Chrome', installId: INSTALL, salt: SALT }),
+    })
+    const { requestId } = asked.json()
+    const waiting = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
+    expect(waiting.companionRequest).toEqual({ requestId, code: expect.stringMatching(/^[A-HJ-NP-Z2-9]{4}$/), name: 'Chrome', extension: 'lnckeo', expiresAt: expect.any(Number) })
+
+    // The same install asking again replaces its waiting request; another install would be busy.
+    const { deviceId } = await pairExtension(INSTALL)
+    const done = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
+    expect(done.devices).toEqual([expect.objectContaining({ id: deviceId, kind: 'extension', name: 'Chrome', origin: ORIGIN, connected: false })])
+    expect(JSON.stringify(done)).not.toMatch(/token/i)
+  })
+
+  it('renames an extension, and refuses to put it on a screen', async () => {
+    const { deviceId } = await pairExtension()
+    const renamed = await eapp.inject({ method: 'PATCH', url: `/api/devices/${deviceId}`, headers: { host: HOST }, payload: { name: 'Work Chrome' } })
+    expect(renamed.statusCode).toBe(200)
+    expect(renamed.json()).toMatchObject({ id: deviceId, kind: 'extension', name: 'Work Chrome' })
+    const screen = await eapp.inject({ method: 'PATCH', url: `/api/devices/${deviceId}`, headers: { host: HOST }, payload: { screenId: 'ipad' } })
+    expect(screen.statusCode).toBe(400)
+    const status = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
+    expect(status.devices.find((d: { id: string }) => d.id === deviceId)).not.toHaveProperty('screenId')
+    expect((await eapp.inject({ method: 'PATCH', url: '/api/devices/nobody', headers: { host: HOST }, payload: { name: 'x' } })).statusCode).toBe(404)
+  })
+
+  it.skipIf(!hasOpenssl)('remove every iPad and a certificate reset leave the extensions paired', async () => {
+    const { deviceId } = await pairExtension()
+    const kinds = async () => ((await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json().devices as { id: string; kind: string }[])
+    for (const [method, url] of [['DELETE', '/api/devices'], ['POST', '/api/devices/reset-certificate']] as const) {
+      const { device: ipad } = await eapp.pairing.store.create('iPad', { width: 1180, height: 820 }, null)
+      expect((await kinds()).map((d) => d.id)).toEqual(expect.arrayContaining([ipad.id, deviceId]))
+      expect((await eapp.inject({ method, url, headers: { host: HOST } })).statusCode, url).toBeLessThan(300)
+      const left = await kinds()
+      expect(left.some((d) => d.kind === 'ipad'), url).toBe(false)
+      expect(left.map((d) => d.id), url).toContain(deviceId)
+    }
+  })
+
+  it('removes an extension like any device', async () => {
+    const { deviceId } = await pairExtension()
+    expect((await eapp.inject({ method: 'DELETE', url: `/api/devices/${deviceId}`, headers: { host: HOST } })).statusCode).toBe(204)
+    const status = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
+    expect(status.devices.find((d: { id: string }) => d.id === deviceId)).toBeUndefined()
+  })
+})
+
+describe('the device status reads the companion through its closures', () => {
+  it('marks an extension connected when its socket is open, and carries the request', async () => {
+    const sdir = await mkdtemp(join(tmpdir(), 'fremkit-devices-status-'))
+    try {
+      const store = new DeviceStore(join(sdir, 'devices.json'))
+      await store.load()
+      const { device } = await store.createExtension({ name: 'Chrome', origin: `chrome-extension://${'f'.repeat(32)}`, installId: '3a9c1d2e-5b6f-4a7b-8c9d-0e1f2a3b4c5d' })
+      let open = new Set<string>()
+      const service = new DeviceService({
+        app: { log: { warn() {} } } as never,
+        store, codes: new PairingCodes(), secrets: {} as never, config: {} as never, hub: {} as never, catalog: {} as never,
+        lanAddresses: () => [],
+        companionRequest: () => ({ requestId: 'r1', code: 'AB2C', name: 'Chrome', expiresAt: 5, token: 'secret' } as never),
+        companionConnected: () => open,
+      })
+      expect(service.status().devices[0]).toMatchObject({ id: device.id, connected: false })
+      open = new Set([device.id])
+      expect(service.status().devices[0]).toMatchObject({ id: device.id, connected: true })
+      expect(service.status().companionRequest).toEqual({ requestId: 'r1', code: 'AB2C', name: 'Chrome', expiresAt: 5 })
+    } finally {
+      await rm(sdir, { recursive: true, force: true })
     }
   })
 })

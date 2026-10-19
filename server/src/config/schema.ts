@@ -424,9 +424,16 @@ export type MarketplaceState = z.infer<typeof MarketplaceSchema>
  * selector and "Add a screen" out of sight. It changes what the admin *shows*, nothing the server
  * does: the remote listener stays exactly as `devices.json` says. A config written before this
  * existed is given a value by `adoptLabs` in `migrate.ts`, never this default.
+ *
+ * `companion` is the Fremkit Companion browser extension and the Fremplay widget it feeds: the
+ * extension rows and pairing request in the Devices pane, Fremplay in the widget library and the
+ * pairing prompt on the Edge. UI only, like `devices`: the server never reads it, and must not rely
+ * on it for security. The companion routes, the socket's challenge and the `companion` channel's
+ * refusal to paired devices guard the same way whether it is on or off.
  */
 export const LabsSchema = z.object({
   devices: z.boolean().default(false),
+  companion: z.boolean().default(false),
 }).prefault({})
 export type Labs = z.infer<typeof LabsSchema>
 
@@ -475,7 +482,7 @@ export const DEFAULT_CONFIG: Config = {
   secrets: { backend: defaultSecretsBackend() },
   locale: defaultLocale(),
   privacy: { claudeAccountUsage: false, showAccountEmail: false, codexAccount: false, codexHistorySources: [], macmonTemperature: false },
-  labs: { devices: false },
+  labs: { devices: false, companion: false },
   marketplace: { installed: {} },
   widgets: {
     'clock-1': { widgetId: 'clock', showTitle: true, settings: {} },

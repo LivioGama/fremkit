@@ -20,7 +20,8 @@
  *   that dies with this process, after a day unused, or after a week at most, and that cannot
  *   mint a code or be presented as a bearer.
  *
- * A few routes are exempt, by route rather than by path text — see `isPublicRoute`.
+ * A few routes are exempt, by route rather than by path text — see `isPublicRoute` and
+ * `isCompanionRoute`.
  */
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
@@ -124,6 +125,31 @@ export function isPublicRoute(method: string, routeUrl: string | undefined): boo
   const m = method.toUpperCase()
   if (m !== 'GET' && m !== 'HEAD') return false
   return routeUrl !== undefined && PUBLIC_ROUTES.has(routeUrl)
+}
+
+/**
+ * The routes the browser extension reaches without the secret, as `METHOD url-pattern`.
+ *
+ * An extension cannot read a file only this user can read, so it pairs instead: it asks
+ * (`POST /api/companion/pair`), the Edge shows a code, the user types it into the extension, which
+ * proves it (`…/:requestId/confirm`, answered with the server's proof and the token) and
+ * watches for a refusal (`POST /api/companion/pair/:requestId`); the socket (`/companion/ws`) then
+ * asks for the token. Each of these checks the extension's origin itself, and the Host check still
+ * applies. They are POSTs because Chrome sends no `Origin` on an extension's GET to a host it holds
+ * a permission for, and a POST always carries it.
+ * Refusing is not here: it stays behind the secret.
+ *
+ * Matched on the method and the route Fastify matched, like `PUBLIC_ROUTES`.
+ */
+export const COMPANION_ROUTES: ReadonlySet<string> = new Set([
+  'POST /api/companion/pair',
+  'POST /api/companion/pair/:requestId',
+  'POST /api/companion/pair/:requestId/confirm',
+  'GET /companion/ws',
+])
+
+export function isCompanionRoute(method: string, routeUrl: string | undefined): boolean {
+  return routeUrl !== undefined && COMPANION_ROUTES.has(`${method.toUpperCase()} ${routeUrl}`)
 }
 
 /**

@@ -5,6 +5,11 @@ import { ROOT } from '../fixtures/server.js'
 
 /** What answers without the session, by design (`server/src/http/access.ts`, PUBLIC_ROUTES). */
 const PUBLIC = new Set(['GET /auth', 'GET /auth/proof', 'GET /fremkit.js', 'GET /widgets/:id/*'])
+/**
+ * The browser companion's routes skip the session too (`COMPANION_ROUTES` in the same file): an
+ * extension cannot read the secret. Without an extension's `Origin` they answer 403 instead.
+ */
+const COMPANION = new Set(['POST /api/companion/pair', 'POST /api/companion/pair/e2e', 'POST /api/companion/pair/e2e/confirm', 'GET /companion/ws'])
 
 /**
  * Every route the server registers, read from its sources, so a route added tomorrow is in this
@@ -47,10 +52,12 @@ test('nothing answers without the session but 401, the public routes aside', asy
   for (const client of [anonymous, wrongBearer]) {
     for (const { method, path } of routes) {
       const res = await client.fetch(path, { method, data: method === 'GET' ? undefined : {}, maxRedirects: 0 })
-      if (res.status() !== 401) refused.push(`${method} ${path} → ${res.status()}`)
+      const expected = COMPANION.has(`${method} ${path}`) ? 403 : 401
+      if (res.status() !== expected) refused.push(`${method} ${path} → ${res.status()}`)
     }
   }
   expect(refused).toEqual([])
+  expect(routes.filter((r) => COMPANION.has(`${r.method} ${r.path}`))).toHaveLength(COMPANION.size)
 
   // The public ones do answer, and `/auth` with a code that was never issued still refuses.
   expect((await anonymous.get('/fremkit.js')).status()).toBe(200)

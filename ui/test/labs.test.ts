@@ -18,10 +18,10 @@ vi.mock('../src/shared/api', async (importOriginal) => {
 
 const status = (over: Partial<DeviceStatus> = {}): DeviceStatus => ({
   enabled: false, listening: false, error: null, guessing: false, host: 'mac.example.local',
-  addresses: ['192.0.2.10'], port: 4243, keyHash: null, fingerprint: null, devices: [], ...over,
+  addresses: ['192.0.2.10'], port: 4243, keyHash: null, fingerprint: null, devices: [], companionRequest: null, ...over,
 })
 const paired: PublicDevice = {
-  id: 'dev-1', name: 'Kitchen iPad', pairedAt: '2026-10-01T08:00:00.000Z', lastSeen: null,
+  id: 'dev-1', kind: 'ipad', name: 'Kitchen iPad', pairedAt: '2026-10-01T08:00:00.000Z', lastSeen: null,
   viewport: { width: 1376, height: 1032 }, screenId: null,
 }
 
@@ -165,6 +165,71 @@ describe('the Devices section while pairing is in use', () => {
     useDevices().status.value = status()
     await flushPromises()
     expect(hasDevices(wrapper)).toBe(true)
+    wrapper.unmount()
+  })
+})
+
+describe('labs.companion', () => {
+  const withCompanion = (companion: boolean | undefined): Config =>
+    ({ ...config(false, 1), labs: { devices: false, ...(companion === undefined ? {} : { companion }) } })
+  const manifest = (id: string) => ({ id }) as unknown as import('../src/shared/types').WidgetManifest
+
+  it('reads an absent flag as off', () => {
+    expect(labs.labsCompanion(null)).toBe(false)
+    expect(labs.labsCompanion(config(true, 1))).toBe(false)
+    expect(labs.labsCompanion(withCompanion(undefined))).toBe(false)
+    expect(labs.labsCompanion(withCompanion(true))).toBe(true)
+  })
+
+  it('leaves Fremplay out of the widget lists while off, and only Fremplay', () => {
+    const manifests = { clock: manifest('clock'), fremplay: manifest('fremplay') }
+    expect(labs.widgetOffered(withCompanion(false), 'fremplay')).toBe(false)
+    expect(labs.widgetOffered(withCompanion(false), 'clock')).toBe(true)
+    expect(labs.offeredManifests(withCompanion(false), manifests).map((m) => m.id)).toEqual(['clock'])
+    expect(labs.offeredManifests(withCompanion(true), manifests).map((m) => m.id)).toEqual(['clock', 'fremplay'])
+  })
+
+  it('counts a paired extension for its own part of the Devices pane, not for the iPad one', () => {
+    const ext = { id: 'ext-1', kind: 'extension', name: 'Chrome', pairedAt: '2026-10-02T08:00:00.000Z', lastSeen: null,
+      origin: `chrome-extension://${'a'.repeat(32)}`, installId: '3a9c1d2e-5b6f-4a7b-8c9d-0e1f2a3b4c5d', connected: false } as PublicDevice
+    const off = withCompanion(false)
+    expect(labs.pairingInUse(status({ devices: [ext] }))).toBe(false)
+    expect(labs.extensionsPaired(status({ devices: [ext] }))).toBe(true)
+    expect(labs.extensionsPaired(status({ devices: [paired] }))).toBe(false)
+    expect(labs.showsIpads(off, status({ devices: [ext] }))).toBe(false)
+    expect(labs.showsExtensions(off, status({ devices: [ext] }))).toBe(true)
+    expect(labs.showsExtensions(off, status({ devices: [paired], enabled: true }))).toBe(false)
+    expect(labs.showsExtensions(withCompanion(true), status())).toBe(true)
+    expect(labs.showsIpads(withCompanion(true), status())).toBe(false)
+    expect(labs.showsDevices(off, status({ devices: [ext] }))).toBe(true)
+  })
+
+  it('shows the Devices pane and the switches while on, as labs.devices does', () => {
+    expect(labs.showsDevices(withCompanion(true), status())).toBe(true)
+    expect(labs.showsDevices(withCompanion(false), status())).toBe(false)
+    expect(labs.labsShown(withCompanion(true))).toBe(true)
+    expect(labs.labsShown(withCompanion(false))).toBe(false)
+  })
+
+  it('has its own switch in About, under the same seven clicks, which writes the flag alone', async () => {
+    seed(false, 1)
+    const s = useAdminStore()
+    const wrapper = settings('about')
+    await flushPromises()
+    const version = wrapper.find('[data-test="version"]')
+    for (let i = 0; i < labs.REVEAL_TAPS - 1; i++) await version.trigger('click')
+    expect(wrapper.find('[data-test="labs-companion"]').exists()).toBe(false)
+    await version.trigger('click')
+    await flushPromises()
+    const box = wrapper.find('[data-test="labs-companion"] input')
+    expect(wrapper.text()).toMatch(/Browser companion \(Fremplay\)|Compagnon de navigateur \(Fremplay\)/)
+    expect((box.element as HTMLInputElement).checked).toBe(false)
+    await box.setValue(true)
+    expect(s.state.config!.labs).toEqual({ devices: false, companion: true })
+    expect(hasDevices(wrapper)).toBe(true)
+    await box.setValue(false)
+    expect(s.state.config!.labs).toEqual({ devices: false, companion: false })
+    expect(hasDevices(wrapper)).toBe(false)
     wrapper.unmount()
   })
 })

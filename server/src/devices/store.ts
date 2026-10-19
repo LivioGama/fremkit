@@ -14,33 +14,52 @@ export const ViewportSchema = z.object({
   height: z.number().int().min(1).max(10000),
 })
 
-const DeviceSchema = z.object({
+/** A browser extension's origin: `chrome-extension://` and the 32 letters of its id. */
+export const EXTENSION_ORIGIN = /^chrome-extension:\/\/[a-p]{32}$/
+
+const BaseFields = {
   id: z.string().min(1),
   name: z.string(),
   tokenHash: z.string().regex(/^[0-9a-f]{64}$/),
   pairedAt: z.string(),
   lastSeen: z.string().nullable(),
+}
+
+const IpadSchema = z.object({
+  ...BaseFields,
+  kind: z.literal('ipad'),
   viewport: ViewportSchema,
   screenId: z.string().nullable(),
 })
 
-const FileSchema = z.object({
-  version: z.literal(1),
-  enabled: z.boolean(),
-  devices: z.array(DeviceSchema),
+const ExtensionSchema = z.object({
+  ...BaseFields,
+  kind: z.literal('extension'),
+  origin: z.string().regex(EXTENSION_ORIGIN),
+  installId: z.string().uuid(),
 })
 
+/** What a caller may hand `createExtension`: the fields the loader would validate on the next start. */
+const ExtensionInputSchema = ExtensionSchema.pick({ name: true, origin: true, installId: true })
+
+const DeviceSchema = z.discriminatedUnion('kind', [IpadSchema, ExtensionSchema])
+
+/** A version 1 record has no `kind`: every one of them is an iPad. */
+const LegacyDeviceSchema = z.object({ ...BaseFields, viewport: ViewportSchema, screenId: z.string().nullable() })
+  .transform((d) => ({ ...d, kind: 'ipad' as const }))
+
+const FileSchema = z.union([
+  z.object({ version: z.literal(2), enabled: z.boolean(), devices: z.array(DeviceSchema) }),
+  z.object({ version: z.literal(1), enabled: z.boolean(), devices: z.array(LegacyDeviceSchema) }),
+])
+
 export type Viewport = z.infer<typeof ViewportSchema>
-export type Device = {
-  id: string
-  name: string
-  tokenHash: string
-  pairedAt: string
-  lastSeen: string | null
-  viewport: { width: number; height: number }
-  screenId: string | null
-}
-export type PublicDevice = Omit<Device, 'tokenHash'>
+export type IpadDevice = z.infer<typeof IpadSchema>
+export type ExtensionDevice = z.infer<typeof ExtensionSchema>
+export type Device = IpadDevice | ExtensionDevice
+export type PublicIpadDevice = Omit<IpadDevice, 'tokenHash'>
+export type PublicExtensionDevice = Omit<ExtensionDevice, 'tokenHash'>
+export type PublicDevice = PublicIpadDevice | PublicExtensionDevice
 
 type State = { enabled: boolean; devices: Device[] }
 
@@ -50,7 +69,7 @@ function hashToken(token: string): string {
 
 function toPublic(device: Device): PublicDevice {
   const { tokenHash: _omit, ...rest } = device
-  return { ...rest, viewport: { ...rest.viewport } }
+  return rest.kind === 'ipad' ? { ...rest, viewport: { ...rest.viewport } } : { ...rest }
 }
 
 /**
@@ -82,6 +101,14 @@ export class DeviceStore {
     return result
   }
 
+  /**
+   * Resolves once every mutation queued so far has finished (failed ones included). For tests: a
+   * write nobody awaited (`touch` on hello, a sweep's `remove`) must land before its folder goes.
+   */
+  settled(): Promise<void> {
+    return this.queue.then(() => undefined)
+  }
+
   /** Reads the file. Missing means disabled and empty; corrupt is moved aside and starts empty. */
   async load(): Promise<void> {
     return this.enqueue(async () => {
@@ -108,7 +135,7 @@ export class DeviceStore {
         this.state = { enabled: false, devices: [] }
         return
       }
-      this.state = { enabled: parsed.enabled, devices: parsed.devices }
+      this.state = { enabled: parsed.enabled, devices: parsed.devices as Device[] }
     })
   }
 
@@ -140,8 +167,9 @@ export class DeviceStore {
   ): Promise<{ device: PublicDevice; token: string }> {
     return this.enqueue(async () => {
       const token = randomBytes(32).toString('base64url')
-      const device: Device = {
+      const device: IpadDevice = {
         id: randomUUID(),
+        kind: 'ipad',
         name,
         tokenHash: hashToken(token),
         pairedAt: this.now().toISOString(),
@@ -155,11 +183,43 @@ export class DeviceStore {
   }
 
   /**
-   * The device a token belongs to, or null. The candidate is hashed and compared against every
+   * Pairs a browser extension. An install that pairs again (same origin and install id) replaces
+   * its record, so its old token stops working and the list holds one entry per install.
+   */
+  async createExtension(input: {
+    name: string
+    origin: string
+    installId: string
+  }): Promise<{ device: PublicDevice; token: string }> {
+    // Parsed before anything is written: a record the loader would refuse makes the next start
+    // move the whole file aside as corrupt, and every paired iPad with it.
+    const checked = ExtensionInputSchema.parse(input)
+    return this.enqueue(async () => {
+      const token = randomBytes(32).toString('base64url')
+      const device: ExtensionDevice = {
+        id: randomUUID(),
+        kind: 'extension',
+        name: checked.name,
+        tokenHash: hashToken(token),
+        pairedAt: this.now().toISOString(),
+        lastSeen: null,
+        origin: checked.origin,
+        installId: checked.installId,
+      }
+      const kept = this.state.devices.filter(
+        (d) => !(d.kind === 'extension' && d.origin === checked.origin && d.installId === checked.installId),
+      )
+      await this.commit({ ...this.state, devices: [...kept, device] })
+      return { device: toPublic(device), token }
+    })
+  }
+
+  /**
+   * The device of this kind a token belongs to, or null. The candidate is hashed and compared against every
    * stored hash in constant time, with no early exit, so timing reveals neither the match nor
    * which device it was.
    */
-  findByToken(token: string): PublicDevice | null {
+  findByToken(token: string, kind: Device['kind']): PublicDevice | null {
     const candidate = Buffer.from(hashToken(token), 'utf8')
     let found: Device | null = null
     for (const device of this.state.devices) {
@@ -169,7 +229,18 @@ export class DeviceStore {
       const same = stored.length === candidate.length && timingSafeEqual(stored, candidate)
       if (same && !found) found = device
     }
-    return found ? toPublic(found) : null
+    return found && found.kind === kind ? toPublic(found) : null
+  }
+
+  /**
+   * The key an extension's socket proof is signed with: the 32 raw bytes of its token's sha256,
+   * which the extension can recompute from the token and nobody else can. Null when the id names
+   * no record, or one that is not an extension.
+   */
+  extensionProofKey(id: string): { key: Buffer; origin: string } | null {
+    const device = this.state.devices.find((d) => d.id === id)
+    if (!device || device.kind !== 'extension') return null
+    return { key: Buffer.from(device.tokenHash, 'hex'), origin: device.origin }
   }
 
   async update(id: string, patch: { name?: string; screenId?: string | null }): Promise<PublicDevice | null> {
@@ -178,7 +249,8 @@ export class DeviceStore {
       if (index < 0) return null
       const next: Device = { ...this.state.devices[index] }
       if (patch.name !== undefined) next.name = patch.name
-      if (patch.screenId !== undefined) next.screenId = patch.screenId
+      // A screen is an iPad's: an extension record keeps only its name.
+      if (patch.screenId !== undefined && next.kind === 'ipad') next.screenId = patch.screenId
       const devices = [...this.state.devices]
       devices[index] = next
       await this.commit({ ...this.state, devices })
@@ -193,9 +265,10 @@ export class DeviceStore {
   async detach(id: string, screenId: string): Promise<boolean> {
     return this.enqueue(async () => {
       const index = this.state.devices.findIndex((d) => d.id === id)
-      if (index < 0 || this.state.devices[index].screenId !== screenId) return false
+      const current = this.state.devices[index]
+      if (index < 0 || current.kind !== 'ipad' || current.screenId !== screenId) return false
       const devices = [...this.state.devices]
-      devices[index] = { ...devices[index], screenId: null }
+      devices[index] = { ...current, screenId: null }
       await this.commit({ ...this.state, devices })
       return true
     })
@@ -210,10 +283,17 @@ export class DeviceStore {
     })
   }
 
-  async removeAll(): Promise<void> {
+  /**
+   * Every iPad, and only iPads: what "remove every iPad" and a certificate reset take away. A
+   * browser extension has nothing to do with the TLS key and is removed from its own row. Answers
+   * the ids removed.
+   */
+  async removeIpads(): Promise<string[]> {
     return this.enqueue(async () => {
-      if (this.state.devices.length === 0) return
-      await this.commit({ ...this.state, devices: [] })
+      const ids = this.state.devices.filter((d) => d.kind === 'ipad').map((d) => d.id)
+      if (ids.length === 0) return []
+      await this.commit({ ...this.state, devices: this.state.devices.filter((d) => d.kind !== 'ipad') })
+      return ids
     })
   }
 
@@ -260,7 +340,7 @@ export class DeviceStore {
   private async write(state: State): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true })
     const tmp = `${this.filePath}.tmp`
-    const body = { version: 1, enabled: state.enabled, devices: state.devices }
+    const body = { version: 2, enabled: state.enabled, devices: state.devices }
     // The mode is given at creation *and* forced afterwards: `writeFile` only applies `mode`
     // when it creates the file, so a leftover temporary from a crashed run would keep its own.
     await writeFile(tmp, JSON.stringify(body, null, 2) + '\n', { encoding: 'utf8', mode: MODE })

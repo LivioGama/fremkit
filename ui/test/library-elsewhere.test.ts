@@ -73,6 +73,18 @@ afterEach(async () => {
 })
 
 describe('the widget library', () => {
+  it('offers Fremplay only while labs.companion is on', async () => {
+    const s = useAdminStore()
+    s.state.manifests = { ...s.state.manifests, fremplay: manifest('fremplay', 'Fremplay') }
+    s.selectScreen('edge')
+    const wrapper = mount(WidgetLibrary, { attachTo: document.body })
+    expect(wrapper.text()).not.toContain('Fremplay')
+    s.state.config = { ...s.state.config!, labs: { devices: false, companion: true } }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('Fremplay')
+    wrapper.unmount()
+  })
+
   it('offers the widgets of other screens and places one on click', async () => {
     const s = useAdminStore()
     const wrapper = mount(WidgetLibrary, { attachTo: document.body })
