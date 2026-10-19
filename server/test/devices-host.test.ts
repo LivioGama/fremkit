@@ -81,7 +81,7 @@ describe('defaultRouteInterface', () => {
 
 describe('isPrivate', () => {
   it('is RFC 1918 and nothing else', () => {
-    for (const a of ['10.0.0.1', '10.255.255.255', '172.16.0.1', '172.31.255.254', '192.168.0.1']) expect(isPrivate(a), a).toBe(true)
+    for (const a of ['10.1.2.3', '10.255.255.255', '172.16.0.1', '172.31.255.254', '192.168.0.1']) expect(isPrivate(a), a).toBe(true)
     for (const a of ['172.15.0.1', '172.32.0.1', '192.169.0.1', '100.64.0.1', '169.254.1.1', '192.0.2.10', '198.51.100.7', '127.0.0.1']) {
       expect(isPrivate(a), a).toBe(false)
     }
