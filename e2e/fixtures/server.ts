@@ -25,8 +25,20 @@ const SERVER_DIR = join(ROOT, 'server')
 const TSX = join(SERVER_DIR, 'node_modules', '.bin', 'tsx')
 const FIXTURES = fileURLToPath(new URL('.', import.meta.url))
 
-/** The test ports: 4330–4339, one per parallel worker, never the live 4242. */
-export const FIRST_PORT = 4330
+/**
+ * The test ports: 4330–4339 by default, one per parallel worker, never the live 4242.
+ * `E2E_FIRST_PORT` moves the range, so several checkouts or agents can run the suite at once.
+ */
+export const FIRST_PORT = firstPort(process.env.E2E_FIRST_PORT)
+
+function firstPort(value: string | undefined): number {
+  if (value === undefined || value === '') return 4330
+  const port = Number(value)
+  if (!Number.isInteger(port) || port < 1024 || port > 65535 - 10 || (port <= 4243 && port + 9 >= 4242)) {
+    throw new Error(`E2E_FIRST_PORT must be a free range of ten ports clear of 4242–4243, not ${value}`)
+  }
+  return port
+}
 export const MAX_WORKERS = 10
 
 export interface ServerOptions {

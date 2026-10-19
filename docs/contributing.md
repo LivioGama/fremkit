@@ -259,8 +259,9 @@ pnpm e2e --repeat-each=3                                 # what to run before ca
 ```
 
 Each Playwright worker starts its own server (`e2e/fixtures/server.ts`) on a port from 4330 to
-4339, with a temporary data folder, a `file` secrets backend (never the keychain) and an empty
-registry index served locally, so nothing reaches the network; the live server on 4242 is never
+4339 (`E2E_FIRST_PORT=4360 pnpm e2e` moves the range, for a second checkout running the suite at
+the same time), with a temporary data folder, a `file` secrets backend (never the keychain) and an
+empty registry index served locally, so nothing reaches the network; the live server on 4242 is never
 touched. Before every test the server is put back to the state the test asks for (`seed`,
 `connections`), and the browser signs in the way a person does: a one-time code from
 `POST /api/auth/code`, redeemed at `/auth`. WebKit runs too when its Playwright build is installed
