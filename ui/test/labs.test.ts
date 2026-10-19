@@ -189,6 +189,21 @@ describe('labs.companion', () => {
     expect(labs.offeredManifests(withCompanion(true), manifests).map((m) => m.id)).toEqual(['clock', 'fremplay'])
   })
 
+  it('counts a paired extension for its own part of the Devices pane, not for the iPad one', () => {
+    const ext = { id: 'ext-1', kind: 'extension', name: 'Chrome', pairedAt: '2026-10-02T08:00:00.000Z', lastSeen: null,
+      origin: `chrome-extension://${'a'.repeat(32)}`, installId: '3a9c1d2e-5b6f-4a7b-8c9d-0e1f2a3b4c5d', connected: false } as PublicDevice
+    const off = withCompanion(false)
+    expect(labs.pairingInUse(status({ devices: [ext] }))).toBe(false)
+    expect(labs.extensionsPaired(status({ devices: [ext] }))).toBe(true)
+    expect(labs.extensionsPaired(status({ devices: [paired] }))).toBe(false)
+    expect(labs.showsIpads(off, status({ devices: [ext] }))).toBe(false)
+    expect(labs.showsExtensions(off, status({ devices: [ext] }))).toBe(true)
+    expect(labs.showsExtensions(off, status({ devices: [paired], enabled: true }))).toBe(false)
+    expect(labs.showsExtensions(withCompanion(true), status())).toBe(true)
+    expect(labs.showsIpads(withCompanion(true), status())).toBe(false)
+    expect(labs.showsDevices(off, status({ devices: [ext] }))).toBe(true)
+  })
+
   it('shows the Devices pane and the switches while on, as labs.devices does', () => {
     expect(labs.showsDevices(withCompanion(true), status())).toBe(true)
     expect(labs.showsDevices(withCompanion(false), status())).toBe(false)

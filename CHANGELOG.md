@@ -149,9 +149,11 @@ tagged `vX.Y.Z`.
 - **The browser companion and Fremplay are experimental.** Until you tick **Browser companion
   (Fremplay)** under **Experimental features** (behind **Settings → About** → Experimental
   features, the same seven clicks on the version), the admin hides Fremplay from the widget
-  library and the bar's list, and the extension rows and pairing request in **Settings → Devices**,
-  and the Edge shows no pairing prompt. A Fremplay widget already placed stays, and a dashboard that
-  has one starts with the option on.
+  library and the bar's list and the pairing request in **Settings → Devices**, and the Edge shows
+  no pairing prompt. A browser extension already paired stays listed there, to rename or remove,
+  whatever the option says. With only this option on, **Settings → Devices** shows the browser
+  extensions without the iPad controls. A Fremplay widget already placed stays, and a dashboard
+  that has one starts with the option on.
 - **Fremplay: show the video of a browser tab on the Edge, with touch controls** (experimental, behind Settings → About → Experimental features; needs the Fremkit Companion extension).
 - **Fremkit Companion, a browser extension for Chrome and other Chromium browsers** (experimental, behind Settings → About → Experimental features; in `companion/`, loaded unpacked for now). Link it once by allowing it on the Edge, then send the video of any tab to the Fremplay widget from its toolbar menu or with ⌥⇧E; a player embedded from another site asks for that site's permission the first time, after the popup names the site, and the extension gives the permission back unless the share starts with a video in that site's frame.
 - **The extension checks it is talking to your Fremkit before it signs in** (experimental). When another program holds Fremkit's port, the extension keeps its credential to itself and its popup says *The server on this port is not your Fremkit*. It also refuses a pairing approval that comes back faster than anyone could tap Allow on the Edge. When it shows itself removed without proof that Fremkit said so, its popup warns not to reconnect unless you removed the browser yourself.

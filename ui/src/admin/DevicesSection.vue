@@ -21,7 +21,7 @@ import type { PublicExtensionDevice, PublicIpadDevice } from '../shared/api'
 import type { Screen } from '../shared/types'
 import AddScreenDialog from './AddScreenDialog.vue'
 import { useDevices } from './devices'
-import { labsCompanion } from './labs'
+import { labsCompanion, labsDevices, showsExtensions, showsIpads } from './labs'
 import { useAdminStore } from './store'
 
 const s = useAdminStore()
@@ -65,14 +65,22 @@ const countdown = computed(() => {
 
 const deviceScreens = computed<Screen[]>(() => (s.state.config?.screens ?? []).filter((x) => x.kind === 'device'))
 const list = computed<PublicIpadDevice[]>(() => (status.value?.devices ?? []).filter((d): d is PublicIpadDevice => d.kind === 'ipad'))
-const allExtensions = computed<PublicExtensionDevice[]>(() => (status.value?.devices ?? []).filter((d): d is PublicExtensionDevice => d.kind === 'extension'))
+const extensions = computed<PublicExtensionDevice[]>(() => (status.value?.devices ?? []).filter((d): d is PublicExtensionDevice => d.kind === 'extension'))
 /**
- * The browser companion's rows and request card show only while `labs.companion` is on. The admin
- * only: an extension paired before the switch went off still works, and "Remove all" still
- * removes it.
+ * Two parts, each with its own rule (`labs.ts`): the iPad one follows `labs.devices` or iPad
+ * pairing in use, the browser extension one `labs.companion` or a paired extension, so a paired
+ * device of either kind can always be renamed or removed. Once shown, a part stays while the pane
+ * is open, so removing the last device does not pull it from under the pointer; turning its flag
+ * off reads the rule again. The request card follows `labs.companion` alone: with it off, no
+ * request can be allowed here.
  */
 const companionOn = computed(() => labsCompanion(s.state.config))
-const extensions = computed<PublicExtensionDevice[]>(() => (companionOn.value ? allExtensions.value : []))
+const ipadsShown = ref(false)
+const extensionsShown = ref(false)
+watch(() => showsIpads(s.state.config, status.value), (on) => { if (on) ipadsShown.value = true }, { immediate: true })
+watch(() => showsExtensions(s.state.config, status.value), (on) => { if (on) extensionsShown.value = true }, { immediate: true })
+watch(() => labsDevices(s.state.config), (on) => { if (!on) ipadsShown.value = showsIpads(s.state.config, status.value) })
+watch(companionOn, (on) => { if (!on) extensionsShown.value = showsExtensions(s.state.config, status.value) })
 /** The extension's request, until its expiry even if the next poll is still to come. */
 const request = computed(() => {
   const r = companionOn.value ? status.value?.companionRequest ?? null : null
@@ -125,94 +133,103 @@ async function onCreated(screenId: string): Promise<void> {
 
 <template>
   <div class="devices">
-    <BaseCheckbox :model-value="enabled" :label="t('admin.devices.enable')"
-      @update:model-value="devices.setEnabled($event)" />
-    <p class="ro">{{ t('admin.devices.firewall') }}</p>
-    <p v-if="portInUse" class="bad" role="alert" data-test="port-in-use">{{ t('admin.devices.portInUse', { port: status?.port ?? '' }) }}</p>
+    <template v-if="ipadsShown">
+      <BaseCheckbox :model-value="enabled" :label="t('admin.devices.enable')"
+        @update:model-value="devices.setEnabled($event)" />
+      <p class="ro">{{ t('admin.devices.firewall') }}</p>
+      <p v-if="portInUse" class="bad" role="alert" data-test="port-in-use">{{ t('admin.devices.portInUse', { port: status?.port ?? '' }) }}</p>
 
-    <div v-if="live && offer" class="pair">
-      <!-- The SVG is drawn here from the offer's URL, never taken from the network as markup. -->
-      <div class="qr" role="img" :aria-label="t('admin.devices.qr')" v-html="qr" />
-      <div class="code">
-        <p class="ro">{{ t('admin.devices.scan') }}</p>
-        <p class="value mono" data-test="pairing-code">{{ offer.code }}</p>
-        <p class="ro">{{ t('admin.devices.expires', { time: countdown }) }}</p>
-        <template v-if="status?.fingerprint">
-          <p class="fingerprint" data-test="fingerprint">{{ t('admin.devices.fingerprint', { words: status.fingerprint.join(' ') }) }}</p>
-          <p class="ro">{{ t('admin.devices.fingerprintHelp') }}</p>
-        </template>
-        <BaseButton @click="devices.newCode()"><BaseIcon name="refresh-cw" :size="16" />{{ t('admin.devices.newCode') }}</BaseButton>
+      <div v-if="live && offer" class="pair">
+        <!-- The SVG is drawn here from the offer's URL, never taken from the network as markup. -->
+        <div class="qr" role="img" :aria-label="t('admin.devices.qr')" v-html="qr" />
+        <div class="code">
+          <p class="ro">{{ t('admin.devices.scan') }}</p>
+          <p class="value mono" data-test="pairing-code">{{ offer.code }}</p>
+          <p class="ro">{{ t('admin.devices.expires', { time: countdown }) }}</p>
+          <template v-if="status?.fingerprint">
+            <p class="fingerprint" data-test="fingerprint">{{ t('admin.devices.fingerprint', { words: status.fingerprint.join(' ') }) }}</p>
+            <p class="ro">{{ t('admin.devices.fingerprintHelp') }}</p>
+          </template>
+          <BaseButton @click="devices.newCode()"><BaseIcon name="refresh-cw" :size="16" />{{ t('admin.devices.newCode') }}</BaseButton>
+        </div>
       </div>
-    </div>
-    <p v-if="live && status?.guessing" class="warn" role="alert">
-      <BaseIcon name="alert-triangle" :size="16" />{{ t('admin.devices.guessing') }}
-    </p>
+      <p v-if="live && status?.guessing" class="warn" role="alert">
+        <BaseIcon name="alert-triangle" :size="16" />{{ t('admin.devices.guessing') }}
+      </p>
+      <ul v-if="list.length" class="list">
+        <li v-for="d in list" :key="d.id" class="device" data-test="device">
+          <div class="head">
+            <BaseIcon name="tablet" :size="16" />
+            <strong class="name">{{ d.name }}</strong>
+            <span class="ro size">{{ t('admin.inspector.screen.viewport.value', d.viewport) }}</span>
+          </div>
+          <label class="field">
+            <span class="ro">{{ t('admin.devices.screen') }}</span>
+            <select :value="d.screenId ?? ''" :aria-label="t('admin.devices.screen')"
+              @change="pickScreen(d, ($event.target as HTMLSelectElement).value)">
+              <option value="">{{ t('admin.devices.noScreen') }}</option>
+              <option v-for="x in deviceScreens" :key="x.id" :value="x.id">{{ x.name }}</option>
+            </select>
+          </label>
+          <div v-if="d.screenId === null" class="prompt">
+            <span>{{ t('admin.devices.noScreenPrompt') }}</span>
+            <BaseButton variant="primary" data-test="create-screen" @click="creatingFor = d">{{ t('admin.devices.createScreen') }}</BaseButton>
+          </div>
+          <p class="ro">{{ t('admin.devices.pairedAt', { date: when(d.pairedAt) }) }} · {{ t('admin.devices.lastSeen', { date: when(d.lastSeen) }) }}</p>
+          <BaseButton variant="danger" @click="confirm.ask(`device:${d.id}`, () => devices.remove(d.id))">
+            <template v-if="confirm.armed(`device:${d.id}`)">{{ t('common.confirm') }}</template>
+            <template v-else><BaseIcon name="trash-2" :size="16" />{{ t('admin.devices.remove') }}</template>
+          </BaseButton>
+        </li>
+      </ul>
+      <p v-else class="ro" data-test="ipads-none">{{ t('admin.devices.none') }}</p>
+
+      <div class="row">
+        <BaseButton variant="danger" :disabled="!list.length && !extensions.length" @click="confirm.ask('devices:all', () => devices.removeAll())">
+          {{ confirm.armed('devices:all') ? t('common.confirm') : t('admin.devices.removeAll') }}
+        </BaseButton>
+        <BaseButton variant="danger" @click="confirm.ask('devices:cert', () => devices.resetCertificate())">
+          {{ confirm.armed('devices:cert') ? t('common.confirm') : t('admin.devices.resetCertificate') }}
+        </BaseButton>
+      </div>
+      <p class="ro">{{ t('admin.devices.resetCertificate.hint') }}</p>
+    </template>
+
+    <section v-if="extensionsShown" class="extensions" data-test="extensions">
+      <h4>{{ t('admin.devices.extensions') }}</h4>
+      <div v-if="request" class="request" role="alertdialog" data-test="companion-request">
+        <p class="ask">{{ t('admin.devices.extension.request') }}</p>
+        <p class="rname" data-test="request-name">{{ request.name }}</p>
+        <p class="value mono" data-test="request-code">{{ request.code }}</p>
+        <div class="row">
+          <BaseButton data-test="request-refuse" @click="devices.answerCompanion(request, false)">{{ t('admin.devices.extension.refuse') }}</BaseButton>
+          <BaseButton variant="primary" data-test="request-approve" :disabled="!requestSettled" @click="devices.answerCompanion(request, true)">{{ t('admin.devices.extension.approve') }}</BaseButton>
+        </div>
+      </div>
+
+      <ul v-if="extensions.length" class="list">
+        <li v-for="d in extensions" :key="d.id" class="device" data-test="extension">
+          <div class="head">
+            <BaseIcon name="globe" :size="16" />
+            <input class="rename" :value="d.name" maxlength="60" :aria-label="t('admin.devices.extension.name')"
+              data-test="extension-name" @change="rename(d, $event)" @keydown.enter="($event.target as HTMLInputElement).blur()" />
+            <span v-if="d.connected" class="ro size on" data-test="extension-connected">{{ t('admin.devices.extension.connected') }}</span>
+          </div>
+          <p class="ro">{{ t('admin.devices.extension.kind') }} · {{ t('admin.devices.pairedAt', { date: when(d.pairedAt) }) }} · {{ t('admin.devices.lastSeen', { date: when(d.lastSeen) }) }}</p>
+          <BaseButton variant="danger" data-test="extension-remove" @click="confirm.ask(`device:${d.id}`, () => devices.remove(d.id))">
+            <template v-if="confirm.armed(`device:${d.id}`)">{{ t('common.confirm') }}</template>
+            <template v-else><BaseIcon name="trash-2" :size="16" />{{ t('admin.devices.remove') }}</template>
+          </BaseButton>
+        </li>
+      </ul>
+      <p v-else class="ro" data-test="extensions-none">{{ t('admin.devices.extension.none') }}</p>
+    </section>
+
     <p v-if="error" class="bad action" role="alert" data-test="action-error">
       {{ error }}
       <BaseButton variant="icon" :title="t('common.close')" @click="devices.dismiss()"><BaseIcon name="x" :size="14" /></BaseButton>
     </p>
     <p v-if="pollError" class="bad" data-test="poll-error">{{ pollError }}</p>
-
-    <div v-if="request" class="request" role="alertdialog" data-test="companion-request">
-      <p class="ask">{{ t('admin.devices.extension.request') }}</p>
-      <p class="rname" data-test="request-name">{{ request.name }}</p>
-      <p class="value mono" data-test="request-code">{{ request.code }}</p>
-      <div class="row">
-        <BaseButton data-test="request-refuse" @click="devices.answerCompanion(request, false)">{{ t('admin.devices.extension.refuse') }}</BaseButton>
-        <BaseButton variant="primary" data-test="request-approve" :disabled="!requestSettled" @click="devices.answerCompanion(request, true)">{{ t('admin.devices.extension.approve') }}</BaseButton>
-      </div>
-    </div>
-
-    <ul v-if="list.length || extensions.length" class="list">
-      <li v-for="d in extensions" :key="d.id" class="device" data-test="extension">
-        <div class="head">
-          <BaseIcon name="globe" :size="16" />
-          <input class="rename" :value="d.name" maxlength="60" :aria-label="t('admin.devices.extension.name')"
-            data-test="extension-name" @change="rename(d, $event)" @keydown.enter="($event.target as HTMLInputElement).blur()" />
-          <span v-if="d.connected" class="ro size on" data-test="extension-connected">{{ t('admin.devices.extension.connected') }}</span>
-        </div>
-        <p class="ro">{{ t('admin.devices.extension.kind') }} · {{ t('admin.devices.pairedAt', { date: when(d.pairedAt) }) }} · {{ t('admin.devices.lastSeen', { date: when(d.lastSeen) }) }}</p>
-        <BaseButton variant="danger" data-test="extension-remove" @click="confirm.ask(`device:${d.id}`, () => devices.remove(d.id))">
-          <template v-if="confirm.armed(`device:${d.id}`)">{{ t('common.confirm') }}</template>
-          <template v-else><BaseIcon name="trash-2" :size="16" />{{ t('admin.devices.remove') }}</template>
-        </BaseButton>
-      </li>
-      <li v-for="d in list" :key="d.id" class="device" data-test="device">
-        <div class="head">
-          <BaseIcon name="tablet" :size="16" />
-          <strong class="name">{{ d.name }}</strong>
-          <span class="ro size">{{ t('admin.inspector.screen.viewport.value', d.viewport) }}</span>
-        </div>
-        <label class="field">
-          <span class="ro">{{ t('admin.devices.screen') }}</span>
-          <select :value="d.screenId ?? ''" :aria-label="t('admin.devices.screen')"
-            @change="pickScreen(d, ($event.target as HTMLSelectElement).value)">
-            <option value="">{{ t('admin.devices.noScreen') }}</option>
-            <option v-for="x in deviceScreens" :key="x.id" :value="x.id">{{ x.name }}</option>
-          </select>
-        </label>
-        <div v-if="d.screenId === null" class="prompt">
-          <span>{{ t('admin.devices.noScreenPrompt') }}</span>
-          <BaseButton variant="primary" data-test="create-screen" @click="creatingFor = d">{{ t('admin.devices.createScreen') }}</BaseButton>
-        </div>
-        <p class="ro">{{ t('admin.devices.pairedAt', { date: when(d.pairedAt) }) }} · {{ t('admin.devices.lastSeen', { date: when(d.lastSeen) }) }}</p>
-        <BaseButton variant="danger" @click="confirm.ask(`device:${d.id}`, () => devices.remove(d.id))">
-          <template v-if="confirm.armed(`device:${d.id}`)">{{ t('common.confirm') }}</template>
-          <template v-else><BaseIcon name="trash-2" :size="16" />{{ t('admin.devices.remove') }}</template>
-        </BaseButton>
-      </li>
-    </ul>
-    <p v-else class="ro">{{ t('admin.devices.none') }}</p>
-
-    <div class="row">
-      <BaseButton variant="danger" :disabled="!list.length && !allExtensions.length" @click="confirm.ask('devices:all', () => devices.removeAll())">
-        {{ confirm.armed('devices:all') ? t('common.confirm') : t('admin.devices.removeAll') }}
-      </BaseButton>
-      <BaseButton variant="danger" @click="confirm.ask('devices:cert', () => devices.resetCertificate())">
-        {{ confirm.armed('devices:cert') ? t('common.confirm') : t('admin.devices.resetCertificate') }}
-      </BaseButton>
-    </div>
-    <p class="ro">{{ t('admin.devices.resetCertificate.hint') }}</p>
 
     <AddScreenDialog v-if="creatingFor" :device="creatingFor" @created="onCreated" @close="creatingFor = null" />
   </div>
@@ -245,6 +262,7 @@ async function onCreated(screenId: string): Promise<void> {
   border: 1px solid var(--accent); border-radius: var(--radius-sm); }
 .request p { margin: 0; }
 .rname { color: var(--accent); font-weight: 600; }
+.extensions h4 { margin: var(--space-3) 0 var(--space-2); font-size: var(--fs-sm); }
 .field { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
 .field .ro { margin: 0; }
 .field select { flex: 1; min-width: 0; min-height: 44px; box-sizing: border-box; font: inherit; font-size: var(--fs-sm); color: var(--text);

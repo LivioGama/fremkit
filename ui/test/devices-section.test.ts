@@ -104,27 +104,96 @@ describe('the devices section', () => {
     wrapper.unmount()
   })
 
-  it('hides the extension rows and the request card while labs.companion is off, and Remove all still counts them', async () => {
-    const s = useAdminStore()
-    s.state.config = { ...config(), labs: { devices: true, companion: false } }
-    deviceApi.getDevices.mockResolvedValue(status({
-      devices: [extension()],
-      companionRequest: { requestId: 'r1', code: 'K7M2', name: 'Chrome', expiresAt: Date.now() + 60_000 },
-    }))
-    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
-    await flushPromises()
-    expect(wrapper.find('[data-test="extension"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="companion-request"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('No paired device')
-    const removeAll = wrapper.findAll('button').find((b) => b.text() === 'Remove every device')
-    expect(removeAll).toBeDefined()
-    expect(removeAll?.attributes('disabled')).toBeUndefined()
-    // Turned on, both come back without a reload.
-    s.state.config = { ...config(), labs: { devices: true, companion: true } }
-    await flushPromises()
-    expect(wrapper.find('[data-test="extension"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="companion-request"]').exists()).toBe(true)
-    wrapper.unmount()
+  describe('which parts show', () => {
+    const REQUEST = () => ({ requestId: 'r1', code: 'K7M2', name: 'Chrome', expiresAt: Date.now() + 60_000 })
+    async function mountWith(labs: { devices: boolean; companion: boolean }, answer: DeviceStatus) {
+      useAdminStore().state.config = { ...config(), labs }
+      deviceApi.getDevices.mockResolvedValue(answer)
+      const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+      await flushPromises()
+      return wrapper
+    }
+    const ipadPart = (w: Awaited<ReturnType<typeof mountWith>>) => w.find('input[type="checkbox"]').exists()
+    const extPart = (w: Awaited<ReturnType<typeof mountWith>>) => w.find('[data-test="extensions"]').exists()
+
+    it('both flags off: an extension paired keeps its row, with rename and remove, but no request card and no iPad part', async () => {
+      const w = await mountWith({ devices: false, companion: false }, status({ devices: [extension()], companionRequest: REQUEST() }))
+      expect(extPart(w)).toBe(true)
+      expect(w.find('[data-test="extension-name"]').exists()).toBe(true)
+      expect(w.find('[data-test="extension-remove"]').exists()).toBe(true)
+      expect(w.find('[data-test="companion-request"]').exists()).toBe(false)
+      expect(ipadPart(w)).toBe(false)
+      expect(w.find('[data-test="ipads-none"]').exists()).toBe(false)
+      expect(w.find('[data-test="extensions-none"]').exists()).toBe(false)
+      w.unmount()
+    })
+
+    it('only labs.companion on: the extension part with its request card and empty state, no iPad controls', async () => {
+      const w = await mountWith({ devices: false, companion: true }, status({ companionRequest: REQUEST() }))
+      expect(extPart(w)).toBe(true)
+      expect(w.find('[data-test="companion-request"]').exists()).toBe(true)
+      expect(w.find('[data-test="extensions-none"]').text()).toBe('No browser extension linked.')
+      expect(ipadPart(w)).toBe(false)
+      expect(w.find('[data-test="pairing-code"]').exists()).toBe(false)
+      expect(w.text()).not.toContain('No paired iPad')
+      w.unmount()
+    })
+
+    it('only labs.devices on: the iPad part, as on main, and no extension part', async () => {
+      const w = await mountWith({ devices: true, companion: false }, status({ companionRequest: REQUEST() }))
+      expect(ipadPart(w)).toBe(true)
+      expect(w.find('[data-test="ipads-none"]').text()).toBe('No paired iPad.')
+      expect(extPart(w)).toBe(false)
+      expect(w.find('[data-test="companion-request"]').exists()).toBe(false)
+      w.unmount()
+    })
+
+    it('both flags off: iPad pairing in use shows the iPad part, the listener on or an iPad paired', async () => {
+      for (const answer of [status({ enabled: true }), status({ devices: [device()] })]) {
+        const w = await mountWith({ devices: false, companion: false }, answer)
+        expect(ipadPart(w)).toBe(true)
+        expect(extPart(w)).toBe(false)
+        w.unmount()
+      }
+    })
+
+    it('each part has its own empty state, never beside a listed device of the other kind', async () => {
+      const w = await mountWith({ devices: true, companion: true }, status({ devices: [device()] }))
+      expect(w.find('[data-test="ipads-none"]').exists()).toBe(false)
+      expect(w.find('[data-test="extensions-none"]').exists()).toBe(true)
+      w.unmount()
+      const x = await mountWith({ devices: true, companion: true }, status({ devices: [extension()] }))
+      expect(x.find('[data-test="extensions-none"]').exists()).toBe(false)
+      expect(x.find('[data-test="ipads-none"]').exists()).toBe(true)
+      expect(x.text()).not.toContain('No paired device')
+      x.unmount()
+    })
+
+    it('a part stays while the pane is open after its last device goes, until its flag turns off', async () => {
+      const w = await mountWith({ devices: false, companion: false }, status({ devices: [extension()] }))
+      expect(extPart(w)).toBe(true)
+      useDevices().status.value = status()
+      await flushPromises()
+      expect(extPart(w)).toBe(true)
+      expect(w.find('[data-test="extensions-none"]').exists()).toBe(true)
+      // On, then off again: the rule is read anew, and nothing is paired any more.
+      const s = useAdminStore()
+      s.state.config = { ...config(), labs: { devices: false, companion: true } }
+      await flushPromises()
+      s.state.config = { ...config(), labs: { devices: false, companion: false } }
+      await flushPromises()
+      expect(extPart(w)).toBe(false)
+      w.unmount()
+    })
+
+    it('turning labs.companion on brings the request card without a reload', async () => {
+      const w = await mountWith({ devices: false, companion: false }, status({ devices: [extension()], companionRequest: REQUEST() }))
+      expect(w.find('[data-test="companion-request"]').exists()).toBe(false)
+      useAdminStore().state.config = { ...config(), labs: { devices: false, companion: true } }
+      await flushPromises()
+      expect(w.find('[data-test="companion-request"]').exists()).toBe(true)
+      w.unmount()
+    })
   })
 
   it('lists an extension with no screen picker, and removes it', async () => {
@@ -137,7 +206,7 @@ describe('the devices section', () => {
     expect(row.find('[data-test="extension-connected"]').text()).toBe('connected')
     expect(row.find('select').exists()).toBe(false)
     expect(row.text()).toContain('Paired')
-    expect(wrapper.text()).not.toContain('No paired device')
+    expect(wrapper.find('[data-test="extensions-none"]').exists()).toBe(false)
     await row.find('[data-test="extension-remove"]').trigger('click')
     await row.find('[data-test="extension-remove"]').trigger('click')
     await flushPromises()

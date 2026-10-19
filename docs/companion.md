@@ -10,16 +10,16 @@ until an extension is linked.
 It is **experimental** for now, and hidden until you turn it on: in the admin, open
 **Settings → About**, click the version number seven times (or focus it and press Enter seven
 times), and tick **Browser companion (Fremplay)** under **Experimental features**. Until then the
-admin leaves Fremplay out of the widget library and the bar's list and hides the extension rows and
-the pairing request in **Settings → Devices**, and the Edge shows no pairing prompt, so no request
-can be allowed. A Fremplay widget already placed stays where it is.
+admin leaves Fremplay out of the widget library and the bar's list and hides the pairing request in
+**Settings → Devices**, and the Edge shows no pairing prompt, so no request can be allowed. A
+browser already linked stays listed in **Settings → Devices** whatever the switch says, so it can
+always be renamed or removed, and a Fremplay widget already placed stays where it is.
 
 The switch (`labs.companion` in the config) only changes what the admin and the dashboard show. The
 server never reads it and does not rely on it for security: the companion routes, the socket's
 challenge and the refusal of the `companion` channel to paired devices guard the same way whether
 it is on or off, and an extension linked before you turned it off keeps working until you remove
-it (**Remove every device** in **Settings → Devices** still does, or turn the switch back on to
-remove it alone).
+it.
 
 ## What you need
 
