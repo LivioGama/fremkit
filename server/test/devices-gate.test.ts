@@ -8,6 +8,7 @@ import { RemoteListener } from '../src/devices/listener.js'
 import { remoteAccess } from '../src/devices/allowlist.js'
 import { readCookie } from '../src/http/cookies.js'
 import { generateToken } from '../src/http/access.js'
+import { hostAddresses } from '../src/widgets/webrtc.js'
 import { hasOpenssl, remote, tlsMaterial, upgrade } from './helpers/remote.js'
 
 let dir: string
@@ -24,6 +25,10 @@ async function writeFixture(root: string): Promise<void> {
   await mkdir(join(root, 'widgets', 'clock'), { recursive: true })
   await writeFile(join(root, 'widgets', 'clock', 'manifest.json'), JSON.stringify({ id: 'clock', name: 'Clock', version: '1.0.0', minSize: [8, 4], defaultSize: [16, 4] }))
   await writeFile(join(root, 'widgets', 'clock', 'index.html'), '<!doctype html><html><head><title>c</title></head><body>hi</body></html>')
+  // A built-in at WebRTC's `local` level, whose page carries the Mac's addresses when asked locally.
+  await mkdir(join(root, 'widgets', 'fremplay'), { recursive: true })
+  await writeFile(join(root, 'widgets', 'fremplay', 'manifest.json'), JSON.stringify({ id: 'fremplay', name: 'Fremplay', version: '1.0.0', minSize: [8, 4], defaultSize: [16, 4] }))
+  await writeFile(join(root, 'widgets', 'fremplay', 'index.html'), '<!doctype html><html><body>play</body></html>')
   const ui = join(root, 'ui')
   await mkdir(join(ui, 'assets'), { recursive: true })
   await writeFile(join(ui, 'index.html'), '<!doctype html><title>dashboard</title>')
@@ -248,6 +253,19 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
     const opened = await upgrade(port, { ...cookie(token), origin: `https://127.0.0.1:${port}` })
     expect(opened.status).toBe(101)
     if ('socket' in opened) opened.socket.destroy()
+  })
+
+  it('serves a `local` built-in at the `none` level through the listener, with none of the Mac\'s addresses', async () => {
+    const local = (await app.inject({ url: '/widgets/fremplay/index.html' })).body
+    expect(local).toContain('data-webrtc="local"')
+    expect(local).toContain('data-webrtc-hosts=')
+    for (const headers of [{}, cookie(token)]) {
+      const res = await remote(port, { path: '/widgets/fremplay/index.html', host: `example.local:${port}`, headers })
+      expect(res.status).toBe(200)
+      expect(res.body).toContain('<script src="/fremkit.js"></script>')
+      expect(res.body).not.toContain('data-webrtc')
+      for (const address of hostAddresses()) expect(res.body, address).not.toContain(address)
+    }
   })
 
   it('builds the widget CSP from the remote origin', async () => {
