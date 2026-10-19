@@ -15,6 +15,7 @@ const NativeTargetSchema = z.object({
   bundleId: z.string().min(1).max(255),
   title: z.string().max(1024),
   application: z.string().min(1).max(255),
+  windowID: z.number().int().positive().max(0xffff_ffff),
 })
 
 const SWIFT = '/usr/bin/swift'
@@ -47,7 +48,7 @@ export function nativeArgsFor(action: RectangleAction, target: Target): string[]
 export function nativeArgsFor(modeOrAction: 'inspect' | RectangleAction, target?: Target): string[] {
   if (modeOrAction === 'inspect') return [HELPER, 'inspect']
   if (!target) throw new Error('native target required')
-  return [HELPER, 'run', String(target.pid), target.bundleId, target.title, ...nativeInvocationFor(modeOrAction)]
+  return [HELPER, 'run', String(target.pid), target.bundleId, target.title, String(target.windowID), ...nativeInvocationFor(modeOrAction)]
 }
 
 function parseResponse(stdout: string): NativeResponse | null {
@@ -65,7 +66,7 @@ function parseResponse(stdout: string): NativeResponse | null {
 
 /**
  * Uses macOS Accessibility APIs and the system display geometry. The widget can act only on a
- * window it explicitly inspected, and the helper verifies that exact process and title again.
+ * window it explicitly inspected, and the helper verifies its session-unique window ID again.
  */
 export function createRectangleProvider(run: Runner = runProgram, now: () => number = Date.now): Provider {
   const targets = new Map<string, { target: Target; expiresAt: number }>()

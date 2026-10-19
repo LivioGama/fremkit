@@ -8,6 +8,30 @@ struct Target: Codable {
     let bundleId: String
     let title: String
     let application: String
+    let windowID: UInt32
+}
+
+struct WindowCandidate: Codable {
+    let windowID: UInt32
+    let pid: Int32
+    let title: String
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+
+    var bounds: CGRect { CGRect(x: x, y: y, width: width, height: height) }
+}
+
+struct IdentityProbe: Decodable {
+    let pid: Int32
+    let title: String
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+    let expectedWindowID: UInt32?
+    let windows: [WindowCandidate]
 }
 
 struct Response: Encodable {
@@ -64,6 +88,36 @@ func sizeAttribute(_ element: AXUIElement, _ attribute: CFString) -> CGSize? {
     return size
 }
 
+func closeEnough(_ lhs: CGFloat, _ rhs: CGFloat) -> Bool { abs(lhs - rhs) <= 4 }
+
+// CGWindowID is unique within the current user session. AX does not expose that ID directly,
+// so map its focused window to exactly one Core Graphics row by owner, title, and bounds.
+// If the mapping is absent or ambiguous, do not guess which same-titled window was focused.
+func matchingWindowID(pid: Int32, title: String, bounds: CGRect, expectedWindowID: UInt32? = nil, candidates: [WindowCandidate]) -> UInt32? {
+    let matches = candidates.filter { candidate in
+        candidate.pid == pid && candidate.title == title &&
+        closeEnough(CGFloat(candidate.x), bounds.minX) && closeEnough(CGFloat(candidate.y), bounds.minY) &&
+        closeEnough(CGFloat(candidate.width), bounds.width) && closeEnough(CGFloat(candidate.height), bounds.height)
+    }
+    guard matches.count == 1, let match = matches.first, match.windowID != kCGNullWindowID else { return nil }
+    if let expectedWindowID, expectedWindowID != match.windowID { return nil }
+    return match.windowID
+}
+
+func onScreenWindowCandidates() -> [WindowCandidate]? {
+    guard let rawWindows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else { return nil }
+    return rawWindows.compactMap { info in
+        guard let pid = info[kCGWindowOwnerPID as String] as? NSNumber,
+              let windowID = info[kCGWindowNumber as String] as? NSNumber,
+              let title = info[kCGWindowName as String] as? String,
+              let rawBounds = info[kCGWindowBounds as String] as? [String: Any],
+              let bounds = CGRect(dictionaryRepresentation: rawBounds as CFDictionary),
+              windowID.uint32Value != kCGNullWindowID else { return nil }
+        return WindowCandidate(windowID: windowID.uint32Value, pid: pid.int32Value, title: title,
+                               x: bounds.minX, y: bounds.minY, width: bounds.width, height: bounds.height)
+    }
+}
+
 func focusedTarget(expected: Target? = nil) -> (Target, AXUIElement, CGPoint, CGSize)? {
     guard AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication else { return nil }
     let pid = app.processIdentifier
@@ -81,7 +135,10 @@ func focusedTarget(expected: Target? = nil) -> (Target, AXUIElement, CGPoint, CG
           let position = pointAttribute(window, kAXPositionAttribute as CFString),
           let size = sizeAttribute(window, kAXSizeAttribute as CFString) else { return nil }
     if let expected, expected.title != title { return nil }
-    let target = Target(pid: pid, bundleId: bundleId, title: title, application: appName)
+    guard let candidates = onScreenWindowCandidates(),
+          let windowID = matchingWindowID(pid: pid, title: title, bounds: CGRect(origin: position, size: size),
+                                          expectedWindowID: expected?.windowID, candidates: candidates) else { return nil }
+    let target = Target(pid: pid, bundleId: bundleId, title: title, application: appName, windowID: windowID)
     return (target, window, position, size)
 }
 
@@ -125,8 +182,6 @@ func setAX(_ window: AXUIElement, attribute: CFString, size: CGSize) -> Bool {
     return AXUIElementSetAttributeValue(window, attribute, boxed) == .success
 }
 
-func closeEnough(_ lhs: CGFloat, _ rhs: CGFloat) -> Bool { abs(lhs - rhs) <= 4 }
-
 func waitForGeometry(_ expected: Target, position: CGPoint, size: CGSize) -> Bool {
     for _ in 0..<30 {
         if let (_, _, actualPosition, actualSize) = focusedTarget(expected: expected),
@@ -164,6 +219,7 @@ func menuAction(_ path: [String], expected: Target) -> Bool {
             role($0) == kAXMenuItemRole as String && stringAttribute($0, kAXTitleAttribute as CFString) == title
         }) else { return false }
         let isFinalItem = index == path.count - 2
+        if isFinalItem, focusedTarget(expected: expected) == nil { return false }
         guard AXUIElementPerformAction(item, kAXPressAction as CFString) == .success else { return false }
         if isFinalItem { return true }
         Thread.sleep(forTimeInterval: 0.05)
@@ -215,6 +271,9 @@ func runAction(_ action: String, expected: Target) {
     }
 
     if action == "next-display" {
+        guard focusedTarget(expected: expected) != nil else {
+            respond(Response(ok: false, error: "target-changed-or-unavailable"))
+        }
         guard setAX(window, attribute: kAXPositionAttribute as CFString, point: targetPosition) else {
             respond(Response(ok: false, error: "window-action-rejected"))
         }
@@ -238,6 +297,21 @@ func runAction(_ action: String, expected: Target) {
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
+if ProcessInfo.processInfo.environment["FREMKIT_RECTANGLE_TESTING"] == "1", arguments.first == "test-window-identity" {
+    guard arguments.count == 2,
+          let data = arguments[1].data(using: .utf8),
+          let probes = try? JSONDecoder().decode([IdentityProbe].self, from: data) else {
+        respond(Response(ok: false, error: "invalid-test-probe"))
+    }
+    let windowIDs = probes.map { probe in
+        matchingWindowID(pid: probe.pid, title: probe.title,
+                         bounds: CGRect(x: probe.x, y: probe.y, width: probe.width, height: probe.height),
+                         expectedWindowID: probe.expectedWindowID, candidates: probe.windows)
+    }
+    if let data = try? JSONEncoder().encode(windowIDs), let output = String(data: data, encoding: .utf8) { print(output) }
+    else { respond(Response(ok: false, error: "identity-test-encoding-failed")) }
+    exit(0)
+}
 guard let mode = arguments.first else { respond(Response(ok: false, error: "missing-mode")) }
 guard AXIsProcessTrusted() else { respond(Response(ok: false, error: "accessibility-permission-required")) }
 
@@ -247,9 +321,9 @@ if mode == "inspect" {
 }
 
 guard mode == "run", arguments.count >= 6,
-      let pid = Int32(arguments[1]) else { respond(Response(ok: false, error: "invalid-request")) }
-let expected = Target(pid: pid, bundleId: arguments[2], title: arguments[3], application: "")
-let invocation = Array(arguments.dropFirst(4))
+      let pid = Int32(arguments[1]), let windowID = UInt32(arguments[4]) else { respond(Response(ok: false, error: "invalid-request")) }
+let expected = Target(pid: pid, bundleId: arguments[2], title: arguments[3], application: "", windowID: windowID)
+let invocation = Array(arguments.dropFirst(5))
 if invocation.count == 4, invocation[0] == "menu", invocation[1] == "Window" {
     let action = invocation[2] == "Fill" ? "fill" : invocation[3] == "Left" ? "left-half" : invocation[3] == "Right" ? "right-half" : "invalid"
     runAction(action, expected: expected)
