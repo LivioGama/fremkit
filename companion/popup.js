@@ -29,9 +29,14 @@ const PAIR_ERRORS = {
   limited: () => t('pairLimited'),
   busy: () => t('pairBusy'),
   cooldown: () => t('pairCooldown'),
-  tooFast: () => t('pairTooFast'),
+  exhausted: () => t('pairExhausted'),
   unreachable: () => t('pairUnreachable'),
   failed: () => t('pairFailed'),
+}
+const CODE_ERRORS = {
+  wrongCode: () => t('pairWrongCode'),
+  badCode: () => t('pairBadCode'),
+  busy: () => t('pairChecking'),
 }
 const LINKS = {
   ok: ['ok', () => t('linkOk')],
@@ -53,6 +58,8 @@ let busy = false
 /** A start is under way: the popup closes once it is accepted, from the reply or from storage. */
 let starting = false
 let shownError = null
+/** What the last typed code got, until the next try: `wrongCode`, `badCode`, … */
+let codeError = null
 
 const hostOf = (url) => {
   try {
@@ -101,12 +108,19 @@ function renderPairing() {
   const pending = local.pairing && local.pairing.expiresAt > now ? local.pairing : null
   $('connect').hidden = Boolean(pending)
   $('connect').disabled = busy
+  // The code is never shown here: it is on the Edge, which only the real Fremkit can write to,
+  // and typing it is what pairs (lib/pairProof.js).
   $('code').hidden = !pending
+  if (!pending) codeError = null
   if (pending) {
     const left = Math.ceil((pending.expiresAt - now) / 1000)
-    $('digits').textContent = pending.code
     $('valid').textContent = t('pairValid', `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`)
+    $('typed').disabled = busy
+    $('confirm').disabled = busy
   }
+  const typedError = pending && codeError ? (CODE_ERRORS[codeError] ?? PAIR_ERRORS.failed)() : null
+  $('codeerror').hidden = !typedError
+  $('codeerror').textContent = typedError ?? ''
   // Shown removed with the token kept: the 4401 came before any proof, so another program holding
   // Fremkit's port may have sent it to get this browser to pair with it instead.
   $('removedwarn').hidden = !(local.revoked && local.token)
@@ -213,10 +227,30 @@ $('stop').addEventListener('click', async () => {
 
 $('connect').addEventListener('click', async () => {
   busy = true
+  codeError = null
   render()
   await ask('pair')
   busy = false
   render()
+  $('typed').value = ''
+  $('typed').focus()
+})
+
+$('codeform').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  if (busy) return
+  busy = true
+  codeError = null
+  render()
+  const res = await ask('confirmCode', { code: $('typed').value })
+  busy = false
+  // Paired: the storage change renders the menu. A wrong code is cleared for the next try.
+  if (!res?.ok) {
+    codeError = res?.error ?? 'failed'
+    $('typed').value = ''
+  }
+  render()
+  if (!res?.ok) $('typed').focus()
 })
 
 $('settings').addEventListener('click', (e) => {
@@ -252,7 +286,7 @@ async function main() {
   }
   render()
   ask('open')
-  // The pairing code counts down; the share's title changes under the menu.
+  // The pairing's time left counts down; the share's title changes under the menu.
   setInterval(() => !isPaired() && render(), 1000)
   const commands = await chrome.commands.getAll()
   renderShortcut(commands.find((c) => c.name === 'fremplay-toggle')?.shortcut)

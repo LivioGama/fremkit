@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 // @ts-expect-error plain JS modules outside server/, no declarations
 import { cleanFrames, cleanState, cleanSurvey, control, cropRect, embeddedPlayer, pickVideo, pickedOrigin, placeFrame, survey, youtubeVolume } from '../../companion/lib/video.js'
@@ -24,7 +26,11 @@ import { grantToReturn } from '../../companion/lib/grant.js'
 // @ts-expect-error plain JS module
 import { withVolumeHint } from '../../companion/lib/volume.js'
 // @ts-expect-error plain JS module
-import { approvalTooFast, MIN_APPROVAL_MS } from '../../companion/lib/approval.js'
+import * as pairProof from '../../companion/lib/pairProof.js'
+import * as serverPairProof from '../src/companion/pairProof.js'
+import { CompanionPairing } from '../src/companion/pairing.js'
+import { DeviceStore } from '../src/devices/store.js'
+import { CODE_ALPHABET } from '../src/devices/codes.js'
 import { isLocalSdp, parseExtensionMessage, PROOF_LABEL as SERVER_PROOF_LABEL, PROTOCOL } from '../src/companion/protocol.js'
 import { HELLO_TIMEOUT_MS } from '../src/companion/socket.js'
 import { COMPANION_NAMES } from '../src/companion/routes.js'
@@ -791,23 +797,104 @@ describe('grantToReturn (the grant a start gives back)', () => {
   })
 })
 
-describe('approvalTooFast (an approval no hand on the Edge could give)', () => {
-  it('waits as long as the Edge and the admin hold Allow back (COMPANION_ALLOW_DELAY_MS)', () => {
-    expect(MIN_APPROVAL_MS).toBe(2_000)
+/** The same vector as companion-pairing.test.ts, run through the server's pairProof.ts. */
+const PAIR_VECTOR = {
+  code: 'K7QM',
+  requestId: '3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b',
+  nonceE: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE',
+  nonceS: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI',
+  key: 'a4cf5dbd6f76bcf8117a2098cfdd2aa40310b26b00d984e897968c829796b0b8',
+  macS: 'zmpz29L7bwyvBl7bCYR3wAVbWK86PKl4QGHYHj3cvak',
+  macE: 'm0kTJZhVO_hpRSFRV_B8N1lgNrozNintFWLnhPq00Jw',
+}
+
+describe('the typed-code proof, from the extension side', () => {
+  it('uses the server\'s cost, salt and labels', () => {
+    for (const k of ['PAIR_KEY_ITERATIONS', 'PAIR_SALT_PREFIX', 'PAIR_SERVER_LABEL', 'PAIR_CLIENT_LABEL'] as const) {
+      expect(pairProof[k], k).toBe(serverPairProof[k])
+    }
   })
 
-  it('refuses an approval collected less than 2 s after the request was accepted', () => {
-    const at = 1_000_000
-    expect(approvalTooFast(at, at)).toBe(true)
-    expect(approvalTooFast(at, at + 1_500)).toBe(true)
-    expect(approvalTooFast(at, at + 1_999)).toBe(true)
-    expect(approvalTooFast(at, at + 2_000)).toBe(false)
-    expect(approvalTooFast(at, at + 30_000)).toBe(false)
+  it('computes the fixed vector the server test pins', async () => {
+    const v = PAIR_VECTOR
+    const key: Uint8Array = await pairProof.pairKey(v.code, v.requestId)
+    expect(Buffer.from(key).toString('hex')).toBe(v.key)
+    expect(await pairProof.pairMac(key, pairProof.PAIR_SERVER_LABEL, v.requestId, v.nonceE, v.nonceS)).toBe(v.macS)
+    expect(await pairProof.pairMac(key, pairProof.PAIR_CLIENT_LABEL, v.requestId, v.nonceE, v.nonceS)).toBe(v.macE)
   })
 
-  it('counts a pairing that does not say when it began as too fast', () => {
-    for (const acceptedAt of [undefined, null, '1000', Number.NaN, Infinity]) {
-      expect(approvalTooFast(acceptedAt, 5_000), String(acceptedAt)).toBe(true)
+  it('reads a typed code in any case, with spaces or a dash, and nothing outside the alphabet', () => {
+    expect(pairProof.normalizeCode('k7qm')).toBe('K7QM')
+    expect(pairProof.normalizeCode(' K7-QM ')).toBe('K7QM')
+    expect(pairProof.CODE_LENGTH).toBe(4)
+    for (const bad of ['', 'K7Q', 'K7QMX', 'K7Q0', 'K7QI', 'K7Q1', 'K7QO', 'K7Q!', null, undefined, 42]) {
+      expect(pairProof.normalizeCode(bad), String(bad)).toBeNull()
+    }
+    for (const c of CODE_ALPHABET) expect(pairProof.normalizeCode(c.repeat(4))).toBe(c.repeat(4))
+  })
+
+  /** `confirmCode` against the real pairing, through a `post` that records what it sent. */
+  async function withPairing(run: (ctx: {
+    pairing: CompanionPairing; requestId: string; code: string; sent: { step: string; body: Record<string, unknown> }[]
+    post: (step: string, body: Record<string, unknown>) => Promise<unknown>
+  }) => Promise<void>) {
+    const dir = await mkdtemp(join(tmpdir(), 'fremkit-companion-ext-'))
+    const store = new DeviceStore(join(dir, 'devices.json'))
+    await store.load()
+    const pairing = new CompanionPairing(store)
+    const origin = `chrome-extension://${'a'.repeat(32)}`
+    try {
+      const r = pairing.request({ origin, name: 'Chrome', installId: ID })
+      if (typeof r === 'string') throw new Error(r)
+      const sent: { step: string; body: Record<string, unknown> }[] = []
+      const post = async (step: string, body: Record<string, unknown>) => {
+        sent.push({ step, body })
+        if (step === 'confirm') return pairing.confirm(r.requestId, origin, body.nonce as string)
+        return pairing.finish(r.requestId, origin, 'mac' in body ? (body.mac as string) : null)
+      }
+      await run({ pairing, requestId: r.requestId, code: r.code, sent, post })
+    } finally {
+      pairing.dispose()
+      await store.settled()
+      await rm(dir, { recursive: true, force: true })
+    }
+  }
+
+  it('pairs with the Edge\'s code against the real server side', async () => {
+    await withPairing(async ({ requestId, code, post }) => {
+      const got = await pairProof.confirmCode({ post, requestId, code })
+      expect(got).toMatchObject({ state: 'paired', token: expect.any(String), deviceId: expect.any(String) })
+    })
+  })
+
+  it('a wrong code sends nothing derived from it: wrong, wrong, then exhausted', async () => {
+    await withPairing(async ({ requestId, code, sent, post }) => {
+      const other = code === 'ZZZZ' ? 'YYYY' : 'ZZZZ'
+      expect(await pairProof.confirmCode({ post, requestId, code: other })).toEqual({ state: 'wrong' })
+      expect(await pairProof.confirmCode({ post, requestId, code: other })).toEqual({ state: 'wrong' })
+      expect(await pairProof.confirmCode({ post, requestId, code: other })).toEqual({ state: 'exhausted' })
+      expect(sent.filter((m) => m.step === 'finish').map((m) => m.body)).toEqual([{ abandon: true }, { abandon: true }, { abandon: true }])
+      expect(await pairProof.confirmCode({ post, requestId, code })).toEqual({ state: 'refused' })
+    })
+  })
+
+  it('gives a server that does not know the code no mac to grind, whatever it answers', async () => {
+    const answers = [
+      { state: 'confirm', nonce: 'B'.repeat(43), mac: 'A'.repeat(43) },
+      { state: 'confirm', nonce: 'B'.repeat(43), mac: '' },
+      { state: 'confirm', nonce: 'short', mac: 'A'.repeat(43) },
+      { state: 'paired', token: TOKEN, deviceId: ID },
+      null,
+    ]
+    for (const answer of answers) {
+      const sent: { step: string; body: Record<string, unknown> }[] = []
+      const post = async (step: string, body: Record<string, unknown>) => {
+        sent.push({ step, body })
+        return step === 'confirm' ? answer : { state: 'paired', token: TOKEN, deviceId: ID }
+      }
+      const got = await pairProof.confirmCode({ post, requestId: RID, code: 'K7QM' })
+      expect(got.state, JSON.stringify(answer)).not.toBe('paired')
+      expect(sent.some((m) => 'mac' in m.body), JSON.stringify(answer)).toBe(false)
     }
   })
 })

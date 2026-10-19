@@ -9,14 +9,14 @@ export const PROOF_LABEL = 'fremkit-companion-proof-v1|'
 
 const utf8 = (s) => new TextEncoder().encode(s)
 
-function base64url(bytes) {
+export function base64url(bytes) {
   let bin = ''
   for (const b of bytes) bin += String.fromCharCode(b)
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 /** Bytes from unpadded base64url; null for anything else. */
-function fromBase64url(s) {
+export function fromBase64url(s) {
   if (typeof s !== 'string' || !/^[A-Za-z0-9_-]*$/.test(s)) return null
   try {
     const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4))

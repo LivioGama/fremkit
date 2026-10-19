@@ -44,11 +44,13 @@
     <!-- Removed by an answer nobody proved: maybe not Fremkit's (worker `removed`) -->
     <p id="removedwarn" class="error" role="alert" hidden>__MSG_pairRemovedWarning__</p>
     <button id="connect" class="primary">__MSG_pairConnect__</button>
-    <div id="code" class="code" hidden>
-      <div class="muted">__MSG_pairTouch__</div>
-      <div id="digits" class="digits"></div>
+    <form id="code" class="code" hidden autocomplete="off">
+      <label for="typed" class="muted">__MSG_pairType__</label>
+      <input id="typed" class="digits" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text">
+      <button id="confirm" type="submit" class="primary">__MSG_pairConfirm__</button>
+      <div id="codeerror" class="error" role="alert" hidden></div>
       <div id="valid" class="muted small"></div>
-    </div>
+    </form>
     <div id="pairerror" class="error" role="alert" hidden></div>
   </main>
 

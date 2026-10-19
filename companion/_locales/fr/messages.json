@@ -133,8 +133,20 @@
   "pairConnect": {
     "message": "Connecter à Fremkit"
   },
-  "pairTouch": {
-    "message": "Touchez Autoriser sur l'Edge si ce code s'y affiche :"
+  "pairType": {
+    "message": "Tapez le code affiché sur l'Edge"
+  },
+  "pairConfirm": {
+    "message": "Valider"
+  },
+  "pairWrongCode": {
+    "message": "Code incorrect"
+  },
+  "pairBadCode": {
+    "message": "Le code a 4 caractères, ceux affichés sur l’Edge."
+  },
+  "pairChecking": {
+    "message": "Vérification en cours…"
   },
   "pairValid": {
     "message": "Valable encore $value$",
@@ -159,8 +171,8 @@
   "pairCooldown": {
     "message": "Demande refusée, réessayez dans une minute."
   },
-  "pairTooFast": {
-    "message": "Approbation trop rapide, refusée."
+  "pairExhausted": {
+    "message": "Trop d'essais : demande refusée. Reconnectez pour un nouveau code."
   },
   "pairUnreachable": {
     "message": "Fremkit ne répond pas sur ce Mac. Est-il lancé ?"

@@ -4,13 +4,13 @@
 // wakes it again if Chrome stopped it.
 //
 // What must survive the worker being stopped is in chrome.storage: the install id, the token and a
-// pairing waiting for its answer in `local`; the share and the link state in `session`.
+// pairing waiting for its code in `local`; the share and the link state in `session`.
 
-import { approvalTooFast } from './lib/approval.js'
 import { browserName } from './lib/browser.js'
 import { handshake } from './lib/handshake.js'
 import { grantToReturn } from './lib/grant.js'
 import { closeOutcome, refusalOf } from './lib/link.js'
+import { confirmCode, normalizeCode } from './lib/pairProof.js'
 import { idleDelay } from './lib/presence.js'
 import { isOwnContext } from './lib/sender.js'
 import * as protocol from './lib/protocol.js'
@@ -33,6 +33,8 @@ const NO_VIDEO_MS = 10_000
 /** How long a start waits for the server's answer. */
 const START_TIMEOUT_MS = 8_000
 const PAIR_POLL_MS = 1_500
+/** A pairing request's life on the server (REQUEST_TTL_MS): no server's say makes it longer. */
+const PAIR_TTL_MS = 120_000
 const FLASH_MS = 1_500
 
 const GOLD = '#d9b36a'
@@ -133,47 +135,91 @@ async function pair() {
     return saveLocal({ pairError: known.includes(reason) ? reason : res.status === 409 ? 'busy' : 'limited' })
   }
   const body = res.ok ? await res.json().catch(() => null) : null
-  if (!body?.requestId || !body.code) return saveLocal({ pairError: 'failed' })
-  // `acceptedAt`: an approval sooner than a person can give one is refused (lib/approval.js).
-  await saveLocal({ pairing: { requestId: body.requestId, code: body.code, expiresAt: body.expiresAt, acceptedAt: Date.now() }, name })
+  if (typeof body?.requestId !== 'string' || !Number.isFinite(body.expiresAt)) return saveLocal({ pairError: 'failed' })
+  // The code is not in the answer: it shows on the Edge only, and the user types it here
+  // (lib/pairProof.js). The deadline is the server's, bounded by a request's life, so whatever
+  // answers on the port cannot keep the poll and this worker alive for ever.
+  const expiresAt = Math.min(body.expiresAt, Date.now() + PAIR_TTL_MS)
+  await saveLocal({ pairing: { requestId: body.requestId, expiresAt }, name })
   pollPairing()
 }
 
 let polling = false
+/** A typed code being confirmed: one at a time, and the poll does not end the pairing under it. */
+let confirming = false
 
-/** Asks for the answer until there is one or the code expires. Resumed when the worker restarts. */
+/** Watches for a refusal or the expiry until the code is confirmed. Resumed when the worker restarts. */
 async function pollPairing() {
   if (polling) return
   polling = true
   try {
     while (local.pairing) {
       const pending = local.pairing
-      if (Date.now() > pending.expiresAt) return await endPairing('expired')
-      let answer = null
-      try {
-        // A POST: Chrome sends no Origin on this extension's GETs to 127.0.0.1, and the server needs it.
-        const res = await fetch(`${HTTP}/api/companion/pair/${encodeURIComponent(pending.requestId)}`, { method: 'POST', cache: 'no-store' })
-        if (res.ok) answer = await res.json()
-      } catch { /* not running yet: keep asking until the code expires */ }
-      if (local.pairing?.requestId !== pending.requestId) continue
-      if (answer?.state === 'approved' && answer.token) {
-        // No hand on the Edge is this fast: whatever approved it is not the user, so its token is
-        // not taken. (A program that waits is not caught here; see docs/companion.md.)
-        if (approvalTooFast(pending.acceptedAt, Date.now())) return await endPairing('tooFast')
-        await saveLocal({ token: answer.token, deviceId: answer.deviceId, pairing: null, pairError: null, revoked: false })
-        await setLink('connecting')
-        stayFor(PRESENCE_MS)
-        connect()
-        return
+      if (Date.now() > pending.expiresAt) {
+        if (!confirming) return await endPairing('expired')
+      } else {
+        let answer = null
+        try {
+          // A POST: Chrome sends no Origin on this extension's GETs to 127.0.0.1, and the server needs it.
+          const res = await fetch(`${HTTP}/api/companion/pair/${encodeURIComponent(pending.requestId)}`, { method: 'POST', cache: 'no-store' })
+          if (res.ok) answer = await res.json()
+        } catch { /* not running yet: keep asking until the code expires */ }
+        if (local.pairing?.requestId !== pending.requestId) continue
+        // `expired` also follows a confirmation that paired, which ends the pairing itself.
+        if (!confirming && (answer?.state === 'refused' || answer?.state === 'expired')) return await endPairing(answer.state)
       }
-      if (answer?.state === 'refused' || answer?.state === 'expired') return await endPairing(answer.state)
-      // fetch and timers do not keep an MV3 worker alive; an extension API call does, so the
-      // answer is still collected when no popup and no socket are around.
+      // fetch and timers do not keep an MV3 worker alive; an extension API call does, so a
+      // refusal is still seen when no popup and no socket are around.
       await chrome.runtime.getPlatformInfo()
       await delay(PAIR_POLL_MS)
     }
   } finally {
     polling = false
+  }
+}
+
+/**
+ * The code the user typed from the Edge: proved with the server, the server first, and the token
+ * taken only if both ends knew it. Resolves `{ ok }` or `{ ok: false, error }`.
+ */
+async function confirmTyped(typed) {
+  const pending = local.pairing
+  if (!pending || Date.now() > pending.expiresAt) return { ok: false, error: 'expired' }
+  const code = normalizeCode(typed)
+  if (!code) return { ok: false, error: 'badCode' }
+  if (confirming) return { ok: false, error: 'busy' }
+  confirming = true
+  try {
+    const post = async (step, body) => {
+      try {
+        const res = await fetch(`${HTTP}/api/companion/pair/${encodeURIComponent(pending.requestId)}/${step}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+          cache: 'no-store',
+        })
+        return await res.json().catch(() => null)
+      } catch {
+        return null
+      }
+    }
+    const result = await confirmCode({ post, requestId: pending.requestId, code })
+    if (result.state === 'paired') {
+      await saveLocal({ token: result.token, deviceId: result.deviceId, pairing: null, pairError: null, revoked: false })
+      await setLink('connecting')
+      stayFor(PRESENCE_MS)
+      connect()
+      return { ok: true }
+    }
+    if (local.pairing?.requestId !== pending.requestId) return { ok: false, error: 'expired' }
+    if (result.state === 'wrong') return { ok: false, error: 'wrongCode' }
+    if (['refused', 'expired', 'exhausted'].includes(result.state)) {
+      await endPairing(result.state)
+      return { ok: false, error: result.state }
+    }
+    return { ok: false, error: 'failed' }
+  } finally {
+    confirming = false
   }
 }
 
@@ -762,6 +808,8 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       }))
     case 'pair':
       return reply(ready.then(pair).then(() => ({ ok: true })))
+    case 'confirmCode':
+      return reply(ready.then(() => confirmTyped(msg.code)))
     case 'unpair':
       return reply(ready.then(() => unpair()).then(() => ({ ok: true })))
     case 'start':
