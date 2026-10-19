@@ -4,7 +4,7 @@ import type { Config } from '../config/schema.js'
 import { findInstance } from '../config/instances.js'
 import { resolveServices, type ServiceResult } from '../providers/service-status.js'
 import { buildView, findNode, type DiskNode } from '../providers/disk-map-tree.js'
-import { emptySnapshot } from '../codex/snapshot.js'
+import { codexProviders } from './codex.js'
 import {
   DEMO_APPS, DEMO_CLIPBOARD, DEMO_PROCESSES, DEMO_SESSIONS, DEMO_TRACKS,
   clamp, coverArt, round1, wander,
@@ -50,17 +50,10 @@ export function createDemoProviders(opts: DemoProviderOptions): Provider[] {
     brightnessProvider(opts.config),
     diskMapProvider(now),
     ...claudeProviders(now, opts.config),
-    { channel: 'codex', intervalMs: 60_000, poll: async () => emptySnapshot('unconfigured') },
-    { channel: 'codex-live', intervalMs: 60_000, poll: async () => ({ sessions: [], updatedAt: null, error: 'unconfigured', truncated: false }) },
+    ...codexProviders(now, opts.config),
     dockerProvider(now),
-    {
-      channel: 'local-models', intervalMs: 15_000,
-      poll: async () => {
-        const part = { data: null, stale: false, error: 'unavailable', updatedAt: null }
-        return { installed: part, loaded: part, mlx: part }
-      },
-    },
-    { channel: 'mutedeck', intervalMs: 5_000, poll: async () => ({ available: false }), commands: { toggleMute: ACTED, toggleVideo: ACTED, toggleShare: ACTED, toggleRecord: ACTED, leave: ACTED } },
+    localModelsProvider(now),
+    mutedeckProvider(now),
     { channel: 'cleanshot', commands: { run: ACTED } },
     rtkProvider(now),
     { channel: 'shortcuts', commands: { open: ACTED } },
@@ -521,6 +514,63 @@ function rtkProvider(now: () => number): Provider {
         },
         stale: false, error: null, updatedAt: now(),
       }
+    },
+  }
+}
+
+/** Ollama with three models on disk, two of them loaded, and one MLX server: generic names only. */
+function localModelsProvider(now: () => number): Provider {
+  const installed = [
+    { name: 'llama-3.1-8b-instruct', size: 4.9 * GB },
+    { name: 'qwen-2.5-coder-7b', size: 4.7 * GB },
+    { name: 'nomic-embed-text', size: 0.27 * GB },
+  ].map((m) => ({ ...m, size: Math.round(m.size), size_vram: null, context_length: null, expires_at: null }))
+  return {
+    channel: 'local-models',
+    intervalMs: 15_000,
+    poll: async () => {
+      const t = now()
+      const part = <T>(data: T): { data: T; stale: false; error: null; updatedAt: number } => ({ data, stale: false, error: null, updatedAt: t })
+      const loaded = [
+        { name: 'llama-3.1-8b-instruct', size: Math.round(6.2 * GB), size_vram: Math.round(6.2 * GB), context_length: 8_192 },
+        { name: 'nomic-embed-text', size: Math.round(0.6 * GB), size_vram: Math.round(0.6 * GB), context_length: 2_048 },
+      ].map((m) => ({ ...m, expires_at: new Date(t + 4 * 60_000).toISOString() }))
+      const mlx = [{
+        pid: 48_213, backend: 'MLX' as const, model: 'qwen-2.5-coder-7b-4bit', port: 8080,
+        cpu: round1(clamp(wander(t, 6, 5, 20_000), 0.2, 100)), memoryBytes: Math.round(4.4 * GB),
+      }]
+      return { installed: part(installed), loaded: part(loaded), mlx: part(mlx) }
+    },
+  }
+}
+
+/**
+ * MuteDeck in a meeting: muted, camera on. The buttons toggle the fake state; leaving ends the
+ * call, and another one starts a minute later so a recording never stays on an empty tile.
+ */
+function mutedeckProvider(now: () => number): Provider {
+  const state = { mute: 'active', video: 'active', share: 'inactive', record: 'inactive' }
+  let leftAt: number | null = null
+  const inCall = (): boolean => {
+    if (leftAt !== null && now() - leftAt > 60_000) leftAt = null
+    return leftAt === null
+  }
+  const toggle = (key: keyof typeof state) => async (): Promise<{ ok: true }> => {
+    if (inCall()) state[key] = state[key] === 'active' ? 'inactive' : 'active'
+    return { ok: true }
+  }
+  return {
+    channel: 'mutedeck',
+    intervalMs: 1000,
+    poll: async () => (inCall()
+      ? { available: true, status: 200, control: 'system', call: 'active', ...state }
+      : { available: true, status: 200, control: 'system', call: 'inactive', mute: 'disabled', video: 'disabled', share: 'disabled', record: 'disabled' }),
+    commands: {
+      toggleMute: toggle('mute'),
+      toggleVideo: toggle('video'),
+      toggleShare: toggle('share'),
+      toggleRecord: toggle('record'),
+      leave: async () => { leftAt = now(); return { ok: true } },
     },
   }
 }

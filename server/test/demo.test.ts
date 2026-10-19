@@ -109,8 +109,7 @@ describe('demo mode', () => {
     for (const p of providers) {
       if (!p.poll) continue
       const data = await p.poll()
-      // The few channels of registry widgets the demo does not act out say so with a code.
-      if (!['codex', 'codex-live', 'local-models'].includes(p.channel)) expect(errorCode(data, false), p.channel).toBeNull()
+      expect(errorCode(data, false), p.channel).toBeNull()
     }
   })
 
@@ -128,6 +127,32 @@ describe('demo mode', () => {
     const probe = await status.commands!.probe({ instanceId: 'service-status-1' }) as { ok: boolean; results: unknown[] }
     expect(probe.ok).toBe(true)
     expect(probe.results).toHaveLength(4)
+  })
+
+  it("acts out the Sietch widgets' channels: Codex, local models, MuteDeck", async () => {
+    const config = ConfigSchema.parse(demoConfig())
+    const providers = createDemoProviders({ config: () => config })
+    const poll = async (channel: string): Promise<any> => providers.find((p) => p.channel === channel)!.poll!()
+    const codex = await poll('codex')
+    expect(codex.quotas.data.buckets[0].primary.usedPercent).toBeGreaterThan(0)
+    expect(codex.history.data.threads.length).toBeGreaterThan(1)
+    const live = await poll('codex-live')
+    // The widget matches a live session to a stored thread by id.
+    for (const s of live.sessions) expect(codex.history.data.threads.map((t: { id: string }) => t.id)).toContain(s.id)
+    expect((await poll('local-models')).loaded.data.length).toBeGreaterThan(0)
+    const mutedeck = providers.find((p) => p.channel === 'mutedeck')!
+    expect(await poll('mutedeck')).toMatchObject({ available: true, call: 'active', mute: 'active', video: 'active' })
+    await mutedeck.commands!.toggleMute({})
+    expect((await poll('mutedeck')).mute).toBe('inactive')
+    await mutedeck.commands!.leave({})
+    expect((await poll('mutedeck')).call).toBe('inactive')
+  })
+
+  it("keeps Codex behind the same privacy switches as the real provider", async () => {
+    const config = ConfigSchema.parse({ ...demoConfig(), privacy: { ...demoConfig().privacy, codexAccount: false, codexHistorySources: [] } })
+    const providers = createDemoProviders({ config: () => config })
+    expect(((await providers.find((p) => p.channel === 'codex')!.poll!()) as { error: string }).error).toBe('unconfigured')
+    expect(((await providers.find((p) => p.channel === 'codex-live')!.poll!()) as { error: string }).error).toBe('unconfigured')
   })
 
   it('seeds a dashboard the config schema accepts, with every built-in on it', async () => {
