@@ -27,6 +27,8 @@
  */
 
 import { Worker } from 'node:worker_threads'
+import type { FastifyInstance } from 'fastify'
+import { closeRemoteListenersNow } from './devices/listener.js'
 
 /** How long the app gets to close before the process exits anyway. */
 export const SHUTDOWN_DEADLINE_MS = 2_000
@@ -62,6 +64,16 @@ export function startWatchdog(ms: number): void {
   } catch {
     // No worker threads here: the main thread's own deadline is all there is.
   }
+}
+
+/**
+ * Stops the app's loopback server and every remote listener from accepting, synchronously: what
+ * the server's handler passes as `closeListenersNow`. Fastify's own close then finds its server
+ * closed already, which it allows (`ERR_SERVER_NOT_RUNNING` is ignored there).
+ */
+export function closeAppListenersNow(app: Pick<FastifyInstance, 'server'>): void {
+  closeRemoteListenersNow()
+  if (app.server.listening) app.server.close()
 }
 
 /** Installs the SIGTERM and SIGINT handlers. Returns the handler, for tests. */

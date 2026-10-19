@@ -1,8 +1,22 @@
 import { spawn } from 'node:child_process'
-import { createConnection } from 'node:net'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createConnection, type AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { installShutdown, SHUTDOWN_DEADLINE_MS, WATCHDOG_MS } from '../src/shutdown.js'
+import { buildApp } from '../src/app.js'
+import { CONFIG_VERSION } from '../src/config/schema.js'
+import { noAdvertise } from '../src/devices/bonjour.js'
+import { execFileAsync, type Exec } from '../src/secrets/keychain.js'
+import { closeAppListenersNow, installShutdown, SHUTDOWN_DEADLINE_MS, WATCHDOG_MS } from '../src/shutdown.js'
+import { hasOpenssl } from './helpers/remote.js'
+
+/** Whether a TCP connection to the port is refused. */
+const refused = (port: number, host = '127.0.0.1') => new Promise<boolean>((resolve) => {
+  const socket = createConnection({ port, host })
+  socket.once('connect', () => { socket.destroy(); resolve(false) })
+  socket.once('error', () => resolve(true))
+})
 
 function setup(close: () => Promise<unknown> = async () => undefined) {
   const order: string[] = []
@@ -65,14 +79,38 @@ describe('shutdown', () => {
     child.kill('SIGTERM')
     await seen(() => lines.includes('closed'))
     // Nothing answers on the port any more, though the process is still there.
-    const refused = await new Promise<boolean>((resolve) => {
-      const socket = createConnection({ port, host: '127.0.0.1' })
-      socket.once('connect', () => { socket.destroy(); resolve(false) })
-      socket.once('error', () => resolve(true))
-    })
-    expect(refused).toBe(true)
+    expect(await refused(port)).toBe(true)
     const { signal } = await exited
     expect(signal).toBe('SIGKILL')
     expect(Date.now() - sentAt).toBeLessThan(WATCHDOG_MS + 1_500)
   }, 15_000)
+
+  it.skipIf(!hasOpenssl)('the server\'s own wiring stops the loopback port and the remote listener at once, and the app still closes', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'fremkit-shutdown-'))
+    await writeFile(join(dir, 'fremkit.json'), JSON.stringify({
+      version: CONFIG_VERSION, locale: 'en', secrets: { backend: 'file' }, connections: [], widgets: {},
+      screens: [{ id: 'edge', name: 'edge', kind: 'edge', display: { cols: 30, rows: 20 }, pages: [{ id: 'home', name: 'Home', items: [] }] }],
+    }))
+    const exec: Exec = (cmd, args) => (cmd === '/usr/sbin/scutil' ? Promise.resolve({ stdout: 'example\n' }) : execFileAsync(cmd, args))
+    const app = await buildApp({
+      accessToken: null, dataDir: dir, widgetsDir: join(__dirname, '..', '..', 'widgets'), providers: [], devicesPort: 0,
+      devices: { exec, advertise: noAdvertise, lanAddresses: () => ['192.0.2.10'] },
+    })
+    try {
+      await app.listen({ port: 0, host: '127.0.0.1' })
+      const local = (app.server.address() as AddressInfo).port
+      const status = (await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })).json()
+      expect(status.listening).toBe(true)
+      const remotePort = status.port as number
+      expect(await refused(local)).toBe(false)
+      expect(await refused(remotePort)).toBe(false)
+      closeAppListenersNow(app)
+      expect(await refused(local)).toBe(true)
+      expect(await refused(remotePort)).toBe(true)
+      // Fastify's close finds its server closed already, and finishes.
+      await app.close()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })

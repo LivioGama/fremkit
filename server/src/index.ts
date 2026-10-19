@@ -9,8 +9,7 @@ import { widgetDevDir } from './widgets/dev.js'
 import { accessTokenPath, removeAccessToken, resolveAccessToken, writeAccessToken } from './http/access-file.js'
 
 import { helperLogPath, LogTail } from './diagnostics/log-tail.js'
-import { closeRemoteListenersNow } from './devices/listener.js'
-import { installShutdown } from './shutdown.js'
+import { closeAppListenersNow, installShutdown } from './shutdown.js'
 
 // Every file and folder this process (and its children) creates is this account's alone; the data
 // folder's older files are brought to the same modes at start (data-permissions.ts).
@@ -151,15 +150,8 @@ async function main(): Promise<void> {
     port,
     ...(remotePort !== undefined ? { devicesPort: remotePort } : {}),
   })
-  installShutdown({
-    close: () => app.close(),
-    // Both ports stop accepting from the signal handler itself (shutdown.ts); Fastify's own close
-    // then finds its server closed already, which it allows.
-    closeListenersNow: () => {
-      closeRemoteListenersNow()
-      if (app.server.listening) app.server.close()
-    },
-  })
+  // Both ports stop accepting from the signal handler itself (shutdown.ts).
+  installShutdown({ close: () => app.close(), closeListenersNow: () => closeAppListenersNow(app) })
   await app.listen({ port, host: '127.0.0.1' })
   // Written once the port is ours, and removed on the way out: the file names a server that is
   // listening, never one that failed to bind or has gone. The helper knows the secret of a
