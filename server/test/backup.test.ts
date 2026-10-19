@@ -389,6 +389,30 @@ describe('what an archive or a PUT cannot change', () => {
     expect(after.marketplace.installed['evil-widget']).toBeUndefined()
   })
 
+  it('restoring keeps this Mac\'s experimental features switch, either way', async () => {
+    for (const here of [true, false]) {
+      const current = (await app.inject({ url: '/api/config' })).json()
+      expect((await app.inject({ method: 'PUT', url: '/api/config', payload: { ...current, labs: { devices: here } } })).statusCode).toBe(200)
+      // A file stating the opposite, then one written before the switch existed with two screens.
+      for (const labs of [{ labs: { devices: !here } }, {}]) {
+        const crafted = { ...CONFIG, ...labs, screens: [CONFIG.screens[0], { ...CONFIG.screens[0], id: 'second', name: 'Second' }] }
+        const archive = writeZip([{ name: CONFIG_ENTRY, data: Buffer.from(JSON.stringify(crafted)) }])
+        expect((await post(archive)).statusCode).toBe(200)
+        expect((await app.inject({ url: '/api/config' })).json().labs).toEqual({ devices: here })
+      }
+    }
+  })
+
+  it('PUT /api/config without labs keeps the switch, and with it sets it', async () => {
+    const current = (await app.inject({ url: '/api/config' })).json()
+    expect((await app.inject({ method: 'PUT', url: '/api/config', payload: { ...current, labs: { devices: true } } })).statusCode).toBe(200)
+    const { labs: _labs, ...without } = current
+    expect((await app.inject({ method: 'PUT', url: '/api/config', payload: without })).statusCode).toBe(200)
+    expect((await app.inject({ url: '/api/config' })).json().labs).toEqual({ devices: true })
+    expect((await app.inject({ method: 'PUT', url: '/api/config', payload: { ...current, labs: { devices: false } } })).statusCode).toBe(200)
+    expect((await app.inject({ url: '/api/config' })).json().labs).toEqual({ devices: false })
+  })
+
   it('PUT /api/config replays the current consent records', async () => {
     const current = (await app.inject({ url: '/api/config' })).json()
     const res = await app.inject({

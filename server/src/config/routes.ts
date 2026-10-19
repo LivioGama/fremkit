@@ -47,6 +47,10 @@ export async function configRoutes(
     // what is granted. A stale admin tab saving an old copy must not bring back a revoked share
     // or a consent the user withdrew, and a PUT must not forge one.
     parsed.data.marketplace = { ...parsed.data.marketplace, installed: current.marketplace.installed }
+    // A body without `labs` keeps the switch as it is: the schema's default would turn the
+    // experimental features off behind the user's back for any client that does not send it.
+    const body = req.body as { labs?: { devices?: unknown } } | null
+    if (typeof body?.labs?.devices !== 'boolean') parsed.data.labs = { ...parsed.data.labs, devices: current.labs.devices }
 
     const errors = [
       ...validateLayout(parsed.data, opts.catalog.manifests),

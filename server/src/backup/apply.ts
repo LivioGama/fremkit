@@ -43,6 +43,8 @@ export async function applyConfig(deps: ApplyConfigDeps, incoming: Config, save:
   const here = store.get()
   incoming.secrets = here.secrets
   incoming.privacy = here.privacy
+  // The experimental features are a choice made on this Mac too, not something a file brings.
+  incoming.labs = here.labs
   incoming.marketplace = { ...incoming.marketplace, installed: here.marketplace.installed }
 
   // Before the save, and before anything can poll with the restored fields: a stored secret is
