@@ -28,11 +28,13 @@ const data = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
 const value = $.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding);
 if (!value) throw new Error('invalid input');
 const board = $.NSPasteboard.generalPasteboard;
-board.prepareForNewContentsWithOptions($.NSPasteboardContentsCurrentHostOnly);
+const ownedChangeCount = Number(board.prepareForNewContentsWithOptions($.NSPasteboardContentsCurrentHostOnly));
+if (!Number.isSafeInteger(ownedChangeCount)) throw new Error('pasteboard write failed');
 if (!board.setStringForType(value, $.NSPasteboardTypeString)) throw new Error('pasteboard write failed');
-board.setDataForType($.NSData.data, 'org.nspasteboard.ConcealedType');
-board.setDataForType($.NSData.data, 'org.nspasteboard.TransientType');
-String(board.changeCount);`
+if (!board.setDataForType($.NSData.data, 'org.nspasteboard.ConcealedType')) throw new Error('pasteboard write failed');
+if (!board.setDataForType($.NSData.data, 'org.nspasteboard.TransientType')) throw new Error('pasteboard write failed');
+if (Number(board.changeCount) !== ownedChangeCount) throw new Error('pasteboard write failed');
+String(ownedChangeCount);`
 
 const CLEAR_CODE_SCRIPT = `ObjC.import('AppKit');
 ObjC.import('Foundation');
