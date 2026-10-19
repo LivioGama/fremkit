@@ -16,6 +16,12 @@ tagged `vX.Y.Z`.
 - **Alignment guides in the editor.** While you drag or resize a widget, or move it with the arrow
   keys, thin accent lines show where its edges or its centre line up with another widget's, or
   with the screen's edges and centre.
+- **Select several widgets at once in the editor.** Shift- or Cmd-click adds a widget to the
+  selection, dragging on the empty canvas draws a selection rectangle, and Cmd+A selects the whole
+  page. Selected widgets move together with the mouse or the arrow keys (locked ones stay where they
+  are), and duplicate, copy and paste (keeping their arrangement), lock, change opacity or title,
+  move to another page and delete together — from the keyboard, their right-click menu or the
+  inspector, each undone in one step.
 - **See a widget before placing it.** Hovering a card of the editor's widget library (or reaching
   it with Tab) shows its preview with its name, what it does, its default size and what it may
   read, control and reach.

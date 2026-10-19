@@ -92,6 +92,7 @@ function title(group: PaletteGroup): string {
   if (stack.value.length) return ''
   if (group === 'widget') {
     const sel = s.selected.value
+    if (s.state.selection.length > 1) return t('admin.inspector.selection.title', { n: s.state.selection.length })
     return sel ? (sel.title?.trim() || pick(s.state.manifests[sel.widgetId]?.name) || sel.widgetId) : ''
   }
   return t(`admin.palette.group.${group}`)

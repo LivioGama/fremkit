@@ -52,6 +52,9 @@ describe('matchShortcut', () => {
     expect(matchShortcut(press('ArrowLeft'))?.id).toBe('move')
     expect(matchShortcut(press('ArrowLeft', { shiftKey: true }))?.id).toBe('resize')
     expect(matchShortcut(press('Tab', { shiftKey: true }))?.id).toBe('previousWidget')
+    expect(matchShortcut(press('a', { metaKey: true }))?.id).toBe('selectAll')
+    // ⌘A in a text field selects its text, as it always has.
+    expect(matchShortcut(press('a', { metaKey: true }), true)).toBeNull()
     // "?" is Shift+/ on one keyboard and Shift+, on another: Shift is not part of it.
     expect(matchShortcut(press('?', { shiftKey: true }))?.id).toBe('shortcuts')
   })

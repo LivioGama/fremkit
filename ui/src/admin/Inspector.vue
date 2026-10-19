@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import WidgetInspector from './WidgetInspector.vue'
 import PageInspector from './PageInspector.vue'
+import SelectionInspector from './SelectionInspector.vue'
 import { useAdminStore } from './store'
 
 const s = useAdminStore()
@@ -9,9 +10,12 @@ const s = useAdminStore()
 <template>
   <aside class="inspector">
     <div class="body">
-      <WidgetInspector />
-      <!-- With no widget selected, the inspector edits the page being shown. -->
-      <PageInspector v-if="!s.selected.value" />
+      <!-- Several selected: what they share. One: that widget. None: the page being shown. -->
+      <SelectionInspector v-if="s.state.selection.length > 1" />
+      <template v-else>
+        <WidgetInspector />
+        <PageInspector v-if="!s.selected.value" />
+      </template>
     </div>
   </aside>
 </template>
