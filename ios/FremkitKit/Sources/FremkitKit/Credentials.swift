@@ -15,8 +15,16 @@ public struct PairedMac: Codable, Equatable, Sendable {
     public var deviceId: String
     /// The Mac's name for people: its `.local` name without the suffix, or its Bonjour name.
     public var name: String
+    /// The Mac's other LAN addresses, as it last listed them (`DeviceInfo.addresses`): tried after
+    /// `host` and `address` when looking for it, under the same pin. Private IPv4 literals only, at
+    /// most `maxAddresses`.
+    public var addresses: [String]
 
-    public init(host: String, address: String, port: Int, keyHash: String, token: String, deviceId: String, name: String) {
+    /// How many of the Mac's other addresses are kept.
+    public static let maxAddresses = 8
+
+    public init(host: String, address: String, port: Int, keyHash: String, token: String, deviceId: String, name: String,
+                addresses: [String] = []) {
         self.host = host
         self.address = address
         self.port = port
@@ -24,6 +32,37 @@ public struct PairedMac: Codable, Equatable, Sendable {
         self.token = token
         self.deviceId = deviceId
         self.name = name
+        self.addresses = Self.cleaned(addresses)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case host, address, port, keyHash, token, deviceId, name, addresses
+    }
+
+    /// A pairing stored before `addresses` existed has none: `[]`.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(host: try c.decode(String.self, forKey: .host),
+                  address: try c.decode(String.self, forKey: .address),
+                  port: try c.decode(Int.self, forKey: .port),
+                  keyHash: try c.decode(String.self, forKey: .keyHash),
+                  token: try c.decode(String.self, forKey: .token),
+                  deviceId: try c.decode(String.self, forKey: .deviceId),
+                  name: try c.decode(String.self, forKey: .name),
+                  addresses: (try? c.decodeIfPresent([String].self, forKey: .addresses)) ?? [])
+    }
+
+    /// The private IPv4 literals of `addresses`, each once, in order, at most `maxAddresses`.
+    static func cleaned(_ addresses: [String]) -> [String] {
+        var seen = Set<String>()
+        return Array(addresses.filter { isPrivateIPv4Literal($0) && seen.insert($0).inserted }.prefix(maxAddresses))
+    }
+
+    /// The record with `addresses` (cleaned) as the Mac's other addresses: what it listed last.
+    public func updating(addresses: [String]) -> PairedMac {
+        var copy = self
+        copy.addresses = Self.cleaned(addresses)
+        return copy
     }
 
     /// The record with `address` as the one to try first next time, when it is an IP literal (the

@@ -11,7 +11,7 @@ public enum ConnectResult: Equatable, Sendable {
 }
 
 /// Finds the paired Mac when it may have moved: its `.local` name, then the last address that
-/// worked, then whatever Bonjour resolved. A wrong key is "not this one, next" (remembered: if
+/// worked, then the other addresses it last listed, then whatever Bonjour resolved. A wrong key is "not this one, next" (remembered: if
 /// nothing else answers, the key changed); a 401 from the right key ends the search, since
 /// another address would only say the same.
 public struct Connector: Sendable {
@@ -52,11 +52,12 @@ public struct Connector: Sendable {
         return (wrongKey.isEmpty ? .unreachable : .keyChanged, wrongKey)
     }
 
-    /// `preferring`, `mac.host`, `mac.address`, then `discovered`, each once (compared without case),
-    /// keeping only the `.local` names and IPv4 literals the Mac answers on (`isConnectableHost`).
+    /// `preferring`, `mac.host`, `mac.address`, the Mac's other addresses (`mac.addresses`), then
+    /// `discovered`, each once (compared without case), keeping only the `.local` names and IPv4
+    /// literals the Mac answers on (`isConnectableHost`). Each is probed under the pin like any other.
     static func candidates(mac: PairedMac, discovered: [String], preferring: String? = nil) -> [String] {
         var seen = Set<String>()
-        return ([preferring ?? ""] + [mac.host, mac.address] + discovered).filter { host in
+        return ([preferring ?? ""] + [mac.host, mac.address] + mac.addresses + discovered).filter { host in
             isConnectableHost(host) && seen.insert(PinnedSession.normalise(host)).inserted
         }
     }

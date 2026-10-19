@@ -8,12 +8,41 @@ public struct DeviceInfo: Codable, Equatable, Sendable {
     public let screenId: String?
     /// What the Mac wants the screen's brightness at, or nil when brightness is not the Mac's to set.
     public let brightness: DeviceBrightness?
+    /// The Mac's other LAN addresses, where to look for it when the one in use goes away. Only the
+    /// private IPv4 literals the Mac sent (`isPrivateIPv4Literal`), at most `PairedMac.maxAddresses`;
+    /// empty from a Mac that sends none.
+    public let addresses: [String]
 
-    public init(id: String, name: String, screenId: String?, brightness: DeviceBrightness?) {
+    public init(id: String, name: String, screenId: String?, brightness: DeviceBrightness?, addresses: [String] = []) {
         self.id = id
         self.name = name
         self.screenId = screenId
         self.brightness = brightness
+        self.addresses = PairedMac.cleaned(addresses)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, screenId, brightness, addresses
+    }
+
+    /// Lenient about `addresses` only: missing (an older Mac) or not a list of strings is `[]`, and
+    /// an entry that is not a private IPv4 literal is dropped. The wire is never trusted with where
+    /// the app connects.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try c.decode(String.self, forKey: .id),
+                  name: try c.decode(String.self, forKey: .name),
+                  screenId: try c.decodeIfPresent(String.self, forKey: .screenId),
+                  brightness: try c.decodeIfPresent(DeviceBrightness.self, forKey: .brightness),
+                  addresses: (try? c.decodeIfPresent([LossyString].self, forKey: .addresses))?.compactMap(\.value) ?? [])
+    }
+}
+
+/// A list entry that may not be a string: decoded as nil instead of failing the whole list.
+private struct LossyString: Decodable {
+    let value: String?
+    init(from decoder: any Decoder) throws {
+        value = try? decoder.singleValueContainer().decode(String.self)
     }
 }
 

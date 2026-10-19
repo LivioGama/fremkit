@@ -94,6 +94,15 @@ public func isIPv4Literal(_ s: String) -> Bool {
     return inet_pton(AF_INET, s, &v4) == 1
 }
 
+/// A private IPv4 literal (RFC 1918: 10/8, 172.16/12, 192.168/16): what the app accepts as one of
+/// the Mac's other addresses from the wire. Never a public, CGNAT, link-local or IPv6 one.
+public func isPrivateIPv4Literal(_ s: String) -> Bool {
+    var v4 = in_addr()
+    guard inet_pton(AF_INET, s, &v4) == 1 else { return false }
+    let b = withUnsafeBytes(of: v4.s_addr) { Array($0) }
+    return b[0] == 10 || (b[0] == 172 && (16...31).contains(b[1])) || (b[0] == 192 && b[1] == 168)
+}
+
 /// A host the app connects to: a `.local` name or an IPv4 literal. The Mac answers on those only
 /// (its remote listener's Host set is its `.local` name and its IPv4 addresses, and anything else
 /// gets 421), and an IPv6 literal would also carry its zone into the cookie domain, the CSP and

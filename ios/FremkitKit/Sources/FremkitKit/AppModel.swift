@@ -175,7 +175,7 @@ public final class AppModel {
         isConnecting = false
         switch result {
         case let .connected(host, info):
-            remember(host, for: mac)
+            remember(host, addresses: info.addresses, for: mac)
             unansweredChecks = 0
             state = .dashboard(host: host, info: info)
         case .unauthorized:
@@ -187,10 +187,12 @@ public final class AppModel {
         }
     }
 
-    /// The address that answered, remembered for the next launch; if the keychain refuses, this
-    /// session still has it.
-    private func remember(_ host: String, for mac: PairedMac) {
-        let updated = mac.updating(address: host)
+    /// The address that answered (nil for a check of the host in use) and the other addresses the Mac
+    /// listed, remembered for the next search and the next launch; if the keychain refuses, this
+    /// session still has them.
+    private func remember(_ host: String?, addresses: [String], for mac: PairedMac) {
+        var updated = mac.updating(addresses: addresses)
+        if let host { updated = updated.updating(address: host) }
         guard updated != mac else { return }
         try? store.save(updated)
         self.mac = updated
@@ -238,7 +240,9 @@ public final class AppModel {
         guard case .dashboard(host, _) = state, let mac else { return }
         if case .unreachable = outcome {} else { unansweredChecks = 0 }
         switch outcome {
-        case let .ok(info): state = .dashboard(host: host, info: info)
+        case let .ok(info):
+            remember(nil, addresses: info.addresses, for: mac)
+            state = .dashboard(host: host, info: info)
         case .unauthorized: state = .unauthorized
         // A wrong key reconnects even from the periodic check: the Connector then decides between
         // the dashboard (another candidate answers) and the key-changed screen.
@@ -310,7 +314,7 @@ public final class AppModel {
         guard case .dashboard(host, _) = state, let mac else { return }
         switch result {
         case let .connected(found, info):
-            remember(found, for: mac)
+            remember(found, addresses: info.addresses, for: mac)
             unansweredChecks = 0
             // A new host rebuilds the web view (`RootView` keys it by host); the same one keeps it.
             state = .dashboard(host: found, info: info)

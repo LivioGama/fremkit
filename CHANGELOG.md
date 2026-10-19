@@ -33,7 +33,9 @@ tagged `vX.Y.Z`.
   shows the same four words as the iPad, and type the code. Opening a link while the iPad is paired
   asks before replacing the pairing. The iPad reports the size its dashboard really gets, so it lands
   on the matching screen. After **Reset the certificate**, the iPad says the Mac's key has changed
-  and offers **Pair again**.
+  and offers **Pair again**. When the address it uses goes away (the Ethernet cable unplugged), the
+  iPad finds the Mac at its other network addresses by itself, even when the local network's name
+  lookup fails.
 - **A fingerprint for your Mac's key.** Under the pairing code, the Devices section shows four words
   derived from the Mac's key; a device that shows the same four words is talking to this Mac. The Mac
   is also announced on the network under its computer name rather than "Fremkit", with its address,
