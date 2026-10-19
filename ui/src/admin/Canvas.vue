@@ -12,8 +12,8 @@ import { navHeightOf, navItemsOf, type NavItem } from '../shared/types'
 import { backgroundStyle, pageBackground } from '../shared/background'
 import { useAdminStore } from './store'
 import { openContextMenu } from '../shared/ui/contextMenu'
-import { navWidgetMenu } from './menus'
-import { editorFocus } from './editorFocus'
+import { navBarMenu, navWidgetMenu, pageMenu } from './menus'
+import { editorFocus, renameRequest } from './editorFocus'
 import { useHealth } from './useHealth'
 
 const s = useAdminStore()
@@ -21,6 +21,14 @@ const host = ref<HTMLElement>()
 const health = useHealth()
 /** A bar widget's menu leads with its fix too, as a tile's does. */
 const menuUi = { ...editorFocus, fix: health.fix, update: health.update }
+/** A page button's menu is the pages list's; its rename is done in the list, as the palette's is. */
+const pageUi = {
+  ...editorFocus,
+  rename: (i: number) => { const p = s.screen.value?.pages[i]; if (p) renameRequest.value = { kind: 'page' as const, id: p.id } },
+}
+function onBarMenu(page: number | null, e: MouseEvent): void {
+  openContextMenu(e, page == null ? navBarMenu(s, editorFocus) : pageMenu(s, page, pageUi))
+}
 
 /**
  * Test mode behaves like the screen: a swipe on the bar or on the board changes page, wrapping
@@ -108,7 +116,8 @@ onUnmounted(() => observer?.disconnect())
         :opacity="display.navOpacity" :nav-items="navItemsOf(screen)" :widgets="s.state.config!.widgets" :manifests="s.state.manifests"
         :cell="display.cell" :edit="s.state.mode === 'edit'" :nav-style="display.navStyle" @select="s.selectPage"
         @swipe="go" @tap="popover.toggle"
-        @item-menu="(item, e) => openContextMenu(e, navWidgetMenu(s, item.instanceId, menuUi))" />
+        @item-menu="(item, e) => openContextMenu(e, navWidgetMenu(s, item.instanceId, menuUi))"
+        @bar-menu="onBarMenu" />
       <!-- Test mode only: in Edit mode the overlay is inert, so no tap ever reaches here. -->
       <NavPopover v-if="popover.open.value"
         :key="popover.open.value.item.instanceId"

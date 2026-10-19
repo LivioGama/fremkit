@@ -67,7 +67,7 @@ describe('widgetMenu', () => {
     const menu = widgetMenu(s, 'clock-1', ui())
     const labels = items(menu).map((e) => e.label)
     expect(labels).toEqual([
-      'Settings…', 'Show title', 'Appearance', 'Copy style', 'Paste style', 'Duplicate', 'Copy', 'Paste',
+      'Show title', 'Appearance', 'Copy style', 'Paste style', 'Duplicate', 'Copy', 'Paste',
       'Move to page', 'Also show on screen', 'Move to screen', 'Size', 'Lock position',
       'About this widget…', 'Reload widget', 'Delete everywhere',
     ])

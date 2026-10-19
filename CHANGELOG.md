@@ -116,13 +116,16 @@ tagged `vX.Y.Z`.
   page backgrounds like any other.
 - **Right-click menus on the rest of the editor.** On a page in the list: rename, duplicate, page
   background, copy to another screen (as new widgets with the same settings, laid out for that
-  screen), move up or down, delete. Pages now reorder by dragging, and a row shows a single "…"
+  screen), move up or down, delete. Pages now reorder by dragging, which the grip at the start of
+  each row says, and a row shows a single "…"
   on hover instead of five buttons. On a widget in the library: add it to any page, add it to the
   bar, and for a widget from the Sietch, show it there, update it or uninstall it. On a bar widget,
-  in the preview or in the Screen settings: its settings, move left or right, remove. On a screen
+  in the preview or in the Screen settings: its settings, move left or right, remove. On a page of
+  the bar in the preview, that page's menu; on the bar itself: new page, add a widget to the bar,
+  the bar's settings. On a screen
   above the canvas: rename it in place (or double-click it), its settings, delete it.
 - **Right-click menus in the editor.** A right click on a widget opens a real menu, like a Mac
-  app's: settings, show title, appearance (opacity presets, colours, background image, reset),
+  app's: show title, appearance (opacity presets, colours, background image, reset),
   copy and paste a widget's style, duplicate, copy and paste, move it to another page or screen,
   show it on another screen too, default or minimum size, open its connection, about the widget
   (version, where it came from, what it asks for, an update when one is waiting), reload it, and

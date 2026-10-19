@@ -154,7 +154,7 @@ describe('the menus', () => {
     const well: MenuUi = { revealSection: vi.fn(), focusLibrarySearch: vi.fn(), fix: () => null }
     const none: MenuUi = { revealSection: vi.fn(), focusLibrarySearch: vi.fn() }
     for (const ui of [well, none]) {
-      expect((widgetMenu(s, 'clock-1', ui)[0] as MenuItem).label).toBe('Settings…')
+      expect((widgetMenu(s, 'clock-1', ui)[0] as MenuItem).label).toBe('Show title')
     }
   })
 })
