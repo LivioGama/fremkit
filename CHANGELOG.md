@@ -171,6 +171,9 @@ tagged `vX.Y.Z`.
   requests run it in CI. See `docs/contributing.md`.
 
 ### Changed
+- **The Sietch keeps its tabs, search and filters in view** while its list scrolls, with *Expand all*
+  / *Collapse all* for its shelves. Escape in its search clears the search before it closes the
+  window.
 - **Settings, in a window of their own.** The top bar's *Screen* button is now *Settings*, and it
   opens a window laid out like the Mac's: every screen on the left, each with its own settings
   (name, layout and bar, bar widgets, background, brightness, kiosk address), then the app's panes —

@@ -192,7 +192,7 @@ onUnmounted(() => {
       <ConnectionsInspector />
     </BaseModal>
     <BaseModal v-else-if="s.state.modal === 'marketplace'" :title="t('admin.tabs.marketplace')"
-      :width="720" :height="840" :close-label="t('common.close')" @close="s.closeModal()">
+      :width="720" :height="840" flush :close-label="t('common.close')" @close="s.closeModal()">
       <MarketplacePanel />
     </BaseModal>
     <BaseModal v-else-if="s.state.modal === 'about'" :title="t('admin.about.title')"
