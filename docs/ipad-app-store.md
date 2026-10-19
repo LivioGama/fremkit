@@ -91,10 +91,30 @@ keywords.
 ## Screenshots
 
 iPad 13" is required (2064 × 2752 portrait or 2752 × 2064 landscape); App Store Connect scales it
-for the smaller iPads. Three to five, landscape, from the demo dashboard
-(`FREMKIT_DEMO=1`, docs/demo-mode.md) on a device screen: the dashboard, a page with the
-media and calendar widgets, the pairing screen with its QR code, the Devices settings on the Mac.
-None shows a real name, address or account.
+for the smaller iPads. Three, portrait, one per page of a device screen on the demo dashboard
+(`FREMKIT_DEMO=1`, docs/demo-mode.md), in English and in French:
+
+1. **Today**: clock, weather, calendar, music, Dock badges, Claude sessions and limits.
+2. **Work**: service status, timer, processes, CPU, memory, network, disk map.
+3. **Mac**: shortcuts, clipboard, batteries, volume, brightness, disks, uptime, world clock.
+
+No pairing screen: it names the Mac it pairs with. Nothing else shows a real name, address or
+account.
+
+To take them again:
+
+1. Start a demo server with a kept folder on a free port (`FREMKIT_DEMO=1 FREMKIT_PORT=… FREMKIT_DATA_DIR=…`)
+   and switch pairing on there. The listener is always 4243: switch it off on the live server
+   for the time being.
+2. `scripts/build-ios.sh build`, then create an iPad Pro 13-inch simulator, boot it and
+   `xcrun simctl install` the app. Seed it with a pairing link (`POST /api/devices/code`, its
+   `url`) written to the app's data container as `tmp/FremkitSeedLink`
+   (`xcrun simctl get_app_container <udid> <bundle id> data`), then launch it.
+3. In the demo's admin, **Settings → Devices → Create a screen its size**, pre-filled from the
+   Edge, then lay out its pages.
+4. `xcrun simctl status_bar <udid> override --time 9:41 --batteryState charged --batteryLevel 100`,
+   and `xcrun simctl io <udid> screenshot <file>.png` on each page. Switch the demo's language
+   in Settings → General for the French set.
 
 ## Notes for App Review
 
