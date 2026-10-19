@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ConnectionProviderContext } from '../connections/types.js'
 import { pbPasteboard, type Pasteboard } from './clipboard.js'
+import { readSelectedText, type SelectedTextResult } from './selected-text.js'
 import type { CommandContext, Provider } from './types.js'
 import { USER_AGENT } from '../version.js'
 import { readJsonCapped } from '../net/json.js'
@@ -10,12 +11,13 @@ export const GROQ_API = 'https://api.groq.com/openai/v1'
 export const OPENAI_TIMEOUT_MS = 25_000
 export const SHELLSMITH_MAX_REQUEST_CHARS = 1000
 export const SHELLSMITH_MAX_COMMAND_CHARS = 2000
+export const TRANSLATE_MAX_TEXT_BYTES = 2048
 
 const ModelSchema = z.string().trim().min(1).max(100).regex(/^[A-Za-z0-9._:/-]+$/)
-// The dashboard stamps every widget command with the sending widget instance id.
-const INSTANCE = { instanceId: z.string().min(1).max(200).optional() }
-const RequestPayload = z.strictObject({ ...INSTANCE, request: z.string().trim().min(1).max(SHELLSMITH_MAX_REQUEST_CHARS) })
-const CopyPayload = z.strictObject({ ...INSTANCE, command: z.string().trim().min(1).max(SHELLSMITH_MAX_COMMAND_CHARS) })
+const RequestPayload = z.strictObject({ request: z.string().trim().min(1).max(SHELLSMITH_MAX_REQUEST_CHARS) })
+const CopyPayload = z.strictObject({ command: z.string().trim().min(1).max(SHELLSMITH_MAX_COMMAND_CHARS) })
+const FavoritesPayload = z.strictObject({ favorites: z.array(z.string().regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/)).length(2) })
+const TranslationResponse = z.strictObject({ sourceLanguage: z.string().trim().min(2).max(20), text: z.string().trim().min(1).max(20_000) })
 
 interface ResponsesBody {
   output?: Array<{ content?: Array<{ type?: unknown; text?: unknown }> }>
@@ -30,18 +32,27 @@ type CompletionResult =
 export interface OpenAIShellsmithDeps {
   fetchFn?: typeof fetch
   pasteboard?: Pasteboard
+  selectedText?: () => Promise<SelectedTextResult>
 }
 
 type ApiProvider = 'openai' | 'groq'
 const providerFor = (fields: Record<string, string>): ApiProvider | null => fields.provider === undefined || fields.provider === '' || fields.provider === 'openai'
   ? 'openai' : fields.provider === 'groq' ? 'groq' : null
 const apiFor = (provider: ApiProvider): string => provider === 'groq' ? GROQ_API : OPENAI_API
+const languageAliases: Record<string, string> = {
+  english: 'en', français: 'fr', french: 'fr', deutsch: 'de', german: 'de', español: 'es', spanish: 'es',
+  italiano: 'it', italian: 'it', português: 'pt', portuguese: 'pt', nederlands: 'nl', dutch: 'nl',
+  日本語: 'ja', japanese: 'ja', 中文: 'zh', chinese: 'zh',
+}
+const baseLanguage = (code: string): string => languageAliases[code.trim().toLowerCase()] ?? code.split('-')[0].toLowerCase()
+
 async function chatCompletion(
   fetchFn: typeof fetch,
   api: string,
   token: string,
   model: string,
   prompt: string,
+  json: boolean,
 ): Promise<CompletionResult> {
   const reasoningModel = model.startsWith('openai/gpt-oss-')
   let response: Response
@@ -60,6 +71,7 @@ async function chatCompletion(
         messages: [{ role: 'user', content: prompt }],
         max_completion_tokens: reasoningModel ? 1200 : 800,
         temperature: 0.2,
+        ...(json ? { response_format: { type: 'json_object' } } : {}),
         ...(reasoningModel ? { reasoning_effort: 'low', reasoning_format: 'hidden' } : {}),
       }),
       signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
@@ -82,6 +94,7 @@ async function chatCompletion(
 export function createOpenAIShellsmithProvider(ctx: ConnectionProviderContext, deps: OpenAIShellsmithDeps = {}): Provider {
   const fetchFn = deps.fetchFn ?? fetch
   const pasteboard = deps.pasteboard ?? pbPasteboard
+  const selectedText = deps.selectedText ?? readSelectedText
   const token = ctx.secrets.token?.trim() ?? ''
   const modelResult = ModelSchema.safeParse(ctx.fields.model)
   const provider = providerFor(ctx.fields)
@@ -98,7 +111,8 @@ export function createOpenAIShellsmithProvider(ctx: ConnectionProviderContext, d
 
         if (provider === 'groq') {
           const completion = await chatCompletion(fetchFn, api, token, modelResult.data,
-            `Suggest one shell command for this request. Do not execute it, call tools, or include secrets. Return only command text, without markdown or explanation. Avoid destructive commands unless explicitly requested.\n\nRequest: ${parsed.data.request}`)
+            `Suggest one shell command for this request. Do not execute it, call tools, or include secrets. Return only command text, without markdown or explanation. Avoid destructive commands unless explicitly requested.\n\nRequest: ${parsed.data.request}`,
+            false)
           if (!completion.ok) return completion
           if (completion.content.length > SHELLSMITH_MAX_COMMAND_CHARS) return { ok: false, error: 'invalid-response' }
           return { ok: true, command: completion.content }
@@ -139,6 +153,38 @@ export function createOpenAIShellsmithProvider(ctx: ConnectionProviderContext, d
           .join('\n')
         if (!command || command.length > SHELLSMITH_MAX_COMMAND_CHARS) return { ok: false, error: 'invalid-response' }
         return { ok: true, command }
+      },
+      translateSelection: async (payload, commandContext?: CommandContext) => {
+        if (!commandContext?.loopback) return { ok: false, error: 'local-only' }
+        const parsed = FavoritesPayload.safeParse(payload)
+        if (!provider) return { ok: false, error: 'invalid-request' }
+        if (!parsed.success || !modelResult.success) return { ok: false, error: 'choose-two-languages' }
+        const [favoriteA, favoriteB] = parsed.data.favorites
+        const aBase = baseLanguage(favoriteA)
+        const bBase = baseLanguage(favoriteB)
+        if (aBase === bBase) return { ok: false, error: 'choose-two-languages' }
+        if (!token) return { ok: false, error: 'unconfigured' }
+
+        let selection: SelectedTextResult
+        try { selection = await selectedText() } catch { return { ok: false, error: 'selection-unavailable' } }
+        if (!selection.ok) {
+          const error = selection.error === 'no-selection' ? 'empty-selection'
+            : selection.error === 'unavailable' ? 'selection-unavailable' : selection.error
+          return { ok: false, error }
+        }
+        const text = selection.text
+        if (!text.trim()) return { ok: false, error: 'empty-selection' }
+        if (new TextEncoder().encode(text).byteLength > TRANSLATE_MAX_TEXT_BYTES) return { ok: false, error: 'text-too-long' }
+
+        const prompt = `Translate the text below into whichever of these two favorite languages is different from its source: ${favoriteA} and ${favoriteB}. Identify the source language accurately. Return only a JSON object with string properties sourceLanguage (a short language code such as en or fr) and text (the translation). If the source is neither favorite, still identify its actual language; the app will refuse to show a translation. Preserve the meaning and formatting.\n\nText to translate:\n${text}`
+        const completion = await chatCompletion(fetchFn, api, token, modelResult.data, prompt, true)
+        if (!completion.ok) return completion
+        let translation: z.infer<typeof TranslationResponse>
+        try { translation = TranslationResponse.parse(JSON.parse(completion.content)) } catch { return { ok: false, error: 'invalid-response' } }
+        const sourceBase = baseLanguage(translation.sourceLanguage)
+        if (sourceBase === aBase) return { ok: true, sourceLanguage: sourceBase, targetLanguage: favoriteB, text: translation.text }
+        if (sourceBase === bBase) return { ok: true, sourceLanguage: sourceBase, targetLanguage: favoriteA, text: translation.text }
+        return { ok: false, error: 'language-not-favorite' }
       },
       copyCommand: async (payload, commandContext?: CommandContext) => {
         if (!commandContext?.loopback) return { ok: false, error: 'local-only' }

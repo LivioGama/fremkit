@@ -10,4 +10,5 @@ import type { ConnectionType } from '../types.js'
 /** Every connection type the server ships with. */
 export function defaultConnectionTypes(): ConnectionType[] {
   return [azureDevOpsType, bambuType, githubType, icsType, synologyType, vercelType, openAIShellsmithType]
+
 }
