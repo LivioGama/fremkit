@@ -245,7 +245,11 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   A bare name resolves through Homebrew's folder, which is not ours to trust.
 - **The admin window and the kiosk pin their main frame to their own origin**
   (`AdminOrigin`, `KioskOrigin`), and an origin is trusted for writes only on this server's own
-  port (`allowedOrigins`).
+  port (`allowedOrigins`). The iPad's web view does the same (`Dashboard.allowsMainFrame`) and
+  hears the page's messages only from that origin (`Dashboard.isPageOrigin`).
+- **A typed pairing code travels as a proof bound to the Mac's key** (`codeProof.ts`,
+  `CodeProof.swift`), never as itself: the four words are 32 bits and can be ground, the proof
+  cannot be relayed to another key. `/api/pair` takes `proof` or the QR's `secret`, nothing else.
 - **Commands that act on the Mac take their target from a closed list**: `dock.activate` only
   for an app in the current Dock snapshot; a URL handed to `open` is the parsed `href` that was
   checked, never the raw string.
