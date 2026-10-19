@@ -190,7 +190,10 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   because `HOST_CHANNELS` names only the literal `config`. A new channel for the editor's eyes goes
   there too, and `HOST_CHANNELS` never grows a `config:*` entry.
 - **Every editor action goes through the admin store's `apply()`**, menus and shortcuts
-  included, so it is undoable and saved. Context menus are data built for
+  included, so it is undoable and saved. The canvas selection is `state.selection` (a list);
+  `state.selectedId` is an accessor over it that reads null while several tiles are selected, so a
+  command meant for "what is selected" reads `selection`/`selectedTiles`, and a group command is
+  one `apply()`, never one per tile. Context menus are data built for
   `ui/src/shared/ui/contextMenu.ts`; do not write a second menu component.
 
 
