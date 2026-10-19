@@ -33,12 +33,13 @@ const NameSchema = z.string().trim().min(1).max(60)
  * Either the code, typed by hand, or the secret the QR code carries (`codes.ts`), never both. The
  * secret's schema is its exact shape, so nothing longer ever reaches the comparison.
  */
+/** A typed code arrives as its proof (`codeProof`), never as itself: 32 bytes, base64url, like a secret. */
 const PairSchema = z.object({
-  code: z.string().max(64).optional(),
+  proof: z.string().regex(SECRET_PATTERN).optional(),
   secret: z.string().regex(SECRET_PATTERN).optional(),
   name: NameSchema,
   viewport: ViewportSchema,
-}).refine((b) => (b.code === undefined) !== (b.secret === undefined), { message: 'code or secret, one of them' })
+}).refine((b) => (b.proof === undefined) !== (b.secret === undefined), { message: 'proof or secret, one of them' })
 
 const SettingsSchema = z.object({ enabled: z.boolean() })
 
@@ -76,10 +77,10 @@ export async function deviceRoutes(app: FastifyInstance, opts: DeviceRoutesOptio
     reply.header('cache-control', 'no-store')
     const parsed = PairSchema.safeParse(req.body)
     if (!parsed.success) return badBody(reply, parsed.error)
-    const { code, secret, name, viewport } = parsed.data
+    const { proof, secret, name, viewport } = parsed.data
     // Counted per peer address (`codes.ts`): the socket's, which no header can change. A secret is
     // taken before that count, and a wrong one fails exactly as a wrong code does.
-    const credential = secret !== undefined ? { secret } : { code: (code ?? '').trim().toUpperCase() }
+    const credential = secret !== undefined ? { secret } : { proof: proof ?? '' }
     const result = await service.pair(credential, name, viewport, req.ip)
     if ('error' in result) {
       const { status, key } = PAIR_ERRORS[result.error]

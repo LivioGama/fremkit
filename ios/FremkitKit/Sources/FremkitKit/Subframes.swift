@@ -33,6 +33,26 @@ extension Dashboard {
         return !path.split(separator: "/", omittingEmptySubsequences: false).contains { $0 == "." || $0 == ".." }
     }
 
+    /// Whether the main frame may go to `url`: the Mac's own origin, `https://<host>:<port>`, and
+    /// any path on it. The page reloads itself and is served at `/`; nothing it is meant to show
+    /// lives on another origin, so a link or a script that would take the whole view elsewhere is
+    /// cancelled, as the Mac's kiosk and admin window pin their main frame (`KioskOrigin`).
+    public static func allowsMainFrame(_ url: URL?, host: String, port: Int) -> Bool {
+        guard let url,
+              url.scheme?.lowercased() == "https",
+              url.user == nil, url.password == nil,
+              let urlHost = url.host(percentEncoded: false), !urlHost.isEmpty else { return false }
+        return sameHost(urlHost, host) && (url.port ?? 443) == port
+    }
+
+    /// Whether a script message's frame is the Mac's page, by the frame's security origin
+    /// (`WKSecurityOrigin`, whose port is 0 for the scheme's default): what the page says to the
+    /// app is heard from that origin only, even should the main frame end up somewhere else.
+    public static func isPageOrigin(scheme: String, host originHost: String, port originPort: Int, host: String, port: Int) -> Bool {
+        guard scheme.lowercased() == "https", !originHost.isEmpty else { return false }
+        return sameHost(originHost, host) && (originPort == 0 ? 443 : originPort) == port
+    }
+
     /// Hosts compared as the page's origin is: without case, an IPv6 literal without its brackets
     /// and with its zone unescaped. Unlike `PinnedSession.normalise`, a trailing dot is kept.
     private static func sameHost(_ a: String, _ b: String) -> Bool {

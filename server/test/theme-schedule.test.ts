@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { ConfigSchema, type Config } from '../src/config/schema.js'
-import { createThemeProvider, themeInForce } from '../src/themes/schedule.js'
+import { createThemeProvider, deviceThemeView, themeInForce } from '../src/themes/schedule.js'
 import { buildApp } from '../src/app.js'
 
 /** A local wall-clock instant, so the fixed-time cases hold in any time zone. */
@@ -95,5 +95,20 @@ describe('GET /api/themes', () => {
     const res = await app.inject({ method: 'GET', url: '/api/themes' })
     expect(res.statusCode).toBe(200)
     expect(res.json().inForce).toMatchObject({ id: 'edge', phase: 'night', scheduled: true })
+    expect(res.json().inForce.next).toMatchObject({ to: 'day' })
+  })
+
+  it('gives a request from off this Mac the theme in force without the time of the next switch', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/themes', remoteAddress: '192.0.2.10' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().inForce).toEqual({ id: 'edge', phase: 'night', scheduled: true })
+  })
+})
+
+describe('deviceThemeView', () => {
+  it('keeps the theme and its phase and drops the next switch', () => {
+    const snapshot = { id: 'edge', phase: 'night', scheduled: true, next: { at: '2026-10-19T06:12:00.000Z', to: 'day' } }
+    expect(deviceThemeView(snapshot)).toEqual({ id: 'edge', phase: 'night', scheduled: true })
+    expect(deviceThemeView(null)).toBeNull()
   })
 })

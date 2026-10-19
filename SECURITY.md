@@ -234,6 +234,17 @@ guess counters, so the right secret pairs while codes are at 429; a wrong one ta
 path, refused while the peer is limited and counted otherwise, with the same answer. Pairing by hand
 (the Bonjour list, the typed code and the four words) still uses the code, and still can be held.
 
+On that path the iPad trusts whatever key answers for the Mac it picked, and the four words are
+only 32 bits of that key's hash: a machine on the network can find a key with the same words
+offline, announce itself under the Mac's name, and pass on what the person types. So the typed
+code never leaves the iPad as itself. The app sends a proof of it bound to the key it is talking
+to (PBKDF2-HMAC-SHA256 of the code, salted with that key's hash, 600,000 rounds; `codeProof.ts`,
+`CodeProof.swift`), and the Mac takes only the proof made for its own key, compared in constant
+time like the code was. A relayed proof was made for the impostor's key and is a wrong code here,
+and reading the code back out of it takes about 2^60 hashes, far beyond its five minutes. The
+Mac derives its proof once, when it issues the code. The words help the person pick the right Mac;
+they are no longer what stops a relay.
+
 The remote listener is an **allow-list**, decided by the socket a request arrived on rather than
 by a header: the dashboard's page and its code, the routes a dashboard reads, `/ws`, the widget
 proxy, and the device's own `GET /api/devices/me` and `POST /api/devices/me/brightness`. Everything
@@ -244,14 +255,17 @@ bound to, with the same refusal as a channel that does not exist — and a
 device acts only on the instances of its own screen: the widget proxy (and so a widget's stored
 credential) and the commands that resolve an instance refuse any instance shown elsewhere, and a
 device with no screen acts on none. The device app asks for the Mac's private (RFC 1918) IPv4
-addresses the listener answers on (`GET /api/devices/me?addresses=1`, eight at most), so it can
+addresses the listener answers on, on Wi-Fi or Ethernet only (`en*`: never a VPN's `utun*`, which
+may be a company network on 10/8, nor a virtual machine's bridge), eight at most
+(`GET /api/devices/me?addresses=1`), so it can
 follow the Mac when one goes away; the dashboard page's own request and the `device` channel do not
 ask and are not told. That is not a boundary against the page, which is our own code and could ask
 too; widgets cannot reach the route at all (`connect-src 'none'`, an opaque origin). The iPad keeps
 only private IPv4 addresses from that list and reaches them under the same pin as any other, so a
 stored address presenting another key is not the Mac. The configuration it reads, over HTTP and on the WebSocket,
 is its own screen's — the theme, the language, that screen and the widgets on it — never your
-connections, the marketplace records, the privacy switches or any other screen; the widget
+connections, the marketplace records, the privacy switches or any other screen. The theme in force
+reaches it without the time of the next switch, which is a sunrise or sunset at your coordinates. The widget
 catalogue lists only the widgets on its screen, without the scan's errors, and the installed
 applications and their icons go only to a screen that shows a widget allowed to read them. A
 device has the Mac fetch a site's icon only for a link or image address its own screen's settings

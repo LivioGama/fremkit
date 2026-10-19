@@ -176,6 +176,7 @@ export interface AppOptions {
     advertise?: Advertiser
     lanAddresses?: () => string[]
     preferredAddress?: (addresses: string[]) => Promise<string | null>
+    appAddresses?: (addresses: string[]) => Promise<string[]>
   }
 }
 

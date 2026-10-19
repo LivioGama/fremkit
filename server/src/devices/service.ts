@@ -14,14 +14,16 @@ import { execFileAsync, type Exec } from '../secrets/keychain.js'
 import type { SecretStore } from '../secrets/types.js'
 import type { WidgetCatalog } from '../widgets/catalog.js'
 import type { Hub } from '../ws/hub.js'
+import { codeProof } from './codeProof.js'
 import { fingerprintWords } from './fingerprint.js'
 import { advertise as bonjourAdvertise, type Advertisement, type Advertiser } from './bonjour.js'
 import { ensureKey, issueCertificate, readKey, resetKey, spkiHash } from './certificate.js'
 import { channelAllowed, screenChannels, type ChannelConnection, type ChannelManifest, type ScreenChannels } from './channels.js'
 import { deviceConfigView } from './scope.js'
 import type { PairingCodes } from './codes.js'
-import { lanAddresses as readLanAddresses, cachedPick, computerName, isPrivate, localHostName, preferredAddress } from './host.js'
+import { lanAddresses as readLanAddresses, cachedPick, computerName, isPrivate, lanAppAddresses, localHostName, preferredAddress } from './host.js'
 import { REMOTE_PORT, RemoteListener } from './listener.js'
+import { deviceThemeView } from '../themes/schedule.js'
 import type { DeviceStore, PublicDevice, Viewport } from './store.js'
 
 /** How often the LAN addresses are re-read while listening, to follow a DHCP change. */
@@ -56,7 +58,7 @@ export const MAX_APP_ADDRESSES = 8
 /** What `GET /api/devices/me` answers the device app: `DeviceInfo` and where else it may find the Mac. */
 export type DeviceAppInfo = DeviceInfo & { addresses: string[] }
 
-export type PairCredential = { code: string } | { secret: string }
+export type PairCredential = { proof: string } | { secret: string }
 
 export type PairResult =
   | { token: string; device: PublicDevice }
@@ -85,6 +87,8 @@ export interface DeviceServiceOptions {
   lanAddresses?: () => string[]
   /** Which of the addresses the QR code carries; the default asks the Mac's default route. */
   preferredAddress?: (addresses: string[]) => Promise<string | null>
+  /** Which of the addresses the device app is told, in order; the default is `lanAppAddresses`. */
+  appAddresses?: (addresses: string[]) => Promise<string[]>
 }
 
 /**
@@ -96,6 +100,17 @@ export function deviceBrightnessView(data: unknown, screenId: string | null): un
   if (screenId === null || !data || typeof data !== 'object') return null
   const screens = (data as { screens?: Record<string, unknown> }).screens ?? {}
   return { kiosk: null, screens: Object.hasOwn(screens, screenId) ? { [screenId]: screens[screenId] } : {} }
+}
+
+/**
+ * What a paired socket on `screenId` hears on a host channel (`HOST_CHANNELS`, plus `brightness`):
+ * its own view, or null for nothing at all. A channel with no case here is never sent to a device.
+ */
+export function deviceHostView(channel: string, data: unknown, screenId: string | null): unknown {
+  if (channel === 'config') return deviceConfigView(data as Config, screenId)
+  if (channel === 'brightness') return deviceBrightnessView(data, screenId)
+  if (channel === 'theme') return deviceThemeView(data)
+  return null
 }
 
 /** Whether a device screen was made for this viewport, in either orientation. */
@@ -122,8 +137,8 @@ export class DeviceService {
   private readonly advertiser: Advertiser
   private readonly readAddresses: () => string[]
   private readonly pickAddress: (addresses: string[]) => Promise<string | null>
-  /** `pickAddress` for `meForApp`, kept 30 s per address list: each iPad asks every 30 s or so. */
-  private readonly pickAppAddress: (addresses: string[]) => Promise<string | null>
+  /** `appAddresses` for `meForApp`, kept 30 s per address list: each iPad asks every 30 s or so. */
+  private readonly listAppAddresses: (addresses: string[]) => Promise<string[]>
   private readonly listener: RemoteListener
 
   /**
@@ -162,7 +177,7 @@ export class DeviceService {
     this.advertiser = opts.advertise ?? bonjourAdvertise
     this.readAddresses = opts.lanAddresses ?? readLanAddresses
     this.pickAddress = opts.preferredAddress ?? ((addresses) => preferredAddress(addresses, this.exec))
-    this.pickAppAddress = cachedPick(this.pickAddress)
+    this.listAppAddresses = cachedPick(opts.appAddresses ?? ((addresses) => lanAppAddresses(addresses, this.exec)))
     this.listener = new RemoteListener(opts.app, opts.listenerPort ?? REMOTE_PORT)
   }
 
@@ -172,12 +187,7 @@ export class DeviceService {
     this.hub.setDevicePayload((deviceId) => this.me(deviceId))
     // The config a device hears is its own screen's (devices/scope.ts), never the Mac's whole one.
     // So is the brightness it hears: its own screen's entry, not every screen's id and level.
-    this.hub.setHostView((deviceId, channel, data) => {
-      const screenId = this.deviceScreenOf(deviceId)
-      if (channel === 'config') return deviceConfigView(data as Config, screenId)
-      if (channel === 'brightness') return deviceBrightnessView(data, screenId)
-      return null
-    }, ['brightness'])
+    this.hub.setHostView((deviceId, channel, data) => deviceHostView(channel, data, this.deviceScreenOf(deviceId)), ['brightness'])
     this.config.onChange((cfg) => this.onConfigChange(cfg))
     this.catalog.onScan(() => {
       this.manifests = null
@@ -247,9 +257,10 @@ export class DeviceService {
   private async issueCode(): Promise<PairingOffer | 'notListening'> {
     if (!this.listener.running) return 'notListening'
     const key = await ensureKey(this.secrets, { exec: this.exec })
-    this.keyHash = spkiHash(key)
+    const keyHash = spkiHash(key)
+    this.keyHash = keyHash
     this.keyHashKnown = true
-    const { code, secret, expiresAt } = this.codes.issue()
+    const { code, secret, expiresAt } = this.codes.issue((c) => codeProof(c, keyHash))
     const params: string[] = []
     if (this.hostName !== null) params.push(`h=${encodeURIComponent(`${this.hostName}.local`)}`)
     const address = await this.pickAddress(this.readAddresses())
@@ -259,14 +270,15 @@ export class DeviceService {
   }
 
   /**
-   * Pairs a device with the live code, typed, or with its secret, read off the QR code. It is
+   * Pairs a device with the live code, typed and sent as a proof bound to this Mac's key
+   * (`codeProof`), or with its secret, read off the QR code. It is
    * attached to the one device screen made for its viewport; none, or more than one, leaves it
    * unattached for the user to choose.
    */
   async pair(credential: PairCredential, name: string, viewport: Viewport, peer = ''): Promise<PairResult> {
     const result = 'secret' in credential
       ? this.codes.consumeSecret(credential.secret, peer)
-      : this.codes.consume(credential.code, peer)
+      : this.codes.consume(credential.proof, peer)
     if (result !== 'ok') return { error: result }
     const matches = this.config.get().screens.filter((s) => s.kind === 'device' && fits(s, viewport))
     const screenId = matches.length === 1 ? matches[0].id : null
@@ -345,18 +357,18 @@ export class DeviceService {
    * `device` channel do not ask, and get `me()`. Only the RFC 1918 ones among those the remote
    * listener accepts as Host right now (the certificate's addresses, which `updateHosts` lets
    * through): never a public, CGNAT, link-local or IPv6 address, nor one the listener would answer
-   * 421. The one the QR code and Bonjour would carry (`pickAddress`: the default route's) comes
+   * 421. Of those, only the ones on Wi-Fi or Ethernet (`appAddresses`): never a VPN's or a virtual
+   * machine's, which the iPad cannot reach and should not hear about. The default route's comes
    * first, then the others in order, `MAX_APP_ADDRESSES` at most: each dead one costs the app a
-   * probe. That pick is kept 30 s per address list (`cachedPick`), so an iPad's periodic check does
+   * probe. The list is kept 30 s per address list (`cachedPick`), so an iPad's periodic check does
    * not run `route` each time.
    */
   async meForApp(deviceId: string): Promise<DeviceAppInfo | null> {
     const me = this.me(deviceId)
     if (me === null) return null
     const usable = this.certAddresses.filter(isPrivate)
-    const first = usable.length > 0 ? await this.pickAppAddress(usable) : null
-    const ordered = first !== null && usable.includes(first) ? [first, ...usable.filter((a) => a !== first)] : usable
-    return { ...me, addresses: ordered.slice(0, MAX_APP_ADDRESSES) }
+    const listed = usable.length > 0 ? await this.listAppAddresses(usable) : []
+    return { ...me, addresses: listed.filter((a) => usable.includes(a)).slice(0, MAX_APP_ADDRESSES) }
   }
 
   /** The screen a device is bound to, only while it is a device screen: where its brightness goes. */

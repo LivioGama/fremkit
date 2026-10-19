@@ -68,7 +68,7 @@ struct FremkitApp: App {
         network.start()
         model.start()
         #if DEBUG
-        flow.seedFromLaunchArgument()
+        flow.seedFromInstall()
         #endif
     }
 }

@@ -3,15 +3,16 @@
 #
 #   scripts/build-ios.sh build     the app for the simulator, unsigned (no Local.xcconfig needed)
 #   scripts/build-ios.sh test      FremkitKit's tests, on the Mac
-#   scripts/build-ios.sh install [launch arguments…]
+#   scripts/build-ios.sh install [--seed]
 #                                  a signed Debug build installed and launched on the iPad whose
 #                                  UDID is in FREMKIT_IOS_DEVICE; signing comes from
-#                                  ios/Local.xcconfig (copy ios/Local.example.xcconfig). Arguments
-#                                  after `install` go to the app, e.g.
-#                                  -FremkitSeedLink 'fremkit://pair?…' (Debug builds only).
-#                                  The link carries the code's secret, which pairs past the
-#                                  wrong-code limit: use a fresh one (it pairs once, for 5
-#                                  minutes) and expect it in shell history.
+#                                  ios/Local.xcconfig (copy ios/Local.example.xcconfig). With
+#                                  --seed, a pairing link read from stdin (`pbpaste | … --seed`)
+#                                  is copied into the app's container and opened at launch, as
+#                                  the camera would (Debug builds only). It never goes on a
+#                                  command line: it carries the code's secret, which pairs past
+#                                  the wrong-code limit, and any account on the Mac reads every
+#                                  process's arguments with `ps`.
 #
 # Build output goes to ios/build/ (git-ignored); the full log of the last xcodebuild run is
 # ios/build/xcodebuild.log.
@@ -67,16 +68,28 @@ case "$cmd" in
         xcb -configuration Debug -destination "id=$device" -allowProvisioningUpdates build
         app="$DERIVED/Build/Products/Debug-iphoneos/Fremkit.app"
         bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")"
+        seed=""
+        case "${1:-}" in
+            "") ;;
+            --seed)
+                seed="$(mktemp "${TMPDIR:-/tmp}/fremkit-seed.XXXXXX")"
+                trap 'rm -f "${seed:?}"' EXIT
+                chmod 600 "$seed"
+                cat >"$seed"
+                grep -q '^fremkit://pair?' "$seed" || die "--seed reads a fremkit://pair?… link from stdin"
+                ;;
+            *) die "usage: scripts/build-ios.sh install [--seed]" ;;
+        esac
         xcrun devicectl device install app --device "$device" "$app"
-        # `--` ends devicectl's own options: without it, an argument for the app such as
-        # -FremkitSeedLink is read as an unknown devicectl option and the launch fails.
-        if [[ $# -gt 0 ]]; then
-            xcrun devicectl device process launch --device "$device" --terminate-existing "$bundle_id" -- "$@"
-        else
-            xcrun devicectl device process launch --device "$device" --terminate-existing "$bundle_id"
+        if [[ -n "$seed" ]]; then
+            # Into the app's own container, where the Debug build reads and deletes it at launch
+            # (`PairingFlow.seedFile` in ios/Fremkit/AppModel.swift).
+            xcrun devicectl device copy to --device "$device" --domain-type appDataContainer \
+                --domain-identifier "$bundle_id" --source "$seed" --destination tmp/FremkitSeedLink --quiet
         fi
+        xcrun devicectl device process launch --device "$device" --terminate-existing "$bundle_id"
         ;;
     *)
-        die "usage: scripts/build-ios.sh build | test | install [launch arguments…]"
+        die "usage: scripts/build-ios.sh build | test | install [--seed]"
         ;;
 esac

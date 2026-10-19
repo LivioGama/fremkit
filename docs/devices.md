@@ -45,7 +45,11 @@ showing.
 **Without the camera**, the app lists the Macs it finds on the network (Bonjour, `_fremkit._tcp`).
 Pick yours, type the code, and **check that the four words on the iPad are the ones the admin
 shows** before you confirm: they come from your Mac's key, so a Mac that shows other words is not
-yours. There is no field for typing an address: a Mac that is not in the list is reached with the
+yours. The code you type only works for the Mac whose key the iPad sees, so another machine that
+took your Mac's name cannot pass it on to your Mac. The list shows each Mac by its computer name
+(System Settings → General → Sharing), which the Mac announces on the local network while
+**Allow an iPad on the local network** is on: anyone on the same network can see it, as with AirDrop or file sharing.
+Rename the Mac there if you would rather it did not carry yours. There is no field for typing an address: a Mac that is not in the list is reached with the
 QR code.
 
 The iPad keeps what it needs to reconnect in its keychain and pins the Mac's key: it talks to
@@ -53,8 +57,8 @@ that Mac and no other, whatever the network calls it. If the Mac's address chang
 it again by itself, with the dashboard up: as soon as it sees the Mac announce its new address on
 the network, or about a minute after the old one stops answering. It tries the Mac's `.local` name,
 the last address that worked, and every other private (RFC 1918) IPv4 address the Mac last told it
-about (the app asks `GET /api/devices/me?addresses=1`; the dashboard page and the widgets are not
-told), so unplugging the Ethernet cable moves it to the Mac's Wi-Fi address even when the network's
+about on its Wi-Fi or Ethernet, never a VPN's or a virtual machine's (the app asks
+`GET /api/devices/me?addresses=1`; the dashboard page and the widgets are not told), so unplugging the Ethernet cable moves it to the Mac's Wi-Fi address even when the network's
 name lookup fails. Each of those addresses must present the pinned key, like any other; another key
 at one of them only means another machine holds it now. A Mac that answers nowhere (asleep,
 say) leaves the dashboard where it is until it comes back.

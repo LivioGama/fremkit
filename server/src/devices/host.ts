@@ -34,7 +34,7 @@ const SERVICE_NAME_MAX_BYTES = 63
  */
 export async function computerName(exec: Exec = execFileAsync): Promise<string> {
   try {
-    const { stdout } = await exec('scutil', ['--get', 'ComputerName'])
+    const { stdout } = await exec('/usr/sbin/scutil', ['--get', 'ComputerName'])
     let name = stdout.trim()
     while (Buffer.byteLength(name) > SERVICE_NAME_MAX_BYTES) name = Array.from(name).slice(0, -1).join('')
     name = name.trimEnd()
@@ -114,20 +114,53 @@ export function pickAddress(addresses: string[], ifaces: InterfaceMap, defaultIn
   return addresses[0] ?? null
 }
 
+/** Wi-Fi and Ethernet, built in or plugged in: `en0`, `en7`. */
+function isEthernet(name: string): boolean {
+  return /^en\d+$/.test(name)
+}
+
+/**
+ * The addresses among `addresses` an iPad on the LAN may be told to look for the Mac at: RFC 1918
+ * ones on a Wi-Fi or Ethernet interface (`en*`), the default route's interface first when it is
+ * one, then by interface number. A VPN's `utun*` (a company network on 10/8 is private too), a
+ * virtual machine's `bridge100` or `vmnet*` are never listed: the iPad cannot reach them, and the
+ * list would tell it about networks the Mac is on.
+ */
+export function appAddresses(addresses: string[], ifaces: InterfaceMap, defaultInterface: string | null): string[] {
+  const allowed = new Set(addresses.filter(isPrivate))
+  const names = Object.keys(ifaces).filter(isEthernet).sort((x, y) => Number(x.slice(2)) - Number(y.slice(2)))
+  if (defaultInterface !== null && names.includes(defaultInterface)) {
+    names.splice(names.indexOf(defaultInterface), 1)
+    names.unshift(defaultInterface)
+  }
+  const out: string[] = []
+  for (const name of names) {
+    for (const address of (ifaces[name] ?? []).filter((i) => usable(i) && allowed.has(i.address)).map((i) => i.address).sort()) {
+      if (!out.includes(address)) out.push(address)
+    }
+  }
+  return out
+}
+
+/** `appAddresses` on this Mac's own interfaces and default route. */
+export async function lanAppAddresses(addresses: string[], exec: Exec = execFileAsync): Promise<string[]> {
+  return appAddresses(addresses, networkInterfaces(), await defaultRouteInterface(exec))
+}
+
 /** How long `cachedPick` keeps an answer for the same addresses. */
 export const PICK_TTL_MS = 30_000
 
 /**
  * `pick` remembered for `ttlMs` per address list: the same list asked again within that time gets
- * the same answer without running `pick` (for `preferredAddress`, `route -n get default`) again;
+ * the same answer without running `pick` (for `lanAppAddresses`, `route -n get default`) again;
  * another list, or an older answer, asks again. Concurrent asks for one list share one lookup.
  */
-export function cachedPick(
-  pick: (addresses: string[]) => Promise<string | null>,
+export function cachedPick<T>(
+  pick: (addresses: string[]) => Promise<T>,
   ttlMs = PICK_TTL_MS,
   now: () => number = Date.now,
-): (addresses: string[]) => Promise<string | null> {
-  let last: { key: string; at: number; answer: Promise<string | null> } | null = null
+): (addresses: string[]) => Promise<T> {
+  let last: { key: string; at: number; answer: Promise<T> } | null = null
   return (addresses) => {
     const key = addresses.join(',')
     const t = now()
