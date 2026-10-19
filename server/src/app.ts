@@ -62,6 +62,7 @@ import { backupRoutes } from './backup/routes.js'
 import { bambuRoutes } from './bambu/routes.js'
 import { createShortcutsProvider } from './providers/shortcuts.js'
 import { createMessages2FAProvider } from './providers/messages-2fa.js'
+import { createRectangleProvider } from './providers/rectangle.js'
 import { createServiceStatusProvider } from './providers/service-status.js'
 import { createSystemProvider } from './providers/system.js'
 import { createDiskMapProvider } from './providers/disk-map.js'
@@ -310,6 +311,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     // Registered here, not in providers/index.ts, because that is where the config store lives.
     registry.register(createShortcutsProvider(undefined, instances))
     registry.register(createMessages2FAProvider({ enabled: () => store.get().privacy.messages2FA }))
+    registry.register(createRectangleProvider())
     registry.register(createServiceStatusProvider({}, instances))
     // A paired device may set only its own screen's brightness: see mayCommandBrightness. Read
     // at command time, so a device moved to another screen (or unpaired) is judged as it is now.
@@ -328,8 +330,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // A demo never asks the keychain, whatever its config says: a file in its own data folder.
   const secrets = demo
     ? new FileSecretStore(join(opts.dataDir, 'secrets.json'))
-    : createSecretStore(store.get().secrets.backend, opts.dataDir, { adoptLegacyKeychain: opts.adoptLegacyKeychain === true })
-  // v2 → v3 moved the Homey connection to the type its widget declares, and the declaration
+    : createSecretStore(store.get().secrets.backend, opts.dataDir, { adoptLegacyKeychain: opts.adoptLegacyKeychain === true })  // v2 → v3 moved the Homey connection to the type its widget declares, and the declaration
   // calls the key `token` where the coded type called it `apiKey`. The config half of that is in
   // `migrateConfig`; this is the half that needs the secret store. Idempotent, so it costs one
   // read per Homey connection on a start that has nothing to do.
