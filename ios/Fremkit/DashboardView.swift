@@ -94,8 +94,13 @@ struct DashboardView: UIViewRepresentable {
         }
 
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            // Only the dashboard itself speaks for the app, not a frame inside it.
-            guard message.frameInfo.isMainFrame, let decoded = PageMessage(body: message.body) else { return }
+            // Only the dashboard itself speaks for the app: not a frame inside it, and not a main
+            // frame on any origin but the Mac's.
+            let origin = message.frameInfo.securityOrigin
+            guard message.frameInfo.isMainFrame,
+                  Dashboard.isPageOrigin(scheme: origin.protocol, host: origin.host, port: origin.port,
+                                         host: parent.host, port: parent.port),
+                  let decoded = PageMessage(body: message.body) else { return }
             parent.onMessage(decoded)
         }
 
@@ -117,11 +122,16 @@ struct DashboardView: UIViewRepresentable {
             }
         }
 
-        /// A frame inside the page (a widget) loads only the Mac's `/widgets/…`; the page itself is
-        /// left as it was. A request for a new window (no target frame) is not a frame of the page.
+        /// The page stays on the Mac's origin (`https://<host>:<port>`), as the Mac's kiosk does,
+        /// and a frame inside it (a widget) loads only the Mac's `/widgets/…`. A request for a new
+        /// window (no target frame) has nowhere to open and is cancelled.
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-            guard let frame = navigationAction.targetFrame, !frame.isMainFrame else { return .allow }
-            return Dashboard.allowsSubframe(navigationAction.request.url, host: parent.host, port: parent.port) ? .allow : .cancel
+            let url = navigationAction.request.url
+            guard let frame = navigationAction.targetFrame else { return .cancel }
+            if frame.isMainFrame {
+                return Dashboard.allowsMainFrame(url, host: parent.host, port: parent.port) ? .allow : .cancel
+            }
+            return Dashboard.allowsSubframe(url, host: parent.host, port: parent.port) ? .allow : .cancel
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
