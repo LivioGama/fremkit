@@ -34,7 +34,7 @@ const SERVICE_NAME_MAX_BYTES = 63
  */
 export async function computerName(exec: Exec = execFileAsync): Promise<string> {
   try {
-    const { stdout } = await exec('scutil', ['--get', 'ComputerName'])
+    const { stdout } = await exec('/usr/sbin/scutil', ['--get', 'ComputerName'])
     let name = stdout.trim()
     while (Buffer.byteLength(name) > SERVICE_NAME_MAX_BYTES) name = Array.from(name).slice(0, -1).join('')
     name = name.trimEnd()

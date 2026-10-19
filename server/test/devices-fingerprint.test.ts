@@ -38,6 +38,11 @@ describe('computerName', () => {
   it('reads and trims the name', async () => {
     expect(await computerName(ok("  Example's Mac \n"))).toBe("Example's Mac")
   })
+  it('runs scutil by its absolute path', async () => {
+    const calls: string[] = []
+    await computerName(async (file) => { calls.push(file); return { stdout: 'Mac', stderr: '' } })
+    expect(calls).toEqual(['/usr/sbin/scutil'])
+  })
   it('falls back to Fremkit when scutil fails or prints nothing', async () => {
     expect(await computerName(async () => { throw new Error('x') })).toBe('Fremkit')
     expect(await computerName(ok('\n'))).toBe('Fremkit')
