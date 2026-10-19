@@ -3,8 +3,11 @@
 //
 // The Edge is the one screen a program holding Fremkit's port cannot write to: with the helper, a
 // server that fails /auth/proof never gets the kiosk to load its page. So the code is never sent
-// to the extension; the user types it, and the server must prove it knows it before the extension
-// proves it back. A server that cannot is not Fremkit, and gets nothing it could guess the code from.
+// to the extension; the user types it, the extension proves it first (a program that made the
+// request itself gets one online guess per try), and the server proves it back with the token.
+// The token is kept only if that proof checks and came back within PAIR_ANSWER_MS: a program
+// holding the port that got the extension's proof could only search the code offline, ~2^20 codes
+// at 600 000 PBKDF2 rounds each, which takes minutes on a large GPU, not two seconds.
 
 import { base64url, fromBase64url, newNonce, sameBytes } from './proof.js'
 
@@ -45,41 +48,46 @@ export async function pairKey(code, requestId, iterations = PAIR_KEY_ITERATIONS)
   return new Uint8Array(bits)
 }
 
-/** base64url(HMAC-SHA256(key, label + requestId + "|" + nonceE + "|" + nonceS)). */
-export async function pairMac(key, label, requestId, nonceE, nonceS) {
+/** How long the server's proof may take to come back after the extension sent its own. */
+export const PAIR_ANSWER_MS = 2_000
+
+async function hmac(key, text) {
   const subtle = globalThis.crypto.subtle
-  const hmac = await subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  return base64url(new Uint8Array(await subtle.sign('HMAC', hmac, utf8(`${label}${requestId}|${nonceE}|${nonceS}`))))
+  const k = await subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  return base64url(new Uint8Array(await subtle.sign('HMAC', k, utf8(text))))
 }
 
+/** base64url(HMAC-SHA256(K, PAIR_CLIENT_LABEL + requestId + "|" + nonceE)): the extension's proof. */
+export const pairClientMac = (key, requestId, nonceE) => hmac(key, `${PAIR_CLIENT_LABEL}${requestId}|${nonceE}`)
+
+/** base64url(HMAC-SHA256(K, PAIR_SERVER_LABEL + requestId + "|" + nonceE + "|" + nonceS)): the server's. */
+export const pairServerMac = (key, requestId, nonceE, nonceS) => hmac(key, `${PAIR_SERVER_LABEL}${requestId}|${nonceE}|${nonceS}`)
+
 const B64_32 = /^[A-Za-z0-9_-]{43}$/
+const LATE = Symbol('late')
 
 /**
  * One try at the typed `code` for `requestId`. `post(step, body)` sends to
- * `/api/companion/pair/<requestId>/<step>` and resolves the JSON answer, or null.
+ * `/api/companion/pair/<requestId>/<step>` and resolves the JSON answer, or null. `now` and `wait`
+ * are the clock and the timer, for tests.
  *
- * Resolves `{ state: 'paired', token, deviceId }`; `wrong` when the code is not the Edge's (the
- * server's mac did not match it, or the server said so); `exhausted` when that wrong try was the last;
- * `refused` or `expired` as the server says; `failed` for anything else. The client mac, the one
- * value that could let a server grind the code, is sent only after the server's mac matched.
+ * Resolves `{ state: 'paired', token, deviceId }` only when the server's proof checks against the
+ * typed code and came back within `PAIR_ANSWER_MS` of sending the extension's; a token that came
+ * any other way is dropped and the answer is `impostor`. Otherwise `wrong` (not the Edge's code),
+ * `exhausted` (that wrong one was the last try), `refused` or `expired` as the server says, or
+ * `failed`.
  */
-export async function confirmCode({ post, requestId, code, nonce = newNonce() }) {
-  const c = await post('confirm', { nonce })
-  if (c?.state === 'refused' || c?.state === 'expired') return { state: c.state }
-  if (c?.state !== 'confirm' || typeof c.nonce !== 'string' || !B64_32.test(c.nonce) || typeof c.mac !== 'string') return { state: 'failed' }
+export async function confirmCode({ post, requestId, code, nonce = newNonce(), now = () => Date.now(), wait = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const key = await pairKey(code, requestId)
-  const expected = await pairMac(key, PAIR_SERVER_LABEL, requestId, nonce, c.nonce)
-  if (!sameBytes(fromBase64url(c.mac), fromBase64url(expected))) {
-    // Nothing derived from the code goes back: only that this try is over.
-    const f = await post('finish', { abandon: true })
-    return { state: f?.state === 'refused' ? 'exhausted' : f?.state === 'expired' ? 'expired' : 'wrong' }
-  }
-  const f = await post('finish', { mac: await pairMac(key, PAIR_CLIENT_LABEL, requestId, nonce, c.nonce) })
-  if (f?.state === 'paired' && typeof f.token === 'string' && typeof f.deviceId === 'string') {
-    return { state: 'paired', token: f.token, deviceId: f.deviceId }
-  }
-  if (f?.state === 'wrong') return { state: 'wrong' }
-  // The server's mac matched, so the code was right: a refusal now is the Edge's Refuse.
-  if (f?.state === 'refused' || f?.state === 'expired') return { state: f.state }
-  return { state: 'failed' }
+  const mac = await pairClientMac(key, requestId, nonce)
+  const sent = now()
+  const answer = await Promise.race([post('confirm', { nonce, mac }), wait(PAIR_ANSWER_MS).then(() => LATE)])
+  if (answer === LATE || now() - sent > PAIR_ANSWER_MS) return { state: 'impostor' }
+  const state = answer?.state
+  if (['wrong', 'exhausted', 'refused', 'expired'].includes(state)) return { state }
+  if (state !== 'paired') return { state: 'failed' }
+  const proven = typeof answer.nonce === 'string' && B64_32.test(answer.nonce) && answer.nonce !== nonce &&
+    sameBytes(fromBase64url(answer.mac), fromBase64url(await pairServerMac(key, requestId, nonce, answer.nonce)))
+  if (!proven || typeof answer.token !== 'string' || typeof answer.deviceId !== 'string') return { state: 'impostor' }
+  return { state: 'paired', token: answer.token, deviceId: answer.deviceId }
 }

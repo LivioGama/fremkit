@@ -30,6 +30,7 @@ const PAIR_ERRORS = {
   busy: () => t('pairBusy'),
   cooldown: () => t('pairCooldown'),
   exhausted: () => t('pairExhausted'),
+  impostor: () => t('linkImpostor'),
   unreachable: () => t('pairUnreachable'),
   failed: () => t('pairFailed'),
 }

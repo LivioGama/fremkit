@@ -290,16 +290,21 @@ the door is narrow.
 **Its credential.** An extension is linked by the code you type into it: it asks, the server shows
 a four-character code on the Edge and in the admin (never to the extension), and you type that code
 into the extension's popup. Typing it is the approval; there is no Allow. The code itself never
-travels. The extension sends a fresh nonce; the server answers its own nonce and
-`HMAC-SHA256(K, "fremkit-companion-pair-server-v1|" + request id | both nonces)`, where
-`K = PBKDF2-HMAC-SHA256(code, "fremkit-companion-pair-code-v1:" + request id, 600,000 rounds)` (the
-iPad code proof's function and cost under its own salt; `server/src/companion/pairProof.ts`). The
-extension recomputes that mac from the typed code, and only when it matches sends its own (the
-same fields under `…-client-v1|`); the server checks it in constant time, writes the record and
-hands out the token in that answer. The server proves first, so a program posing as the server
-never gets a value derived from the code to grind offline: it gets one online guess per try. A
-request gets three tries (a wrong code, a wrong mac, or a fourth confirmation refuses it), and one
-confirmation is live at a time. Every step is a `POST` (Chrome sends no `Origin` on an extension's
+travels. `K = PBKDF2-HMAC-SHA256(code, "fremkit-companion-pair-code-v1:" + request id, 600,000
+rounds)` (the iPad code proof's function and cost under its own salt;
+`server/src/companion/pairProof.ts`), which the server derives when the request is made. The
+extension proves first: it sends a fresh nonce and `HMAC-SHA256(K, "fremkit-companion-pair-client-v1|"
++ request id | nonce)`. The server checks it in constant time; a wrong one counts, and the third
+refuses the request. A right one gets the server's proof back in the same answer, its own nonce and
+`HMAC-SHA256(K, "fremkit-companion-pair-server-v1|" + request id | both nonces)`, with the token.
+The extension keeps the token only if that proof checks against the typed code **and** came back
+within two seconds of sending its own; otherwise it drops the token and says the server on the port
+is not Fremkit. Why both rules: a program that made a request itself (see below) only ever learns
+whether a guess was right, three guesses per request. A program holding the port in Fremkit's place
+does receive the extension's proof and could search the code offline from it, but about 2^20
+four-character codes at 600,000 PBKDF2 rounds each is ~6·10^11 HMAC-SHA256 computations, minutes on
+a large GPU and hours on a CPU, and its answer had to be back in two seconds. The real server
+answers at once, K being ready. The exchange is a `POST` (Chrome sends no `Origin` on an extension's
 `GET` to `127.0.0.1`). The token is 32 random bytes; only its `sha256` is stored, compared in
 constant time. A code lasts two minutes, and one request waits at a time: while it waits, a
 request from another install is answered 409 and does not take its place; only the same install
@@ -314,7 +319,7 @@ Removing the extension in **Settings → Devices** closes its socket and its tok
 files:
 
 - `POST /api/companion/pair`, `POST /api/companion/pair/:requestId` (where a request stands) and
-  `POST /api/companion/pair/:requestId/confirm` and `…/finish` (the code's proof), which each check
+  `POST /api/companion/pair/:requestId/confirm` (the code's proof), which each check
   for Companion's own `Origin` (`chrome-extension://lnckeodobpbbmfbdlpnegjpchgkehdlk`, the ID its
   manifest `key` fixes, or one a developer lists in `FREMKIT_COMPANION_EXTENSION_IDS`) before doing
   anything.
@@ -369,10 +374,9 @@ pages.
 else; it is out of scope, as under *Known limits*. One running as another account, or anything that
 reaches the port without reading your files, cannot pair without the code that is on the Edge.
 It can, however, post a pairing request: an `Origin` header is only a header to a program that is
-not a browser, and the per-install limits count an install id it picks. It then sees the server's
-mac for each of its three tries; a four-character code behind 600,000 PBKDF2 rounds is not out of
-reach of a determined offline search within the request's two minutes, which is why such a request
-is one you did not start and should refuse. A program that keeps a request of its own waiting can
+not a browser, and the per-install limits count an install id it picks. It cannot pair with that
+request without the code: it must prove the code first, and gets nothing but "wrong" for each of
+its three guesses, about one chance in 350,000, after which the request is refused. A program that keeps a request of its own waiting can
 hold pairing up (you then see a request you did not start, and the Edge counts the other browsers
 turned away since you last answered one, a count only your answer clears, or two minutes with no
 request waiting at all: refuse it), but it cannot swap its request in under the code you type: the
@@ -383,8 +387,8 @@ extension also drops the answer's candidates that are not loopback or a `.local`
 depth only: WebRTC learns the receiver's address from its incoming checks whatever the answer lists.
 Such a program can make the extension show itself removed (an unproven refusal), but the token stays
 until you pair again. Nor can it pair the extension with itself by holding port 4242 when you press
-Connect (Fremkit stopped or restarting): the extension takes a token only once the server has proved
-it knows the code you typed, and that code is on the Edge. With the helper, the Edge shows only a
+Connect (Fremkit stopped or restarting): the extension takes a token only once the server has proved,
+within two seconds, that it knows the code you typed, and that code is on the Edge. With the helper, the Edge shows only a
 page from a server that passed `/auth/proof` (`AccessProof.swift`): one that cannot is *foreign*,
 and the kiosk never loads its page, so a program holding the port cannot put a code there, and the
 code you type from the Edge binds the pairing to the real Fremkit. Without the helper (Fremkit run

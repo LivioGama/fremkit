@@ -177,8 +177,8 @@ async function pollPairing() {
 }
 
 /**
- * The code the user typed from the Edge: proved with the server, the server first, and the token
- * taken only if both ends knew it. Resolves `{ ok }` or `{ ok: false, error }`.
+ * The code the user typed from the Edge: proved to the server, which proves it back with the
+ * token, kept only if that proof checks and came in time (lib/pairProof.js). Resolves `{ ok }` or `{ ok: false, error }`.
  */
 async function confirmTyped(typed) {
   const pending = local.pairing
@@ -211,7 +211,8 @@ async function confirmTyped(typed) {
     }
     if (local.pairing?.requestId !== pending.requestId) return { ok: false, error: 'expired' }
     if (result.state === 'wrong') return { ok: false, error: 'wrongCode' }
-    if (['refused', 'expired', 'exhausted'].includes(result.state)) {
+    // A token without the server's timely proof is not taken: whatever answered is not Fremkit.
+    if (['refused', 'expired', 'exhausted', 'impostor'].includes(result.state)) {
       await endPairing(result.state)
       return { ok: false, error: result.state }
     }

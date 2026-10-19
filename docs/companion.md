@@ -73,8 +73,9 @@ from yours: a request you did not start is one to refuse, not one to type a code
 carries the code it showed, and Fremkit turns it down (*The request changed: check the code*) if the
 request waiting is no longer that one.
 
-The code never travels: the extension and Fremkit each prove they know it, Fremkit first, and only
-then does the extension take its credential. See [SECURITY.md](../SECURITY.md#a-browser-extension)
+The code never travels: the extension proves it knows it, Fremkit proves it back with the
+credential, and the extension keeps the credential only if that proof checks and came within two
+seconds; otherwise the popup says *The server on this port is not your Fremkit*. See [SECURITY.md](../SECURITY.md#a-browser-extension)
 for the exchange and what that credential is.
 
 Each time it connects, the extension first has the server prove that it holds this extension's

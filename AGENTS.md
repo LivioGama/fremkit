@@ -225,9 +225,10 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   Each spawned server gets a fresh secret; the token file is written after `listen` and removed
   on exit.
 - **The companion takes a token only after the user typed the Edge's code and the server proved it
-  knows it.** The code goes to the Edge and the admin, never to the extension; the server's mac
-  under K(code) comes first, and the extension sends its own only when that one matched
-  (`server/src/companion/pairProof.ts`, `companion/lib/pairProof.js`, one test vector). No approve route, no
+  knows it.** The code goes to the Edge and the admin, never to the extension; the extension's mac
+  under K(code) comes first (three wrong ones kill the request), and the token is kept only with a
+  server mac that checks and came back within 2 s (`server/src/companion/pairProof.ts`,
+  `companion/lib/pairProof.js`, one test vector). No approve route, no
   path that hands out a token without that exchange.
 - **No secret on a command line, ever.** Any account on the Mac reads every process's argv with
   `ps`. The keychain is written through `security -i` on stdin and read with `-g`

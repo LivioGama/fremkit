@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -806,23 +806,24 @@ const PAIR_VECTOR = {
   nonceE: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE',
   nonceS: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI',
   key: 'a4cf5dbd6f76bcf8117a2098cfdd2aa40310b26b00d984e897968c829796b0b8',
+  macE: 'KbDbFhseuugQot78I5ThFuaNIbfL-lsHInSWmcDFNNg',
   macS: 'zmpz29L7bwyvBl7bCYR3wAVbWK86PKl4QGHYHj3cvak',
-  macE: 'm0kTJZhVO_hpRSFRV_B8N1lgNrozNintFWLnhPq00Jw',
 }
 
 describe('the typed-code proof, from the extension side', () => {
-  it('uses the server\'s cost, salt and labels', () => {
-    for (const k of ['PAIR_KEY_ITERATIONS', 'PAIR_SALT_PREFIX', 'PAIR_SERVER_LABEL', 'PAIR_CLIENT_LABEL'] as const) {
+  it('uses the server\'s cost, salt, labels and answer bound', () => {
+    for (const k of ['PAIR_KEY_ITERATIONS', 'PAIR_SALT_PREFIX', 'PAIR_SERVER_LABEL', 'PAIR_CLIENT_LABEL', 'PAIR_ANSWER_MS'] as const) {
       expect(pairProof[k], k).toBe(serverPairProof[k])
     }
+    expect(pairProof.PAIR_ANSWER_MS).toBe(2_000)
   })
 
   it('computes the fixed vector the server test pins', async () => {
     const v = PAIR_VECTOR
     const key: Uint8Array = await pairProof.pairKey(v.code, v.requestId)
     expect(Buffer.from(key).toString('hex')).toBe(v.key)
-    expect(await pairProof.pairMac(key, pairProof.PAIR_SERVER_LABEL, v.requestId, v.nonceE, v.nonceS)).toBe(v.macS)
-    expect(await pairProof.pairMac(key, pairProof.PAIR_CLIENT_LABEL, v.requestId, v.nonceE, v.nonceS)).toBe(v.macE)
+    expect(await pairProof.pairClientMac(key, v.requestId, v.nonceE)).toBe(v.macE)
+    expect(await pairProof.pairServerMac(key, v.requestId, v.nonceE, v.nonceS)).toBe(v.macS)
   })
 
   it('bounds the server\'s deadline by a request\'s life', () => {
@@ -845,9 +846,11 @@ describe('the typed-code proof, from the extension side', () => {
     for (const c of CODE_ALPHABET) expect(pairProof.normalizeCode(c.repeat(4))).toBe(c.repeat(4))
   })
 
+  type Sent = { step: string; body: Record<string, unknown> }
+
   /** `confirmCode` against the real pairing, through a `post` that records what it sent. */
   async function withPairing(run: (ctx: {
-    pairing: CompanionPairing; requestId: string; code: string; sent: { step: string; body: Record<string, unknown> }[]
+    pairing: CompanionPairing; requestId: string; code: string; sent: Sent[]
     post: (step: string, body: Record<string, unknown>) => Promise<unknown>
   }) => Promise<void>) {
     const dir = await mkdtemp(join(tmpdir(), 'fremkit-companion-ext-'))
@@ -858,11 +861,10 @@ describe('the typed-code proof, from the extension side', () => {
     try {
       const r = pairing.request({ origin, name: 'Chrome', installId: ID })
       if (typeof r === 'string') throw new Error(r)
-      const sent: { step: string; body: Record<string, unknown> }[] = []
+      const sent: Sent[] = []
       const post = async (step: string, body: Record<string, unknown>) => {
         sent.push({ step, body })
-        if (step === 'confirm') return pairing.confirm(r.requestId, origin, body.nonce as string)
-        return pairing.finish(r.requestId, origin, 'mac' in body ? (body.mac as string) : null)
+        return pairing.confirm(r.requestId, origin, body.nonce as string, body.mac as string)
       }
       await run({ pairing, requestId: r.requestId, code: r.code, sent, post })
     } finally {
@@ -872,41 +874,102 @@ describe('the typed-code proof, from the extension side', () => {
     }
   }
 
-  it('pairs with the Edge\'s code against the real server side', async () => {
-    await withPairing(async ({ requestId, code, post }) => {
+  it('pairs with the Edge\'s code against the real server side, proving first', async () => {
+    await withPairing(async ({ requestId, code, sent, post }) => {
       const got = await pairProof.confirmCode({ post, requestId, code })
       expect(got).toMatchObject({ state: 'paired', token: expect.any(String), deviceId: expect.any(String) })
+      expect(sent).toHaveLength(1)
+      expect(Object.keys(sent[0].body).sort()).toEqual(['mac', 'nonce'])
     })
   })
 
-  it('a wrong code sends nothing derived from it: wrong, wrong, then exhausted', async () => {
-    await withPairing(async ({ requestId, code, sent, post }) => {
+  it('a wrong code is wrong, wrong, then exhausted, and the right one is too late after', async () => {
+    await withPairing(async ({ requestId, code, post }) => {
       const other = code === 'ZZZZ' ? 'YYYY' : 'ZZZZ'
       expect(await pairProof.confirmCode({ post, requestId, code: other })).toEqual({ state: 'wrong' })
       expect(await pairProof.confirmCode({ post, requestId, code: other })).toEqual({ state: 'wrong' })
       expect(await pairProof.confirmCode({ post, requestId, code: other })).toEqual({ state: 'exhausted' })
-      expect(sent.filter((m) => m.step === 'finish').map((m) => m.body)).toEqual([{ abandon: true }, { abandon: true }, { abandon: true }])
       expect(await pairProof.confirmCode({ post, requestId, code })).toEqual({ state: 'refused' })
     })
   })
 
-  it('gives a server that does not know the code no mac to grind, whatever it answers', async () => {
-    const answers = [
-      { state: 'confirm', nonce: 'B'.repeat(43), mac: 'A'.repeat(43) },
-      { state: 'confirm', nonce: 'B'.repeat(43), mac: '' },
-      { state: 'confirm', nonce: 'short', mac: 'A'.repeat(43) },
-      { state: 'paired', token: TOKEN, deviceId: ID },
-      null,
+  /** A server answering `paired` with this token; `macFor` gives its macS from K and the nonces. */
+  function fakeServer(macFor: (key: Uint8Array, nonceE: string, nonceS: string) => Promise<string> | string) {
+    const nonceS = 'B'.repeat(43)
+    return async (_step: string, body: Record<string, unknown>) => {
+      const key = await pairProof.pairKey('K7QM', RID)
+      return { state: 'paired', nonce: nonceS, mac: await macFor(key, body.nonce as string, nonceS), token: TOKEN, deviceId: ID }
+    }
+  }
+  const rightMac = (key: Uint8Array, nonceE: string, nonceS: string) => pairProof.pairServerMac(key, RID, nonceE, nonceS)
+
+  it('takes the token from a server whose proof checks', async () => {
+    expect(await pairProof.confirmCode({ post: fakeServer(rightMac), requestId: RID, code: 'K7QM' }))
+      .toEqual({ state: 'paired', token: TOKEN, deviceId: ID })
+  })
+
+  it('drops the token of a server whose proof does not check: a wrong mac, another code\'s, garbage, none', async () => {
+    const wrongs = [
+      () => 'A'.repeat(43),
+      async (_k: Uint8Array, nE: string, nS: string) => pairProof.pairServerMac(await pairProof.pairKey('ZZZZ', RID), RID, nE, nS),
+      // The extension's own proof sent back is not the server's.
+      (k: Uint8Array, nE: string) => pairProof.pairClientMac(k, RID, nE),
+      // The server's mac for another nonce of the extension's.
+      (k: Uint8Array, _nE: string, nS: string) => pairProof.pairServerMac(k, RID, 'C'.repeat(43), nS),
+      () => '',
+      () => undefined as unknown as string,
     ]
-    for (const answer of answers) {
-      const sent: { step: string; body: Record<string, unknown> }[] = []
-      const post = async (step: string, body: Record<string, unknown>) => {
-        sent.push({ step, body })
-        return step === 'confirm' ? answer : { state: 'paired', token: TOKEN, deviceId: ID }
+    for (const macFor of wrongs) {
+      const got = await pairProof.confirmCode({ post: fakeServer(macFor), requestId: RID, code: 'K7QM' })
+      expect(got).toEqual({ state: 'impostor' })
+      expect(JSON.stringify(got)).not.toContain(TOKEN)
+    }
+  })
+
+  it('drops the token of a right proof that came back after two seconds', async () => {
+    vi.useFakeTimers()
+    try {
+      const slow = fakeServer(rightMac)
+      let posted!: () => void
+      const sentProof = new Promise<void>((resolve) => { posted = resolve })
+      const post = (step: string, body: Record<string, unknown>) => {
+        posted()
+        return new Promise((resolve) => setTimeout(() => resolve(slow(step, body)), 2_500))
       }
-      const got = await pairProof.confirmCode({ post, requestId: RID, code: 'K7QM' })
-      expect(got.state, JSON.stringify(answer)).not.toBe('paired')
-      expect(sent.some((m) => 'mac' in m.body), JSON.stringify(answer)).toBe(false)
+      const pending = pairProof.confirmCode({ post, requestId: RID, code: 'K7QM' })
+      // K is derived off the timers' clock; once the proof is out, two seconds pass with no answer.
+      await sentProof
+      await vi.advanceTimersByTimeAsync(2_001)
+      expect(await pending).toEqual({ state: 'impostor' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('drops the token when the clock says the answer was late, whatever the timer did', async () => {
+    let t = 0
+    const now = () => t
+    const post = async (step: string, body: Record<string, unknown>) => {
+      const answer = await fakeServer(rightMac)(step, body)
+      t += 2_001
+      return answer
+    }
+    expect(await pairProof.confirmCode({ post, requestId: RID, code: 'K7QM', now, wait: () => new Promise(() => {}) })).toEqual({ state: 'impostor' })
+    // Just within the bound, the same answer is taken.
+    const inTime = async (step: string, body: Record<string, unknown>) => {
+      const answer = await fakeServer(rightMac)(step, body)
+      t += 1_999
+      return answer
+    }
+    expect((await pairProof.confirmCode({ post: inTime, requestId: RID, code: 'K7QM', now, wait: () => new Promise(() => {}) })).state).toBe('paired')
+  })
+
+  it('passes on what a server says that carries no token, and fails on nonsense', async () => {
+    for (const state of ['wrong', 'exhausted', 'refused', 'expired']) {
+      expect(await pairProof.confirmCode({ post: async () => ({ state }), requestId: RID, code: 'K7QM' })).toEqual({ state })
+    }
+    for (const answer of [null, {}, { state: 'confirm' }, 'paired']) {
+      expect(await pairProof.confirmCode({ post: async () => answer, requestId: RID, code: 'K7QM' })).toEqual({ state: 'failed' })
     }
   })
 })
