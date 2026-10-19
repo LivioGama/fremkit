@@ -70,6 +70,11 @@
   html.compact .glyph{display:block;width:clamp(18px,40vh,32px);height:clamp(18px,40vh,32px);fill:none;stroke:currentColor;stroke-width:2;
     stroke-linecap:round;stroke-linejoin:round;opacity:.6}
   html.compact .mark{position:absolute}
+
+  /* Drawn on a paired device: the one sentence, nothing else (onMac in logic.js). */
+  .stage.elsewhere video,.stage.elsewhere .scrim,.stage.elsewhere .info,.stage.elsewhere .controls,.stage.elsewhere .sub{display:none}
+  html.compact .stage.elsewhere .line{display:block;font-size:calc(11px * var(--text-scale, 1));font-weight:500;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
 </style></head><body>
 <div id="stage" class="stage">
   <video id="video" muted playsinline autoplay></video>
@@ -93,6 +98,7 @@
     video: { fr: 'Vidéo', en: 'Video' },
     slow: { fr: 'La vidéo n’arrive pas : arrêtez le partage puis relancez-le', en: 'The video is not coming through: stop the share and start it again' },
     offerRefused: { fr: 'L’Edge a refusé cette connexion vidéo.', en: 'The Edge refused this video connection.' },
+    elsewhere: { fr: 'Fremplay ne s\'affiche que sur l\'Edge du Mac.', en: 'Fremplay only shows on the Mac\'s Edge.' },
     back: { fr: 'Reculer de 10 secondes', en: 'Back 10 seconds' },
     fwd: { fr: 'Avancer de 10 secondes', en: 'Forward 10 seconds' },
     play: { fr: 'Lecture', en: 'Play' },
@@ -129,6 +135,19 @@
   Fremkit.whenReady(function () {
     var $ = function (id) { return document.getElementById(id) }
     var stage = $('stage'), video = $('video')
+
+    // Not this Mac (a paired iPad): no peer to receive the share with, and no channel to hear it
+    // on. One sentence in place of everything else, and nothing subscribed or asked.
+    if (!FP.onMac(typeof RTCPeerConnection === 'undefined' ? undefined : RTCPeerConnection)) {
+      stage.classList.add('elsewhere')
+      var say = function () {
+        $('line').textContent = Fremkit.t(L.elsewhere)
+        $('glyph').innerHTML = ICON.video
+      }
+      Fremkit.onLocale(say)
+      say()
+      return
+    }
     var buttons = {}
     Array.prototype.forEach.call(document.querySelectorAll('#controls button'), function (b) { buttons[b.dataset.a] = b })
 

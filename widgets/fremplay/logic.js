@@ -122,8 +122,19 @@
     return Math.min(100, Math.max(0, Math.round(v + step)))
   }
 
+  /**
+   * Whether this frame can show a share at all: it is drawn on this Mac. The server gives the
+   * page WebRTC's `local` level only on a request from this Mac; a paired iPad's copy runs at
+   * `none`, where the bridge leaves no `RTCPeerConnection` (server/src/widgets/webrtc.ts), and
+   * the `companion` channel is refused to it as well. No peer, no picture: say where it shows.
+   * `Peer` is the frame's `RTCPeerConnection`, whatever it is.
+   */
+  function onMac(Peer) {
+    return typeof Peer === 'function'
+  }
+
   root.FremkitFremplay = {
     PROTOCOL: PROTOCOL, MAC_STEP: MAC_STEP, stateOf: stateOf, plan: plan, switched: switched, clock: clock,
-    stepVolume: stepVolume, volumeTarget: volumeTarget, stepLevel: stepLevel
+    stepVolume: stepVolume, volumeTarget: volumeTarget, stepLevel: stepLevel, onMac: onMac
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this)

@@ -139,6 +139,10 @@ Edge*), or press **⌃⇧F** (Control-Shift-F). Press it again to stop. The shor
   Fremplay widget, the popup tells you so and nothing is sent. A dashboard that stayed loaded is
   moved once per share; one that has just loaded (the kiosk after a restart of Fremkit) turns to
   that page when a share is already live, once, and leaves you where you go next.
+- **On the Mac's Edge only.** A Fremplay widget on a paired iPad's screen shows *Fremplay ne
+  s'affiche que sur l'Edge du Mac.* / *Fremplay only shows on the Mac's Edge.* and nothing else:
+  the picture goes peer to peer between addresses of this Mac, and the iPad's copy of the widget
+  gets no WebRTC and no `companion` channel.
 - The browser can be in the background, on another tab or another desktop. Quitting it, or
   closing the tab, ends the share.
 - The video travels directly between the browser and the Edge over WebRTC, between addresses of

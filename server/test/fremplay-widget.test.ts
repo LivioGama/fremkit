@@ -27,6 +27,7 @@ interface Logic {
   MAC_STEP: number
   volumeTarget(setting: unknown, volume: unknown): string
   stepLevel(level: unknown, step: number): number
+  onMac(Peer: unknown): boolean
 }
 
 async function loadLogic(): Promise<Logic> {
@@ -222,6 +223,53 @@ describe('fremplay/logic.js plan', () => {
   })
 })
 
+const SESSION_FOR_DEVICE = '3c2b1a09-8f7e-4d6c-9b5a-0e1f2d3c4b5a'
+
+describe('fremplay on a paired device', () => {
+  it('tells this Mac\'s frame from a device\'s by the peer connection the bridge left it', async () => {
+    const FP = await loadLogic()
+    // WebRTC at `local`: the bridge's guarded constructor.
+    expect(FP.onMac(function RTCPeerConnection() {})).toBe(true)
+    // At `none` (every remote request), the bridge locks it to undefined.
+    expect(FP.onMac(undefined)).toBe(false)
+    expect(FP.onMac(null)).toBe(false)
+  })
+
+  it('shows only that sentence on a device, and neither subscribes nor asks for anything', async () => {
+    const page = await loadPage({ noPeer: true })
+    expect(page.nodes.get('line')!.textContent).toBe("Fremplay ne s'affiche que sur l'Edge du Mac.")
+    expect(page.stage.classes.has('elsewhere')).toBe(true)
+    expect(page.subscribed).toEqual([])
+    page.publish(sharing(SESSION_FOR_DEVICE, { [RECEIVER]: 'v=0' }))
+    await page.settle()
+    expect(page.commands).toEqual([])
+    expect(page.peers).toEqual([])
+  })
+
+  it('says where it shows, in both languages, before subscribing to anything', async () => {
+    const html = await readFile(fileURLToPath(new URL('../../widgets/fremplay/index.html', import.meta.url)), 'utf8')
+    expect(html).toContain("elsewhere: { fr: 'Fremplay ne s\\'affiche que sur l\\'Edge du Mac.', en: 'Fremplay only shows on the Mac\\'s Edge.' }")
+    const check = html.indexOf('if (!FP.onMac(')
+    expect(check).toBeGreaterThan(0)
+    expect(check).toBeLessThan(html.indexOf("Fremkit.subscribe('companion'"))
+  })
+
+  it('is served to a remote request without WebRTC\'s local level', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'fremkit-fremplay-remote-'))
+    const app = await buildApp({ accessToken: null, dataDir: join(dir, 'data'), widgetsDir: SHIPPED })
+    try {
+      const { markRemoteSocket } = await import('../src/net/remote.js')
+      app.addHook('onRequest', async (req) => { if (req.headers['x-test-remote'] === '1') markRemoteSocket(req.socket) })
+      const res = await app.inject({ url: '/widgets/fremplay/index.html', headers: { 'x-test-remote': '1' } })
+      expect(res.statusCode).toBe(200)
+      expect(res.body).not.toContain('data-webrtc')
+    } finally {
+      await app.close()
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('fremplay/logic.js helpers', () => {
   it('writes a position as m:ss, or h:mm:ss past an hour', async () => {
     const { clock } = await loadLogic()
@@ -288,9 +336,11 @@ interface Page {
   setVisibility(state: 'visible' | 'hidden'): void
   fire(id: string, type: string): void
   reply: { view: unknown }
+  /** The channels the page subscribed to. */
+  subscribed: string[]
 }
 
-async function loadPage(opts: { compact?: boolean; settings?: Record<string, unknown> } = {}): Promise<Page> {
+async function loadPage(opts: { compact?: boolean; settings?: Record<string, unknown>; noPeer?: boolean } = {}): Promise<Page> {
   const html = await readFile(fileURLToPath(new URL('../../widgets/fremplay/index.html', import.meta.url)), 'utf8')
   const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n')
   const logic = await loadLogic()
@@ -346,12 +396,14 @@ async function loadPage(opts: { compact?: boolean; settings?: Record<string, unk
   const subscribers: ((data: unknown) => void)[] = []
   const volumeSubscribers: ((data: unknown) => void)[] = []
   const volumeCommands: [string, Record<string, unknown>][] = []
+  const subscribed: string[] = []
   const Fremkit = {
     settings: opts.settings ?? { fit: 'contain' },
     locale: 'fr',
     compact: opts.compact === true,
     whenReady: (cb: () => void) => cb(),
     subscribe: (channel: string, cb: (data: unknown) => void) => {
+      subscribed.push(channel)
       if (channel === 'volume') volumeSubscribers.push(cb)
       else {
         expect(channel).toBe('companion')
@@ -396,14 +448,14 @@ async function loadPage(opts: { compact?: boolean; settings?: Record<string, unk
     'document', 'window', 'Fremkit', 'FremkitFremplay', 'RTCPeerConnection', 'MediaStream', 'crypto',
     'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', script,
   )(
-    document, window, Fremkit, logic, FakePeer, class {}, globalThis.crypto,
+    document, window, Fremkit, logic, opts.noPeer ? undefined : FakePeer, class {}, globalThis.crypto,
     (fn: () => void, ms: number) => setTimeout(fn, ms), (t: unknown) => clearTimeout(t as number),
     (fn: () => void, ms: number) => setInterval(fn, ms), (t: unknown) => clearInterval(t as number),
   )
 
   const fire = (key: string, type: string, e: unknown = {}) => (listeners.get(key + ':' + type) ?? []).forEach((fn) => fn(e))
   return {
-    nodes, buttons, stage: byId('stage'), commands, volumeCommands, peers, reply,
+    nodes, buttons, stage: byId('stage'), commands, volumeCommands, peers, reply, subscribed,
     publish: (data) => subscribers.forEach((cb) => cb(data)),
     publishVolume: (data) => volumeSubscribers.forEach((cb) => cb(data)),
     settle: async () => { for (let i = 0; i < 10; i++) await Promise.resolve() },
