@@ -297,6 +297,9 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
     expect(csp).toContain(`https://example.local:${port}`)
     expect(csp).not.toContain('127.0.0.1')
     expect(csp).toContain('sandbox allow-scripts')
+    // Framed by the iPad's page from this same origin, and by no other page.
+    expect(csp).toContain(`frame-ancestors https://example.local:${port}`)
+    expect(csp.split('; ').find((d) => d.startsWith('frame-ancestors'))).toBe(`frame-ancestors https://example.local:${port}`)
   })
 
   it('gives the dashboard a host CSP written for the remote origin', async () => {

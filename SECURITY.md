@@ -104,7 +104,11 @@ enforces that — but it can *send*, and it can embed. So:
 A widget is a folder of HTML and JavaScript. It is **untrusted code**, and it runs in a
 `sandbox="allow-scripts"` iframe *and* under a CSP served with its own files, so the two hold even
 if someone opens `/widgets/<id>/index.html` directly. The document has an opaque origin: nothing
-it does counts as coming from `http://127.0.0.1:4242`.
+it does counts as coming from `http://127.0.0.1:4242`. Its CSP also names who may frame it
+(`frame-ancestors`): the dashboard and the admin on this server's loopback origins, or, through the
+remote listener, the paired device's own `https://<mac>:4243`. Another web page gets no widget
+document to frame, so none whose bridge attributes it could read (Fremplay's lists this Mac's
+addresses) or that would take a `fremkit:connect` from it.
 
 What a widget **cannot** do:
 
