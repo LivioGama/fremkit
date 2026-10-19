@@ -11,8 +11,10 @@
   "scripts": {
     "setup": "bash scripts/setup.sh",
     "dev": "bash scripts/dev.sh",
+    "demo": "bash scripts/demo.sh",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
+    "e2e": "pnpm --filter e2e e2e",
     "typecheck": "pnpm -r typecheck",
     "start": "pnpm --filter server start",
     "kiosk": "bash scripts/kiosk.sh",
@@ -20,8 +22,11 @@
     "helper:build": "bash scripts/build-helper.sh",
     "helper:install": "bash scripts/install-helper.sh",
     "helper:test": "bash scripts/test-helper.sh",
+    "ios:build": "bash scripts/build-ios.sh build",
+    "ios:test": "bash scripts/build-ios.sh test",
     "widget:new": "server/node_modules/.bin/tsx server/src/cli/widget.ts new",
-    "widget:check": "server/node_modules/.bin/tsx server/src/cli/widget.ts check"
+    "widget:check": "server/node_modules/.bin/tsx server/src/cli/widget.ts check",
+    "widget:preview": "server/node_modules/.bin/tsx server/src/cli/widget.ts preview"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

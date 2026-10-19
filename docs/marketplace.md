@@ -129,8 +129,8 @@ tokens: no code, nothing served, nothing subscribed to, no network host. So:
 - **Removing the one in use is refused**, naming it, rather than repainting the screen in
   something nobody chose.
 
-Install them from *Sietch* → **Themes**; they land in `data/themes/` and show up in Screen →
-Theme at once. See [themes.md](themes.md).
+Install them from *Sietch* → **Themes**; they land in `data/themes/` and show up in Settings →
+Appearance → Theme at once. See [themes.md](themes.md).
 
 ## When a widget declares a connection
 
@@ -163,6 +163,11 @@ whoever owns a DNS record. Neither trusts the other.
   2 MB ceiling. A redirect is refused rather than followed.
 - Every URL the index names must be **https and on that same host**. A registry publishes files;
   it does not get to name other servers.
+- A widget's **preview image** (the index entry's optional `preview`, a URL on that same host —
+  one elsewhere is dropped) is fetched by the server, never by the admin: at most 200 KB, and only
+  if its bytes are really a PNG or a WebP. The admin shows it as `/api/marketplace/preview/<id>`.
+- A package whose manifest names a `preview` must carry that file, under 200 KB and of the format
+  its name says (see [A preview image](writing-widgets.md#a-preview-image)).
 - The download stops at the size the index declared, and its **sha256 is verified before a single
   zip entry is read**.
 - The package must be a plain folder: no dotfile, no symlink, no nested archive, no absolute or

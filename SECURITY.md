@@ -202,6 +202,80 @@ reaches a screen. The bridge provides `Fremkit.esc()`, `Fremkit.el()` and `Fremk
 the widgets here use them. See the Security section of
 [docs/writing-widgets.md](docs/writing-widgets.md).
 
+### A paired device
+
+Off by default: until you switch it on in the admin, nothing listens beyond `127.0.0.1`. Turned
+on, a second listener answers on port 4243, **TLS only**, with a self-signed key the iPad app pins
+(the hash of its public key travels in the pairing QR code, and the app shows four words from it
+to compare when you pair without the camera). A device holds a random token that the Mac stores as
+a hash; revoking the device, or resetting the certificate, ends it at once, open WebSocket
+included. The listener drops any peer outside the private ranges — RFC 1918 and link-local IPv4,
+unique-local and link-local IPv6, and the Mac itself — before the TLS handshake, so a host on a
+public IPv4 or IPv6 address gets nothing, and neither does Tailscale (100.64/10 and
+fd7a:115c:a1e0::/48 are refused by name). A VPN that uses the same private ranges as a home network
+(WireGuard or OpenVPN on 10/8 or 172.16/12, ZeroTier) cannot be told apart from it and is let in;
+it still needs a live code or a device token. Pairing needs a single-use code, valid five minutes;
+`/api/pair` answers 404 unless a code is live, and wrong guesses are limited per peer (5 a minute;
+a peer is an IPv4 address, a link-local IPv6 address, or the /64 of any other IPv6 address, since
+one host controls every address of its /64) under a total ceiling of 60 a minute per code. A
+guesser shares its allowance with the other IPv6 peers of its /64, so it can hold pairing at 429
+over such an address; the iPad then tries the Mac's other addresses, the QR code's IPv4 one
+included, and pairs there. A guesser using several addresses together (IPv4 aliases, link-local
+addresses, ULA prefixes) can spend the total and hold pairing for everyone for as long as it keeps
+guessing; a new code resets the total, but a guesser watching for it spends the new one as fast.
+The code itself stays out of reach either way: at most 300 guesses against 32^8 values.
+
+That lock-out reaches the typed code only. With every code the Mac also draws a 256-bit random
+secret, bound to it (same five minutes, single use, gone with a new code, a pairing, the switch
+turned off or a certificate reset), and puts it in the QR code's link, and only there: it is in the
+answer to `POST /api/devices/code` (no-store) and in no other route, status, log or error. The iPad
+sends it instead of the code. `/api/pair` compares it in constant time *before* looking at the
+guess counters, so the right secret pairs while codes are at 429; a wrong one takes the wrong-code
+path, refused while the peer is limited and counted otherwise, with the same answer. Pairing by hand
+(the Bonjour list, the typed code and the four words) still uses the code, and still can be held.
+
+On that path the iPad trusts whatever key answers for the Mac it picked, and the four words are
+only 32 bits of that key's hash: a machine on the network can find a key with the same words
+offline, announce itself under the Mac's name, and pass on what the person types. So the typed
+code never leaves the iPad as itself. The app sends a proof of it bound to the key it is talking
+to (PBKDF2-HMAC-SHA256 of the code, salted with that key's hash, 600,000 rounds; `codeProof.ts`,
+`CodeProof.swift`), and the Mac takes only the proof made for its own key, compared in constant
+time like the code was. A relayed proof was made for the impostor's key and is a wrong code here,
+and reading the code back out of it takes about 2^60 hashes, far beyond its five minutes. The
+Mac derives its proof once, when it issues the code. The words help the person pick the right Mac;
+they are no longer what stops a relay.
+
+The remote listener is an **allow-list**, decided by the socket a request arrived on rather than
+by a header: the dashboard's page and its code, the routes a dashboard reads, `/ws`, the widget
+proxy, and the device's own `GET /api/devices/me` and `POST /api/devices/me/brightness`. Everything
+else, the admin and every route that writes the configuration or reads a secret, answers 404. A
+paired socket may subscribe to and command only what the widgets of its own screen declare — on a
+per-connection channel (`calendar:<id>`, `github:<id>`), only the connections those widgets are
+bound to, with the same refusal as a channel that does not exist — and a
+device acts only on the instances of its own screen: the widget proxy (and so a widget's stored
+credential) and the commands that resolve an instance refuse any instance shown elsewhere, and a
+device with no screen acts on none. The device app asks for the Mac's private (RFC 1918) IPv4
+addresses the listener answers on, on Wi-Fi or Ethernet only (`en*`: never a VPN's `utun*`, which
+may be a company network on 10/8, nor a virtual machine's bridge), eight at most
+(`GET /api/devices/me?addresses=1`), so it can
+follow the Mac when one goes away; the dashboard page's own request and the `device` channel do not
+ask and are not told. That is not a boundary against the page, which is our own code and could ask
+too; widgets cannot reach the route at all (`connect-src 'none'`, an opaque origin). The iPad keeps
+only private IPv4 addresses from that list and reaches them under the same pin as any other, so a
+stored address presenting another key is not the Mac. The configuration it reads, over HTTP and on the WebSocket,
+is its own screen's — the theme, the language, that screen and the widgets on it — never your
+connections, the marketplace records, the privacy switches or any other screen. The theme in force
+reaches it without the time of the next switch, which is a sunrise or sunset at your coordinates. The widget
+catalogue lists only the widgets on its screen, without the scan's errors, and the installed
+applications and their icons go only to a screen that shows a widget allowed to read them. A
+device has the Mac fetch a site's icon only for a link or image address its own screen's settings
+hold, and none without a screen. By design, the dashboard's page and code, `/fremkit.js` and every
+widget's files under `/widgets/<id>/` (manifest included) answer before pairing, to any peer the
+listener accepts: an iPad needs them to show the pairing page and its widgets, and they tell a
+peer on the network which widgets are installed, nothing about how they are set up. In the iPad app, a frame inside the dashboard may load only
+the Mac's `/widgets/…`, the same rule as the Edge's kiosk. See
+[docs/devices.md](docs/devices.md).
+
 ### A browser extension
 
 The [Fremkit Companion](docs/companion.md) extension is the one thing that talks to the server

@@ -20,7 +20,7 @@ const extension = (over: Partial<PublicExtensionDevice> = {}): PublicDevice => (
 })
 const status = (over: Partial<DeviceStatus> = {}): DeviceStatus => ({
   enabled: false, listening: false, error: null, guessing: false, host: 'mac.example.local',
-  addresses: ['192.0.2.10'], port: 4243, keyHash: null, devices: [], companionRequest: null, ...over,
+  addresses: ['192.0.2.10'], port: 4243, keyHash: null, fingerprint: null, devices: [], companionRequest: null, ...over,
 })
 
 const deviceApi = vi.hoisted(() => ({
@@ -40,7 +40,7 @@ vi.mock('../src/shared/api', async (importOriginal) => {
 })
 
 const { default: DevicesSection } = await import('../src/admin/DevicesSection.vue')
-const { default: ScreenInspector } = await import('../src/admin/ScreenInspector.vue')
+const { default: ScreenPane } = await import('../src/admin/settings/ScreenPane.vue')
 const { useDevices } = await import('../src/admin/devices')
 const { useAdminStore } = await import('../src/admin/store')
 
@@ -87,7 +87,7 @@ afterEach(async () => {
 
 describe('the devices section', () => {
   it('turns pairing on, then shows a code and its QR', async () => {
-    deviceApi.setDevicesEnabled.mockResolvedValue(status({ enabled: true, listening: true }))
+    deviceApi.setDevicesEnabled.mockResolvedValue(status({ enabled: true, listening: true, fingerprint: ['aardvark', 'absurd', 'woodlark', 'zulu'] }))
     const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
     await flushPromises()
     expect(wrapper.find('[data-test="pairing-code"]').exists()).toBe(false)
@@ -97,6 +97,8 @@ describe('the devices section', () => {
     expect(deviceApi.newPairingCode).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-test="pairing-code"]').text()).toBe('ABCD2345')
     expect(wrapper.find('.qr svg').exists()).toBe(true)
+    expect(wrapper.find('[data-test="fingerprint"]').text()).toBe('Fingerprint: aardvark absurd woodlark zulu')
+    expect(wrapper.text()).toContain('If the iPad shows these words, it is this Mac.')
     expect(wrapper.text()).not.toContain('Someone is trying')
     wrapper.unmount()
   })
@@ -357,7 +359,7 @@ describe('removing a screen', () => {
     deviceApi.getDevices.mockResolvedValue(status({ devices: [device({ screenId: 'kitchen' })] }))
     const s = useAdminStore()
     s.selectScreen('kitchen')
-    const wrapper = mount(ScreenInspector, {
+    const wrapper = mount(ScreenPane, {
       attachTo: document.body,
       global: { stubs: { ...stubs, DevicesSection: true, NavWidgetsEditor: true, BackgroundPicker: true } },
     })

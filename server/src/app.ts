@@ -4,8 +4,10 @@ import fastifyWebsocket from '@fastify/websocket'
 import { homedir } from 'node:os'
 import { shippedPaths } from './paths.js'
 import { join } from 'node:path'
-import { access, mkdir } from 'node:fs/promises'
+import { access, mkdir, readFile } from 'node:fs/promises'
 import { ConfigStore } from './config/store.js'
+import { ConfigHistory } from './config/history.js'
+import { historyRoutes } from './config/history-routes.js'
 import { setServerLocale } from './i18n.js'
 import { ConnectionManager } from './connections/manager.js'
 import { ConnectionTypeRegistry } from './connections/registry.js'
@@ -53,7 +55,8 @@ import { helperRoutes } from './helper/routes.js'
 import { createDockProvider } from './dock/provider.js'
 import { bambuCameras } from './bambu/cameras.js'
 import { sweepStaleCameraDirs } from './providers/bambu-rtsp.js'
-import { seedDefaultBackground } from './backgrounds/seed.js'
+import { DEFAULT_BACKGROUND, seedDefaultBackground } from './backgrounds/seed.js'
+import { isSafeBackgroundName } from './config/schema.js'
 import { backupRoutes } from './backup/routes.js'
 import { bambuRoutes } from './bambu/routes.js'
 import { createShortcutsProvider } from './providers/shortcuts.js'
@@ -61,9 +64,10 @@ import { createServiceStatusProvider } from './providers/service-status.js'
 import { createSystemProvider } from './providers/system.js'
 import { createDiskMapProvider } from './providers/disk-map.js'
 import { BrightnessService } from './brightness/service.js'
-import { createBrightnessProvider } from './brightness/provider.js'
+import { createBrightnessProvider, BRIGHTNESS_INTERVAL_MS } from './brightness/provider.js'
 import { brightnessRoutes } from './brightness/routes.js'
-import { findInstance, findInstances } from './config/instances.js'
+import { findInstance, findInstances, type InstanceLookup } from './config/instances.js'
+import { commandScope, instanceInScope, type ScreenOfDevice } from './devices/scope.js'
 import { migrateHomeySecret } from './config/migrate.js'
 import { BYTES_CSP, hostCsp, isByteRoute } from './http/headers.js'
 import { isAllowedHost, isReadMethod } from './http/guard.js'
@@ -84,12 +88,28 @@ import type { Advertiser } from './devices/bonjour.js'
 import { createCompanion, type Companion } from './companion/index.js'
 import type { Exec } from './secrets/keychain.js'
 import { diagnosticsRoutes } from './diagnostics/routes.js'
+import { shareRoutes } from './share/routes.js'
+import { shareRedaction } from './share/context.js'
 import type { LogTail } from './diagnostics/log-tail.js'
 import { isDeclaredType } from './connections/declared.js'
 import { tightenDataDir } from './data-permissions.js'
+import { createDemoProviders } from './demo/providers.js'
+import { demoConnectionTypes } from './demo/connections.js'
+import { demoPublicFetch } from './demo/fetch.js'
+import { demoConnectionFetch } from './demo/declared.js'
+import { demoIcon } from './demo/icons.js'
+import { DEMO_APPS } from './demo/world.js'
+import { FileSecretStore } from './secrets/file.js'
 
 export interface AppOptions {
   dataDir: string
+  /**
+   * Demo mode (`FREMKIT_DEMO=1`, docs/demo-mode.md): every channel is answered by the fakes in
+   * `demo/` instead of the real providers, which are never constructed — nothing reads the Mac,
+   * the keychain or an account, and nothing a provider does reaches the network. `providers` is
+   * ignored. `index.ts` also gives a demo its own data folder; this option does not check that.
+   */
+  demo?: boolean
   /**
    * This instance may take over the keychain items an earlier version filed under the shared
    * `fremkit` service. Only the live server (port 4242) passes it; see `secrets/keychain.ts`.
@@ -146,6 +166,8 @@ export interface AppOptions {
   onRoute?: (route: RouteOptions) => void
   /** The port paired devices reach the remote listener on. 4243; the tests pass 0. */
   devicesPort?: number
+  /** Tests: the brightness service to use instead of one over the live config. */
+  brightness?: BrightnessService
   /**
    * Test seam for the device service: a fixed host name and addresses, and an advertiser that
    * does not run `dns-sd`.
@@ -155,6 +177,7 @@ export interface AppOptions {
     advertise?: Advertiser
     lanAddresses?: () => string[]
     preferredAddress?: (addresses: string[]) => Promise<string | null>
+    appAddresses?: (addresses: string[]) => Promise<string[]>
   }
 }
 
@@ -176,7 +199,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
 
   // Private before anything is read from it or written to it: see data-permissions.ts.
   await tightenDataDir(opts.dataDir)
-  const store = new ConfigStore(join(opts.dataDir, 'fremkit.json'))
+  const store = new ConfigStore(join(opts.dataDir, 'fremkit.json'), { history: new ConfigHistory(join(opts.dataDir, 'history')) })
   await store.load()
   // Providers, the proxy and the connection types are far from any request, so they read the
   // language from this module-level copy rather than being handed a store they have no use for.
@@ -214,8 +237,14 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
 
   const dock = new DockState({ iconsDir: join(opts.dataDir, 'icons') })
   await dock.loadIcons()
-  const installedApps = new InstalledApps()
-  const appIcons = new AppIcons({ dir: join(opts.dataDir, 'icons', 'apps'), apps: installedApps })
+  const demo = opts.demo === true
+  // A demo lists no installed application and extracts no icon from one: both read the Mac.
+  const installedApps = demo ? new InstalledApps({ roots: [] }) : new InstalledApps()
+  const appIcons = demo ? undefined : new AppIcons({ dir: join(opts.dataDir, 'icons', 'apps'), apps: installedApps })
+  if (demo) {
+    // The helper uploads the Dock's icons; a demo has no helper, so it draws its own.
+    for (const app of DEMO_APPS) await dock.setIcon(app.bundleId, demoIcon(app.hue, app.glyph))
+  }
 
   // The sound is a widget setting the *core* acts on: an iframe cannot start audio nobody
   // clicked on, and the moment worth hearing about is the one where the dashboard is not in
@@ -223,50 +252,78 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const attention = createAttention({ instances: () => findInstances(store.get(), 'claude-sessions') })
   const tracker = new ClaudeTracker({ filePath: join(opts.dataDir, 'claude-sessions.json'), onAttention: attention })
   await tracker.load()
-  const usage = new ClaudeUsage({ filePath: join(opts.dataDir, 'claude-usage.json'), transcriptsDir: opts.claudeTranscriptsDir ?? join(homedir(), '.claude', 'projects') })
+  const usage = new ClaudeUsage({ filePath: join(opts.dataDir, 'claude-usage.json'), transcriptsDir: demo ? join(opts.dataDir, 'demo-transcripts') : opts.claudeTranscriptsDir ?? join(homedir(), '.claude', 'projects') })
   await usage.load()
 
+  /**
+   * The device screen a paired device is attached to, asked of the device service at call time:
+   * the one rule (devices/scope.ts) the proxy, the commands and the config projection share. The
+   * service is built further down, after the hub; nothing calls this before a request comes in.
+   */
+  const screenOfDevice: ScreenOfDevice = (deviceId) => deviceService.deviceScreenOf(deviceId)
+
+  // Per-screen settings from the store, reports from the helper: see brightness/service.ts.
+  const brightness = opts.brightness ?? new BrightnessService({ config: () => store.get() })
+  // The service decides (and tells the devices) on every command and report itself; this only
+  // asks the channel's watchers for an immediate poll.
+  const brightnessChanged = (): void => registry.refresh('brightness')
   let hub!: Hub
   const registry = new ProviderRegistry(
     (channel, data) => hub.broadcast(channel, data),
     (channel) => hub.forget(channel),
   )
   hub = new Hub(registry)
-  for (const p of opts.providers ?? []) registry.register(p)
-  // Consent lives in the config store, so this provider is registered beside the Claude providers.
-  registry.register(createSystemProvider({ macmonTemperatureEnabled: () => store.get().privacy.macmonTemperature }))
-  registry.register(createClaudeSessionsProvider(tracker))
-  registry.register(createClaudeUsageProvider(usage))
-  registry.register(createClaudeIdentityProvider())
-  registry.register(createClaudeAccountProvider({
-    filePath: join(opts.dataDir, 'claude-account.json'),
-    enabled: () => store.get().privacy.claudeAccountUsage,
-  }))
-  const codex = createCodexProvider({
-    enabled: () => store.get().privacy.codexAccount || store.get().privacy.codexHistorySources.length > 0,
-    accountEnabled: () => store.get().privacy.codexAccount,
-    historySources: () => store.get().privacy.codexHistorySources,
-  }, { isLocalChat: createLocalChatValidator() })
-  registry.register(codex)
-  registry.register(codex.sessions)
-  registry.register(createDockProvider(dock))
-  // Registered here, not in providers/index.ts, because its last scan is saved under the data dir.
-  registry.register(createDiskMapProvider({ dataDir: opts.dataDir }))
-  // These two act on the user's behalf — opening an application, knocking on a host — so they
+  // These act on the user's behalf — opening an application, knocking on a host — so they
   // resolve what to act on from the saved dashboard rather than from the widget's message.
-  // Registered here, not in providers/index.ts, because that is where the config store lives.
-  const instances = (instanceId: string) => findInstance(store.get(), instanceId)
-  registry.register(createShortcutsProvider(undefined, instances))
-  registry.register(createServiceStatusProvider({}, instances))
-  // Per-screen settings from the store, reports from the helper: see brightness/service.ts.
-  const brightness = new BrightnessService({ config: () => store.get() })
-  const brightnessChanged = (): void => registry.refresh('brightness')
-  // A paired device may set only its own screen's brightness: see mayCommandBrightness. Read
-  // at command time, so a device moved to another screen (or unpaired) is judged as it is now.
-  registry.register(createBrightnessProvider(brightness, brightnessChanged, (id) => deviceService.me(id)?.screenId ?? null))
-  // The theme in force, day or night: see themes/schedule.ts.
+  // A paired device resolves only the instances of its own screen: see devices/scope.ts. The
+  // demo's fakes resolve through it too, so a demo scopes a device exactly like the real thing.
+  const instances: InstanceLookup = (instanceId, ctx) => {
+    const config = store.get()
+    return instanceInScope(config, commandScope(ctx, screenOfDevice), instanceId) ? findInstance(config, instanceId) : null
+  }
+  /** Every real provider: the Mac, the accounts, the helper's reports. Never called in demo mode. */
+  function registerRealProviders(): void {
+    for (const p of opts.providers ?? []) registry.register(p)
+    // Consent lives in the config store, so this provider is registered beside the Claude providers.
+    registry.register(createSystemProvider({ macmonTemperatureEnabled: () => store.get().privacy.macmonTemperature }))
+    registry.register(createClaudeSessionsProvider(tracker))
+    registry.register(createClaudeUsageProvider(usage))
+    registry.register(createClaudeIdentityProvider())
+    registry.register(createClaudeAccountProvider({
+      filePath: join(opts.dataDir, 'claude-account.json'),
+      enabled: () => store.get().privacy.claudeAccountUsage,
+    }))
+    const codex = createCodexProvider({
+      enabled: () => store.get().privacy.codexAccount || store.get().privacy.codexHistorySources.length > 0,
+      accountEnabled: () => store.get().privacy.codexAccount,
+      historySources: () => store.get().privacy.codexHistorySources,
+    }, { isLocalChat: createLocalChatValidator() })
+    registry.register(codex)
+    registry.register(codex.sessions)
+    registry.register(createDockProvider(dock))
+    // Registered here, not in providers/index.ts, because its last scan is saved under the data dir.
+    registry.register(createDiskMapProvider({ dataDir: opts.dataDir }))
+    // Registered here, not in providers/index.ts, because that is where the config store lives.
+    registry.register(createShortcutsProvider(undefined, instances))
+    registry.register(createServiceStatusProvider({}, instances))
+    // A paired device may set only its own screen's brightness: see mayCommandBrightness. Read
+    // at command time, so a device moved to another screen (or unpaired) is judged as it is now.
+    registry.register(createBrightnessProvider(brightness, brightnessChanged, (id) => deviceService.deviceScreenOf(id)))
+  }
+  if (demo) {
+    // The demo has its own `brightness` channel; the service above still serves the routes and
+    // the paired devices.
+    for (const p of createDemoProviders({ config: () => store.get(), instances })) registry.register(p)
+  } else {
+    registerRealProviders()
+  }
+  // The theme in force, day or night: see themes/schedule.ts. Read from the config alone, so a
+  // demo runs the real one.
   registry.register(createThemeProvider(() => store.get()))
-  const secrets = createSecretStore(store.get().secrets.backend, opts.dataDir, { adoptLegacyKeychain: opts.adoptLegacyKeychain === true })
+  // A demo never asks the keychain, whatever its config says: a file in its own data folder.
+  const secrets = demo
+    ? new FileSecretStore(join(opts.dataDir, 'secrets.json'))
+    : createSecretStore(store.get().secrets.backend, opts.dataDir, { adoptLegacyKeychain: opts.adoptLegacyKeychain === true })
   // v2 → v3 moved the Homey connection to the type its widget declares, and the declaration
   // calls the key `token` where the coded type called it `apiKey`. The config half of that is in
   // `migrateConfig`; this is the half that needs the secret store. Idempotent, so it costs one
@@ -274,7 +331,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await migrateHomeySecret(store.get(), secrets).catch((err: unknown) => {
     console.error('could not move the Homey key to its new field:', (err as Error).message)
   })
-  const connectionTypes = new ConnectionTypeRegistry(opts.connectionTypes ?? defaultConnectionTypes())
+  const codedTypes = opts.connectionTypes ?? defaultConnectionTypes()
+  const connectionTypes = new ConnectionTypeRegistry(demo ? demoConnectionTypes(codedTypes) : codedTypes)
   const connections = new ConnectionManager({ registry, types: connectionTypes, secrets })
   /**
    * What the proxy has cached per declared connection.
@@ -288,9 +346,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
    * config changes — an install adds one, an uninstall takes one away, and a consent that has
    * not been given yet grants none.
    */
+  // A demo's declared connections, Test button and proxy alike, reach the invented devices of
+  // `demo/declared.ts` and never the network.
+  const connectionFetch = demo ? demoConnectionFetch() : undefined
   const syncDeclared = (): void => syncDeclaredTypes(
     connectionTypes,
     declaredFromCatalog(catalog.entries, (id) => grantedFor(catalog, store.get(), id)),
+    connectionFetch ? { fetch: connectionFetch } : {},
   )
   // Both, and both are needed. The catalogue changing is a widget arriving or leaving; the
   // config changing is the *consent record* being written, which is what turns a declaration
@@ -318,6 +380,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     }
     syncDeclared()
     hub.broadcast('config', cfg)
+    brightness.snapshot()
     brightnessChanged()
     registry.refresh('theme')
     // Fire and forget: a failed sync must not break the save that triggered it.
@@ -392,7 +455,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // which is the built-in one or the installed one depending on who owns the id.
   await app.register(fastifyStatic, { root: opts.widgetsDir, serve: false, decorateReply: true })
 
-  await app.register(configRoutes, { store, catalog })
+  await app.register(configRoutes, { store, catalog, screenOfDevice })
   await app.register(connectionRoutes, { store, catalog, types: connectionTypes, manager: connections, secrets, connCache })
   await app.register(widgetRoutes, {
     catalog,
@@ -400,10 +463,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     bridgePath: opts.bridgePath ?? shippedPaths().bridgePath,
     port: opts.port,
     dev: process.env.FREMKIT_DEV === '1',
+    screenOfDevice,
     ...(opts.webrtcLocalBuiltins ? { webrtcLocalBuiltins: opts.webrtcLocalBuiltins } : {}),
   })
   await app.register(themeRoutes, { catalog: themes, config: () => store.get() })
-  await app.register(proxyRoutes, { catalog, store, secrets, cache: connCache })
+  await app.register(proxyRoutes, {
+    catalog, store, secrets, cache: connCache, screenOfDevice,
+    // The proxy's checks all run; only the last step, the request itself, is answered locally.
+    ...(demo ? { publicFetch: demoPublicFetch(), fetch: connectionFetch, isPrivate: async () => false } : {}),
+  })
   const marketplaceRegistry = new Registry({
     ...(opts.registryUrl ? { url: opts.registryUrl } : {}),
     ...(opts.registryDev ? { dev: true } : {}),
@@ -423,10 +491,23 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     // then report `unauthorized` until the secrets are typed back in.
     onRestored: async (config) => { await connections.sync(config.connections); retainCameras(config) },
   })
-  await app.register(faviconRoutes, { dir: join(opts.dataDir, 'icons', 'favicons') })
+  await app.register(historyRoutes, {
+    store,
+    types: connectionTypes,
+    secrets,
+    // A version put back brings its connections back as they were, exactly like a backup.
+    onRestored: async (config) => { await connections.sync(config.connections); retainCameras(config) },
+  })
+  await app.register(faviconRoutes, { dir: join(opts.dataDir, 'icons', 'favicons'), config: () => store.get(), screenOfDevice })
   await app.register(claudeRoutes, { tracker, usage })
-  await app.register(dockRoutes, { state: dock, appIcons })
-  await app.register(appsRoutes, { apps: installedApps })
+  await app.register(dockRoutes, {
+    state: dock,
+    ...(appIcons ? { appIcons } : {}),
+    deviceMayListApps: (id) => deviceService.maySubscribe(id, 'dock'),
+  })
+  /** Whether this is a demo server: `pnpm widget:preview` refuses to capture anything else. */
+  app.get('/api/demo', async () => ({ demo }))
+  await app.register(appsRoutes, { apps: installedApps, deviceMayListApps: (id) => deviceService.maySubscribe(id, 'dock') })
   await app.register(helperRoutes)
   await app.register(brightnessRoutes, { service: brightness, changed: brightnessChanged })
   await app.register(bambuRoutes, { cameras: bambuCameras })
@@ -444,12 +525,29 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     config: store,
     hub,
     catalog,
+    channelOf: (connection) => connections.channelFor(connection),
+    brightnessOf: (screenId) => {
+      const s = brightness.snapshot().screens[screenId]
+      return s ? { target: s.target, seq: s.seq } : null
+    },
     listenerPort: opts.devicesPort ?? REMOTE_PORT,
     companionRequest: () => companion?.pairing.pending() ?? null,
     companionConnected: () => companion?.session.connectedIds() ?? new Set(),
     ...opts.devices,
   })
-  await app.register(deviceRoutes, { service: deviceService, config: store })
+  // A new target for a screen reaches the devices bound to it over the `device` channel.
+  brightness.onChange((screens) => deviceService.screensChanged(screens))
+  // The clock moves a ramp and ends a manual hold with nobody asking, and a paired device does
+  // not watch the `brightness` channel: something has to keep deciding for it. Started here, after
+  // the last await that can throw, so a failed start leaves no timer behind.
+  const brightnessTick = setInterval(() => brightness.snapshot(), BRIGHTNESS_INTERVAL_MS)
+  brightnessTick.unref()
+  app.addHook('onClose', async () => { clearInterval(brightnessTick) })
+  await app.register(deviceRoutes, {
+    service: deviceService,
+    config: store,
+    reportBrightness: (screenId, report) => { brightness.deviceReport(screenId, report); brightnessChanged() },
+  })
   await app.register(diagnosticsRoutes, {
     deps: {
       config: () => store.get(),
@@ -465,6 +563,22 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       remoteAccess: () => devices.enabled,
       accessToken: opts.accessToken,
       ...(opts.logTail ? { log: (count: number) => opts.logTail!.recent(count) } : {}),
+    },
+  })
+  await app.register(shareRoutes, {
+    deps: {
+      config: () => store.get(),
+      manifest: (id) => catalog.get(id),
+      source: (id) => catalog.entry(id)?.source,
+      readImage: (name) => (isSafeBackgroundName(name)
+        ? readFile(join(opts.dataDir, 'backgrounds', name)).catch(() => null)
+        : Promise.resolve(null)),
+      redaction: () => shareRedaction(store.get(), {
+        secretsFor: (connection) => connections.secretsFor(connection),
+        devices: () => devices.list(),
+        accessToken: opts.accessToken,
+      }),
+      shippedBackground: DEFAULT_BACKGROUND,
     },
   })
   app.addHook('onClose', async () => { await deviceService.close() })

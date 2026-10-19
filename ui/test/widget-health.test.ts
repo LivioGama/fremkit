@@ -5,6 +5,7 @@
  * somebody to fix it. The pieces that draw it are in `widget-health-ui.test.ts`.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { reactive } from 'vue'
 import { setLocale } from '../src/shared/i18n'
 import {
   computeHealth, describeProblem, healthEntries, pageLevel, screenLevel, widgetHealth, worst,
@@ -82,7 +83,7 @@ beforeEach(() => setLocale('en'))
 
 describe('a widget’s health', () => {
   it('is well when nothing says otherwise, including a channel never polled', () => {
-    expect(one({ widgetId: 'gh', showTitle: false, settings: { connection: 'gh-work' } })).toEqual({ level: 'ok', problems: [] })
+    expect(one({ widgetId: 'gh', showTitle: false, settings: { connection: 'gh-work' } })).toEqual({ level: 'ok', problems: [], update: null })
   })
 
   it('is an error when the widget is not installed, offering the registry when it has it', () => {
@@ -151,12 +152,19 @@ describe('a widget’s health', () => {
     expect(h.problems[0]).toMatchObject({ detail: 'Work', action: { kind: 'connection', id: 'gh-work' } })
   })
 
-  it('lists an update last, after what actually breaks the widget', () => {
+  it('says an update is news, not a problem', () => {
+    const market = [{ id: 'gh', updateAvailable: true, version: '1.2.0', installable: false }]
+    const h = one({ widgetId: 'gh', showTitle: false, settings: { connection: 'gh-work' } }, { market })
+    expect(h).toEqual({ level: 'update', problems: [], update: { widgetId: 'gh', version: '1.2.0' } })
+  })
+
+  it('keeps a problem’s level when an update waits too', () => {
     const h = one({ widgetId: 'gh', showTitle: false, settings: { connection: 'gh-work' } }, {
       channels: { 'github:gh-work': 'offline' }, market: [{ id: 'gh', updateAvailable: true, installable: false }],
     })
-    expect(h.problems.map((p) => p.code)).toEqual(['offline', 'update'])
+    expect(h.problems.map((p) => p.code)).toEqual(['offline'])
     expect(h.level).toBe('warning')
+    expect(h.update).toEqual({ widgetId: 'gh', version: null })
   })
 
   it('never puts a value of a setting or a provider message in its sentence', () => {
@@ -195,10 +203,29 @@ describe('health across the dashboard', () => {
     expect(entries[0]).toMatchObject({ instanceId: 'gh-1', place: { screenId: 'edge', pageIndex: 1, pageName: 'Work' } })
   })
 
-  it('takes the worst level', () => {
+  it('takes the worst level, an update below a warning', () => {
     expect(worst(['ok', 'warning', 'ok'])).toBe('warning')
     expect(worst(['warning', 'error'])).toBe('error')
+    expect(worst(['update', 'ok'])).toBe('update')
+    expect(worst(['update', 'warning', 'update'])).toBe('warning')
+    expect(worst(['error', 'update'])).toBe('error')
     expect(worst([])).toBe('ok')
+  })
+
+  it('leaves an update out of the dots and the list of what to fix', () => {
+    const h = computeHealth(input({ market: [{ id: 'clock', updateAvailable: true, version: '2.0.0', installable: false }] }))
+    expect(h['clock-1'].level).toBe('update')
+    expect(pageLevel(h, cfg.screens[0].pages[0])).toBe('ok')
+    expect(screenLevel(h, cfg.screens[0])).toBe('ok')
+    expect(screenLevel(h, cfg.screens[1])).toBe('ok')
+    expect(healthEntries(cfg, h, 'edge')).toEqual([])
+    // A problem elsewhere on the screen still marks it.
+    const both = computeHealth(input({
+      channels: { 'github:gh-work': 'offline' },
+      market: [{ id: 'clock', updateAvailable: true, installable: false }],
+    }))
+    expect(screenLevel(both, cfg.screens[0])).toBe('warning')
+    expect(healthEntries(cfg, both, 'edge').map((e) => e.instanceId)).toEqual(['gh-1'])
   })
 })
 
@@ -219,7 +246,7 @@ describe('fixing from the editor', () => {
       state: { types: [ghType], connections: [work], loaded: true, busy: false, error: '' },
       load: vi.fn(async () => {}),
     }
-    const market = { state: { widgets: [] as unknown[] }, setView: vi.fn(), start: vi.fn(async () => {}) }
+    const market = { state: reactive({ widgets: [] as { id: string; version: string; updateAvailable: boolean; installed: boolean }[] }), setView: vi.fn(), start: vi.fn(async () => {}) }
     const ui = { revealSection: vi.fn() }
     const health = createHealth({
       store, connections: connections as never, market: market as never, ui,
@@ -262,5 +289,15 @@ describe('fixing from the editor', () => {
     expect(health.fix('gh-1')).toBeNull()
     push({ channels: { 'github:gh-work': 'unauthorized' } })
     expect(health.fix('gh-1')?.label).toBe('Fix: Open the connection')
+  })
+
+  it('offers an update as a plain item, never as a fix', async () => {
+    const { health, market } = await setup()
+    expect(health.update('gh-1')).toBeNull()
+    market.state.widgets = [{ id: 'gh', version: '1.2.0', updateAvailable: true, installed: true }]
+    expect(health.of('gh-1').level).toBe('update')
+    expect(health.fix('gh-1')).toBeNull()
+    expect(health.update('gh-1')?.label).toBe('Update to v1.2.0')
+    expect(health.entries.value).toEqual([])
   })
 })

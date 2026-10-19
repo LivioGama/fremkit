@@ -14,12 +14,16 @@ import { execFileAsync, type Exec } from '../secrets/keychain.js'
 import type { SecretStore } from '../secrets/types.js'
 import type { WidgetCatalog } from '../widgets/catalog.js'
 import type { Hub } from '../ws/hub.js'
+import { codeProof } from './codeProof.js'
+import { fingerprintWords } from './fingerprint.js'
 import { advertise as bonjourAdvertise, type Advertisement, type Advertiser } from './bonjour.js'
 import { ensureKey, issueCertificate, readKey, resetKey, spkiHash } from './certificate.js'
-import { screenChannels, type ChannelManifest, type ScreenChannels } from './channels.js'
+import { channelAllowed, screenChannels, type ChannelConnection, type ChannelManifest, type ScreenChannels } from './channels.js'
+import { deviceConfigView } from './scope.js'
 import type { PairingCodes } from './codes.js'
-import { lanAddresses as readLanAddresses, localHostName, preferredAddress } from './host.js'
+import { lanAddresses as readLanAddresses, cachedPick, computerName, isPrivate, lanAppAddresses, localHostName, preferredAddress } from './host.js'
 import { REMOTE_PORT, RemoteListener } from './listener.js'
+import { deviceThemeView } from '../themes/schedule.js'
 import type { DeviceStore, PublicDevice, PublicExtensionDevice, PublicIpadDevice, Viewport } from './store.js'
 
 /** How often the LAN addresses are re-read while listening, to follow a DHCP change. */
@@ -42,6 +46,8 @@ export type DeviceStatus = {
   port: number
   /** Base64url SHA-256 of the key's SPKI: what a device pins. Never the key itself. */
   keyHash: string | null
+  /** Four words from the key's hash, for a person to compare with the device's screen. */
+  fingerprint: string[] | null
   devices: StatusDevice[]
   /** The extension waiting for the user's answer, or null. */
   companionRequest: CompanionRequest | null
@@ -49,13 +55,31 @@ export type DeviceStatus = {
 
 export type PairingOffer = { code: string; expiresAt: number; url: string }
 
-export type DeviceInfo = { id: string; name: string; screenId: string | null }
+/** What the page of a device needs to apply its screen's brightness; null when the screen has none. */
+export type DeviceBrightness = { target: number | null; seq: number }
+
+export type DeviceInfo = { id: string; name: string; screenId: string | null; brightness: DeviceBrightness | null }
+
+/** How many addresses `meForApp` lists at most. */
+export const MAX_APP_ADDRESSES = 8
+
+/** What `GET /api/devices/me` answers the device app: `DeviceInfo` and where else it may find the Mac. */
+export type DeviceAppInfo = DeviceInfo & { addresses: string[] }
+
+export type PairCredential = { proof: string } | { secret: string }
 
 export type PairResult =
   | { token: string; device: PublicDevice }
   | { error: 'wrong' | 'expired' | 'limited' }
 
 export interface DeviceServiceOptions {
+  /**
+   * The channel a connection publishes on (`ConnectionManager.channelFor`), so a device's policy
+   * names its screen's connections and no others. Defaults to `<type>:<id>`.
+   */
+  channelOf?: (connection: ChannelConnection) => string
+  /** The brightness decided for a screen, injected so this module does not import brightness. */
+  brightnessOf?: (screenId: string) => DeviceBrightness | null
   app: FastifyInstance
   store: DeviceStore
   codes: PairingCodes
@@ -77,6 +101,30 @@ export interface DeviceServiceOptions {
    */
   companionRequest?: () => CompanionRequest | null
   companionConnected?: () => ReadonlySet<string>
+  /** Which of the addresses the device app is told, in order; the default is `lanAppAddresses`. */
+  appAddresses?: (addresses: string[]) => Promise<string[]>
+}
+
+/**
+ * The `brightness` snapshot as a device hears it: its own screen's entry and no other screen's id,
+ * level or mode, the Edge's (`kiosk`) included. Shaped like the snapshot, so the brightness widget,
+ * which reads `screens[Fremkit.screen]`, works unchanged.
+ */
+export function deviceBrightnessView(data: unknown, screenId: string | null): unknown {
+  if (screenId === null || !data || typeof data !== 'object') return null
+  const screens = (data as { screens?: Record<string, unknown> }).screens ?? {}
+  return { kiosk: null, screens: Object.hasOwn(screens, screenId) ? { [screenId]: screens[screenId] } : {} }
+}
+
+/**
+ * What a paired socket on `screenId` hears on a host channel (`HOST_CHANNELS`, plus `brightness`):
+ * its own view, or null for nothing at all. A channel with no case here is never sent to a device.
+ */
+export function deviceHostView(channel: string, data: unknown, screenId: string | null): unknown {
+  if (channel === 'config') return deviceConfigView(data as Config, screenId)
+  if (channel === 'brightness') return deviceBrightnessView(data, screenId)
+  if (channel === 'theme') return deviceThemeView(data)
+  return null
 }
 
 /** Whether a device screen was made for this viewport, in either orientation. */
@@ -103,6 +151,8 @@ export class DeviceService {
   private readonly advertiser: Advertiser
   private readonly readAddresses: () => string[]
   private readonly pickAddress: (addresses: string[]) => Promise<string | null>
+  /** `appAddresses` for `meForApp`, kept 30 s per address list: each iPad asks every 30 s or so. */
+  private readonly listAppAddresses: (addresses: string[]) => Promise<string[]>
   private readonly listener: RemoteListener
   private readonly companionRequest: () => CompanionRequest | null
   private readonly companionConnected: () => ReadonlySet<string>
@@ -120,9 +170,14 @@ export class DeviceService {
   private keyHash: string | null = null
   private keyHashKnown = false
   private bonjour: Advertisement | null = null
+  /** The name and TXT address `bonjour` was started with, to restart it when the address moves. */
+  private bonjourName = 'Fremkit'
+  private bonjourAddress: string | null = null
   private timer: NodeJS.Timeout | null = null
   /** The granted catalogue, as the policy reads it; dropped when the config or catalogue moves. */
   private manifests: Map<string, ChannelManifest> | null = null
+  private readonly brightnessOf: (screenId: string) => DeviceBrightness | null
+  private readonly channelOf: ((connection: ChannelConnection) => string) | undefined
 
   constructor(opts: DeviceServiceOptions) {
     this.app = opts.app
@@ -131,6 +186,8 @@ export class DeviceService {
     this.secrets = opts.secrets
     this.config = opts.config
     this.hub = opts.hub
+    this.brightnessOf = opts.brightnessOf ?? (() => null)
+    this.channelOf = opts.channelOf
     this.catalog = opts.catalog
     this.exec = opts.exec ?? execFileAsync
     this.advertiser = opts.advertise ?? bonjourAdvertise
@@ -138,6 +195,7 @@ export class DeviceService {
     this.pickAddress = opts.preferredAddress ?? ((addresses) => preferredAddress(addresses, this.exec))
     this.companionRequest = opts.companionRequest ?? (() => null)
     this.companionConnected = opts.companionConnected ?? (() => new Set())
+    this.listAppAddresses = cachedPick(opts.appAddresses ?? ((addresses) => lanAppAddresses(addresses, this.exec)))
     this.listener = new RemoteListener(opts.app, opts.listenerPort ?? REMOTE_PORT)
   }
 
@@ -145,6 +203,9 @@ export class DeviceService {
   async init(): Promise<void> {
     this.hub.setPolicy((deviceId) => this.policyFor(deviceId))
     this.hub.setDevicePayload((deviceId) => this.me(deviceId))
+    // The config a device hears is its own screen's (devices/scope.ts), never the Mac's whole one.
+    // So is the brightness it hears: its own screen's entry, not every screen's id and level.
+    this.hub.setHostView((deviceId, channel, data) => deviceHostView(channel, data, this.deviceScreenOf(deviceId)), ['brightness'])
     this.config.onChange((cfg) => this.onConfigChange(cfg))
     this.catalog.onScan(() => {
       this.manifests = null
@@ -185,6 +246,7 @@ export class DeviceService {
       addresses: this.readAddresses(),
       port: this.listener.port,
       keyHash: this.keyHash,
+      fingerprint: this.keyHash === null ? null : fingerprintWords(this.keyHash),
       devices: this.store.list().map((d): StatusDevice => (d.kind === 'extension' ? { ...d, connected: connected.has(d.id) } : d)),
       // Picked field by field, so nothing the pairing object grows later reaches the admin.
       companionRequest: request ? { requestId: request.requestId, code: request.code, name: request.name, expiresAt: request.expiresAt } : null,
@@ -202,31 +264,53 @@ export class DeviceService {
     this.keyHashKnown = true
   }
 
-  /** A fresh code and the QR payload carrying it. Only while listening: the caller checks. */
-  async pairingCode(): Promise<PairingOffer> {
+  /**
+   * A fresh code and the QR payload carrying it and its secret (`s=`), or `notListening`. The
+   * secret is in the link and nowhere else: not a field of its own, not in the status, not in a log.
+   *
+   * On the chain with the switch and the certificate reset, so that a code asked for while either
+   * runs is issued before it (and dropped by it) or after it (and refused while off): never a code
+   * left live by a switch-off, nor one carrying the pin a reset has just replaced.
+   */
+  pairingCode(): Promise<PairingOffer | 'notListening'> {
+    return this.serialize(() => this.issueCode())
+  }
+
+  private async issueCode(): Promise<PairingOffer | 'notListening'> {
+    if (!this.listener.running) return 'notListening'
     const key = await ensureKey(this.secrets, { exec: this.exec })
-    this.keyHash = spkiHash(key)
+    const keyHash = spkiHash(key)
+    this.keyHash = keyHash
     this.keyHashKnown = true
-    const { code, expiresAt } = this.codes.issue()
+    const { code, secret, expiresAt } = this.codes.issue((c) => codeProof(c, keyHash))
     const params: string[] = []
     if (this.hostName !== null) params.push(`h=${encodeURIComponent(`${this.hostName}.local`)}`)
     const address = await this.pickAddress(this.readAddresses())
     if (address !== null) params.push(`a=${encodeURIComponent(address)}`)
-    params.push(`p=${this.listener.port}`, `c=${code}`, `k=${this.keyHash}`)
+    params.push(`p=${this.listener.port}`, `c=${code}`, `s=${secret}`, `k=${this.keyHash}`)
     return { code, expiresAt, url: `fremkit://pair?${params.join('&')}` }
   }
 
   /**
-   * Pairs a device with the live code. It is attached to the one device screen made for its
-   * viewport; none, or more than one, leaves it unattached for the user to choose.
+   * Pairs a device with the live code, typed and sent as a proof bound to this Mac's key
+   * (`codeProof`), or with its secret, read off the QR code. It is
+   * attached to the one device screen made for its viewport; none, or more than one, leaves it
+   * unattached for the user to choose.
    */
-  async pair(code: string, name: string, viewport: Viewport): Promise<PairResult> {
-    const result = this.codes.consume(code)
+  async pair(credential: PairCredential, name: string, viewport: Viewport, peer = ''): Promise<PairResult> {
+    const result = 'secret' in credential
+      ? this.codes.consumeSecret(credential.secret, peer)
+      : this.codes.consume(credential.proof, peer)
     if (result !== 'ok') return { error: result }
     const matches = this.config.get().screens.filter((s) => s.kind === 'device' && fits(s, viewport))
     const screenId = matches.length === 1 ? matches[0].id : null
     const { device, token } = await this.store.create(name, viewport, screenId)
     return { token, device }
+  }
+
+  /** Whether a pairing code is live: outside of one, there is nothing to pair with. */
+  get pairingOpen(): boolean {
+    return this.codes.hasLive()
   }
 
   /** Puts a device on a device screen, or on none. Refuses any other screen. */
@@ -285,7 +369,50 @@ export class DeviceService {
 
   me(deviceId: string): DeviceInfo | null {
     const device = this.store.list().find((d) => d.id === deviceId)
-    return device?.kind === 'ipad' ? { id: device.id, name: device.name, screenId: device.screenId } : null
+    // An extension is no device screen: it has no `me`, as before main's brightness.
+    if (device?.kind !== 'ipad') return null
+    const brightness = device.screenId === null ? null : this.brightnessOf(device.screenId)
+    return { id: device.id, name: device.name, screenId: device.screenId, brightness }
+  }
+
+  /**
+   * `me()` with the Mac's LAN addresses, for the device app, which asks for them
+   * (`GET /api/devices/me?addresses=1`) so it can follow the Mac when the one it uses goes away
+   * (Ethernet unplugged) and Bonjour does not answer. The dashboard page's own request and the
+   * `device` channel do not ask, and get `me()`. Only the RFC 1918 ones among those the remote
+   * listener accepts as Host right now (the certificate's addresses, which `updateHosts` lets
+   * through): never a public, CGNAT, link-local or IPv6 address, nor one the listener would answer
+   * 421. Of those, only the ones on Wi-Fi or Ethernet (`appAddresses`): never a VPN's or a virtual
+   * machine's, which the iPad cannot reach and should not hear about. The default route's comes
+   * first, then the others in order, `MAX_APP_ADDRESSES` at most: each dead one costs the app a
+   * probe. The list is kept 30 s per address list (`cachedPick`), so an iPad's periodic check does
+   * not run `route` each time.
+   */
+  async meForApp(deviceId: string): Promise<DeviceAppInfo | null> {
+    const me = this.me(deviceId)
+    if (me === null) return null
+    const usable = this.certAddresses.filter(isPrivate)
+    const listed = usable.length > 0 ? await this.listAppAddresses(usable) : []
+    return { ...me, addresses: listed.filter((a) => usable.includes(a)).slice(0, MAX_APP_ADDRESSES) }
+  }
+
+  /** The screen a device is bound to, only while it is a device screen: where its brightness goes. */
+  deviceScreenOf(deviceId: string): string | null {
+    const device = this.store.list().find((d) => d.id === deviceId)
+    const screenId = device?.kind === 'ipad' ? device.screenId : null
+    return screenId !== null && isDeviceScreen(this.config.get(), screenId) ? screenId : null
+  }
+
+  /** Whether the widgets of a device's screen may subscribe to `channel`: what its page may ask the host for. */
+  maySubscribe(deviceId: string, channel: string): boolean {
+    return channelAllowed(this.policyFor(deviceId)?.subscriptions ?? [], channel)
+  }
+
+  /** Re-sends the `device` payload to every device bound to one of these screens. */
+  screensChanged(screenIds: string[]): void {
+    for (const d of this.store.list()) {
+      if (d.kind === 'ipad' && d.screenId !== null && screenIds.includes(d.screenId)) this.hub.refreshDevice(d.id)
+    }
   }
 
   // --- internals -------------------------------------------------------------------------------
@@ -305,6 +432,9 @@ export class DeviceService {
       await this.store.setEnabled(true)
       return { enabled: true }
     }
+    // Nothing pairs with a code from before the switch went off; `stop()` drops it already, this is
+    // in case anything ever issued one while off.
+    this.codes.clear()
     const key = await ensureKey(this.secrets, { exec: this.exec })
     this.keyHash = spkiHash(key)
     this.keyHashKnown = true
@@ -321,7 +451,9 @@ export class DeviceService {
     }
     this.error = null
     this.updateHosts()
-    this.bonjour = this.advertiser(this.listener.port)
+    this.bonjourName = await computerName(this.exec)
+    this.bonjourAddress = await this.pickAddress(this.certAddresses)
+    this.bonjour = this.advertiser(this.listener.port, this.bonjourName, this.bonjourAddress)
     this.timer = setInterval(() => { void this.checkAddresses() }, ADDRESS_CHECK_MS)
     this.timer.unref()
     await this.store.setEnabled(true)
@@ -348,7 +480,13 @@ export class DeviceService {
     this.hub.closeRemote()
   }
 
-  /** The `host:port` authorities the gate lets in, lowercased as it compares them. */
+  /**
+   * The `host:port` authorities the gate lets in, lowercased as it compares them: the `.local`
+   * name and the IPv4 addresses, deliberately no IPv6 literal. A zoned one (`fe80::1%en0`) would
+   * reach the cookie domain, the CSP host sources and the Origin check in forms none of them
+   * accept, so the iPad app connects by name or IPv4 only (`isConnectableHost`). A peer can still
+   * be IPv6 under the `.local` Host; `codes.ts` keys it by /64 for that.
+   */
   private updateHosts(): void {
     const port = this.listener.port
     const names = [
@@ -361,7 +499,8 @@ export class DeviceService {
 
   /**
    * Follows the Mac to a new address: re-issues the certificate from the same key (so the pin
-   * holds) and lets the new authority through the gate. Nothing happens when nothing changed.
+   * holds), lets the new authority through the gate, and advertises the new address in the
+   * Bonjour TXT record. Nothing happens when nothing changed.
    */
   private checkAddresses(): Promise<void> {
     return this.serialize(async () => {
@@ -376,6 +515,12 @@ export class DeviceService {
       this.hostName = hostName
       this.certAddresses = addresses
       this.updateHosts()
+      // The advertisement carries the address too (TXT `a=`): announce the new one.
+      const address = await this.pickAddress(addresses)
+      if (!this.listener.running || this.bonjour === null || address === this.bonjourAddress) return
+      this.bonjour.stop()
+      this.bonjourAddress = address
+      this.bonjour = this.advertiser(this.listener.port, this.bonjourName, address)
     }).catch((err: unknown) => {
       this.app.log.warn({ err: (err as Error).message }, 'could not follow a change of address')
     })
@@ -393,7 +538,7 @@ export class DeviceService {
     const config = this.config.get()
     // A screen that stopped being a device screen grants nothing, even before the store catches up.
     if (!isDeviceScreen(config, screenId)) return null
-    return screenChannels(config, screenId, this.grantedManifests())
+    return screenChannels(config, screenId, this.grantedManifests(), this.channelOf)
   }
 
   private refreshAll(): void {

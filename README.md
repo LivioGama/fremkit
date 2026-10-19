@@ -32,6 +32,8 @@ The name is the Fremen survival kit from *Dune*.
   *from the registry*, meeting controls, CleanShot X actions, Azure DevOps builds, GitHub
   notifications and Actions, a Bambu Lab printer, Homey devices and flows, a Synology NAS.
   Twenty-two ship with Fremkit; the rest are one press away in the admin.
+- **An iPad app** that shows a screen of the dashboard from your Mac over the local network,
+  paired by QR code and revocable from the admin. See [docs/devices.md](docs/devices.md).
 - **A browser extension** — *Fremkit Companion* sends the video of a Chromium tab to the Fremplay widget on the Edge, with touch controls. See [docs/companion.md](docs/companion.md).
 - **Compact widgets** in the navigation bar, with a full-size popover on touch.
 - **Per-tile appearance** — background colour, opacity, background image, accent colour and how
@@ -43,7 +45,10 @@ The name is the Fremen survival kit from *Dune*.
   supervises the server.
 - **A widget marketplace** — *Sietch* in the admin installs widgets from a curated registry,
   showing what each one will be allowed to do and asking again when an update wants more.
-- **Backup and restore** of the whole dashboard, as a zip that never carries a secret.
+- **Backup and restore** of the whole dashboard, as a zip that never carries a secret, and a
+  **history** of every saved version for the last month, each one a click away from coming back.
+- **Shareable layouts** — a page, a screen or the whole setup as one file to post and load in a
+  click, without your accounts in it.
 - **Themes** — the palette, the fonts and the text size, as a folder with one JSON file: two ship
   with it, four more are on the registry, and yours sits beside them. The dashboard, the editor
   and the widgets all wear the one you pick — or a second one at night, switching at sunset or
@@ -186,7 +191,7 @@ badges.
    top bar says saved, saving or not saved.
 
 A fresh install starts on one page with a clock and the wallpaper that ships with Fremkit. That
-wallpaper is an ordinary entry in the background library, so *Screen → Image → Remove the image*
+wallpaper is an ordinary entry in the background library, so *Settings → your screen → Screen background → Remove the image*
 leaves the screen with no background at all rather than putting it back.
 
 ### Editing, in more detail
@@ -199,23 +204,39 @@ each edited on its own: pick it above the canvas. The widgets are shared, so one
 two screens is the same widget, with the same settings.
 
 - **Edit / Test** — in Edit, an overlay captures the mouse: click to select, drag to move, eight
-  handles to resize. In Test the overlay steps aside and the widgets are usable, and the preview
+  handles to resize. While a widget moves, alignment guides show where its edges or its centre
+  line up with another widget's or with the screen's edges and centre (the grid already snaps, so
+  the guides only show; they never pull). Shift- or Cmd-click adds a widget to the selection (or
+  takes it out), a drag on the empty canvas draws a rectangle that selects every widget it touches,
+  Cmd+A selects the whole page, and a click on the empty canvas or Escape lets go. Several selected
+  widgets move together — by the mouse or the arrows, locked ones staying put — and are duplicated,
+  copied and pasted (in the same arrangement), locked, restyled, moved to another page or removed
+  together, each as one undo step; the inspector then shows how many and what they share. In Test the overlay steps aside and the widgets are usable, and the preview
   behaves like the screen: a horizontal swipe on the navigation bar or on free board space changes
   page, wrapping around at either end.
 - **Right click** — on a widget: settings, show title, appearance (opacity presets, colours,
   background image, reset), copy and paste its style, duplicate, copy and paste, move to another
   page or screen, also show it on another screen, default or minimum size, lock its position (a
   locked widget is neither dragged nor resized), open its connection, about, reload, remove. On
-  the empty canvas: paste, add a widget, new page, page background, screen settings. On a page in
+  the empty canvas: paste, select all, add a widget, new page, page background, screen settings. On a page in
   the list: rename, duplicate, page background, copy to another screen, move, delete. On a library
   card: add to a page or to the bar, and for a Sietch widget show it there, update or uninstall it.
-  On a bar widget: settings, move left or right, remove. On a screen above the canvas: rename,
+  On a group of selected widgets: show title, opacity, duplicate, copy and paste, move to page,
+  lock, remove. On a bar widget: settings, move left or right, remove. On a screen above the canvas: rename,
   screen settings, delete. The menus work from the
   keyboard too (arrows, Enter, Escape, type-ahead).
-- **Keyboard** — arrows move the selection by one cell, Shift+arrows resize it from the south-east corner, Delete or Backspace removes it,
+- **Command palette** — Cmd+K (Ctrl+K, or *Commands* in the top bar) searches everything the
+  editor can do and runs it from the keyboard: add a widget, go to a page or a screen, select a
+  widget, open a connection, jump to a setting, fix a widget that needs attention, and every item
+  of the right-click menus — the selected widget's included, submenus and all. Its commands are
+  the menus' own, so a new menu item is in the palette too. The last commands run come first.
+- **Keyboard** — Tab and Shift+Tab select the next or previous widget of the page, Cmd+A all of
+  them, arrows move the selection — one widget or several — by one cell (a held arrow is one undo step), Shift+arrows resize it from the south-east
+  corner — never through another widget, never a locked one — Delete or Backspace removes it,
   Cmd+D duplicates it, Cmd+C and Cmd+V copy it and paste a new one with the same settings on the
   page you are on (any page, any screen), Escape deselects. Cmd+Z and Cmd+Shift+Z undo and redo
-  anywhere, up to 50 steps.
+  anywhere, up to 50 steps. `?` shows every shortcut; the sheet, the key handler and the menus'
+  hints all read the one table in `ui/src/admin/shortcuts.ts`.
 - **Left column** — the pages (drag to reorder, double-click to rename, the rest in their menu or
   behind the "…" on hover) and the widget library, with a
   rescan button that re-reads the `widgets/` folder without restarting the server. Each card says
@@ -226,8 +247,8 @@ two screens is the same widget, with the same settings.
   ones it can command, the hosts it may reach. With no widget selected, *Page*: its own background
   (a colour or an image shown instead of the screen's, or the screen's). *Screen*: language, grid
   (read-only), navigation bar height and opacity, which gesture opens the admin, auto-rotation
-  delay, the bar's compact widgets, the screen background, the kiosk URL, backup and restore, and
-  privacy.
+  delay, the bar's compact widgets, the screen background, the kiosk URL, the history of saved
+  versions, backup and restore, and privacy.
 - **Move to page** — a tile can be sent to another page from the *Widget* tab: it keeps everything
   it carries and lands in the largest free spot there, or the move is refused when nothing fits.
 - **Copy settings from…** — where the same widget already exists elsewhere, a drop-down above its
@@ -260,9 +281,9 @@ border, **fill** colours the whole tile. The screen itself has a background colo
 and a page can have its own, shown instead of the screen's while that page is on screen.
 
 **The navigation bar.** The strip at the bottom of every page, 80 px or 40 px tall, as opaque as
-you like. Its middle shows page dots by default. In *Screen → Pages in the bar*, each screen can show scrolling names instead. The sides stay available for compact widgets. **Hold or double-tap
+you like. Its middle shows page dots by default. In *Settings → your screen → Layout → Pages in the bar*, each screen can show scrolling names instead. The sides stay available for compact widgets. **Hold or double-tap
 a page button to open the admin** — the Edge has no keyboard, so this is the way in from the screen.
-*Screen → Open the admin from the bar* chooses between the two gestures, or accepts both, which
+*Settings → your screen → Layout → Open the admin from the bar* chooses between the two gestures, or accepts both, which
 is the default. When both gestures are enabled, a page tap waits briefly for a possible
 double tap. With only long press enabled, the page opens on release. The admin prevents a
 named-page layout that would hide compact widgets. A single page keeps its
@@ -291,7 +312,7 @@ Several widgets can share one, and one service can have several. Non-secret fiel
 (or, with the `file` backend, to a mode-600 `data/secrets.json`) and are never returned by the
 API, logged, written to the config or sent on the WebSocket.
 
-**Brightness.** *Screen → Brightness* sets the level of the selected screen and how it changes
+**Brightness.** *Settings → your screen → Brightness* sets the level of the selected screen and how it changes
 on its own, per screen: a **day / night** pair of levels switched at sunrise and sunset (computed
 on the Mac from a latitude and longitude — typed, or found with *Search for a city*, which asks
 Open-Meteo for that name only when you press it) or at fixed times, with a gradual
@@ -303,7 +324,7 @@ brightness moves noticeably; *Back to automatic* ends it at once. It works over 
 silicon, needs the helper, and only drives the display the kiosk is on; a display that does not
 answer says so (see [troubleshooting](docs/troubleshooting.md#brightness-says-not-adjustable)).
 
-**Language.** French or English, switched in the admin's Screen panel. It changes the interface,
+**Language.** French or English, switched in the admin's *Settings → General*. It changes the interface,
 the widget library and the widgets themselves, live, without a reload.
 
 **The helper, or a browser.** The dashboard is a web page: any browser can show it. The native
@@ -388,9 +409,28 @@ How to obtain each credential, what is stored where, and what is never logged:
 
 The optional [Codex provider](docs/codex.md) reads selected local account and chat data after an explicit opt-in. Its dashboard widgets are distributed separately.
 
+## Share your setup
+
+A setup worth a photo is worth a file. **Export page…** (a page's right-click menu),
+**Export screen…** (a screen's), or **Settings → Share → Export the whole setup…** write a
+`.fremkit-layout.json`: the pages, the bar, each tile's place, look and settings, the theme, and
+the background images. The dialog shows what is in the file before you download it (or copy it,
+where a download is not possible) and what was left out.
+
+Never in it: connections and their secrets, host names, e-mail addresses, device names, privacy
+choices, install consents, brightness schedules. A setting that points at a connection is
+blanked; one typed as free text — a label, a link, a note — goes in only if you tick it. Post the
+file with a photo in the repository's **Discussions → Show and tell**.
+
+To load one, drop it onto the editor, or use **Import a layout…**. The dialog lists the widgets it
+uses, offers to install from the Sietch the ones you do not have (with the usual consent dialog),
+asks which of your connections a widget should use, and adds the pages or screens beside yours —
+replacing only if you choose to. One ⌘Z undoes the whole import. Details, and the file format, in
+**[docs/sharing.md](docs/sharing.md)**.
+
 ## Backup
 
-**/admin → Screen → Backup** downloads the whole dashboard — the configuration and the background
+**/admin → Settings → History & backup → Backup** downloads the whole dashboard — the configuration and the background
 library — as `fremkit-backup-<date>.zip`, and **Restore…** takes one back.
 
 Secrets are never in it: they live in the macOS keychain, and the point of keeping them there is
@@ -404,6 +444,22 @@ choices whatever the archive says: where secrets are kept, the privacy switches,
 installed widget was granted. Details in
 **[docs/contributing.md](docs/contributing.md)**.
 
+### History
+
+**/admin → Settings → History & backup** (or the clock-arrow button next to undo) lists every saved version
+of the dashboard for the last 30 days, up to 100, grouped by day, each with what changed: pages
+added, removed or renamed, widgets added, removed, moved or edited, screens, theme. Continuous
+editing is kept as one version per two minutes, the last state winning. Open a version to see its
+pages, and **Restore this version** to put it back. A restore is a save like any other, so the
+version it replaced is the next line down and restoring that one undoes it. The version before a
+backup restore, a setup import or a Fremkit update that converts the file is always kept.
+
+Like a backup restore, putting a version back keeps this Mac's secrets backend, privacy switches
+and widget permissions, and a connection keeps its stored secret only if it comes back unchanged.
+The versions live in `data/history/`, private to your account, hold no secret (the configuration
+never does), and are not part of a backup: a backup is meant to travel, the history keeps what you
+deleted on purpose.
+
 ## What Fremkit reads on your Mac
 
 Fremkit is a dashboard of your own machine, so several widgets read things that belong to you.
@@ -412,16 +468,16 @@ The list is short and it is all of it.
 | What | Who reads it | When |
 |---|---|---|
 | `~/.claude/projects/` — Claude Code's session transcripts | the `claude-sessions` and `claude-usage` widgets, for the session list and the token counts | whenever one of those widgets is on the dashboard |
-| The `Claude Code-credentials` keychain item — Claude Code's OAuth token | the account usage behind the `claude-usage` gauges. The token is presented to `api.anthropic.com` and nowhere else; it is never stored, never logged, never in an error message | **off for a new install.** Turn it on in **/admin → Screen → Privacy**. A dashboard that already showed the Claude widget before this setting existed keeps it *on*, so the gauges do not go blank on an upgrade — turn it off there if you would rather. The endpoint (`/api/oauth/usage`) is not documented by Anthropic and may disappear |
+| The `Claude Code-credentials` keychain item — Claude Code's OAuth token | the account usage behind the `claude-usage` gauges. The token is presented to `api.anthropic.com` and nowhere else; it is never stored, never logged, never in an error message | **off for a new install.** Turn it on in **/admin → Settings → Privacy**. A dashboard that already showed the Claude widget before this setting existed keeps it *on*, so the gauges do not go blank on an upgrade — turn it off there if you would rather. The endpoint (`/api/oauth/usage`) is not documented by Anthropic and may disappear |
 | Where a Claude Code session lives — its terminal application, pane and tty, read by the hook inside the session | the `claude-sessions` widget's ↗, to raise that window again | whenever the Claude Code hooks are installed. It stays on the server: the dashboard is told which kind of application it is and what to call it, never the pane key or the tty |
 | The clipboard, through `pbpaste` | the `clipboard` widget | whenever that widget is on the dashboard |
 | The Dock's badge counts and the icons of installed applications | the `notifications` and `shortcuts` widgets, through the helper | whenever one of those widgets is on the dashboard |
-| The brightness of the kiosk's display (DDC/CI over its cable) and of the Mac's built-in display | the helper, for the `brightness` widget and *Screen → Brightness*; it changes only the display the kiosk is on | while the helper runs |
+| The brightness of the kiosk's display (DDC/CI over its cable) and of the Mac's built-in display | the helper, for the `brightness` widget and *Settings → your screen → Brightness*; it changes only the display the kiosk is on | while the helper runs |
 | The volume, the battery, the disks, the processes, the network | those widgets, through `pmset`, `df`, `ps` and friends | whenever one of them is on the dashboard |
 | The names and sizes of the folders and files under your home folder or a volume — never their contents | the `disk-map` widget, through `fremkit-scan` or `du`; the last scan is kept in `data/disk-map/` | only when you tap **Scan** (the first time) or ↻ on that widget — never on its own, never on a timer |
 
 A widget that shows an account — its plan, how you signed in — never gets the account's e-mail
-address unless you tick **/admin → Screen → Privacy → Show the account e-mail address**. It is off
+address unless you tick **/admin → Settings → Privacy → Show the account e-mail address**. It is off
 by default, and the server leaves the address out of what it sends, so no widget can show it or
 pass it on. Once on, every widget that reads that account's channel receives it, one installed
 from the marketplace included, and it is on the screen.
@@ -448,6 +504,7 @@ itself (Sparkle's system profile is off).
 | A shortcut button to a NAS or a router has no icon | Expected: favicons of private and local addresses are not fetched. The button still works |
 | The admin shows an old version of itself | Reopen it, or Cmd+R in its window; it keeps one web view for the helper's lifetime |
 | Widgets break after pulling a new version | Restart the server: the widget bridge is read once, at start |
+| The iPad app does not list the Mac | The network may not relay Bonjour: scan the QR code the admin shows, or put both on the same Wi-Fi — [details](docs/devices.md#troubleshooting) |
 | The disk map shows locked folders | Give "Fremkit" (or "Fremkit Helper" for a source install) Full Disk Access, or leave them unmeasured |
 | The disk map says "du (no helper)" | Expected under `pnpm dev`: the bundled `fremkit-scan` is only there under the helper |
 
@@ -458,10 +515,12 @@ The rest, with the reasoning: **[docs/troubleshooting.md](docs/troubleshooting.m
 ```sh
 pnpm dev          # server on 4242 + Vite on 5173; then pnpm open --dev [/admin] to sign in
 pnpm open         # opens http://127.0.0.1:4242 signed in (pnpm open /admin for the admin)
+pnpm demo         # a demo server on :4250, invented data only: see docs/demo-mode.md
 pnpm build        # ui + server
 pnpm start        # production: http://127.0.0.1:4242 and /admin
 pnpm test         # vitest, server + ui
 pnpm typecheck
+pnpm e2e          # Playwright end-to-end tests, after pnpm --filter ui build (docs/contributing.md)
 pnpm helper:build   # native/dist/Fremkit Helper.app
 pnpm helper:install
 pnpm helper:test
@@ -472,6 +531,7 @@ bash scripts/build-app.sh   # native/dist/Fremkit.app: the self-contained app, s
 |---|---|
 | `server/` | Fastify 5 on 127.0.0.1:4242 — config, widget catalog, providers, connections, secrets, the bridge, the WebSocket |
 | `ui/` | Vue 3 — the dashboard, the admin, and the code they share |
+| `e2e/` | Playwright end-to-end tests of the admin and the dashboard, each worker on a throwaway server |
 | `native/` | The Swift helper — kiosk window, HID touch driver, mouse fence, admin window, Dock badges, server supervision, and `fremkit-scan`, the disk map's scanner |
 | `widgets/` | One folder per widget |
 | `scripts/` | Setup, dev, the helper's build and tests, the app's build, notarization and release, the signing identity, kiosk, the Claude Code hooks |
@@ -512,7 +572,7 @@ limits, and how to report a problem: **[SECURITY.md](SECURITY.md)**.
 Fremkit is written by [usul](https://github.com/fdussert), with
 [FlorianBruniaux](https://github.com/FlorianBruniaux) and [mcouzinet](https://github.com/mcouzinet).
 The widgets and themes on the registry name their own authors on their cards. The admin's
-**Screen → About** lists the same people, from `ui/src/shared/credits.ts`.
+**Settings → About** lists the same people, from `ui/src/shared/credits.ts`.
 
 The icons are a subset of [Lucide](https://lucide.dev) (ISC licence, © Lucide Contributors),
 inlined in `ui/src/shared/icons.ts` so the interface takes no runtime icon dependency.

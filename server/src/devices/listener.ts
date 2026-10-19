@@ -5,6 +5,9 @@
  * (`net/remote.ts`), and hands every request and upgrade to the app's own server, so both
  * listeners share one set of routes, one hub and one config — and every remote request meets
  * the devices gate first (`gate.ts`).
+ *
+ * Before any of that, the peer: a connection from outside the local networks (`net/lan.ts`) is
+ * dropped as it is accepted, before the TLS handshake, with nothing said to it.
  */
 
 import { createServer, type Server } from 'node:https'
@@ -12,6 +15,7 @@ import type { Socket } from 'node:net'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import { markRemoteSocket } from '../net/remote.js'
+import { isLanPeer } from '../net/lan.js'
 
 export const REMOTE_PORT = 4243
 
@@ -24,6 +28,8 @@ export class RemoteListener {
   constructor(
     private readonly app: FastifyInstance,
     private readonly requestedPort = REMOTE_PORT,
+    /** Which peer addresses may connect. Only tests pass another one. */
+    private readonly acceptPeer: (address: string | undefined) => boolean = isLanPeer,
   ) {}
 
   get running(): boolean {
@@ -36,7 +42,8 @@ export class RemoteListener {
   }
 
   /**
-   * Starts listening on every interface, IPv4 and IPv6 (`::`, dual-stack). Rejects with the
+   * Starts listening on every interface, IPv4 and IPv6 (`::`, dual-stack); the peer check above
+   * is what keeps it to the local networks. Rejects with the
    * listen error — `code: 'EADDRINUSE'` when the port is taken — and leaves nothing listening.
    */
   async start(keyPem: string, certPem: string): Promise<void> {
@@ -47,7 +54,15 @@ export class RemoteListener {
       this.sockets.add(socket)
       socket.once('close', () => this.sockets.delete(socket))
     }
-    server.on('connection', track)
+    // The raw TCP connection, before TLS: a peer outside the local networks gets nothing, not even
+    // the certificate.
+    server.on('connection', (socket: Socket) => {
+      if (!this.acceptPeer(socket.remoteAddress)) {
+        socket.destroy()
+        return
+      }
+      track(socket)
+    })
     server.on('secureConnection', (socket: Socket) => {
       markRemoteSocket(socket)
       track(socket)
@@ -55,10 +70,20 @@ export class RemoteListener {
     // Marked again on the way in, so a request can never reach the app looking local, whatever
     // order the events above come in.
     server.on('request', (req, res) => {
+      // Asked again on the way in, so no event order can let a refused peer reach the app.
+      if (!this.acceptPeer(req.socket.remoteAddress)) {
+        res.writeHead(403).end()
+        req.socket.destroy()
+        return
+      }
       markRemoteSocket(req.socket)
       this.app.server.emit('request', req, res)
     })
     server.on('upgrade', (req, socket: Socket, head: Buffer) => {
+      if (!this.acceptPeer(socket.remoteAddress)) {
+        socket.destroy()
+        return
+      }
       markRemoteSocket(socket)
       this.app.server.emit('upgrade', req, socket, head)
     })

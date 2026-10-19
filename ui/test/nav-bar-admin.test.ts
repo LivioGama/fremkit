@@ -11,7 +11,7 @@
  *
  * So the bar is mounted and the events are dispatched as the real ones arrive, in order.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import NavBar from '../src/dashboard/NavBar.vue'
 import { pickScreen } from '../src/shared/screens'
@@ -181,5 +181,45 @@ describe('the dots fit the room kept for them', () => {
     // 64 x 0.5 = 32 px would be under the minimum: the column stays 44 real px.
     expect(column(4, 40)).toBe('44px')
     expect(column(8, 40)).toBe('44px')
+  })
+})
+
+describe('the editor\'s right click on the bar', () => {
+  // jsdom has no `elementFromPoint`; the stub each test sets must not outlive it.
+  afterEach(() => { delete (document as { elementFromPoint?: unknown }).elementFromPoint })
+
+  /**
+   * Mounted, then a few milliseconds left to pass: Vue drops an event, at a listener further up,
+   * whose time is not after the moment that listener was attached (the first handler stamps it),
+   * so a click sent in the same millisecond as the mount never reaches the bar's own handler.
+   */
+  async function editBar() {
+    const wrapper = mount(NavBar, { props: { pages: PAGES, active: 0, height: 64, edit: true }, attachTo: document.body })
+    await new Promise((r) => setTimeout(r, 5))
+    const menu = (target: Element): MouseEvent => {
+      // jsdom lays nothing out: the bar finds what is under the pointer by `elementFromPoint`.
+      document.elementFromPoint = () => target
+      const e = new MouseEvent('contextmenu', { clientX: 10, clientY: 10, bubbles: true, cancelable: true })
+      target.dispatchEvent(e)
+      return e
+    }
+    return { wrapper, menu }
+  }
+
+  it('asks for the page\'s menu on a page button, and never opens the admin', async () => {
+    const { wrapper, menu } = await editBar()
+    const e = menu(wrapper.findAll('.page-button')[1].element)
+    expect(e.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('barMenu')?.[0]?.[0]).toBe(1)
+    expect(wrapper.emitted('admin')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('asks for the bar\'s own menu elsewhere, instead of the browser\'s', async () => {
+    const { wrapper, menu } = await editBar()
+    const e = menu(wrapper.find('nav').element)
+    expect(e.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('barMenu')?.[0]?.[0]).toBeNull()
+    wrapper.unmount()
   })
 })

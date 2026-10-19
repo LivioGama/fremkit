@@ -53,6 +53,37 @@ describe('migrateConfig', () => {
       codexHistorySources: [],
     })
   })
+  describe('labs.devices', () => {
+    /** A v4 file as a release before the flag wrote it: no `labs` key at all. */
+    const withoutLabs = (screens: Record<string, unknown>[]) => {
+      const c = JSON.parse(JSON.stringify(migrateConfig(v1))) as Record<string, any>
+      delete c.labs
+      c.screens = screens
+      return c
+    }
+    const edge = () => JSON.parse(JSON.stringify(migrateConfig(v1).screens[0])) as Record<string, any>
+    const device = () => ({ ...edge(), id: 'kitchen', name: 'Kitchen', kind: 'device' })
+
+    it('starts off for a fresh install and for an older file', () => {
+      expect(DEFAULT_CONFIG.labs).toEqual({ devices: false })
+      expect(migrateConfig(v1).labs).toEqual({ devices: false })
+    })
+    it('starts off for a v4 file with only the Edge', () => {
+      expect(migrateConfig(withoutLabs([edge()])).labs.devices).toBe(false)
+    })
+    it('starts on for a v4 file with more than one screen', () => {
+      expect(migrateConfig(withoutLabs([edge(), { ...edge(), id: 'edge-2', name: 'Second' }])).labs.devices).toBe(true)
+    })
+    it('starts on for a v4 file whose only screen is a device one', () => {
+      expect(migrateConfig(withoutLabs([device()])).labs.devices).toBe(true)
+    })
+    it('keeps a stated value either way, whatever the screens', () => {
+      const off = { ...withoutLabs([edge(), device()]), labs: { devices: false } }
+      expect(migrateConfig(off).labs.devices).toBe(false)
+      const on = { ...withoutLabs([edge()]), labs: { devices: true } }
+      expect(migrateConfig(on).labs.devices).toBe(true)
+    })
+  })
   it('rejects an unknown version with a clear message', () => {
     // Translated now, so match either language rather than the French wording.
     expect(() => migrateConfig({ ...v1, version: 7 })).toThrow(/(version de config inconnue|unknown config version).*7/)

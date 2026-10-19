@@ -3,15 +3,22 @@ import { ConfigSchema, validateConnections, validateLayout, validateNavWidgets }
 import type { ConfigStore } from './store.js'
 import type { WidgetCatalog } from '../widgets/catalog.js'
 import { tr, type Locale } from '../i18n.js'
+import { configForScope, requestScope, type ScreenOfDevice } from '../devices/scope.js'
 
 /** Shown to the user, and the reason every save is refused, while the store runs degraded. */
 export const degradedMessage = (locale?: Locale): string => tr(locale, 'config.degraded')
 
-export async function configRoutes(app: FastifyInstance, opts: { store: ConfigStore; catalog: WidgetCatalog }): Promise<void> {
-  app.get('/api/config', async (_req, reply) => {
+export async function configRoutes(
+  app: FastifyInstance,
+  opts: { store: ConfigStore; catalog: WidgetCatalog; screenOfDevice?: ScreenOfDevice },
+): Promise<void> {
+  const screenOfDevice: ScreenOfDevice = opts.screenOfDevice ?? (() => null)
+  app.get('/api/config', async (req, reply) => {
     // Header for anything reading the config itself; /api/config/status is what the admin polls.
     if (opts.store.degraded) reply.header('X-Fremkit-Degraded', '1')
-    return opts.store.get()
+    // A paired device reads its own screen and what drawing it takes, nothing else of the Mac's
+    // config: see `deviceConfigView`.
+    return configForScope(opts.store.get(), requestScope(req, screenOfDevice))
   })
 
   app.get('/api/config/status', async () => ({ degraded: opts.store.degraded }))
@@ -40,6 +47,10 @@ export async function configRoutes(app: FastifyInstance, opts: { store: ConfigSt
     // what is granted. A stale admin tab saving an old copy must not bring back a revoked share
     // or a consent the user withdrew, and a PUT must not forge one.
     parsed.data.marketplace = { ...parsed.data.marketplace, installed: current.marketplace.installed }
+    // A body without `labs` keeps the switch as it is: the schema's default would turn the
+    // experimental features off behind the user's back for any client that does not send it.
+    const body = req.body as { labs?: { devices?: unknown } } | null
+    if (typeof body?.labs?.devices !== 'boolean') parsed.data.labs = { ...parsed.data.labs, devices: current.labs.devices }
 
     const errors = [
       ...validateLayout(parsed.data, opts.catalog.manifests),

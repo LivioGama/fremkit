@@ -28,3 +28,13 @@ docs/superpowers/
 .claude/
 .idea/
 .vscode/
+
+# The iPad app: build output, signing values, Xcode user state
+ios/**/.build/
+ios/Local.xcconfig
+ios/**/xcuserdata/
+ios/build/
+
+# Playwright: what a run leaves behind (e2e/)
+test-results/
+playwright-report/

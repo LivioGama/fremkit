@@ -16,7 +16,7 @@ Two ship, for the same reason eighteen widgets do: what is in the checkout is wh
 install needs with no network at all. Four more — `nuit`, `brume`, `terminal` and `papier` — are
 on the registry; see [Themes from the registry](#themes-from-the-registry) below.
 
-Pick one in the editor: **Screen** → **Theme**. The dashboard repaints at once, the editor with
+Pick one in the editor: **Settings** → **Appearance** → **Theme**. The dashboard repaints at once, the editor with
 it, so what you see while arranging tiles is what the screen shows. ⟳ next to the list rereads the
 folder, exactly like the widget library's.
 
@@ -24,7 +24,7 @@ folder, exactly like the widget library's.
 
 Under the theme list, **Another theme at night** picks a second theme and when it takes over. The
 first one becomes the day theme. The switch follows the same day and night as a screen's
-brightness (**Screen** → **Brightness**): sunrise and sunset at a place, found with a city search
+brightness (**Settings** → your screen → **Brightness**): sunrise and sunset at a place, found with a city search
 or typed as coordinates, or two fixed times on the Mac's clock. When a screen's brightness already
 knows its place, the night theme starts from it, and a button offers it again if you change it.
 Unlike the brightness there is no ramp: the theme changes at once, crossfaded on the screen.
@@ -185,7 +185,7 @@ to the same `TokensSchema` a theme on your disk is, one expression per token, be
 values end up in a `style` attribute on `<html>` and inside every widget frame.
 
 An installed theme lands in `<dataDir>/themes/<id>/` — never in the checkout, so `git pull` can
-neither lose it nor conflict with it — and appears in Screen → Theme straight away. A built-in id
+neither lose it nor conflict with it — and appears in Settings → Appearance → Theme straight away. A built-in id
 can never be taken: `fremkit` and `edge` are refused by the installer and by the registry alike.
 
 Removing the theme the screen is painted with is refused, naming it, rather than repainting the

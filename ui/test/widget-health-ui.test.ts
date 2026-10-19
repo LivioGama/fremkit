@@ -9,6 +9,7 @@ import { mount } from '@vue/test-utils'
 import { setLocale } from '../src/shared/i18n'
 import HealthBanner from '../src/admin/HealthBanner.vue'
 import HealthDot from '../src/admin/HealthDot.vue'
+import UpdateNote from '../src/admin/UpdateNote.vue'
 import { widgetMenu, type MenuUi } from '../src/admin/canvasMenu'
 import { navWidgetMenu } from '../src/admin/menus'
 import { createAdminStore } from '../src/admin/store'
@@ -22,8 +23,9 @@ const broken: InstanceHealth = {
   level: 'error',
   problems: [
     { level: 'error', code: 'unauthorized', action: { kind: 'connection', id: 'gh-work' } },
-    { level: 'warning', code: 'update', action: { kind: 'update', widgetId: 'gh' } },
+    { level: 'warning', code: 'offline', action: null },
   ],
+  update: { widgetId: 'gh', version: '1.2.0' },
 }
 
 describe('the inspector banner', () => {
@@ -31,7 +33,9 @@ describe('the inspector banner', () => {
     const wrapper = mount(HealthBanner, { props: { health: broken } })
     expect(wrapper.classes()).toContain('error')
     expect(wrapper.text()).toContain('refuses the credentials')
-    expect(wrapper.text()).toContain('An update is available.')
+    expect(wrapper.text()).toContain('cannot be reached')
+    // The update has its own note: the banner is about what is wrong.
+    expect(wrapper.text()).not.toContain('1.2.0')
     const buttons = wrapper.findAll('button')
     expect(buttons).toHaveLength(1)
     expect(buttons[0].text()).toBe('Open the connection')
@@ -47,15 +51,35 @@ describe('the inspector banner', () => {
   })
 
   it('has no button for a problem with nothing to press', () => {
-    const wrapper = mount(HealthBanner, { props: { health: { level: 'warning', problems: [{ level: 'warning', code: 'offline', action: null }] } } })
+    const wrapper = mount(HealthBanner, { props: { health: { level: 'warning', problems: [{ level: 'warning', code: 'offline', action: null }], update: null } } })
     expect(wrapper.classes()).toContain('warning')
     expect(wrapper.find('button').exists()).toBe(false)
+  })
+})
+
+describe('the update note', () => {
+  it('names the version and offers the update, calmly', async () => {
+    const wrapper = mount(UpdateNote, { props: { update: { widgetId: 'gh', version: '1.2.0' } } })
+    expect(wrapper.text()).toContain('Version 1.2.0 available')
+    expect(wrapper.classes()).not.toContain('warning')
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('action')?.[0]).toEqual([{ kind: 'update', widgetId: 'gh' }])
+  })
+
+  it('does without a version, and reads in French', () => {
+    expect(mount(UpdateNote, { props: { update: { widgetId: 'gh', version: null } } }).text()).toContain('A new version is available')
+    setLocale('fr')
+    const wrapper = mount(UpdateNote, { props: { update: { widgetId: 'gh', version: '1.2.0' } } })
+    expect(wrapper.text()).toContain('Version 1.2.0 disponible')
+    expect(wrapper.get('button').text()).toBe('Mettre à jour')
   })
 })
 
 describe('the dot', () => {
   it('is drawn only when something is wrong', () => {
     expect(mount(HealthDot, { props: { level: 'ok' } }).find('.health-dot').exists()).toBe(false)
+    // An update is not something wrong.
+    expect(mount(HealthDot, { props: { level: 'update' } }).find('.health-dot').exists()).toBe(false)
     const dot = mount(HealthDot, { props: { level: 'warning', title: 'A widget on this page needs attention' } }).get('.health-dot')
     expect(dot.classes()).toContain('warning')
     expect(dot.attributes('aria-label')).toBe('A widget on this page needs attention')
@@ -110,12 +134,27 @@ describe('the menus', () => {
     expect(run).toHaveBeenCalledOnce()
   })
 
+  it('offer a plain update item, after the fix when there is one', async () => {
+    const s = await store()
+    const run = vi.fn()
+    const update = () => ({ label: 'Update to v1.2.0', run })
+    const onlyUpdate: MenuUi = { revealSection: vi.fn(), focusLibrarySearch: vi.fn(), fix: () => null, update }
+    for (const menu of [widgetMenu(s, 'clock-1', onlyUpdate), navWidgetMenu(s, 'bar-1', onlyUpdate)]) {
+      expect((menu[0] as MenuItem).label).toBe('Update to v1.2.0')
+      expect(isSeparator(menu[1])).toBe(true)
+    }
+    const both: MenuUi = { ...onlyUpdate, fix: () => ({ label: 'Fix: Reload the widget', run: vi.fn() }) }
+    const menu = widgetMenu(s, 'clock-1', both)
+    expect([(menu[0] as MenuItem).label, (menu[1] as MenuItem).label]).toEqual(['Fix: Reload the widget', 'Update to v1.2.0'])
+    expect(isSeparator(menu[2])).toBe(true)
+  })
+
   it('start as before for a widget that is well, or without a health source', async () => {
     const s = await store()
     const well: MenuUi = { revealSection: vi.fn(), focusLibrarySearch: vi.fn(), fix: () => null }
     const none: MenuUi = { revealSection: vi.fn(), focusLibrarySearch: vi.fn() }
     for (const ui of [well, none]) {
-      expect((widgetMenu(s, 'clock-1', ui)[0] as MenuItem).label).toBe('Settings…')
+      expect((widgetMenu(s, 'clock-1', ui)[0] as MenuItem).label).toBe('Show title')
     }
   })
 })

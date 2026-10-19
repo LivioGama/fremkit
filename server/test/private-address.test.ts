@@ -3,7 +3,7 @@ import { embeddedIpv4, expandIpv6, isAddressLiteral, isPrivateAddress, isPrivate
 
 describe('isPrivateAddress', () => {
   it('knows the IPv4 ranges a widget must not reach', () => {
-    for (const ip of ['0.0.0.0', '10.0.0.1', '10.255.255.255', '127.0.0.1', '127.1.2.3',
+    for (const ip of ['0.0.0.0', '10.1.0.1', '10.255.255.255', '127.0.0.1', '127.1.2.3',
       '100.64.0.1', '100.127.255.255', '169.254.169.254', '172.16.0.1', '172.31.255.255',
       '192.168.0.1', '192.0.0.1', '198.18.0.1', '198.19.1.1', '224.0.0.1', '255.255.255.255']) {
       expect(isPrivateAddress(ip), ip).toBe(true)
@@ -18,7 +18,7 @@ describe('isPrivateAddress', () => {
   })
   it('knows the IPv6 ranges, brackets and IPv4-mapped forms included', () => {
     for (const ip of ['::', '::1', '[::1]', 'fc00::1', 'fd12:3456::1', 'fe80::1', 'FE80::1',
-      'ff02::1', '::ffff:127.0.0.1', '::ffff:10.0.0.1']) {
+      'ff02::1', '::ffff:127.0.0.1', '::ffff:10.1.0.1']) {
       expect(isPrivateAddress(ip), ip).toBe(true)
     }
     for (const ip of ['2001:db8::1', '2606:4700::1111', '::ffff:198.51.100.7']) {
@@ -87,7 +87,7 @@ describe('resolvesToPrivate', () => {
     expect(await resolvesToPrivate('api.example.com', resolving('198.51.100.7'))).toBe(false)
   })
   it('refuses a name with one private answer among several', async () => {
-    expect(await resolvesToPrivate('mixed.example', resolving('198.51.100.7', '10.0.0.1'))).toBe(true)
+    expect(await resolvesToPrivate('mixed.example', resolving('198.51.100.7', '10.1.0.1'))).toBe(true)
   })
   it('treats a name it cannot resolve as private', async () => {
     expect(await resolvesToPrivate('ghost.invalid', resolving())).toBe(true)

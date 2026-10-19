@@ -35,6 +35,14 @@ describe('constant-time comparisons', () => {
     expect(spy.calls).toBeGreaterThan(0)
   })
 
+  it('compares a pairing secret with timingSafeEqual', () => {
+    const codes = new PairingCodes()
+    const { secret } = codes.issue()
+    spy.calls = 0
+    expect(codes.consumeSecret(secret)).toBe('ok')
+    expect(spy.calls).toBeGreaterThan(0)
+  })
+
   it('compares a device token with timingSafeEqual, against every device', async () => {
     const store = new DeviceStore(join(await mkdtemp(join(tmpdir(), 'fremkit-timing-')), 'devices.json'))
     await store.load()

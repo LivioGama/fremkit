@@ -10,7 +10,7 @@ import BaseButton from '../shared/ui/BaseButton.vue'
 import BaseIcon from '../shared/ui/BaseIcon.vue'
 import { useI18n } from '../shared/i18n'
 import { openContextMenu } from '../shared/ui/contextMenu'
-import { editorFocus } from './editorFocus'
+import { editorFocus, renameRequest } from './editorFocus'
 import { pageMenu, type PageMenuUi } from './menus'
 import { dropIndex } from './pageDrag'
 import { useAdminStore } from './store'
@@ -138,6 +138,13 @@ function dropClass(i: number): Record<string, boolean> {
   return { 'drop-before': i === d.to && d.to < d.from, 'drop-after': i === d.to && d.to > d.from }
 }
 
+/** A rename asked for by the command palette. */
+watch(renameRequest, (req) => {
+  if (req?.kind !== 'page') return
+  renameRequest.value = null
+  if (s.screen.value?.pages.some((p) => p.id === req.id)) startEdit(req.id)
+}, { immediate: true })
+
 /** A rename started from the menu or the keyboard puts the cursor in the field, text selected. */
 watch(editing, async (id) => {
   if (!id) return
@@ -157,6 +164,7 @@ watch(editing, async (id) => {
         :title="t('admin.pages.drag')"
         @click="onClick(i)" @contextmenu="onMenu($event, i)" @keydown.self="onRowKey($event, i)"
         @pointerdown="onDown($event, i)" @pointermove="onMove" @pointerup="onUp" @pointercancel="endDrag">
+        <BaseIcon v-if="s.screen.value!.pages.length > 1" name="grip-vertical" :size="14" class="grip" aria-hidden="true" />
         <input v-if="editing === p.id" :value="p.name" 
           @click.stop @blur="commitName(i, $event)" @keydown.enter="($event.target as HTMLInputElement).blur()" @keydown.esc.stop="cancelEdit()" />
         <span v-else class="name" @dblclick.stop="startEdit(p.id)">{{ p.name }}</span>
@@ -175,7 +183,7 @@ watch(editing, async (id) => {
 h2 { display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-xs);
   text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin: 0 0 var(--space-2); }
 ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; }
-li { position: relative; display: flex; align-items: center; gap: 2px; min-height: 32px; padding: 0 2px 0 var(--space-2);
+li { position: relative; display: flex; align-items: center; gap: 2px; min-height: 32px; padding: 0 2px 0 2px;
   border-radius: var(--radius-sm); cursor: pointer; font-size: var(--fs-sm); touch-action: none;
   user-select: none; -webkit-user-select: none; }
 li:hover { background: var(--surface-2); }
@@ -188,7 +196,11 @@ li.drop-before::before, li.drop-after::after { content: ''; position: absolute; 
   border-radius: 1px; background: var(--accent); pointer-events: none; }
 li.drop-before::before { top: -2px; }
 li.drop-after::after { bottom: -2px; }
-.name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The usual sign that a row can be dragged: faint at rest, plain under the pointer. */
+.grip { flex: 0 0 auto; color: var(--text-muted); opacity: .5; cursor: grab; }
+li:hover .grip { opacity: 1; }
+.dragging .grip { cursor: grabbing; }
+.name { flex: 1; padding-left: 2px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A page with a background of its own says so with a small accent dot. */
 .health { margin: 0 4px; }
 .own-bg { width: 6px; height: 6px; flex: 0 0 auto; margin: 0 4px; border-radius: 50%; background: var(--accent); }

@@ -15,7 +15,7 @@
 
 import { lookup as dnsLookup } from 'node:dns'
 import type { LookupAddress, LookupAllOptions, LookupOneOptions } from 'node:dns'
-import { Agent, fetch as undiciFetch } from 'undici'
+import type { Agent } from 'undici'
 import { isPrivateAddress } from './private.js'
 
 type LookupCallback = (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void
@@ -47,10 +47,26 @@ export function guardedLookup(resolve: Resolver = dnsLookup as unknown as Resolv
   }
 }
 
+/**
+ * The `undici` package, loaded only once Node's own `fetch` holds the global dispatcher.
+ *
+ * Loading `undici` installs its dispatcher in the process-wide slot Node's built-in `fetch` also
+ * reads (`Symbol.for('undici.globalDispatcher.1')`) when that slot is still empty, and the slot
+ * cannot be taken back. Node 26's `fetch` driving the package's dispatcher loses the
+ * `content-encoding` header, so every gzip answer reached its callers undecoded: the Claude
+ * limits read `invalid-json` and Azure DevOps went `offline`. A static import ran first, at
+ * server start. A `data:` fetch makes Node claim the slot without touching the network.
+ */
+let undiciModule: Promise<typeof import('undici')> | undefined
+export function loadUndici(): Promise<typeof import('undici')> {
+  undiciModule ??= fetch('data:,').then((r) => r.arrayBuffer()).then(() => import('undici'))
+  return undiciModule
+}
+
 /** One dispatcher for the whole process: its connections are pooled like the global fetch's. */
-let shared: Agent | undefined
-export function publicDispatcher(): Agent {
-  shared ??= new Agent({ connect: { lookup: guardedLookup() } })
+let shared: Promise<Agent> | undefined
+export function publicDispatcher(): Promise<Agent> {
+  shared ??= loadUndici().then(({ Agent }) => new Agent({ connect: { lookup: guardedLookup() } }))
   return shared
 }
 
@@ -58,5 +74,7 @@ export function publicDispatcher(): Agent {
 export type PublicFetch = (input: string | URL, init?: RequestInit) => Promise<Response>
 
 /** `fetch`, through `publicDispatcher`: a name that resolves to a private address is never connected to. */
-export const publicFetch: PublicFetch = (input, init) =>
-  undiciFetch(input, { ...(init as object), dispatcher: publicDispatcher() }) as unknown as Promise<Response>
+export const publicFetch: PublicFetch = async (input, init) => {
+  const [{ fetch: undiciFetch }, dispatcher] = await Promise.all([loadUndici(), publicDispatcher()])
+  return undiciFetch(input, { ...(init as object), dispatcher }) as unknown as Promise<Response>
+}

@@ -145,8 +145,9 @@ export function createShortcutsProvider(
         if (!request.success) {
           return { ok: false, error: request.error.issues[0]?.message ?? tr(undefined, 'provider.invalidPayload') }
         }
-        // The target comes from the user's saved settings, never from the message.
-        const resolved = resolveButton(instances, request.data)
+        // The target comes from the user's saved settings, never from the message; a paired
+        // device finds only the instances of its own screen.
+        const resolved = resolveButton((id) => instances(id, ctx), request.data)
         if (!resolved.ok) return { ok: false, error: resolved.error }
         const [file, args] = argvFor(resolved.payload)
         try {

@@ -57,6 +57,13 @@ function isLocalOnly(channel: string): boolean {
  */
 export type DevicePolicy = (deviceId: string) => ScreenChannels | null
 
+/**
+ * What a paired device is sent on a viewed channel instead of what everyone else hears: the host
+ * channels (the config, narrowed to its own screen, `devices/scope.ts`) and any channel named when
+ * the view is set (`brightness`, narrowed to its screen's entry). Null sends nothing.
+ */
+export type HostView = (deviceId: string, channel: string, data: unknown) => unknown
+
 type Incoming =
   | { type: 'subscribe'; channel: string }
   | { type: 'unsubscribe'; channel: string }
@@ -76,6 +83,15 @@ export class Hub {
    */
   private policy: DevicePolicy = () => null
   private devicePayload: (deviceId: string) => unknown = () => null
+  /**
+   * Until one is set, a paired device hears nothing on a host channel: the full config is the
+   * Mac's, and a view that does not exist yet must not fall back to it.
+   */
+  private hostView: HostView = () => null
+  /** The channels a paired socket hears through `hostView`: the host ones, and those named with it. */
+  private viewChannels = new Set<string>(HOST_CHANNELS)
+  /** The last host-channel message each paired socket was sent, so a refresh repeats nothing. */
+  private hostSent = new Map<SocketLike, Map<string, string>>()
 
   constructor(private readonly registry: ProviderRegistry) {}
 
@@ -105,6 +121,7 @@ export class Hub {
     const ctx = this.contexts.get(socket)
     this.clients.delete(socket)
     this.contexts.delete(socket)
+    this.hostSent.delete(socket)
     const deviceId = ctx?.paired ? ctx.deviceId : undefined
     if (deviceId !== undefined) {
       const sockets = this.deviceSockets.get(deviceId)
@@ -122,10 +139,17 @@ export class Hub {
     this.devicePayload = fn
   }
 
+  /** `channels`: widget channels besides the host ones whose payload a device gets its own view of. */
+  setHostView(fn: HostView, channels: readonly string[] = []): void {
+    this.hostView = fn
+    this.viewChannels = new Set([...HOST_CHANNELS, ...channels])
+  }
+
   /**
    * Re-reads a device's policy after its screen, or that screen's widgets, changed: drops every
-   * subscription the policy no longer allows, then tells the device's sockets what changed on
-   * the `device` channel so the page can reload what it shows.
+   * subscription the policy no longer allows, re-sends its view of the host channels when that
+   * view changed, then tells the device's sockets what changed on the `device` channel so the
+   * page can reload what it shows.
    */
   refreshDevice(deviceId: string): void {
     const sockets = this.deviceSockets.get(deviceId)
@@ -139,6 +163,17 @@ export class Hub {
         if (this.subscriptionAllowed(allowed, ch)) continue
         channels.delete(ch)
         this.registry.removeSubscriber(ch)
+      }
+    }
+    // The host channels next: the config a device sees is its screen's, and the screen may have
+    // just changed. Before the `device` message, so the page has its new screen when told of it.
+    for (const socket of sockets) {
+      const channels = this.clients.get(socket)
+      if (!channels) continue
+      for (const ch of this.viewChannels) {
+        if (!channels.has(ch) || !this.lastValues.has(ch)) continue
+        const view = this.messageFor(socket, ch, this.lastValues.get(ch), '')
+        if (view !== null) this.safeSend(socket, view)
       }
     }
     const msg = this.deviceMessage(deviceId)
@@ -179,8 +214,35 @@ export class Hub {
     this.lastValues.set(channel, data)
     const msg = JSON.stringify({ type: 'data', channel, data })
     for (const [socket, channels] of this.clients) {
-      if (channels.has(channel)) this.safeSend(socket, msg)
+      if (!channels.has(channel)) continue
+      const out = this.messageFor(socket, channel, data, msg)
+      if (out !== null) this.safeSend(socket, out)
     }
+  }
+
+  /**
+   * The message one socket is sent for `channel`: `shared` for everyone but a paired socket on a
+   * host channel, which gets its device's view instead — or nothing, when there is no view, when
+   * it cannot be built, or when it is exactly what that socket was last sent.
+   */
+  private messageFor(socket: SocketLike, channel: string, data: unknown, shared: string): string | null {
+    const ctx = this.contextOf(socket)
+    if (!ctx.paired || !this.viewChannels.has(channel)) return shared
+    if (ctx.deviceId === undefined) return null
+    let msg: string
+    try {
+      const view = this.hostView(ctx.deviceId, channel, data)
+      if (view === null || view === undefined) return null
+      msg = JSON.stringify({ type: 'data', channel, data: view })
+    } catch {
+      // Nothing logged: the error may quote the config.
+      return null
+    }
+    let sent = this.hostSent.get(socket)
+    if (!sent) this.hostSent.set(socket, (sent = new Map()))
+    if (sent.get(channel) === msg) return null
+    sent.set(channel, msg)
+    return msg
   }
 
   /**
@@ -230,7 +292,11 @@ export class Hub {
           this.registry.addSubscriber(msg.channel)
         }
         if (this.lastValues.has(msg.channel)) {
-          this.safeSend(socket, JSON.stringify({ type: 'data', channel: msg.channel, data: this.lastValues.get(msg.channel) }))
+          const data = this.lastValues.get(msg.channel)
+          // A replay is sent even when it repeats the last one: the page asked again.
+          this.hostSent.get(socket)?.delete(msg.channel)
+          const out = this.messageFor(socket, msg.channel, data, JSON.stringify({ type: 'data', channel: msg.channel, data }))
+          if (out !== null) this.safeSend(socket, out)
         }
         return
       }
@@ -242,7 +308,12 @@ export class Hub {
       case 'command': {
         const { id, channel, name, payload } = msg
         const ctx = this.contextOf(socket)
-        if (ctx.paired && (typeof channel !== 'string' || isLocalOnly(channel) || !channelAllowed(this.policyOf(ctx)?.commands ?? [], channel))) {
+        // A paired device hears one answer for a channel it may not use and for one that does not
+        // exist: the registry's own "unknown channel" would otherwise let it enumerate ids. A
+        // local-only family (`companion`) is refused whatever the screen's manifests grant.
+        if (ctx.paired && (typeof channel !== 'string' || isLocalOnly(channel)
+          || !channelAllowed(this.policyOf(ctx)?.commands ?? [], channel)
+          || !this.registry.has(channel))) {
           return this.refuse(socket, id)
         }
         this.registry.runCommand(channel, name, payload, ctx).then(

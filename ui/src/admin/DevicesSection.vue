@@ -5,8 +5,9 @@
  *
  * A code is asked for whenever pairing is on and none is on show — on turning it on, on opening
  * the admin while it is on, when the shown one runs out — so the code on screen is always one the
- * server will take. `keyHash` is never shown: a partial hash is no help to compare, and the
- * readable fingerprint comes with the device app.
+ * server will take. `keyHash` itself is never shown: a partial hash is no help to
+ * compare. What is shown, under the code, is the fingerprint: four words derived from it, to
+ * compare with the device's screen.
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { renderSVG } from 'uqr'
@@ -128,6 +129,10 @@ async function onCreated(screenId: string): Promise<void> {
         <p class="ro">{{ t('admin.devices.scan') }}</p>
         <p class="value mono" data-test="pairing-code">{{ offer.code }}</p>
         <p class="ro">{{ t('admin.devices.expires', { time: countdown }) }}</p>
+        <template v-if="status?.fingerprint">
+          <p class="fingerprint" data-test="fingerprint">{{ t('admin.devices.fingerprint', { words: status.fingerprint.join(' ') }) }}</p>
+          <p class="ro">{{ t('admin.devices.fingerprintHelp') }}</p>
+        </template>
         <BaseButton @click="devices.newCode()"><BaseIcon name="refresh-cw" :size="16" />{{ t('admin.devices.newCode') }}</BaseButton>
       </div>
     </div>
@@ -216,6 +221,7 @@ async function onCreated(screenId: string): Promise<void> {
 .qr { flex: none; width: 168px; height: 168px; padding: 8px; background: #fff; border-radius: var(--radius-sm); }
 .qr :deep(svg) { display: block; width: 100%; height: 100%; }
 .code { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.fingerprint { margin: 0 0 var(--space-1); letter-spacing: .08em; color: var(--text); }
 .value { margin: 0 0 var(--space-1); font-size: 1.6em; letter-spacing: .12em; color: var(--text); }
 .code :deep(button), .row :deep(button), .device :deep(button), .request :deep(button) { min-height: 44px; }
 .list { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }

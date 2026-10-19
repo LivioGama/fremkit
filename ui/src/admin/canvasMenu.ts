@@ -8,6 +8,8 @@ import { surfaceOpacity } from '../shared/background'
 import { screensShowing } from '../shared/screens'
 import { SEPARATOR, tidy, type MenuEntry, type MenuItem } from '../shared/ui/contextMenu'
 import { STYLE_KEYS, type AdminStore } from './store'
+import { shortcutHint } from './shortcuts'
+import { openSettings } from './settingsWindow'
 import type { SettingField, Widget, WidgetManifest } from '../shared/types'
 
 /** What a menu does outside the store: moving the eye to a part of the editor. */
@@ -21,6 +23,8 @@ export interface MenuUi {
    * with it, so the problem a badge shows is one click from its cure.
    */
   fix?(instanceId: string): { label: string; run: () => void } | null
+  /** "Update to vX" for a widget with a newer version in the registry: news, not a fix. */
+  update?(instanceId: string): { label: string; run: () => void } | null
 }
 
 /** The inspector section `revealSection` opens for a page's own background. */
@@ -38,8 +42,10 @@ export function revealPageBackground(s: AdminStore, i: number, ui: MenuUi): void
 /** The tile opacities the Appearance submenu offers, in percent. */
 export const OPACITY_PRESETS = [100, 80, 60, 40, 0] as const
 
-/** The shortcut hints, as macOS spells them. */
-export const KEYS = { duplicate: '⌘D', copy: '⌘C', paste: '⌘V', remove: '⌫' } as const
+/** The shortcut hints, as macOS spells them: read from the editor's one table of shortcuts. */
+export const KEYS = {
+  duplicate: shortcutHint('duplicate'), copy: shortcutHint('copy'), paste: shortcutHint('paste'), remove: shortcutHint('remove'),
+} as const
 
 /**
  * The connection a widget's settings point at — the first `connection` or `connections` field
@@ -103,15 +109,14 @@ export function widgetMenu(s: AdminStore, instanceId: string, ui: MenuUi): MenuE
 
   const connection = connectionOf(manifest, widget)
   const lastPlace = s.isLastPlace(instanceId)
-  const hasSettings = !!manifest && Object.keys(manifest.settingsSchema ?? {}).length > 0
 
   const fix = ui.fix?.(instanceId)
+  const update = ui.update?.(instanceId)
 
   return tidy([
     fix && { label: fix.label, run: fix.run },
-    fix && SEPARATOR,
-    { label: t('admin.menu.settings'), run: () => { s.select(instanceId); ui.revealSection(hasSettings ? 'widget.settings' : '') } },
-    SEPARATOR,
+    update && { label: update.label, run: update.run },
+    (fix || update) && SEPARATOR,
     { label: t('admin.menu.showTitle'), checked: widget.showTitle, run: () => s.updateInstance(instanceId, { showTitle: !widget.showTitle }) },
     { label: t('admin.menu.appearance'), children: appearance },
     { label: t('admin.menu.copyStyle'), run: () => s.copyStyle(instanceId) },
@@ -151,16 +156,82 @@ export function widgetMenu(s: AdminStore, instanceId: string, ui: MenuUi): MenuE
   ])
 }
 
+/**
+ * The menu of several selected tiles: what makes sense for all of them at once. Each command is
+ * one store action, so one undo step, whatever the number of tiles.
+ */
+export function selectionMenu(s: AdminStore, ids: string[]): MenuEntry[] {
+  const cfg = s.state.config
+  const scr = s.screen.value
+  const tiles = (s.page.value?.items ?? []).filter((p) => ids.includes(p.instanceId) && cfg?.widgets[p.instanceId])
+  if (!cfg || !scr || tiles.length < 2) return []
+  const list = tiles.map((p) => p.instanceId)
+  const widgets = list.map((id) => cfg.widgets[id])
+  const allShown = widgets.every((w) => w.showTitle)
+  const allLocked = tiles.every((p) => p.locked)
+  const opacities = new Set(widgets.map((w) => Math.round(surfaceOpacity(w.opacity) * 100)))
+  const styled = widgets.some((w) => STYLE_KEYS.some((k) => w[k] !== undefined))
+  // Removing deletes the widgets this screen alone shows: then the submenu is the confirmation.
+  const deletes = list.filter((id) => s.isLastPlace(id)).length
+
+  return tidy([
+    { label: t('admin.menu.showTitle'), checked: allShown, run: () => s.updateWidgets(list, { showTitle: !allShown }) },
+    {
+      label: t('admin.menu.appearance'),
+      children: [
+        ...OPACITY_PRESETS.map((p): MenuItem => ({
+          label: t('admin.menu.opacity', { percent: p }),
+          checked: opacities.size === 1 && opacities.has(p),
+          run: () => s.updateWidgets(list, { opacity: p === 100 ? undefined : p / 100 }),
+        })),
+        SEPARATOR,
+        {
+          label: t('admin.menu.resetAppearance'), disabled: !styled,
+          run: () => s.updateWidgets(list, Object.fromEntries(STYLE_KEYS.map((k) => [k, undefined]))),
+        },
+      ],
+    },
+    SEPARATOR,
+    { label: t('common.duplicate'), shortcut: KEYS.duplicate, run: () => s.duplicateTiles(list) },
+    { label: t('admin.menu.copy'), shortcut: KEYS.copy, run: () => s.copyTiles(list) },
+    { label: t('admin.menu.paste'), shortcut: KEYS.paste, disabled: !s.state.clipboard, run: () => s.pasteWidget() },
+    SEPARATOR,
+    {
+      label: t('admin.menu.moveToPage'),
+      children: tidy([
+        ...scr.pages.map((p, i): MenuItem => ({ label: p.name, disabled: i === s.state.pageIndex, run: () => s.moveTilesToPage(list, i) })),
+        SEPARATOR,
+        { label: t('admin.menu.newPage'), run: () => s.moveTilesToNewPage(list) },
+      ]),
+    },
+    { label: t('admin.menu.lock'), checked: allLocked, run: () => s.setLockedTiles(list, !allLocked) },
+    SEPARATOR,
+    !deletes
+      ? { label: t('admin.menu.removeTilesFromScreen', { n: list.length }), shortcut: KEYS.remove, run: () => s.removeTiles(list) }
+      : deletes === list.length
+        ? {
+          label: t('admin.menu.deleteEverywhere'), danger: true,
+          children: [{ label: t('admin.menu.deleteTilesConfirm', { n: list.length }), danger: true, run: () => s.removeTiles(list) }],
+        }
+        : {
+          label: t('admin.menu.removeTiles', { n: list.length }), danger: true,
+          children: [{ label: t('admin.menu.removeTilesConfirm'), danger: true, run: () => s.removeTiles(list) }],
+        },
+  ])
+}
+
 /** The menu of the canvas's empty background. */
 export function canvasMenu(s: AdminStore, ui: MenuUi): MenuEntry[] {
   if (!s.state.config) return []
+  const hasTiles = !!s.page.value?.items.length
   return tidy([
     { label: t('admin.menu.paste'), shortcut: KEYS.paste, disabled: !s.state.clipboard, run: () => s.pasteWidget() },
+    { label: t('admin.menu.selectAll'), shortcut: shortcutHint('selectAll'), disabled: !hasTiles, run: () => s.selectAll() },
     SEPARATOR,
     { label: t('admin.menu.addWidget'), run: () => ui.focusLibrarySearch() },
     { label: t('admin.menu.newPage'), run: () => s.addPage() },
     SEPARATOR,
     { label: t('admin.menu.pageBackground'), run: () => revealPageBackground(s, s.state.pageIndex, ui) },
-    { label: t('admin.menu.screenSettings'), run: () => s.openModal('screen') },
+    { label: t('admin.menu.screenSettings'), run: () => openSettings(s, 'screen') },
   ])
 }

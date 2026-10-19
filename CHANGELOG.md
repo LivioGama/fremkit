@@ -13,14 +13,107 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+
+- **iPad and extra screens are experimental until the iPad app is available.** Until you tick
+  **iPad and extra screens** under **Experimental features**, the admin hides **Settings → Devices**
+  and, on a dashboard with a single screen, the screen selector with its **+ Add a screen**;
+  importing a layout skips its iPad screens and says so. To show the option, click the version
+  number in **Settings → About** seven times (or focus it and press Enter seven times). Unticking it
+  hides the same things again. Whatever the option says, a dashboard with several screens keeps
+  its selector and **+ Add a screen**, and **Settings → Devices** stays in sight while pairing is on
+  or an iPad is paired, so it can always be switched off or the iPad unpaired. A dashboard that
+  already has several screens or an iPad screen starts with the option on. A backup restore or
+  a restored version keeps the option as it is on this Mac.
+- **The iPad follows the brightness set for its screen.** What you set in the admin or with the
+  Brightness widget, the day/night schedule included, is applied on the iPad, which reports its own
+  level back, so a change in Control Center shows in the admin. When the app is closed or not open
+  on that screen, the controls say so within 30 seconds. The iPad also switches to the night theme
+  and back on time, rather than at its next reload.
+- **The Fremkit iPad app pairs on its own.** Scan the QR code the admin shows, or open its
+  `fremkit://` link from the Camera app; without the camera, pick the Mac in the list, check that it
+  shows the same four words as the iPad, and type the code; the code only works for the Mac whose
+  key the iPad sees, so another machine on the network cannot pass it on. Opening a link while the iPad is paired
+  asks before replacing the pairing. The iPad reports the size its dashboard really gets, so it lands
+  on the matching screen. After **Reset the certificate**, the iPad says the Mac's key has changed
+  and offers **Pair again**. When the address it uses goes away (the Ethernet cable unplugged), the
+  iPad finds the Mac at its other network addresses by itself, even when the local network's name
+  lookup fails.
+- **A fingerprint for your Mac's key.** Under the pairing code, the Devices section shows four words
+  derived from the Mac's key; a device that shows the same four words is talking to this Mac. The Mac
+  is also announced on the network under its computer name rather than "Fremkit", with its address,
+  so an iPad finds it even where the Mac's `.local` name does not resolve.
+- **Alignment guides in the editor.** While you drag or resize a widget, or move it with the arrow
+  keys, thin accent lines show where its edges or its centre line up with another widget's, or
+  with the screen's edges and centre.
+- **Select several widgets at once in the editor.** Shift- or Cmd-click adds a widget to the
+  selection, dragging on the empty canvas draws a selection rectangle, and Cmd+A selects the whole
+  page. Selected widgets move together with the mouse or the arrow keys (locked ones stay where they
+  are), and duplicate, copy and paste (keeping their arrangement), lock, change opacity or title,
+  move to another page and delete together — from the keyboard, their right-click menu or the
+  inspector, each undone in one step.
+- **See a widget before placing it.** Hovering a card of the editor's widget library (or reaching
+  it with Tab) shows its preview with its name, what it does, its default size and what it may
+  read, control and reach.
+- **Demo mode acts out the Sietch's widgets too**: Codex sessions and quotas, local AI models, a
+  MuteDeck meeting, a Synology NAS, a Homey's devices and flows and an Elgato Key Light all show
+  invented data, so they can be tried and get preview images without any account or device.
+- **Every built-in widget has a preview**, taken with `pnpm widget:preview` against the demo
+  server, so none of it shows anybody's real data.
+- **Pictures in the Sietch.** A registry widget that publishes a preview shows it as a thumbnail on
+  its row of the Sietch, before you install it.
+- **`pnpm widget:preview`.** Takes a widget's preview image for you: it renders the widget alone at
+  its default size against a demo server, waits for it to show data, and writes `preview.webp`
+  into its folder. Works on the built-ins (`--all`) and on your own widget (`--dir`). See
+  [docs/writing-widgets.md](docs/writing-widgets.md#a-preview-image).
+- **Widget previews in the manifest.** A widget may name a `preview` image (`preview.webp` or
+  `.png`, at most 200 KB, twice its default size in pixels). The installer refuses a package whose
+  preview is missing or is not the image it claims to be, and `pnpm widget:check` checks its
+  dimensions and warns when a widget has none.
+- **Demo mode.** `pnpm demo` (or `FREMKIT_DEMO=1`) starts a server that shows a full, moving
+  dashboard of invented data — calendar, CPU, music, weather, Claude sessions, GitHub and Azure
+  DevOps runs, Dock badges — without reading anything off the Mac or any account, in a data folder
+  of its own. For screenshots, App Store review of the iPad app, and trying Fremkit out. See
+  [docs/demo-mode.md](docs/demo-mode.md).
+- **Command palette.** ⌘K (or Ctrl+K, or **Commands** in the top bar) opens a search field over
+  the editor that reaches everything it can do: add a widget to the page, go to a page or a
+  screen, select a widget by its name, open a connection, jump to a widget's setting by its label,
+  run the fix of a widget that needs attention, and every command of the menus — the selected
+  widget's right-click menu with its submenus (type "move work" to send it to the page Work), the
+  page's and the screen's, undo, redo, Edit/Test, the theme, the history, export and import,
+  diagnostics. Accents and case do not matter; ↑ ↓ choose, Enter runs, → opens a submenu, Escape
+  closes. With nothing typed it starts with the last commands you ran.
+- **Keyboard shortcuts sheet.** Press `?` in the editor, or pick **Keyboard shortcuts** in the
+  command palette, to see every shortcut of the editor in one place.
+- **Tab through the page's widgets.** In the editor, Tab and Shift+Tab select the next and the
+  previous widget of the page, top to bottom; the arrows then move it a cell at a time and
+  Shift+arrows resize it. Holding an arrow down is one step to undo, not one per cell.
+- **Dashboard history.** Settings → History & backup (or the button next to undo) lists every saved version
+  of the dashboard for the last month, by day, with what changed in each — pages, widgets,
+  screens, theme. Open one to see its pages and restore it in two taps; the version it replaces
+  stays in the list, so a restore is undone the same way. The version before a backup restore or
+  a Fremkit update is always kept. Your privacy settings, widget permissions and secrets stay as
+  they are.
 - **Widget health in the editor.** A widget that cannot work — not installed, its connection
-  deleted, incomplete or refusing its credentials, its data source out of reach, no connection
-  chosen yet, or an update waiting — wears a red or orange dot on its tile in the editor, with
-  the reason in its tooltip. Select it and the reason sits above its settings with the button
-  that fixes it (open the connection, open the setting, install, update…); its right-click menu
-  starts with **Fix:**. The pages list and the screens selector mark where such a widget is, and
-  the top bar counts them: click the count to list them all. It follows the dashboard live; a
-  widget whose page has not been on screen since Fremkit started has nothing to report yet.
+  deleted, incomplete or refusing its credentials, its data source out of reach, or no connection
+  chosen yet — wears a red or orange dot on its tile in the editor, with the reason in its
+  tooltip. Select it and the reason sits above its settings with the button that fixes it (open
+  the connection, open the setting, install…); its right-click menu starts with **Fix:**. The
+  pages list and the screens selector mark where such a widget is, and the top bar counts them:
+  click the count to list them all. An update is not a problem: a widget with a newer version in
+  the registry wears a small arrow in the theme's accent instead, its inspector says which
+  version is available beside an **Update** button, and its menu offers **Update to vX**; the
+  Sietch button counts updates. It follows the dashboard live; a widget whose page has not been
+  on screen since Fremkit started has nothing to report yet.
+- **Share a page, a screen or your whole setup.** **Export page…** in a page's right-click menu,
+  **Export screen…** and **Export the whole setup…** in a screen's, or **Settings → Share → Share your setup**
+  write a `.fremkit-layout.json` holding the pages, the bar, the tiles' look and settings, the
+  theme and the background images. The export shows what is in the file before you download or
+  copy it: connections, secrets, host names, e-mail addresses, device names, privacy choices and
+  brightness schedules never are, and settings typed as free text (a label, a link) go in only
+  if you tick them. **Import a layout…** — or dropping the file onto the editor — shows what it
+  adds, offers to install the widgets you do not have from the Sietch (asking what they may do,
+  as always), asks which of your connections a widget should use, and adds the pages or screens
+  beside yours unless you choose to replace them. One ⌘Z takes the whole import back.
 - **A theme for the night.** Under the theme list, pick another theme for the night and when it
   takes over: at sunrise and sunset where you are, or at fixed times — the same choice as the
   screen brightness's day and night, and its place is offered when it has one. The dashboard,
@@ -34,13 +127,16 @@ tagged `vX.Y.Z`.
   page backgrounds like any other.
 - **Right-click menus on the rest of the editor.** On a page in the list: rename, duplicate, page
   background, copy to another screen (as new widgets with the same settings, laid out for that
-  screen), move up or down, delete. Pages now reorder by dragging, and a row shows a single "…"
+  screen), move up or down, delete. Pages now reorder by dragging, which the grip at the start of
+  each row says, and a row shows a single "…"
   on hover instead of five buttons. On a widget in the library: add it to any page, add it to the
   bar, and for a widget from the Sietch, show it there, update it or uninstall it. On a bar widget,
-  in the preview or in the Screen settings: its settings, move left or right, remove. On a screen
+  in the preview or in the Screen settings: its settings, move left or right, remove. On a page of
+  the bar in the preview, that page's menu; on the bar itself: new page, add a widget to the bar,
+  the bar's settings. On a screen
   above the canvas: rename it in place (or double-click it), its settings, delete it.
 - **Right-click menus in the editor.** A right click on a widget opens a real menu, like a Mac
-  app's: settings, show title, appearance (opacity presets, colours, background image, reset),
+  app's: show title, appearance (opacity presets, colours, background image, reset),
   copy and paste a widget's style, duplicate, copy and paste, move it to another page or screen,
   show it on another screen too, default or minimum size, open its connection, about the widget
   (version, where it came from, what it asks for, an update when one is waiting), reload it, and
@@ -55,26 +151,27 @@ tagged `vX.Y.Z`.
 - **The extension checks it is talking to your Fremkit before it signs in.** When another program holds Fremkit's port, the extension keeps its credential to itself and its popup says *The server on this port is not your Fremkit*. It also refuses a pairing approval that comes back faster than anyone could tap Allow on the Edge. When it shows itself removed without proof that Fremkit said so, its popup warns not to reconnect unless you removed the browser yourself.
 - **Paired browser extensions are listed with your devices.** Screen → Devices shows each extension with its name (editable), when it paired and was last seen, whether it is connected now, and a Remove button, plus the pairing request waiting for an answer, which can be allowed or refused there as well as on the Edge.
 - **Pairing a browser extension is confirmed on the Edge.** The dashboard shows the code and the browser's name, with Allow and Refuse buttons, and brings up the page holding the Fremplay widget when a share starts. While a request waits, no other extension can take its place, and the prompt counts the other browsers turned away meanwhile; Allow is held for two seconds whenever a new request appears: the answer only goes through for the code that was on show.
-- **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another
-  one, and give each its own layout. A pre-fill is shown as a preview first, naming the widgets
-  that do not fit the new screen, and the Screen panel gives each screen its own address. A
-  widget shown on more than one screen is the same widget: edit its settings once and every
-  screen follows. Removing it from one screen keeps it on the others; on its last screen the
-  admin names it and asks before deleting it. The widget library lists what your other screens
-  show, to place the same widget here, and a tile shown on several screens wears the number of
-  screens.
+- **Several screens per dashboard** (an experimental feature for now, see above). Add a screen in
+  the admin, empty or pre-filled from another one, and give each its own layout. A pre-fill is shown
+  as a preview first, naming the widgets that do not fit the new screen, and the Screen panel gives
+  each screen its own address. A widget shown on more than one screen is the same widget: edit its
+  settings once and every screen follows. Removing it from one screen keeps it on the others; on its
+  last screen the admin names it and asks before deleting it. The widget library lists what your
+  other screens show, to place the same widget here, and a tile shown on several screens wears the
+  number of screens.
 - **Choose page names in the bar.** Each screen can keep the familiar page dots or show
   scrolling names with a current-page marker. Arrows move by a visible page, and the admin
   reserves room for compact widgets. Page taps still work with the admin gestures
   (@FlorianBruniaux, #18).
-- **Pair an iPad** (Mac side). **Screen → Devices** turns on an encrypted listener on the local
-  network, shows a pairing QR code, lists the paired devices with the screen each shows, and
-  unpairs one after you confirm. An iPad screen is created from the paired iPad, at its exact size. The
-  iPad app comes next.
+- **Pair an iPad** (Mac side, an experimental feature for now, see above). **Settings → Devices**
+  turns on an encrypted listener on the local network, shows a pairing QR code, lists the paired
+  devices with the screen each shows, and unpairs one after you confirm. An iPad screen is created
+  from the paired iPad, at its exact size. The iPad app is described above;
+  [docs/devices.md](docs/devices.md) walks through it.
 - **Screen brightness.** A new built-in *Brightness* widget sets the brightness of the screen
   the dashboard is on, from a tile or from the bar, by sliding a finger along it; the
   helper's menu has the same slider. It works over DDC/CI on Apple silicon Macs; a display that
-  does not answer DDC says so instead of failing silently. In **Screen → Brightness**, each
+  does not answer DDC says so instead of failing silently. In **Settings → *a screen* → Brightness**, each
   screen can switch between a day and a night level at sunrise and sunset (computed on the Mac
   from coordinates you type, or find with a city search that asks Open-Meteo only when you press
   *Search*) or at fixed times, with a gradual change, and can follow
@@ -94,7 +191,7 @@ tagged `vX.Y.Z`.
   search ignores accents too now.
 - **Tidy the widget list.** Two buttons beside the Widgets title open or fold every shelf at once,
   and a box hides the widgets the selected screen already shows, on a page or in its bar.
-- **Copy diagnostics for a bug report.** **Screen → About** prepares a report to paste into a
+- **Copy diagnostics for a bug report.** **Settings → About** prepares a report to paste into a
   GitHub issue: the versions, the widgets and connection types in use with their state, and the
   recent server log. Secrets, IP addresses, e-mails, host names and the names you gave things are
   removed, and the report is shown before you copy it. A link opens the bug form. The menu bar
@@ -111,8 +208,26 @@ tagged `vX.Y.Z`.
   light-tile layouts, every text in both languages — and has a running server pick it up.
   `pnpm widget:check <folder>` applies the registry's and the installer's rules to a widget
   before you open a pull request on the Sietch.
+- **End-to-end tests, for contributors.** `pnpm e2e` drives the admin and the dashboard in
+  Chromium (and WebKit when installed) against a throwaway server per worker: the library,
+  editing with the mouse and the keyboard, every right-click menu, ⌘K, undo, export and import,
+  the history, widget health, swipes and the night theme, and a security smoke test. Pull
+  requests run it in CI. See `docs/contributing.md`.
 
 ### Changed
+- **The widget inspector keeps the widget's name in view**, with *Expand all* / *Collapse all* for
+  its sections, while they scroll.
+- **The Sietch keeps its tabs, search and filters in view** while its list scrolls, with *Expand all*
+  / *Collapse all* for its shelves. Escape in its search clears the search before it closes the
+  window.
+- **Settings, in a window of their own.** The top bar's *Screen* button is now *Settings*, and it
+  opens a window laid out like the Mac's: every screen on the left, each with its own settings
+  (name, layout and bar, bar widgets, background, brightness, kiosk address), then the app's panes —
+  General (the language), Appearance (theme and night theme), Share, History & backup, Privacy,
+  Devices and About. The search above them finds a setting in any pane ("opacity", "kiosque",
+  "backup"), accents ignored, and shows only what it found; Escape clears it. A pane's title and its
+  *Expand all* / *Collapse all* stay in view while its sections scroll. *Screen settings…*,
+  *Navigation bar settings…* and the command palette open the window on the right pane.
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer
   together instead of running over the bar's widgets, down to a size a finger can still hit.
 - **Upgrading the dashboard file.** Your dashboard is converted to the new screens layout the
@@ -125,6 +240,10 @@ tagged `vX.Y.Z`.
 - **Adding a screen** creates an Edge screen; an iPad screen is now created from a paired iPad.
 
 ### Fixed
+- **Right-clicking a widget in the bar of the editor's preview opens its menu in Safari and in
+  the Mac's admin window too.** WebKit sent the click to the widget itself, so nothing opened.
+- Escape in a right-click menu opened inside a dialog (the Screen panel's bar widgets) closes
+  the menu only, not the dialog under it.
 - **The install instructions say `pnpm run setup`.** They said `pnpm setup`, which runs pnpm's
   own command instead: it edits your shell profile and never sets Fremkit up.
 - **A connection used only by the navigation bar is protected.** A widget shown only in the bar
@@ -140,6 +259,18 @@ tagged `vX.Y.Z`.
   page saying so.
   Scripts calling the server read the secret from
   `~/Library/Application Support/Fremkit/access-4242.token` (see the README).
+- **An iPad pairs only from your local network, and only while a code is showing.** With
+  *Allow an iPad on the local network* on, the Mac now answers only private and link-local addresses
+  (and itself): a public address, IPv4 or IPv6, and Tailscale get no answer. A VPN that hands out the
+  same private addresses as a home network cannot be told apart from it and still reaches the Mac,
+  though not without a pairing code or a paired iPad's key. Pairing answers
+  only while the admin shows a code; the iPad says so when the code has run out, so make a new one.
+  Wrong codes are counted per address (per network prefix for most IPv6 addresses), and when the
+  Mac answers "too many tries" on one of its addresses the iPad tries the others, so a single machine
+  guessing no longer keeps your iPad from pairing. Scanning the QR code can no longer be blocked at
+  all: it carries a long one-time secret that pairs even while the Mac is refusing codes. A machine
+  guessing from many addresses at once can still hold the typed code until it stops; scan the QR code
+  instead.
 - **A browser holds a session, not the key.** Signing a browser in now gives it a session of its
   own that ends after a day unused, after a week at most, or when Fremkit restarts, instead of
   the key itself. Another program listening on your Mac can no longer pick the key up from the

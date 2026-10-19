@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createAdminStore } from '../src/admin/store'
-import { canvasMenu, connectionOf, widgetMenu, type MenuUi } from '../src/admin/canvasMenu'
+import { canvasMenu, connectionOf, selectionMenu, widgetMenu, type MenuUi } from '../src/admin/canvasMenu'
 import { setLocale } from '../src/shared/i18n'
 import { isSeparator, type MenuEntry, type MenuItem } from '../src/shared/ui/contextMenu'
 import type { Config, WidgetManifest } from '../src/shared/types'
@@ -67,7 +67,7 @@ describe('widgetMenu', () => {
     const menu = widgetMenu(s, 'clock-1', ui())
     const labels = items(menu).map((e) => e.label)
     expect(labels).toEqual([
-      'Settings…', 'Show title', 'Appearance', 'Copy style', 'Paste style', 'Duplicate', 'Copy', 'Paste',
+      'Show title', 'Appearance', 'Copy style', 'Paste style', 'Duplicate', 'Copy', 'Paste',
       'Move to page', 'Also show on screen', 'Move to screen', 'Size', 'Lock position',
       'About this widget…', 'Reload widget', 'Delete everywhere',
     ])
@@ -184,12 +184,70 @@ describe('canvasMenu', () => {
     const s = await make()
     const u = ui()
     const menu = canvasMenu(s, u)
-    expect(items(menu).map((e) => e.label)).toEqual(['Paste', 'Add a widget…', 'New page', 'Page background…', 'Screen settings…'])
+    expect(items(menu).map((e) => e.label)).toEqual(['Paste', 'Select all', 'Add a widget…', 'New page', 'Page background…', 'Screen settings…'])
     expect(find(menu, 'Paste').disabled).toBe(true)
+    expect(find(menu, 'Select all').shortcut).toBe('⌘A')
+    find(menu, 'Select all').run!()
+    expect(s.state.selection).toEqual(['clock-1', 'gh-1'])
     find(menu, 'Add a widget').run!()
     expect(u.focusLibrarySearch).toHaveBeenCalled()
     find(menu, 'Screen settings').run!()
-    expect(s.state.modal).toBe('screen')
+    expect(s.state.modal).toBe('settings')
+  })
+})
+
+describe('selectionMenu', () => {
+  const sub = (menu: MenuEntry[], label: string): MenuEntry[] => find(menu, label).children!
+
+  it('offers what makes sense for several tiles, each command one undo step', async () => {
+    const s = await make()
+    const both = ['clock-1', 'gh-1']
+    expect(selectionMenu(s, ['clock-1'])).toEqual([])
+    const menu = selectionMenu(s, both)
+    expect(items(menu).map((e) => e.label)).toEqual([
+      'Show title', 'Appearance', 'Duplicate', 'Copy', 'Paste', 'Move to page', 'Lock position', 'Remove 2 widgets',
+    ])
+    // gh-1 shows no title: the check is off until all do, and the command turns it on for all.
+    expect(find(menu, 'Show title').checked).toBe(false)
+    find(menu, 'Show title').run!()
+    expect(s.state.config!.widgets['gh-1'].showTitle).toBe(true)
+    expect(s.state.config!.widgets['clock-1'].showTitle).toBe(true)
+    s.undo()
+    expect(s.state.config!.widgets['gh-1'].showTitle).toBe(false)
+
+    // Different opacities: no preset is checked; one sets both.
+    const presets = items(sub(menu, 'Appearance'))
+    expect(presets.filter((e) => e.checked)).toEqual([])
+    find(sub(menu, 'Appearance'), 'Opacity 40%').run!()
+    expect(s.state.config!.widgets['clock-1'].opacity).toBe(0.4)
+    expect(s.state.config!.widgets['gh-1'].opacity).toBe(0.4)
+
+    find(menu, 'Lock position').run!()
+    expect(s.page.value!.items.every((p) => p.locked)).toBe(true)
+    expect(find(selectionMenu(s, both), 'Lock position').checked).toBe(true)
+  })
+
+  it('confirms in a submenu when the removal deletes a widget, and is one undo step', async () => {
+    const s = await make()
+    const menu = selectionMenu(s, ['clock-1', 'gh-1'])
+    // gh-1 is also on the iPad, clock-1 only here.
+    const confirm = items(sub(menu, 'Remove 2 widgets'))
+    expect(confirm).toHaveLength(1)
+    confirm[0].run!()
+    expect(s.page.value!.items).toEqual([])
+    expect(s.state.config!.widgets['clock-1']).toBeUndefined()
+    expect(s.state.config!.widgets['gh-1']).toBeDefined()
+    s.undo()
+    expect(s.page.value!.items.map((p) => p.instanceId)).toEqual(['clock-1', 'gh-1'])
+  })
+
+  it('moves the group to another page', async () => {
+    const s = await make()
+    s.selectMany(['clock-1', 'gh-1'])
+    find(sub(selectionMenu(s, ['clock-1', 'gh-1']), 'Move to page'), 'Work').run!()
+    expect(s.state.pageIndex).toBe(1)
+    expect(s.page.value!.items.map((p) => p.instanceId)).toEqual(['clock-1', 'gh-1'])
+    expect(s.state.selection).toEqual(['clock-1', 'gh-1'])
   })
 })
 

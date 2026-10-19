@@ -1,6 +1,6 @@
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { BUILTIN_COLORS, type ThemeColors } from './color'
-import type { Config, ThemeInfo, ThemeInForce, ThemesResponse } from './types'
+import type { Config, ThemeInfo, ThemeInForce, ThemeSchedule, ThemesResponse } from './types'
 
 /** The theme every config falls back to, and the one the others are layered on. */
 export const BUILTIN_THEME = 'fremkit'
@@ -73,9 +73,13 @@ export function useThemeInForce(): Ref<ThemeInForce | null> { return inForce }
  *
  * The phase comes from the server, the ids from the config this page holds: in the admin that is
  * the config being edited, so choosing another night theme at night shows at once, before the
- * save has gone through.
+ * save has gone through. A paired device's config carries only the night theme's id
+ * (`deviceConfigView`), which is all this reads.
  */
-export function themeIdInForce(config: Pick<Config, 'theme' | 'themeSchedule'> | null | undefined, now: ThemeInForce | null): string | undefined {
+export function themeIdInForce(
+  config: { theme?: string; themeSchedule?: Pick<ThemeSchedule, 'night'> } | null | undefined,
+  now: ThemeInForce | null,
+): string | undefined {
   if (config?.themeSchedule && now?.phase === 'night') return config.themeSchedule.night
   return config?.theme
 }

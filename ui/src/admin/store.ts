@@ -5,12 +5,12 @@ import { useSocket } from '../shared/socket'
 import type { Background, Config, NavHeight, NavItem, Page, Placement, Screen, ScreenDisplay, Widget, WidgetInstance, WidgetManifest, WidgetPermissionSet, WidgetSource, WidgetsResponse } from '../shared/types'
 import { DEFAULT_NAV_HEIGHT, MAX_NAV_WIDGETS, ROWS_BY_NAV_HEIGHT, compactWidth, mergeSettings, navHasRoom, navWiderClusterWidth } from '../shared/types'
 import { DEVICE_CELL, DEVICE_NAV_HEIGHT, deviceGrid, pickScreen, screensShowing, tileOf } from '../shared/screens'
-import { fits, largestFreeSpot, type Grid, type Rect } from './layout'
+import { firstFreeBlock, fits, groupDelta, largestFreeSpot, moveRect, resizeRect, shiftAll, type Grid, type Rect } from './layout'
 import { arrangeInto } from './arrange'
 
 export type Mode = 'edit' | 'test'
 /** The modal dialogs opened from the top bar. Kept in the store so a widget setting can open one. */
-export type ModalName = 'screen' | 'connections' | 'marketplace' | 'about'
+export type ModalName = 'settings' | 'connections' | 'marketplace' | 'about' | 'export' | 'import' | 'shortcuts'
 export type Status = 'saved' | 'saving' | 'error'
 
 /** Edits are grouped this long before one PUT of the whole config. */
@@ -28,8 +28,11 @@ export const degradedMessage = (): string => t('admin.store.degraded')
 export const STYLE_KEYS = ['bgColor', 'accentColor', 'accentMode', 'background', 'opacity'] as const
 export type WidgetStyle = Pick<Widget, typeof STYLE_KEYS[number]>
 
-/** What "Copy" holds: a widget as it is set up, and the size of the tile it was copied from. */
-export interface CopiedWidget { widget: Widget; size: [number, number] }
+/**
+ * What "Copy" holds, one per copied tile: a widget as it is set up, the size of the tile it was
+ * copied from, and — for a group — where that tile sat relative to the group's top-left corner.
+ */
+export interface CopiedWidget { widget: Widget; size: [number, number]; at: [number, number] }
 
 export interface AdminState {
   config: Config | null
@@ -46,6 +49,16 @@ export interface AdminState {
   screenId: string
   /** Within the selected screen. */
   pageIndex: number
+  /**
+   * The selected tiles of the page, by instance id, in the order they were picked. Empty for none.
+   * Every list the store keeps here names tiles of the page shown: `clampSelection` sees to it.
+   */
+  selection: string[]
+  /**
+   * The one selected tile, or null when none is or several are: what single-tile editing (the
+   * widget inspector, the arrow keys' resize, the handles) reads. Setting it selects that tile
+   * alone — or nothing — so callers written before multiple selection keep working unchanged.
+   */
   selectedId: string | null
   dragWidgetId: string | null
   mode: Mode
@@ -69,7 +82,7 @@ export interface AdminState {
    * The editor's own clipboard for widgets — not the system one, which a WKWebView may not
    * share and which would hand someone's settings to any other app. Kept for the visit.
    */
-  clipboard: CopiedWidget | null
+  clipboard: CopiedWidget[] | null
   /** What "Copy style" took, for "Paste style". */
   styleClipboard: WidgetStyle | null
   /**
@@ -123,6 +136,8 @@ export interface AdminStore {
   screen: ComputedRef<Screen | null>
   page: ComputedRef<Page | null>
   selected: ComputedRef<WidgetInstance | null>
+  /** Every selected tile of the page, joined with its widget: one for a single selection. */
+  selectedTiles: ComputedRef<WidgetInstance[]>
   grid: ComputedRef<Grid>
   canUndo: ComputedRef<boolean>
   canRedo: ComputedRef<boolean>
@@ -134,6 +149,12 @@ export interface AdminStore {
   flush(): Promise<void>
   others(ignoreId?: string): Rect[]
   select(id: string | null): void
+  /** Adds a tile of the page to the selection, or takes it out when it is in it: Shift/⌘-click. */
+  toggleSelect(id: string): void
+  /** Selects exactly these tiles of the page (those not on it are ignored): what the marquee draws. */
+  selectMany(ids: string[]): void
+  /** Every tile of the page: ⌘A. */
+  selectAll(): void
   selectScreen(id: string): void
   selectPage(i: number): void
   setMode(mode: Mode): void
@@ -194,7 +215,44 @@ export interface AdminStore {
   canResize(instanceId: string, size: [number, number]): boolean
   /** Locks or unlocks this screen's placement: a locked tile is neither dragged nor resized. */
   setLocked(instanceId: string, locked: boolean): void
+  /**
+   * The keyboard's move: one tile of the page shifted by (dx, dy) cells, or — `resize` — grown or
+   * shrunk by that much from its south-east corner, as the arrow keys and Shift+arrows do. The
+   * rules are the drag's: kept inside the grid, never under the manifest's minimum size, refused
+   * when it would land on another tile, and nothing at all for a locked tile. False when refused.
+   *
+   * `repeat` is a key held down: its steps join the press that started it in one undo step, so
+   * one ⌘Z puts back what one hold moved.
+   */
+  nudgeWidget(instanceId: string, dx: number, dy: number, opts?: { resize?: boolean; repeat?: boolean }): boolean
+  /**
+   * Selects the next tile of the page (`delta` 1) or the previous one (-1), in reading order — top
+   * to bottom, then left to right — wrapping at both ends. With none selected, the first or the
+   * last. Null when the page has no tile.
+   */
+  cycleSelection(delta: 1 | -1): string | null
   copyWidget(instanceId: string): void
+  /**
+   * Several tiles moved together by (dx, dy) cells, as one block cut short at the grid's edge.
+   * Locked tiles stay where they are and the others move without them; refused (false) when a
+   * moved tile would land on one that stays, or when none of them may move. One undo step; with
+   * `repeat` (a held arrow) it joins the step its first press started.
+   */
+  moveTiles(ids: string[], dx: number, dy: number, opts?: { repeat?: boolean }): boolean
+  /** New widgets set up like these, placed together in the first spot of the page where the block fits. */
+  duplicateTiles(ids: string[]): void
+  /** `copyWidget` for several: the paste puts them back in the same arrangement. */
+  copyTiles(ids: string[]): void
+  /** Takes these tiles off this screen in one step; a widget shown nowhere else is deleted. */
+  removeTiles(ids: string[]): void
+  /** Moves these tiles together to another page of this screen, arranged as they are; refused when it has no room. */
+  moveTilesToPage(ids: string[], targetPageIndex: number): void
+  /** A new page at the end of this screen, with these tiles moved onto it where they were. */
+  moveTilesToNewPage(ids: string[]): void
+  /** `setLocked` for several, in one step. */
+  setLockedTiles(ids: string[], locked: boolean): void
+  /** The same patch to every one of these widgets — their look, never their place — in one step. */
+  updateWidgets(ids: string[], patch: Partial<Widget>): void
   /**
    * A new widget set up like the copied one — settings and look — on the current page, at the
    * copied size or the largest that fits. False when there was nothing to paste or no room.
@@ -260,7 +318,7 @@ export function freeInstanceId(cfg: Config, widgetId: string): string {
 }
 
 /** A page id free on that screen: `wanted` when it is, else a random one. */
-function freePageId(pages: Page[], wanted?: string): string {
+export function freePageId(pages: Page[], wanted?: string): string {
   if (wanted && !pages.some((p) => p.id === wanted)) return wanted
   let id = 'page-' + uid()
   while (pages.some((p) => p.id === id)) id = 'page-' + uid()
@@ -298,7 +356,9 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     newConnectionType: '', editConnectionId: '', aboutId: '',
     clipboard: null, styleClipboard: null, reloads: {},
     config: null, manifests: {}, sources: {}, asks: {}, catalogErrors: [],
-    screenId: '', pageIndex: 0, selectedId: null, dragWidgetId: null,
+    screenId: '', pageIndex: 0, selection: [], dragWidgetId: null,
+    get selectedId(): string | null { return this.selection.length === 1 ? this.selection[0] : null },
+    set selectedId(id: string | null) { this.selection = id ? [id] : [] },
     mode: 'edit', modal: null, status: 'saved', toast: '', degraded: false,
   })
   // Reactive arrays: canUndo/canRedo read their .length, and a plain array here would give
@@ -331,6 +391,15 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     const placement = page.value?.items.find((p) => p.instanceId === state.selectedId)
     return placement && state.config ? tileOf(state.config, placement) : null
   })
+  const selectedTiles = computed<WidgetInstance[]>(() => {
+    const cfg = state.config
+    const items = page.value?.items ?? []
+    if (!cfg) return []
+    return state.selection.flatMap((id) => {
+      const placement = items.find((p) => p.instanceId === id)
+      return placement ? [tileOf(cfg, placement)] : []
+    })
+  })
   const grid = computed<Grid>(() => ({ cols: screen.value?.display.cols ?? 64, rows: screen.value?.display.rows ?? 16 }))
   const canUndo = computed(() => undoStack.length > 0)
   const canRedo = computed(() => redoStack.length > 0)
@@ -347,7 +416,8 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     if (!scr) return
     if (state.screenId !== scr.id) { state.screenId = scr.id; state.pageIndex = 0 }
     state.pageIndex = Math.max(0, Math.min(state.pageIndex, scr.pages.length - 1))
-    if (state.selectedId && !page.value?.items.some((p) => p.instanceId === state.selectedId)) state.selectedId = null
+    const onPage = new Set((page.value?.items ?? []).map((p) => p.instanceId))
+    if (state.selection.some((id) => !onPage.has(id))) state.selection = state.selection.filter((id) => onPage.has(id))
   }
 
   /** The edited screen inside the config a mutation is handed. */
@@ -422,10 +492,21 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     timer = setTimeout(() => { timer = undefined; kick() }, debounceMs)
   }
 
-  function apply(mutate: (cfg: Config) => void): void {
+  /**
+   * The step the last `apply` belonged to, when it may be continued (a key held down), else null.
+   * An apply under the same name joins that undo step instead of starting one; any other apply,
+   * an undo or a redo ends it.
+   */
+  let openStep: string | null = null
+
+  function apply(mutate: (cfg: Config) => void, step: { name: string; join: boolean } | null = null): void {
     if (!state.config) return
-    undoStack.push(snapshot())
-    if (undoStack.length > UNDO_LIMIT) undoStack.shift()
+    // An emptied history (a reload, a push from another tab) has no step left to join.
+    if (!(step?.join && openStep === step.name && undoStack.length)) {
+      undoStack.push(snapshot())
+      if (undoStack.length > UNDO_LIMIT) undoStack.shift()
+    }
+    openStep = step?.name ?? null
     redoStack.length = 0
     mutate(state.config)
     clampSelection()
@@ -478,7 +559,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
   }
 
   const store: AdminStore = {
-    state, screen, page, selected, grid, canUndo, canRedo,
+    state, screen, page, selected, selectedTiles, grid, canUndo, canRedo,
 
     async load(): Promise<void> {
       const [cfg, widgets, status] = await Promise.all([deps.api.getConfig(), deps.api.getWidgets(), deps.api.getStatus()])
@@ -503,9 +584,10 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       state.catalogErrors = widgets.errors
     },
 
-    apply,
+    apply: (mutate) => apply(mutate),
 
     undo(): void {
+      openStep = null
       const prev = undoStack.pop()
       if (!prev) return
       redoStack.push(snapshot())
@@ -515,6 +597,7 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     },
 
     redo(): void {
+      openStep = null
       const next = redoStack.pop()
       if (!next) return
       undoStack.push(snapshot())
@@ -534,6 +617,21 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
     },
 
     select(id: string | null): void { state.selectedId = id },
+
+    toggleSelect(id: string): void {
+      if (!page.value?.items.some((p) => p.instanceId === id)) return
+      state.selection = state.selection.includes(id) ? state.selection.filter((x) => x !== id) : [...state.selection, id]
+    },
+
+    selectMany(ids: string[]): void {
+      const onPage = new Set((page.value?.items ?? []).map((p) => p.instanceId))
+      const next = [...new Set(ids)].filter((id) => onPage.has(id))
+      if (next.length !== state.selection.length || next.some((id, i) => state.selection[i] !== id)) state.selection = next
+    },
+
+    selectAll(): void {
+      state.selection = (page.value?.items ?? []).map((p) => p.instanceId)
+    },
     selectPage(i: number): void { state.pageIndex = i; state.selectedId = null },
     setMode(mode: Mode): void { state.mode = mode; if (mode === 'test') state.selectedId = null },
     openModal(name: ModalName): void { state.modal = name; state.newConnectionType = ''; state.editConnectionId = '' },
@@ -901,26 +999,185 @@ export function createAdminStore(deps: StoreDeps): AdminStore {
       })
     },
 
-    copyWidget(instanceId: string): void {
-      const src = page.value?.items.find((p) => p.instanceId === instanceId)
+    nudgeWidget(instanceId: string, dx: number, dy: number, opts: { resize?: boolean; repeat?: boolean } = {}): boolean {
+      const placement = page.value?.items.find((p) => p.instanceId === instanceId)
       const widget = state.config?.widgets[instanceId]
-      if (!src || !widget) return
-      state.clipboard = { widget: clone(widget), size: [src.w, src.h] }
+      if (!placement || !widget || placement.locked) return false
+      const start = rectOf(placement)
+      const min = state.manifests[widget.widgetId]?.minSize ?? [1, 1]
+      const next = opts.resize
+        ? resizeRect(start, 'se', dx, dy, min, grid.value)
+        : moveRect(start, dx, dy, grid.value)
+      if (GEOMETRY.every((k) => next[k] === start[k])) return false
+      if (!fits(next, grid.value, store.others(instanceId))) return false
+      const pageId = page.value!.id
+      apply((c) => {
+        const target = here(c).pages.find((p) => p.id === pageId)?.items.find((x) => x.instanceId === instanceId)
+        if (target) Object.assign(target, next)
+      }, { name: `nudge:${opts.resize ? 'resize' : 'move'}:${instanceId}`, join: !!opts.repeat })
+      return true
+    },
+
+    cycleSelection(delta: 1 | -1): string | null {
+      const items = [...(page.value?.items ?? [])].sort((a, b) => a.y - b.y || a.x - b.x)
+      if (!items.length) return null
+      const at = items.findIndex((p) => p.instanceId === state.selectedId)
+      const i = at < 0 ? (delta > 0 ? 0 : items.length - 1) : (at + delta + items.length) % items.length
+      state.selectedId = items[i].instanceId
+      return state.selectedId
+    },
+
+    copyWidget(instanceId: string): void {
+      store.copyTiles([instanceId])
+    },
+
+    copyTiles(ids: string[]): void {
+      const cfg = state.config
+      const tiles = (page.value?.items ?? []).filter((p) => ids.includes(p.instanceId) && cfg?.widgets[p.instanceId])
+      if (!cfg || !tiles.length) return
+      const x0 = Math.min(...tiles.map((p) => p.x))
+      const y0 = Math.min(...tiles.map((p) => p.y))
+      state.clipboard = tiles.map((p) => ({ widget: clone(cfg.widgets[p.instanceId]), size: [p.w, p.h], at: [p.x - x0, p.y - y0] }))
     },
 
     pasteWidget(): boolean {
       const copied = state.clipboard
-      if (!copied || !state.config || !page.value) return false
-      const min = state.manifests[copied.widget.widgetId]?.minSize ?? [1, 1]
-      const spot = largestFreeSpot(copied.size, min, grid.value, store.others())
-      if (!spot) { state.toast = t('admin.store.noRoom'); return false }
+      if (!copied?.length || !state.config || !page.value) return false
+      // One tile: the largest spot down to its minimum size, as it has always been.
+      if (copied.length === 1) {
+        const [one] = copied
+        const min = state.manifests[one.widget.widgetId]?.minSize ?? [1, 1]
+        const spot = largestFreeSpot(one.size, min, grid.value, store.others())
+        if (!spot) { state.toast = t('admin.store.noRoom'); return false }
+        apply((c) => {
+          const id = freeInstanceId(c, one.widget.widgetId)
+          c.widgets[id] = clone(one.widget)
+          here(c).pages[state.pageIndex].items.push({ instanceId: id, ...spot })
+          state.selectedId = id
+        })
+        return true
+      }
+      // A group: as one block, in the arrangement it was copied in, or not at all.
+      const rects = copied.map((x) => ({ x: x.at[0], y: x.at[1], w: x.size[0], h: x.size[1] }))
+      const shift = firstFreeBlock(rects, grid.value, store.others())
+      if (!shift) { state.toast = t('admin.store.noRoomGroup'); return false }
       apply((c) => {
-        const id = freeInstanceId(c, copied.widget.widgetId)
-        c.widgets[id] = clone(copied.widget)
-        here(c).pages[state.pageIndex].items.push({ instanceId: id, ...spot })
-        state.selectedId = id
+        const items = here(c).pages[state.pageIndex].items
+        const made: string[] = []
+        copied.forEach((x, i) => {
+          const id = freeInstanceId(c, x.widget.widgetId)
+          c.widgets[id] = clone(x.widget)
+          items.push({ instanceId: id, ...shiftAll([rects[i]], shift.dx, shift.dy)[0] })
+          made.push(id)
+        })
+        state.selection = made
       })
       return true
+    },
+
+    moveTiles(ids: string[], dx: number, dy: number, opts: { repeat?: boolean } = {}): boolean {
+      const items = page.value?.items ?? []
+      const moving = items.filter((p) => ids.includes(p.instanceId) && !p.locked)
+      if (!moving.length) return false
+      const step = groupDelta(moving.map(rectOf), dx, dy, grid.value)
+      if (!step.dx && !step.dy) return false
+      const ids2 = new Set(moving.map((p) => p.instanceId))
+      const staying = items.filter((p) => !ids2.has(p.instanceId)).map(rectOf)
+      if (!shiftAll(moving.map(rectOf), step.dx, step.dy).every((r) => fits(r, grid.value, staying))) return false
+      const pageId = page.value!.id
+      apply((c) => {
+        for (const p of here(c).pages.find((x) => x.id === pageId)?.items ?? []) {
+          if (ids2.has(p.instanceId)) { p.x += step.dx; p.y += step.dy }
+        }
+      }, { name: `nudge:group:${[...ids2].sort().join(',')}`, join: !!opts.repeat })
+      return true
+    },
+
+    duplicateTiles(ids: string[]): void {
+      const cfg = state.config
+      const tiles = (page.value?.items ?? []).filter((p) => ids.includes(p.instanceId) && cfg?.widgets[p.instanceId])
+      if (!cfg || !tiles.length) return
+      if (tiles.length === 1) { store.duplicateWidget(tiles[0].instanceId); return }
+      const shift = firstFreeBlock(tiles.map(rectOf), grid.value, store.others())
+      if (!shift) { state.toast = t('admin.store.noRoomGroup'); return }
+      apply((c) => {
+        const items = here(c).pages[state.pageIndex].items
+        const made: string[] = []
+        for (const p of tiles) {
+          const id = freeInstanceId(c, c.widgets[p.instanceId].widgetId)
+          c.widgets[id] = clone(c.widgets[p.instanceId])
+          items.push({ instanceId: id, ...shiftAll([rectOf(p)], shift.dx, shift.dy)[0] })
+          made.push(id)
+        }
+        state.selection = made
+      })
+    },
+
+    removeTiles(ids: string[]): void {
+      if (!ids.length) return
+      apply((c) => {
+        const scr = here(c)
+        for (const p of scr.pages) p.items = p.items.filter((x) => !ids.includes(x.instanceId))
+        scr.nav = scr.nav.filter((x) => !ids.includes(x.instanceId))
+        dropUnplaced(c, ids)
+        state.selection = state.selection.filter((id) => !ids.includes(id))
+      })
+    },
+
+    moveTilesToPage(ids: string[], targetPageIndex: number): void {
+      const tiles = (page.value?.items ?? []).filter((p) => ids.includes(p.instanceId))
+      const target = screen.value?.pages[targetPageIndex]
+      if (!tiles.length || !target || targetPageIndex === state.pageIndex) return
+      if (tiles.length === 1) { store.moveWidget(tiles[0].instanceId, targetPageIndex); return }
+      const shift = firstFreeBlock(tiles.map(rectOf), grid.value, target.items.map(rectOf))
+      if (!shift) { state.toast = t('admin.store.noRoomGroupOnPage', { page: target.name }); return }
+      const moved = new Set(tiles.map((p) => p.instanceId))
+      apply((c) => {
+        const pages = here(c).pages
+        const from = pages[state.pageIndex]
+        const taken = from.items.filter((p) => moved.has(p.instanceId))
+        from.items = from.items.filter((p) => !moved.has(p.instanceId))
+        for (const p of taken) pages[targetPageIndex].items.push({ ...p, x: p.x + shift.dx, y: p.y + shift.dy })
+        state.pageIndex = targetPageIndex
+        state.selection = taken.map((p) => p.instanceId)
+      })
+    },
+
+    moveTilesToNewPage(ids: string[]): void {
+      const moved = new Set((page.value?.items ?? []).filter((p) => ids.includes(p.instanceId)).map((p) => p.instanceId))
+      if (!moved.size) return
+      apply((c) => {
+        const pages = here(c).pages
+        const from = pages[state.pageIndex]
+        const taken = from.items.filter((p) => moved.has(p.instanceId))
+        from.items = from.items.filter((p) => !moved.has(p.instanceId))
+        // They fitted together where they were, so an empty page takes them there as they are.
+        pages.push({ id: freePageId(pages), name: t('admin.store.newPage'), items: taken })
+        state.pageIndex = pages.length - 1
+        state.selection = taken.map((p) => p.instanceId)
+      })
+    },
+
+    setLockedTiles(ids: string[], locked: boolean): void {
+      const onPage = (page.value?.items ?? []).filter((p) => ids.includes(p.instanceId))
+      if (!onPage.length) return
+      apply((c) => {
+        for (const p of here(c).pages) {
+          for (const placement of p.items) {
+            if (!ids.includes(placement.instanceId)) continue
+            if (locked) placement.locked = true; else delete placement.locked
+          }
+        }
+      })
+    },
+
+    updateWidgets(ids: string[], patch: Partial<Widget>): void {
+      const cfg = state.config
+      const targets = ids.filter((id) => cfg?.widgets[id])
+      if (!targets.length) return
+      apply((c) => {
+        for (const id of targets) patchInto(c.widgets[id] as unknown as Record<string, unknown>, patch as Record<string, unknown>)
+      })
     },
 
     copyStyle(instanceId: string): void {

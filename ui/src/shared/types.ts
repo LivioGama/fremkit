@@ -146,16 +146,26 @@ export interface Privacy {
   macmonTemperature: boolean
 }
 
+/**
+ * Features shipped but kept out of the admin until they are ready. `devices` is iPad pairing and
+ * adding screens; the server infers it for a config written before it existed.
+ */
+export interface Labs {
+  devices: boolean
+}
+
 export interface Config {
   version: 4
   /** Id of a theme in `themes/`, the same on every screen; an unknown id paints the built-in one. */
   theme?: string
-  /** A night theme and when it takes over; absent means one theme, day and night. */
+  /** A night theme and when it takes over; absent means one theme, day and night. A paired device gets only `night`. */
   themeSchedule?: ThemeSchedule
   connections: Connection[]
   secrets: { backend: SecretsBackend }
   locale?: Locale
   privacy: Privacy
+  /** Absent in a config the server has not answered with yet, which reads as all off. */
+  labs?: Labs
   /** Every widget instance, keyed by instance id, however many screens show it. */
   widgets: Record<string, Widget>
   /** At least one; the first `edge` one is what the Edge shows. */
@@ -322,6 +332,8 @@ export interface WidgetManifest {
   subscriptions: string[]; commands: string[]
   settingsSchema: Record<string, SettingField>
   permissions: { network: string[] }
+  /** A picture of the widget, a path inside its folder (`/widgets/<id>/<preview>`). */
+  preview?: string
 }
 
 /**
@@ -558,6 +570,11 @@ export interface MarketplaceWidget {
   /** A built-in already owns this id, so it can never be installed. */
   shadowsBuiltin: boolean
   /**
+   * The registry's URL of the widget's preview image, when it publishes one. Never loaded as is:
+   * the admin shows `/api/marketplace/preview/<id>`, which the server fetches and checks.
+   */
+  preview?: string
+  /**
    * What this version changed, as plain text from the package's changelog.
    *
    * **Rendered as text, never as markup.** The registry strips the markdown, but this is a
@@ -668,3 +685,63 @@ export function mergeSettings(manifest: WidgetManifest | undefined, settings: Re
   for (const [k, f] of Object.entries(manifest?.settingsSchema ?? {})) out[k] = f.default
   return { ...out, ...settings }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Shared layouts: mirrors server/src/share/. The server builds and reads the file; the admin
+// shows what is in it and applies it through its store.
+
+export type LayoutScope = 'page' | 'screen' | 'setup'
+export type SharedSource = 'builtin' | 'sietch' | 'local'
+export interface SharedBackground { color?: string; image?: string; fit?: BackgroundFit }
+export interface SharedWidget {
+  widgetId: string; title?: string; showTitle: boolean
+  bgColor?: string; accentColor?: string; accentMode?: AccentMode
+  background?: { image: string; fit?: BackgroundFit; dim?: number }
+  opacity?: number
+  settings: Record<string, unknown>
+}
+export interface SharedPlacement { widget: string; x: number; y: number; w: number; h: number; locked?: boolean }
+export interface SharedPage { name: string; items: SharedPlacement[]; background?: SharedBackground }
+export interface SharedNavItem { widget: string; slot: NavSlot; popup?: boolean }
+export type SharedDisplay = Omit<ScreenDisplay, 'background'> & { background?: SharedBackground }
+export interface SharedScreen { name: string; kind: 'edge' | 'device'; display: SharedDisplay; nav: SharedNavItem[]; pages: SharedPage[] }
+export interface LayoutFile {
+  format: 'fremkit-layout'
+  version: number
+  fremkit?: string
+  scope: LayoutScope
+  theme?: { day: string; night?: string }
+  widgets: Record<string, SharedWidget>
+  catalog: Record<string, { version: string; source: SharedSource }>
+  screens: SharedScreen[]
+  /** In a preview, an embedded image is its size; in a file, its bytes as base64. */
+  images: Record<string, { shipped: true } | { data: string } | { bytes: number }>
+}
+
+export type LeftOutReason = 'connection' | 'personal' | 'unknown' | 'invalid'
+export interface ExportReport {
+  scope: LayoutScope
+  name: string | null
+  screens: number; pages: number; tiles: number
+  widgets: { widgetId: string; name: LocalizedText; version: string; source: SharedSource; count: number }[]
+  theme: { day: string; night?: string } | null
+  images: { embedded: { key: string; bytes: number }[]; leftOut: { reason: 'missing' | 'tooLarge' | 'budget'; bytes?: number }[] }
+  removed: { instanceId: string; widget: string; key: string; label: LocalizedText; reason: LeftOutReason }[]
+  optional: { id: string; instanceId: string; widget: string; key: string; label: LocalizedText; preview: string; included: boolean }[]
+  renamed: { kind: 'page' | 'screen' | 'title'; to: string | null }[]
+}
+export interface ExportPreview { file: LayoutFile; filename: string; report: ExportReport }
+
+export type ImportWidgetStatus = WidgetSource | 'missing'
+export interface ImportReport {
+  scope: LayoutScope
+  fremkit: string | null
+  name: string | null
+  screens: number; pages: number; tiles: number
+  widgets: { widgetId: string; version: string; source: SharedSource; status: ImportWidgetStatus; localVersion: string | null; count: number }[]
+  theme: { day: string; night?: string } | null
+  images: { key: string; bytes: number; shipped: boolean }[]
+  connections: { widget: string; widgetId: string; setting: string; label: LocalizedText; connectionType: string; multiple: boolean }[]
+  dropped: { settings: number; placements: number; images: number }
+}
+export interface ImportPreview { layout: LayoutFile; report: ImportReport; shippedBackground: string }

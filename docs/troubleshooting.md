@@ -15,7 +15,7 @@ and "Notifications: active" above the toggles, and *Log…* opens the supervised
 Use **Copy diagnostics**, then paste the result into the
 [bug form](https://github.com/fdussert/fremkit/issues/new?template=bug.yml). It is in two places:
 
-- the editor, **Screen → About → Diagnostics**: *Prepare diagnostics* shows the whole report
+- the editor, **Settings → About → Diagnostics**: *Prepare diagnostics* shows the whole report
   before *Copy diagnostics* puts it on the clipboard;
 - the helper's menu bar **F**: *Copy diagnostics* copies the same report with the helper's own
   part added (touch driver, Input Monitoring and Accessibility, the kiosk display, DDC). When the
@@ -50,6 +50,7 @@ the issue is public.
 | Printer unreachable (`EHOSTUNREACH`) while `ping` and `curl` work | Local Network not granted to the app that runs the server | Allow it under Privacy & Security → Local Network |
 | "Server: external" | Something already answers port 4242, so the helper steps aside | Expected under `pnpm dev`; otherwise stop the stray server, or turn *Manage the server* off |
 | Brightness: "not adjustable on this display (DDC)" | The display does not answer DDC/CI on this cable or this Mac | See [Brightness says not adjustable](#brightness-says-not-adjustable) |
+| The iPad app does not list the Mac | The router or access point does not relay Bonjour (mDNS) between Ethernet and Wi-Fi, or between bands or VLANs; or the Mac is on both Wi-Fi and Ethernet | Scan the QR code instead (it carries the address), or put both on the same Wi-Fi — [details](#the-ipad-app-does-not-find-the-mac) |
 | The disk map says folders could not be read | macOS privacy protection (TCC) refuses the scan some folders | Give Fremkit (or Fremkit Helper, from a source install) **Full Disk Access**, then scan again — [details](#the-disk-map-says-folders-could-not-be-read) |
 | The disk map is slow and shows no files, "du (no helper)" | The server runs without the helper, or the helper predates the disk map | Rebuild and reinstall the helper — [details](#the-disk-map-uses-du) |
 
@@ -368,8 +369,10 @@ server* off in the menu and run it yourself.
 
 `data/fremkit.json` is valid JSON that the server cannot interpret, so it runs on defaults and
 refuses to save over your file rather than overwriting it. Repair or remove the file — a good copy
-may be in `data/fremkit.json.bak`, the file as it was before the last save — then restart the
-server.
+may be in `data/fremkit.json.bak`, the file as it was before the last save, or among the saved
+versions in `data/history/` (one `<time>-<id>.json` per version, `index.json` says what changed in
+each) — then restart the server. Once it reads its file again, **Settings → History & backup** restores any
+of those versions from the admin.
 
 `data/fremkit.v3.json` is something else: the dashboard as it was the first time a version with
 screens started and converted it, kept once and never overwritten. It is the file to use to go
@@ -387,11 +390,36 @@ and reload the other.
 `DELETE /api/connections/<id>` answers 409 and names the widgets that still point at the
 connection. Remove them, or change their `connection` setting first.
 
+## The iPad app does not find the Mac
+
+Pairing is described in [devices.md](devices.md). The app lists Macs by Bonjour
+(`_fremkit._tcp`), and there is no field for typing an address, so a Mac that is not listed has a
+network reason:
+
+- The router or access point does not relay Bonjour (mDNS) between Ethernet and Wi-Fi, between
+  bands, or between VLANs (a guest network does this on purpose). Scan the **QR code** in the
+  admin instead: it carries the address and the key, and needs no Bonjour. Or put the Mac and the
+  iPad on the same Wi-Fi.
+- The Mac is on both Wi-Fi and Ethernet, so its name answers on an interface the iPad cannot
+  reach. Same remedies, or switch Wi-Fi off on the Mac.
+- **Local Network** was refused on the iPad: Settings → Privacy & Security → Local Network →
+  Fremkit. Without it the app sees nothing, and neither does its web view.
+- The macOS firewall asked whether Fremkit may accept incoming connections and was answered no:
+  System Settings → Network → Firewall → Options.
+- Pairing is switched off (admin, *Settings → Devices*), or port 4243 is held by another
+  application: the admin says so.
+
+An iPad that shows "This iPad is no longer allowed" was removed in the admin: **Pair again** leads
+to the welcome screen. One that shows "This Mac's key has changed" met a different key than the
+one it pinned, which is what **Reset the certificate** does: **Pair again** as well (if you did
+not reset it, check the network, another machine may hold the Mac's old address). One that cannot
+reach its Mac finds it again by itself when the Mac wakes or changes address.
+
 ## Brightness says not adjustable
 
 Fremkit sets the brightness of the display the kiosk is on with DDC/CI, the monitor control
 protocol carried by the display cable, the way MonitorControl and m1ddc do. The helper's **F**
-menu, the `brightness` widget and *Screen → Brightness* all say why when it cannot:
+menu, the `brightness` widget and *Settings → your screen → Brightness* all say why when it cannot:
 
 - **"not adjustable on this display (DDC)"** — the display did not answer. In order of likelihood:
   - DDC/CI is switched off in the monitor's own menu. Turn it on.
@@ -406,8 +434,9 @@ menu, the `brightness` widget and *Screen → Brightness* all say why when it ca
 - **"no display"** — the kiosk's display is not connected.
 - **"Fremkit Helper is not running"** (widget, admin) — brightness needs the helper; a browser
   alone cannot reach the display.
-- **"not adjustable on a paired device yet"** — a device screen's settings are kept, and apply
-  once the device's app can set its own brightness.
+- **"the iPad is not showing this screen right now"** — a device screen's brightness is set by
+  the Fremkit app on the iPad bound to it, which reports its level every few seconds. Open the app
+  and show that screen; the settings are kept meanwhile and apply as soon as it reports.
 
 *Follow the Mac* needs a built-in display to follow: a Mac mini or Mac Studio has none, and a
 MacBook with its lid closed has none in use. The admin says so under the option.

@@ -40,6 +40,14 @@ Fremkit turns a Corsair Xeneon Edge (a 2560 × 720 touch strip) into a widget da
   Its ID is fixed by the manifest `key`. Server side: `server/src/companion/`; the routes that
   skip the access secret are listed in `server/src/http/access.ts` (`COMPANION_ROUTES`). See
   [docs/companion.md](docs/companion.md).
+- `ios/` — the iPad app, which shows a paired device's screen over the pinned TLS listener
+  (4243). `ios/FremkitKit` is a Swift package holding everything that needs no UI — pairing
+  links, the key pin, the connect order, the stored pairing, the app's state machine
+  (`AppModel`) — and is tested on the Mac with `swift test`. `ios/Fremkit.xcodeproj` (one target,
+  folder-synchronized with `ios/Fremkit/`) is the thin SwiftUI + `WKWebView` shell over it. Signing
+  values live in the git-ignored `ios/Local.xcconfig` (start from `ios/Local.example.xcconfig`);
+  the simulator build needs none. Built and tested with `scripts/build-ios.sh`, which picks Xcode
+  over the Command Line Tools by itself.
 - `scripts/` — setup, dev, build/install/test of the helper, signing identity, and the
   downloadable app: `build-app.sh` (self-contained, signed `Fremkit.app` with Sparkle and the
   server as a Node single executable), `notarize.sh`, `release.sh` (builds a release and stops
@@ -68,8 +76,12 @@ pnpm typecheck                    # server + ui (vue-tsc)
 pnpm test                         # vitest, server + ui
 pnpm --filter server exec vitest run test/<file>.test.ts
 pnpm --filter ui build            # required before the server shows a UI change
+pnpm e2e                          # Playwright on the built UI, one throwaway server per worker (4330–4339;
+                                  # E2E_FIRST_PORT=43x0 moves it when another checkout is running the suite)
 pnpm dev                          # server + Vite with hot reload for the UI
 pnpm helper:build && pnpm helper:install && pnpm helper:test
+pnpm ios:build && pnpm ios:test   # iPad app for the simulator, unsigned; FremkitKit's tests
+pbpaste | FREMKIT_IOS_DEVICE=<udid> scripts/build-ios.sh install --seed   # a pairing link from stdin, never argv
 ```
 
 **Every request needs the local access secret** (SECURITY.md): a `curl` without
@@ -121,6 +133,14 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
   every route to keep it so. Judge locality with `isLocalRequest(req)` (`server/src/net/remote.ts`),
   never `isLoopbackAddress(req.ip)` alone: a request to 4243 from the Mac itself has a loopback
   address.
+- **Demo mode** (`FREMKIT_DEMO=1`, `server/src/demo/`, docs/demo-mode.md) must never construct a
+  real provider: a new provider is registered in `registerRealProviders()` in `app.ts`, and a
+  channel a built-in widget reads needs a fake in `demo/providers.ts` too (`demo.test.ts` fails
+  otherwise). A new built-in widget also gets `DEMO_SETTINGS` if its defaults show an empty state,
+  and a preview from `pnpm widget:preview <id>`. A registry widget's channel or declared connection is acted
+  out too (`demo/providers.ts`, `demo/declared.ts` for the LAN devices a declared connection
+  reaches), so `pnpm widget:preview --dir` captures data rather than an empty state; a declared
+  connection's Test and proxy share that fake and must never get the global `fetch` in a demo.
 - **Config schema** changes go through `server/src/config/schema.ts` with a migration in the
   same commit and a test; the store never rewrites a file it could not migrate.
 - **Commits**: small, one concern each — a native fix noticed *while I was in there* is its own
@@ -142,10 +162,11 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
   a widget may rely on, in the commit that adds it (`bridge.test.ts` refuses a member no
   generation lists).
 - **Credits**: somebody's first merged pull request adds their handle to
-  `ui/src/shared/credits.ts`, which the admin's **Screen → About** reads, and to the README's
+  `ui/src/shared/credits.ts`, which the admin's **Settings → About** reads, and to the README's
   Credits section; `credits.test.ts` fails when the two disagree. A registry widget or theme
   credits its own authors in its `author` field, which the registry refuses to leave empty.
-- **Tests before done**: `pnpm typecheck` and `pnpm test` green, the UI rebuilt if touched, a
+- **Tests before done**: `pnpm typecheck` and `pnpm test` green, the UI rebuilt if touched,
+  `pnpm e2e` green when the admin or the dashboard changed (CI runs it in Chromium), a
   rescan if a manifest changed, and — for anything visible — a look at `/admin` or `/` in a
   browser. The widget catalogue test in `server/test/` reads the real `widgets/` folder, so a
   broken manifest fails it. "A look" means you open the screenshot and read it: a capture taken
@@ -168,6 +189,13 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   *kinds*, never instances: connection types, not connection names; widget ids, not titles;
   counts, not device names. A new kind of value that could identify someone (a host, an account,
   a path) gets a redaction rule and a test with documentation-range fixtures.
+- **A shared layout is built, never sliced.** `server/src/share/export.ts` writes a
+  `.fremkit-layout.json` from an allow-list of keys (`format.ts`), so a config key added later
+  stays home by default; adding one to the file is a decision, with a test in `share.test.ts`.
+  Settings travel by their manifest type (`share/settings.ts`): connection-typed ones never, free
+  text only when ticked; every name, title and value goes through `redact()`, and the finished file
+  is checked again. On import the file is a stranger's: re-check settings against local manifests
+  and never keep a value naming one of the user's connection ids.
 - **The author's widget folder is a development tool.** `<dataDir>/widgets-dev` is read only
   under `FREMKIT_WIDGET_DEV=1`, its widgets skip the consent dialog, and nothing shipped sets the
   flag. Never read it, or watch files, without that flag, and never let it shadow a built-in or
@@ -177,7 +205,10 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   because `HOST_CHANNELS` names only the literal `config`. A new channel for the editor's eyes goes
   there too, and `HOST_CHANNELS` never grows a `config:*` entry.
 - **Every editor action goes through the admin store's `apply()`**, menus and shortcuts
-  included, so it is undoable and saved. Context menus are data built for
+  included, so it is undoable and saved. The canvas selection is `state.selection` (a list);
+  `state.selectedId` is an accessor over it that reads null while several tiles are selected, so a
+  command meant for "what is selected" reads `selection`/`selectedTiles`, and a group command is
+  one `apply()`, never one per tile. Context menus are data built for
   `ui/src/shared/ui/contextMenu.ts`; do not write a second menu component.
 
 
@@ -210,6 +241,11 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   Mac's `secrets`, `privacy` and `marketplace.installed`; PUT replays `connections`, `secrets`
   and `marketplace.installed` (privacy stays editable there: it is the admin's switch). Consent
   records change only through the marketplace routes.
+- **Anything that replaces the whole config goes through `applyConfig`** (`server/src/backup/apply.ts`):
+  backup restore, history restore, and any import. It keeps the security settings above, drops a
+  secret whose connection comes back changed, and passes a `reason` to `store.save` so the history
+  (`config/history.ts`) keeps the version it replaced. `<dataDir>/history/` holds full configs: it
+  stays out of backups and diagnostics, and its routes stay off the 4243 allow-list.
 - **Deleting a connection deletes every secret stored under its id**, registered type or not
   (`SecretStore.keysOf`), and a new connection purges its id first: never adopt a stale secret.
 - **System tools by absolute path** (`/usr/bin/open`, `/usr/bin/osascript`, `/usr/sbin/scutil`…),
@@ -217,7 +253,11 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   A bare name resolves through Homebrew's folder, which is not ours to trust.
 - **The admin window and the kiosk pin their main frame to their own origin**
   (`AdminOrigin`, `KioskOrigin`), and an origin is trusted for writes only on this server's own
-  port (`allowedOrigins`).
+  port (`allowedOrigins`). The iPad's web view does the same (`Dashboard.allowsMainFrame`) and
+  hears the page's messages only from that origin (`Dashboard.isPageOrigin`).
+- **A typed pairing code travels as a proof bound to the Mac's key** (`codeProof.ts`,
+  `CodeProof.swift`), never as itself: the four words are 32 bits and can be ground, the proof
+  cannot be relayed to another key. `/api/pair` takes `proof` or the QR's `secret`, nothing else.
 - **Commands that act on the Mac take their target from a closed list**: `dock.activate` only
   for an app in the current Dock snapshot; a URL handed to `open` is the parsed `href` that was
   checked, never the raw string.
@@ -269,6 +309,20 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
   browser automation never reach the widget. Real touches do.
 - The bar's swipe handler captures the pointer on `pointerdown`; anything in the bar that wants
   the release must listen on `window`, not on itself.
+- Never `import … from 'undici'` at module level. Loaded as CommonJS before the first `fetch`,
+  the package takes the process-wide dispatcher slot Node's built-in `fetch` reads too, and Node
+  26's `fetch` then hands back HTTP/2 gzip bodies undecoded — every provider's `res.json()`
+  fails at once (`invalid-json`, `offline`) while every unit test, which injects `fetch`, stays
+  green. Go through `loadUndici()` in `server/src/net/pinned.ts`; `net-pinned.test.ts` replays
+  the server's load order in a fresh process.
+- WebKit sends a right click into an iframe under the pointer even when the frame has
+  `pointer-events: none`: a context menu the host page must hear over a widget frame needs an
+  element covering the frame (`CompactWidgetFrame`'s `.shield` in the editor). Chromium hides it.
+- `playwright install` deletes every browser build in `~/Library/Caches/ms-playwright` that no
+  installed Playwright version links to — including one another tool or agent launches by path.
+  Install for the e2e package only when needed, and say so if you did.
+- A layer drawn above a `BaseModal` (a context menu, the command palette) carries `data-overlay`:
+  the dialog and the layer both hear Escape on the window, and without it one Escape closes both.
 
 ## Where to look first
 
@@ -280,7 +334,10 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
 | add a connection type | **A coded type is the exception, and has to earn it.** One auth header on HTTP(S) is a `connection` the widget *declares* in its own manifest — no release of Fremkit per service; see `docs/writing-widgets.md`. Write code only for what a declaration cannot express: a session handshake, a protocol that is not HTTP, OAuth, a local binary. Nothing else counts — "it already has a provider" does not, and neither does "a picker would be nice" (a declared connection feeds no `pick`; the widget lists ids instead). Homey was coded and should not have been: two widgets on one Homey meant two connections, and a Homey invalidates the previous API key when a new one is issued, so the second key broke the first. If it does earn it: `server/src/connections/types/ics.ts` (simplest) or `github.ts` (fullest), register in `types/index.ts`, document in `docs/connections.md` |
 | add a provider | `server/src/providers/calendar.ts` (polling) or `shortcuts.ts` (commands only), register in `providers/index.ts` |
 | change the companion extension or Fremplay | `companion/`, `server/src/companion/`, `widgets/fremplay`, `docs/companion.md` |
-| change the admin | `ui/src/admin/store.ts` (state), `Canvas.vue`/`EditOverlay.vue` (editing), `SettingsForm.vue` (setting types), `ScreenInspector.vue`, `ConnectionsInspector.vue`; right-click menus in `ui/src/shared/ui/contextMenu.ts` + `ContextMenu.vue` and the menu builders beside the component that opens them |
+| change the admin | `ui/src/admin/store.ts` (state), `Canvas.vue`/`EditOverlay.vue` (editing), `SettingsForm.vue` (setting types), `ConnectionsInspector.vue`; right-click menus in `ui/src/shared/ui/contextMenu.ts` + `ContextMenu.vue` and the menu builders beside the component that opens them |
+| change the settings window (a screen's settings, the app's) | `ui/src/admin/settings/SettingsWindow.vue` (sidebar, search), one `*Pane.vue` per pane beside it, `ui/src/admin/settingsWindow.ts` (the panes, the section → pane routing `revealSection` relies on, and the search index: a new field's label goes into `SETTINGS_INDEX` or the search will not find it). A long panel with a fixed header and expand/collapse all is `shared/ui/ScrollPanel.vue` |
+| add an editor command or shortcut | A command goes into the menu builder it belongs to (`canvasMenu.ts`, `menus.ts`): the ⌘K palette reads those menus (`paletteCommands.ts`), so it appears there too; only what no menu holds is written in `paletteCommands.ts`. A key goes into `ui/src/admin/shortcuts.ts`, which the key handler in `App.vue`, the `?` sheet and the menus' hints all read |
+| add an end-to-end test | `e2e/fixtures/test.ts` (`seed`, `connections`, `signIn`, `openAdmin`, `savedConfig`), a spec in `e2e/tests/` to copy, and [docs/contributing.md](docs/contributing.md#end-to-end-tests). Roles and visible text first; a `data-test` attribute only where neither exists, in its own commit |
 | change the dashboard | `ui/src/dashboard/App.vue`, `NavBar.vue`, `CompactWidgetFrame.vue`, `NavPopover.vue` |
 | change what widgets can do | `server/src/bridge/fremkit.js` and `ui/src/shared/useWidgetBridge.ts`, together |
 | touch or the kiosk window | `native/Sources/FremkitHelper/` |
@@ -289,3 +346,6 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
 | bug reports, diagnostics | `server/src/diagnostics/` (report, `redact.ts`, log tail), `ui/src/admin/DiagnosticsSection.vue`, the helper's `StatusMenu.swift` |
 | change what the editor says about a failing widget | `ui/src/admin/health.ts` (pure, tested), `useHealth.ts` (stores, socket, the fixes), `server/src/providers/health.ts` (the `config:health` channel) |
 | pair a device, the remote listener | `server/src/devices/`, `ui/src/admin/DevicesSection.vue` |
+| change the iPad app | `ios/FremkitKit/Sources/FremkitKit/` (logic, `AppModel.swift` for the screens' state, `PairingFlow.swift` for pairing; test there), `ios/Fremkit/` (`RootView.swift`, `DashboardView.swift` for the web view, `LocalNetwork.swift` for Bonjour), `ui/src/dashboard/native.ts` (what the page tells the app), `scripts/build-ios.sh` |
+| demo mode, widget previews | `server/src/demo/` (fakes, seed), `server/src/cli/preview.ts`, `previewProblems` in `server/src/widgets/manifest.ts` (vendored by the Sietch), `ui/src/admin/WidgetPreviewPopover.vue` |
+| export or import a layout | `server/src/share/` (file format, export, import), `ui/src/admin/share.ts`, `shareApply.ts`, `Share*Dialog.vue`, `docs/sharing.md` |

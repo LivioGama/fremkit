@@ -38,8 +38,10 @@ import BaseButton from '../shared/ui/BaseButton.vue'
 import BaseCard from '../shared/ui/BaseCard.vue'
 import BaseIcon from '../shared/ui/BaseIcon.vue'
 import BaseInput from '../shared/ui/BaseInput.vue'
-import BaseSection, { setSectionsOpen } from '../shared/ui/BaseSection.vue'
+import BaseSection from '../shared/ui/BaseSection.vue'
+import ScrollPanel from '../shared/ui/ScrollPanel.vue'
 import WidgetPermissions from './WidgetPermissions.vue'
+import WidgetPreviewPopover from './WidgetPreviewPopover.vue'
 import { pick, useI18n } from '../shared/i18n'
 import { DND_EXISTING_TYPE, DND_TYPE, useAdminStore } from './store'
 import { useMarketplaceStore } from './marketplace'
@@ -131,7 +133,26 @@ function onDragExisting(e: DragEvent, id: string): void {
   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
 }
 
+/**
+ * The card whose preview is showing, and where it is. Hover waits a moment, so sweeping the
+ * pointer down the list does not flash a popover per card; focus shows it at once, since a
+ * keyboard user is already pointing at that card on purpose.
+ */
+const previewed = ref<{ id: string; anchor: DOMRect } | null>(null)
+let previewTimer: number | undefined
+function showPreview(e: Event, id: string, delay: number): void {
+  window.clearTimeout(previewTimer)
+  const card = e.currentTarget as HTMLElement
+  previewTimer = window.setTimeout(() => { previewed.value = { id, anchor: card.getBoundingClientRect() } }, delay)
+}
+function hidePreview(): void {
+  window.clearTimeout(previewTimer)
+  previewed.value = null
+}
+const previewManifest = computed(() => (previewed.value ? s.state.manifests[previewed.value.id] : undefined))
+
 function onDragStart(e: DragEvent, id: string): void {
+  hidePreview()
   s.setDragWidget(id)
   e.dataTransfer?.setData(DND_TYPE, id)
   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
@@ -153,26 +174,18 @@ function openUpdates(): void {
 
 onMounted(bindDragFallback)
 onBeforeUnmount(unbindDragFallback)
+onBeforeUnmount(() => window.clearTimeout(previewTimer))
 </script>
 
 <template>
-  <section>
-    <h2>
-      {{ t('admin.library.title') }}
-      <span class="tools">
-        <BaseButton variant="icon" :title="t('admin.library.expandAll')" :disabled="searching"
-          @click="setSectionsOpen(sectionIds, true)">
-          <BaseIcon name="chevrons-up-down" :size="16" />
-        </BaseButton>
-        <BaseButton variant="icon" :title="t('admin.library.collapseAll')" :disabled="searching"
-          @click="setSectionsOpen(sectionIds, false)">
-          <BaseIcon name="chevrons-down-up" :size="16" />
-        </BaseButton>
-        <BaseButton variant="icon" :title="t('admin.library.rescan')" @click="s.rescan()">
-          <BaseIcon name="refresh-cw" :size="16" />
-        </BaseButton>
-      </span>
-    </h2>
+  <ScrollPanel class="library" :section-ids="sectionIds" :fold-disabled="searching">
+    <template #title><h2>{{ t('admin.library.title') }}</h2></template>
+    <template #tools>
+      <BaseButton variant="icon" :title="t('admin.library.rescan')" @click="s.rescan()">
+        <BaseIcon name="refresh-cw" :size="16" />
+      </BaseButton>
+    </template>
+    <template #header>
     <div class="search" data-library-search>
       <BaseInput v-model="query" :placeholder="t('admin.market.search')"
         @keydown.enter="placeFirst()" @keydown.esc="query = ''" />
@@ -184,8 +197,10 @@ onBeforeUnmount(unbindDragFallback)
       <input type="checkbox" :checked="hidePlaced" @change="setHidePlaced(($event.target as HTMLInputElement).checked)" />
       {{ t('admin.library.hidePlaced') }}
     </label>
+    <WidgetPreviewPopover v-if="previewed && previewManifest" :manifest="previewManifest"
+      :asks="s.state.asks[previewed.id]" :anchor="previewed.anchor" />
+    </template>
 
-    <div class="scroll">
     <p v-if="nothingFound" class="none">{{ t('admin.market.noMatch') }}</p>
 
     <BaseSection v-if="elsewhere.length" id="library.elsewhere" :title="t('admin.library.elsewhere')"
@@ -203,7 +218,11 @@ onBeforeUnmount(unbindDragFallback)
       :badge="String(g.widgets.length)" default-open :force-open="searching">
       <div class="list">
         <BaseCard v-for="m in g.widgets" :key="m.id" grab :draggable="true" @dragstart="onDragStart($event, m.id)" @dragend="s.setDragWidget(null)"
-          @click="s.addWidget(m.id)" @contextmenu="openContextMenu($event, libraryMenu(s, market, m.id))">
+          :data-library-widget="m.id" tabindex="0"
+          @click="hidePreview(); s.addWidget(m.id)" @keydown.enter.self="s.addWidget(m.id)"
+          @mouseenter="showPreview($event, m.id, 350)" @mouseleave="hidePreview()"
+          @focus="showPreview($event, m.id, 0)" @blur="hidePreview()"
+          @contextmenu="hidePreview(); openContextMenu($event, libraryMenu(s, market, m.id))">
           <BaseIcon :name="m.icon" :size="20" />
           <div class="txt">
             <strong>
@@ -229,23 +248,20 @@ onBeforeUnmount(unbindDragFallback)
         <div class="txt"><strong>{{ e.id }}</strong><small>{{ e.error }}</small></div>
       </BaseCard>
     </div>
-    </div>
-  </section>
+  </ScrollPanel>
 </template>
 
 <style scoped>
 /* Title and search fixed at the top of what is left of the sidebar; the shelves scroll below. */
-section { margin-top: var(--space-4); flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.tools { display: inline-flex; gap: 2px; }
+.library { margin-top: var(--space-4); }
 .search { position: relative; margin-bottom: var(--space-2); }
 .search :deep(input) { padding-right: 32px; }
 .clear { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); }
-.scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: var(--space-3); }
 .hide-placed { display: flex; align-items: center; gap: var(--space-2); min-height: 32px;
   font-size: var(--fs-xs); color: var(--text-muted); cursor: pointer; margin-bottom: var(--space-2); }
 .none { font-size: var(--fs-sm); color: var(--text-muted); margin: var(--space-2) 0; }
-h2 { display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-xs);
-  text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin: 0 0 var(--space-2); }
+h2 { font-size: var(--fs-xs);
+  text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin: 0; }
 .existing { min-height: 44px; }
 .errors { margin-top: var(--space-3); }
 .list { display: flex; flex-direction: column; gap: var(--space-2); }

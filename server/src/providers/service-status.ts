@@ -243,8 +243,9 @@ export function createServiceStatusProvider(
         if (!request.success) {
           return { ok: false, error: request.error.issues[0]?.message ?? tr(undefined, 'provider.invalidPayload') }
         }
-        // The targets come from the user's saved settings, never from the message.
-        const resolved = resolveServices(instances, request.data.instanceId)
+        // The targets come from the user's saved settings, never from the message; a paired
+        // device finds only the instances of its own screen.
+        const resolved = resolveServices((id) => instances(id, ctx), request.data.instanceId)
         if (!resolved.ok) return { ok: false, error: resolved.error }
         // All at once: twenty services one after the other would take longer than the interval.
         const results = await Promise.all(resolved.services.map((s) => probeOne(s, deps)))

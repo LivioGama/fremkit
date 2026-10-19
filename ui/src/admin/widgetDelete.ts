@@ -7,3 +7,5 @@ import { useConfirm } from '../shared/useConfirm'
  */
 export const widgetDelete = useConfirm()
 export const widgetDeleteKey = (instanceId: string): string => `widget:${instanceId}`
+/** The confirmation of a group whose removal deletes at least one widget: the same tiles, in any order. */
+export const tilesDeleteKey = (instanceIds: string[]): string => `widgets:${[...instanceIds].sort().join(',')}`

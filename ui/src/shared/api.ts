@@ -1,4 +1,4 @@
-import type { Config, ConnectionSummary, ConnectionTypeInfo, InstalledAppInfo, MarketplaceResponse, PickOption, WidgetPermissionSet, WidgetsResponse } from './types'
+import type { Config, ConnectionSummary, ExportPreview, ImportPreview, LayoutScope, ConnectionTypeInfo, InstalledAppInfo, MarketplaceResponse, PickOption, WidgetPermissionSet, WidgetsResponse } from './types'
 
 /**
  * The install was refused because the package asks for something the dialog did not show.
@@ -23,6 +23,42 @@ export interface RestoreResult {
   pages: number
   screens: number
   backgrounds: number
+  reenterSecrets: { id: string; name: string; type: string }[]
+}
+/** Which part of the dashboard a shared layout holds, and the free-text settings ticked into it. */
+export interface LayoutRequest { scope: LayoutScope; screen?: string; page?: string; include?: string[] }
+/** What changed between a version and the one before it (`server/src/config/history-diff.ts`). */
+export interface HistorySummary {
+  first?: true
+  screensAdded: string[]
+  screensRemoved: string[]
+  screensRenamed: { from: string; to: string }[]
+  pagesAdded: { screen: string; name: string }[]
+  pagesRemoved: { screen: string; name: string }[]
+  pagesRenamed: { screen: string; from: string; to: string }[]
+  widgetsAdded: string[]
+  widgetsRemoved: string[]
+  widgetsMoved: number
+  widgetsEdited: number
+  theme?: { from: string; to: string }
+  screensEdited: string[]
+  other: boolean
+}
+export type HistoryKind = 'save' | 'earlier' | 'before-migration' | 'restore' | 'import' | 'revert'
+/** One saved version of the dashboard, as `GET /api/history` lists it, newest first. */
+export interface HistoryEntry {
+  id: string
+  at: number
+  savedAt: number
+  kind: HistoryKind
+  summary: HistorySummary
+  revertedTo?: number
+}
+/** What `POST /api/history/:id/restore` answers. */
+export interface HistoryRestoreResult {
+  ok: true
+  pages: number
+  screens: number
   reenterSecrets: { id: string; name: string; type: string }[]
 }
 export type ConnectionTestResult = { ok: true; detail: string } | { ok: false; error: string }
@@ -61,6 +97,8 @@ export interface DeviceStatus {
   addresses: string[]
   port: number
   keyHash: string | null
+  /** Four words from the key's hash, null before a key exists. */
+  fingerprint: string[] | null
   devices: PublicDevice[]
   /** A browser extension waiting for an answer (the Edge shows it too); never carries a token. */
   companionRequest: CompanionRequest | null
@@ -190,10 +228,51 @@ export const api = {
     a.click()
     a.remove()
   },
+  /**
+   * What a shared layout would hold, and what it leaves out: the file with its images as sizes,
+   * and the report the export dialog draws.
+   */
+  previewLayout: (req: LayoutRequest) =>
+    fetch('/api/share/export', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req) })
+      .then((r) => json<ExportPreview>(r)),
+  /** The address the layout file downloads from: an attachment, saved like the backup. */
+  layoutUrl: (req: LayoutRequest): string => {
+    const q = new URLSearchParams({ scope: req.scope })
+    if (req.screen) q.set('screen', req.screen)
+    if (req.page) q.set('page', req.page)
+    if (req.include?.length) q.set('include', req.include.join(','))
+    return `/api/share/export?${q.toString()}`
+  },
+  /** Downloads the layout file, through a hidden anchor as `downloadBackup` does. */
+  downloadLayout: (req: LayoutRequest): void => {
+    const a = document.createElement('a')
+    a.href = api.layoutUrl(req)
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  },
+  /** The layout file as text, for the clipboard when a download is not possible. */
+  layoutText: (req: LayoutRequest) => fetch(api.layoutUrl(req)).then(async (r) => {
+    if (!r.ok) await json<never>(r)
+    return r.text()
+  }),
+  /** Reads a layout file somebody wrote: what may be applied, and what to ask about. Writes nothing. */
+  readLayout: (file: unknown) =>
+    fetch('/api/share/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(file) })
+      .then((r) => json<ImportPreview>(r)),
   /** Replaces the dashboard with the one in `file`. The archive carries no secrets. */
   restoreBackup: (file: File) =>
     fetch('/api/restore', { method: 'POST', headers: { 'content-type': 'application/zip' }, body: file })
       .then((r) => json<RestoreResult>(r)),
+
+  /** The saved versions of the dashboard, newest first. */
+  getHistory: () => fetch('/api/history', { cache: 'no-store' }).then((r) => json<{ entries: HistoryEntry[] }>(r)),
+  getHistoryVersion: (id: string) =>
+    fetch(`/api/history/${encodeURIComponent(id)}`, { cache: 'no-store' }).then((r) => json<{ entry: HistoryEntry; config: Config }>(r)),
+  /** Puts a version back; a save of its own, so the one it replaces stays in the history. */
+  restoreHistory: (id: string) =>
+    fetch(`/api/history/${encodeURIComponent(id)}/restore`, { method: 'POST' }).then((r) => json<HistoryRestoreResult>(r)),
 
   getConnectionTypes: () => fetch('/api/connections/types').then((r) => json<ConnectionTypeInfo[]>(r)),
   getConnections: () => fetch('/api/connections').then((r) => json<ConnectionSummary[]>(r)),

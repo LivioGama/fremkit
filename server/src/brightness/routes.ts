@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { isLoopbackAddress } from '../net/loopback.js'
+import { isLocalRequest } from '../net/remote.js'
 import { tr } from '../i18n.js'
 import { isCrossSiteFetch } from '../http/guard.js'
 import { HelperReportSchema, type BrightnessService } from './service.js'
@@ -16,7 +16,9 @@ export async function brightnessRoutes(
   opts: { service: BrightnessService; changed: () => void; fetch?: Fetch },
 ): Promise<void> {
   app.post('/api/hooks/brightness', { bodyLimit: 4096 }, async (req, reply) => {
-    if (!isLoopbackAddress(req.ip)) return reply.code(403).send({ error: tr(undefined, 'dock.notLocal') })
+    // The socket decides, not the address: a request to the remote listener from this Mac itself
+    // has a loopback address too, and the helper never speaks through that listener.
+    if (!isLocalRequest(req)) return reply.code(403).send({ error: tr(undefined, 'dock.notLocal') })
     const parsed = HelperReportSchema.safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ error: tr(undefined, 'provider.invalidPayload') })
     opts.service.helperReport(parsed.data)

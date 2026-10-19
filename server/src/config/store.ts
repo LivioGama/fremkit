@@ -4,8 +4,19 @@ import { dirname } from 'node:path'
 import { CONFIG_VERSION, ConfigSchema, DEFAULT_CONFIG, type Config } from './schema.js'
 import { migrateConfig } from './migrate.js'
 import { normalizeInstances } from './normalize.js'
+import type { ConfigHistory, HistoryKind } from './history.js'
 
 type Listener = (config: Config) => void
+
+/**
+ * Why a save happens, for the history (`history.ts`). An ordinary edit coalesces with the ones
+ * around it; the others each leave their own entry, with the version before them kept.
+ */
+export interface SaveOptions {
+  reason?: Extract<HistoryKind, 'save' | 'restore' | 'import' | 'revert'>
+  /** For a `revert`: when the version put back was saved. */
+  revertedTo?: number
+}
 
 /**
  * Thrown by every write while the config on disk could not be read.
@@ -29,7 +40,18 @@ export class ConfigStore {
    */
   private degradedFlag = false
 
-  constructor(private readonly filePath: string) {}
+  constructor(private readonly filePath: string, private readonly opts: { history?: ConfigHistory } = {}) {}
+
+  /** The rolling history of saved versions, when this store keeps one. */
+  get history(): ConfigHistory | undefined { return this.opts.history }
+
+  /** History failures are logged and swallowed: losing a snapshot must never lose a save. */
+  private async remember(what: string, run: (history: ConfigHistory) => Promise<void>): Promise<void> {
+    if (!this.opts.history) return
+    try { await run(this.opts.history) } catch (err) {
+      console.error(`config history: could not record ${what} (${(err as Error).message})`)
+    }
+  }
 
   /**
    * Load the config in two phases, because the two ways a file can be unusable deserve very
@@ -68,6 +90,10 @@ export class ConfigStore {
       // — until the next save. The rollback copy is the one that stays.
       if (needsMigration) {
         await this.keepRollbackCopy()
+        // The file as the older release wrote it: what lets a migration that went wrong be undone
+        // from the admin. The history reads it through the migrations, so the next save is
+        // compared with the dashboard it became rather than recorded as a change of format.
+        await this.remember('the version before a migration', (h) => h.recordRaw(raw, 'before-migration'))
         await this.write()
       }
       return this.config
@@ -154,8 +180,8 @@ export class ConfigStore {
     return result
   }
 
-  async save(input: unknown): Promise<Config> {
-    return this.enqueue(() => this.commit(input))
+  async save(input: unknown, opts: SaveOptions = {}): Promise<Config> {
+    return this.enqueue(() => this.commit(input, opts))
   }
 
   /**
@@ -167,15 +193,18 @@ export class ConfigStore {
     return this.enqueue(async () => this.commit(await fn(structuredClone(this.config))))
   }
 
-  private async commit(input: unknown): Promise<Config> {
+  private async commit(input: unknown, opts: SaveOptions = {}): Promise<Config> {
     // The one gate every write passes. While the store is degraded the config held in memory is
     // the default one, not the user's: writing it would overwrite a dashboard we merely failed to
     // read. `PUT /api/config` refuses before it gets here, but the connections API went straight
     // to `update()` and would have flattened the file.
     if (this.degradedFlag) throw new DegradedStoreError()
     const parsed = normalizeInstances(ConfigSchema.parse(input))
+    const before = this.config
     this.config = parsed
     await this.write()
+    await this.remember('a save', (h) => h.recordChange(before, parsed, opts.reason ?? 'save',
+      opts.revertedTo !== undefined ? { revertedTo: opts.revertedTo } : {}))
     // Listeners run inside the queue's turn: one that calls back into `save`/`update` would
     // deadlock, so a listener must only ever kick work off (see app.ts's `void connections.sync`).
     for (const cb of this.listeners) cb(parsed)

@@ -16,6 +16,7 @@ import CompanionPrompt from './CompanionPrompt.vue'
 import { createRevealTracker, type CompanionReveal } from './companionReveal'
 import { useNavPopover } from './useNavPopover'
 import { isRemotePage, useDeviceScreen, type DeviceInfo } from './remote'
+import { useNativeBridge } from './native'
 import { SCREEN_ID } from '../shared/useWidgetBridge'
 import { onWidgetReload } from '../shared/widgetDev'
 
@@ -32,6 +33,8 @@ const remote = isRemotePage()
 const { device, unauthorized } = remote
   ? useDeviceScreen()
   : { device: ref<DeviceInfo | null>(null), unauthorized: ref(false) }
+// Inside the iPad app, tell it about revocation, the screen and the brightness target.
+if (remote) useNativeBridge(device, unauthorized)
 /**
  * The screen this dashboard shows, named by `?screen=<id>`. The kiosk opens `/` with no id and
  * gets the first Edge screen; an id that no longer exists gets it too, never a blank page.
