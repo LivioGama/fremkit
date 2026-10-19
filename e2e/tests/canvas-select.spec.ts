@@ -50,8 +50,9 @@ test('shift-click builds a group that moves and is deleted as one', async ({ pag
   await tile(page, 'clock-2').click({ modifiers: ['Shift'] })
   await expect(selected(page)).toHaveCount(2)
   await expect(page.getByText('2 widgets selected')).toBeVisible()
-  // ⌘-click takes one out, and puts it back.
-  await tile(page, 'clock-2').click({ modifiers: ['ControlOrMeta'] })
+  // ⌘-click takes one out, and puts it back. Meta, not ControlOrMeta: on Linux that is Control,
+  // and a Control-click is the Mac's right click, which the editor leaves to the menu.
+  await tile(page, 'clock-2').click({ modifiers: ['Meta'] })
   await expect(selected(page)).toHaveCount(1)
   await tile(page, 'clock-2').click({ modifiers: ['Shift'] })
   await expect(selected(page)).toHaveCount(2)
