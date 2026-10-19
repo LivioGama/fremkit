@@ -13,6 +13,9 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+- **Alignment guides in the editor.** While you drag or resize a widget, or move it with the arrow
+  keys, thin accent lines show where its edges or its centre line up with another widget's, or
+  with the screen's edges and centre.
 - **See a widget before placing it.** Hovering a card of the editor's widget library (or reaching
   it with Tab) shows its preview with its name, what it does, its default size and what it may
   read, control and reach.

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
  * Mouse capture layer over the widget area in edit mode: grid guides, selection,
- * eight resize handles, and a snapped ghost that turns red when the drop is refused.
+ * eight resize handles, a snapped ghost that turns red when the drop is refused, and the alignment
+ * guides (`guides.ts`) while a tile moves.
  */
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import BaseChip from '../shared/ui/BaseChip.vue'
 import BaseIcon from '../shared/ui/BaseIcon.vue'
 import { pick, useI18n } from '../shared/i18n'
@@ -12,6 +13,7 @@ import { DND_EXISTING_TYPE, DND_TYPE, useAdminStore } from './store'
 import { fitAround, fits, moveRect, resizeRect, snapPoint, type Handle, type Rect } from './layout'
 import { openContextMenu } from '../shared/ui/contextMenu'
 import { canvasMenu, widgetMenu } from './canvasMenu'
+import { alignmentGuides, type Guide } from './guides'
 import { editorFocus } from './editorFocus'
 import { describeProblem } from './health'
 import { useHealth } from './useHealth'
@@ -60,6 +62,18 @@ interface Drag { kind: 'move' | 'resize' | 'create'; instanceId: string; widgetI
 const drag = ref<Drag | null>(null)
 const ghost = ref<Rect | null>(null)
 const ghostOk = ref(true)
+/** The alignment guides of the tile being moved: while it is dragged, and for a moment after a key moved it. */
+const guides = ref<Guide[]>([])
+/** How long the guides stay after an arrow key moved a tile. */
+const KEY_GUIDES_MS = 900
+let guidesTimer: ReturnType<typeof setTimeout> | undefined
+/** The place a mouse drop just put a tile, so the change it makes does not count as a key's. */
+let dropped = ''
+function clearGuides(): void {
+  if (guidesTimer !== undefined) clearTimeout(guidesTimer)
+  guidesTimer = undefined
+  guides.value = []
+}
 /** The element holding the pointer capture, so an aborted drag can hand it back. */
 let captured: { el: HTMLElement; pointerId: number } | null = null
 
@@ -121,6 +135,7 @@ function onPointerMove(e: PointerEvent): void {
     : resizeRect(d.start, d.handle, p.x - d.ox, p.y - d.oy, d.min, s.grid.value)
   ghost.value = next
   ghostOk.value = fits(next, s.grid.value, s.others(d.instanceId))
+  guides.value = alignmentGuides(next, s.others(d.instanceId), s.grid.value, d.kind === 'resize' ? d.handle : undefined)
 }
 
 function onPointerUp(): void {
@@ -129,8 +144,11 @@ function onPointerUp(): void {
   drag.value = null
   ghost.value = null
   captured = null
+  clearGuides()
   if (!d || !g || !ghostOk.value) return
   if (g.x === d.start.x && g.y === d.start.y && g.w === d.start.w && g.h === d.start.h) return
+  // The guides go with the release: the move this applies is not a key's, which would show them again.
+  dropped = `${d.instanceId}:${g.x},${g.y},${g.w},${g.h}`
   s.updateInstance(d.instanceId, { x: g.x, y: g.y, w: g.w, h: g.h })
 }
 
@@ -160,7 +178,37 @@ function abortDrag(): void {
   }
   drag.value = null
   ghost.value = null
+  clearGuides()
 }
+/**
+ * The arrow keys move a tile without a drag: the selected tile's guides show for a moment after
+ * each step. Only a change of place counts — choosing another tile shows none.
+ */
+const selectedRect = computed(() => {
+  const w = s.selected.value
+  return w && !w.locked ? { id: w.instanceId, x: w.x, y: w.y, w: w.w, h: w.h } : null
+})
+watch(selectedRect, (next, prev) => {
+  const droppedHere = dropped === `${next?.id}:${next?.x},${next?.y},${next?.w},${next?.h}`
+  dropped = ''
+  if (drag.value || droppedHere || !next || !prev || next.id !== prev.id) return
+  if (next.x === prev.x && next.y === prev.y && next.w === prev.w && next.h === prev.h) return
+  const resized = next.w !== prev.w || next.h !== prev.h
+  guides.value = alignmentGuides(next, s.others(next.id), s.grid.value, resized ? 'se' : undefined)
+  if (guidesTimer !== undefined) clearTimeout(guidesTimer)
+  guidesTimer = setTimeout(() => { guidesTimer = undefined; guides.value = [] }, KEY_GUIDES_MS)
+})
+
+/** A guide as a line on the board: about two screen pixels thick whatever the preview's scale. */
+function guideStyle(g: Guide) {
+  const k = props.scale || 1
+  const thick = 2 / k
+  const c = cell.value
+  return g.axis === 'x'
+    ? { left: g.at * c - thick / 2 + 'px', top: g.from * c + 'px', width: thick + 'px', height: (g.to - g.from) * c + 'px' }
+    : { top: g.at * c - thick / 2 + 'px', left: g.from * c + 'px', height: thick + 'px', width: (g.to - g.from) * c + 'px' }
+}
+
 function onVisibilityChange(): void { if (document.hidden) abortDrag() }
 
 onMounted(() => {
@@ -168,6 +216,7 @@ onMounted(() => {
   document.addEventListener('visibilitychange', onVisibilityChange)
 })
 onBeforeUnmount(() => {
+  clearGuides()
   window.removeEventListener('blur', abortDrag)
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
@@ -243,6 +292,7 @@ function onDragLeave(): void { ghost.value = null }
       />
     </div>
     <div v-if="ghost" class="ghost" :class="{ bad: !ghostOk }" :style="boxStyle(ghost)" />
+    <div v-for="g in guides" :key="`${g.axis}:${g.at}`" class="guide" :class="[g.axis, g.kind]" :style="guideStyle(g)" data-test="guide" />
   </div>
 </template>
 
@@ -279,5 +329,7 @@ function onDragLeave(): void { ghost.value = null }
 .handle.w { left: 0; top: 50%; cursor: ew-resize; }
 .ghost { position: absolute; box-sizing: border-box; pointer-events: none; border-radius: var(--radius-md);
   border: 2px dashed var(--ok); background: rgba(47, 179, 107, .18); }
+.guide { position: absolute; pointer-events: none; background: var(--accent); z-index: 2; }
+.guide.center { opacity: .75; }
 .ghost.bad { border-color: var(--danger); background: rgba(217, 70, 63, .18); }
 </style>

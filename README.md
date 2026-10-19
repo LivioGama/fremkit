@@ -201,7 +201,9 @@ each edited on its own: pick it above the canvas. The widgets are shared, so one
 two screens is the same widget, with the same settings.
 
 - **Edit / Test** — in Edit, an overlay captures the mouse: click to select, drag to move, eight
-  handles to resize. In Test the overlay steps aside and the widgets are usable, and the preview
+  handles to resize. While a widget moves, alignment guides show where its edges or its centre
+  line up with another widget's or with the screen's edges and centre (the grid already snaps, so
+  the guides only show; they never pull). In Test the overlay steps aside and the widgets are usable, and the preview
   behaves like the screen: a horizontal swipe on the navigation bar or on free board space changes
   page, wrapping around at either end.
 - **Right click** — on a widget: settings, show title, appearance (opacity presets, colours,
