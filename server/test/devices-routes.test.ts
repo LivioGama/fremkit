@@ -660,7 +660,8 @@ describe.skipIf(!hasOpenssl)('a remote port the previous server still holds', ()
       expect(res.json().message).toBeUndefined()
       const status = async () => (await tapp.inject({ method: 'GET', url: '/api/devices' })).json()
       await held.release()
-      await until(async () => (await status()).listening === true)
+      // The retry binds, then records the switch: wait for both, not for the first one alone.
+      await until(async () => { const now = await status(); return now.listening === true && now.enabled === true })
       expect(await status()).toMatchObject({ enabled: true, listening: true, error: null })
     } finally {
       await tapp.close()
