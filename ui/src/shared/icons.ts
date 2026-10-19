@@ -42,6 +42,7 @@ export const ICONS: Record<string, string> = {
   pencil: '<path d="M21.2 6.8a2.7 2.7 0 0 0-3.8-3.8L4.3 16.1a2 2 0 0 0-.5.8l-1.3 4.3a.5.5 0 0 0 .6.7l4.4-1.3a2 2 0 0 0 .8-.5Z"/><path d="m15 5 4 4"/>',
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
   'chevron-right': '<path d="m9 18 6-6-6-6"/>',
   lock: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   'alert-circle': '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',

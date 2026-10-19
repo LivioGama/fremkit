@@ -8,6 +8,7 @@
  *                             [--category info] [--size 8x4] [--channel system] [--no-compact]
  *                             [--author handle] [--dir folder] [--port 4242] [--yes]
  *   pnpm widget:check <folder> [<folder>…]
+ *   pnpm widget:preview <id>… | --all [--dir <folder>] [--url <demo server>]   (see cli/preview.ts)
  *
  * `new` writes into the author's folder (`FREMKIT_WIDGET_DEV_DIR`, else `<dataDir>/widgets-dev`)
  * — never the checkout's `widgets/`, which is for built-ins — then asks a running server to
@@ -36,7 +37,8 @@ const USAGE = `usage:
                        [--description-fr <text>] [--category <${WIDGET_CATEGORIES.join('|')}>]
                        [--size <cols>x<rows>] [--channel <name>] [--no-compact] [--author <handle>]
                        [--dir <folder>] [--port <n>] [--yes]
-  pnpm widget:check <folder> [<folder>…]`
+  pnpm widget:check <folder> [<folder>…]
+  pnpm widget:preview <id> [<id>…] | --all [--dir <folder>] [--url <demo server>] [--wait <ms>] [--png] [--dry-run]`
 
 /** Where the user typed the command: pnpm runs the script from the root and says so here. */
 const cwd = process.env.INIT_CWD || process.cwd()
@@ -51,7 +53,7 @@ function parseArgs(argv: string[]): { positional: string[]; flags: Map<string, s
     if (eq > 0) { flags.set(arg.slice(2, eq), arg.slice(eq + 1)); continue }
     const name = arg.slice(2)
     const next = argv[i + 1]
-    if (['yes', 'no-compact', 'help'].includes(name) || next === undefined || next.startsWith('--')) flags.set(name, true)
+    if (['yes', 'no-compact', 'help', 'all', 'png', 'dry-run'].includes(name) || next === undefined || next.startsWith('--')) flags.set(name, true)
     else { flags.set(name, next); i++ }
   }
   return { positional, flags }
@@ -244,12 +246,36 @@ async function commandCheck(positional: string[]): Promise<number> {
   return failed === 0 ? 0 : 1
 }
 
+async function commandPreview(positional: string[], flags: Map<string, string | true>): Promise<number> {
+  const dir = flag(flags, 'dir')
+  const wait = flag(flags, 'wait')
+  const waitMs = wait === undefined ? 1500 : Number(wait)
+  if (!Number.isFinite(waitMs) || waitMs < 0) throw new UsageError('--wait is a number of milliseconds')
+  // Loaded only here: it pulls in the whole server, which `new` and `check` have no use for.
+  const { runPreview, PreviewUsageError } = await import('./preview.js')
+  try {
+    return await runPreview({
+      ids: positional,
+      all: flags.get('all') === true,
+      ...(dir ? { dir: resolve(cwd, dir) } : {}),
+      ...(flag(flags, 'url') ? { url: flag(flags, 'url') } : {}),
+      waitMs,
+      png: flags.get('png') === true,
+      dryRun: flags.get('dry-run') === true,
+    })
+  } catch (error) {
+    if (error instanceof PreviewUsageError) throw new UsageError(error.message)
+    throw error
+  }
+}
+
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv
   const { positional, flags } = parseArgs(rest)
   if (flags.has('help') || command === undefined) { console.log(USAGE); return command === undefined ? 1 : 0 }
   if (command === 'new') return commandNew(positional, flags)
   if (command === 'check') return commandCheck(positional)
+  if (command === 'preview') return commandPreview(positional, flags)
   throw new UsageError(USAGE)
 }
 

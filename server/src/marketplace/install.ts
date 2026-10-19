@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { readZip, ZipError } from '../backup/zip.js'
-import { builtinOnlyChannels, ManifestSchema, type WidgetManifest } from '../widgets/manifest.js'
+import { builtinOnlyChannels, ManifestSchema, previewProblems, type WidgetManifest } from '../widgets/manifest.js'
 import { ThemeSchema, type Theme } from '../themes/theme.js'
 import { SDK_VERSION } from '../bridge/sdk.js'
 import { isPrivateLiteral } from '../net/private.js'
@@ -190,6 +190,12 @@ export function readPackage(
   // into a way to read this machine's own services, and one check is never enough for that one.
   if (manifest.permissions.network.some((host) => isPrivateLiteral(host))) {
     throw new InstallError('marketplace.badManifest', locale)
+  }
+  // A preview the manifest names has to be in the package, small, and the image it claims to be:
+  // the admin draws it in an <img>. Its dimensions are the registry's business, not this one's.
+  if (manifest.preview !== undefined) {
+    const file = entries.find((e) => e.name === manifest.preview)
+    if (previewProblems(manifest, file?.data ?? null).length > 0) throw new InstallError('marketplace.badPackage', locale)
   }
 
   return { kind: 'widget', version: manifest.version, manifest, files: entries }

@@ -13,6 +13,7 @@ import { ConnCache } from '../src/proxy/conn.js'
 import { ConfigStore } from '../src/config/store.js'
 import { DEFAULT_CONFIG, type Config } from '../src/config/schema.js'
 import { SDK_VERSION } from '../src/bridge/sdk.js'
+import { encodePng } from '../src/demo/icons.js'
 
 const HOST = 'registry.example.com'
 const INDEX_URL = `https://${HOST}/index.json`
@@ -68,6 +69,8 @@ interface Setup {
   themeZip?: Buffer
   /** Per-widget packages, by id, when one zip for every URL is not enough. */
   zips?: Record<string, Buffer>
+  /** What the registry answers for a `.png` URL. */
+  previewBytes?: Buffer
 }
 
 async function build(setup: Setup = {}): Promise<void> {
@@ -89,6 +92,7 @@ async function build(setup: Setup = {}): Promise<void> {
       requested.push(url)
       if (setup.offline) throw new Error('offline')
       if (url === INDEX_URL) return new Response(JSON.stringify(index))
+      if (url.endsWith('.png') && setup.previewBytes) return new Response(new Uint8Array(setup.previewBytes))
       if (setup.themeZip && url.includes('/themes/')) return new Response(new Uint8Array(setup.themeZip))
       const named = /\/widgets\/([a-z0-9-]+)-/.exec(url)?.[1]
       if (named && setup.zips?.[named]) return new Response(new Uint8Array(setup.zips[named]))
@@ -1237,5 +1241,44 @@ describe('themes', () => {
     const res = await app.inject({ method: 'POST', url: '/api/marketplace/update', payload: { id: 'nuit', kind: 'theme' } as never })
     expect(res.statusCode).toBe(200)
     expect(store.get().marketplace.installed.nuit.version).toBe('2.0.0')
+  })
+})
+
+describe('GET /api/marketplace/preview/:id', () => {
+  const PREVIEW_URL = `https://${HOST}/widgets/demo-1.0.0-preview.png`
+  const png = (): Buffer => encodePng(4, 2, new Uint8Array(4 * 2 * 4))
+
+  it('relays the preview the index names, as the image it is', async () => {
+    const zip = packageOf()
+    await build({ zip, index: indexFor(zip, { preview: PREVIEW_URL }), previewBytes: png() })
+    const list = await app.inject({ url: '/api/marketplace' })
+    expect(list.json().widgets[0].preview).toBe(PREVIEW_URL)
+    const res = await app.inject({ url: '/api/marketplace/preview/demo' })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('image/png')
+    expect(res.rawPayload.equals(png())).toBe(true)
+    // Cached: the second look does not go back to the registry.
+    await app.inject({ url: '/api/marketplace/preview/demo' })
+    expect(requested.filter((u) => u === PREVIEW_URL)).toHaveLength(1)
+  })
+
+  it('drops a preview on another host without ever fetching it', async () => {
+    const zip = packageOf()
+    await build({ zip, index: indexFor(zip, { preview: 'https://elsewhere.example.net/p.png' }), previewBytes: png() })
+    const list = await app.inject({ url: '/api/marketplace' })
+    expect(list.json().widgets).toHaveLength(1)
+    expect(list.json().widgets[0].preview).toBeUndefined()
+    expect((await app.inject({ url: '/api/marketplace/preview/demo' })).statusCode).toBe(404)
+    expect(requested.some((u) => u.includes('elsewhere'))).toBe(false)
+  })
+
+  it('refuses bytes that are not a picture', async () => {
+    const zip = packageOf()
+    await build({ zip, index: indexFor(zip, { preview: PREVIEW_URL }), previewBytes: Buffer.from('<svg onload=alert(1)>') })
+    expect((await app.inject({ url: '/api/marketplace/preview/demo' })).statusCode).toBe(502)
+  })
+
+  it('answers 404 for a widget with no preview', async () => {
+    expect((await app.inject({ url: '/api/marketplace/preview/demo' })).statusCode).toBe(404)
   })
 })

@@ -22,6 +22,7 @@ export const BYTE_ROUTES = [
   '/api/proxy/',
   '/api/bambu/',
   '/api/backup',
+  '/api/marketplace/preview/',
 ]
 
 /** True when a request path is one of those routes, query string and all. */

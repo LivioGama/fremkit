@@ -1,4 +1,4 @@
-import { nextTick } from 'vue'
+import { nextTick, shallowRef } from 'vue'
 import { setSectionsOpen } from '../shared/ui/BaseSection.vue'
 import type { MenuUi } from './canvasMenu'
 
@@ -21,3 +21,10 @@ export const editorFocus: MenuUi = {
     input?.select()
   },
 }
+
+/**
+ * A rename asked for away from the list that does it in place — the command palette's "Rename" —
+ * by page or screen id. The pages list and the screens selector watch it, start their inline
+ * rename, and clear it.
+ */
+export const renameRequest = shallowRef<{ kind: 'page' | 'screen'; id: string } | null>(null)

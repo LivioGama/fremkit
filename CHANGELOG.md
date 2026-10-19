@@ -38,6 +38,42 @@ tagged `vX.Y.Z`.
   derived from the Mac's key; a device that shows the same four words is talking to this Mac. The Mac
   is also announced on the network under its computer name rather than "Fremkit", with its address,
   so an iPad finds it even where the Mac's `.local` name does not resolve.
+- **See a widget before placing it.** Hovering a card of the editor's widget library (or reaching
+  it with Tab) shows its preview with its name, what it does, its default size and what it may
+  read, control and reach.
+- **Demo mode acts out the Sietch's widgets too**: Codex sessions and quotas, local AI models, a
+  MuteDeck meeting, a Synology NAS, a Homey's devices and flows and an Elgato Key Light all show
+  invented data, so they can be tried and get preview images without any account or device.
+- **Every built-in widget has a preview**, taken with `pnpm widget:preview` against the demo
+  server, so none of it shows anybody's real data.
+- **Pictures in the Sietch.** A registry widget that publishes a preview shows it as a thumbnail on
+  its row of the Sietch, before you install it.
+- **`pnpm widget:preview`.** Takes a widget's preview image for you: it renders the widget alone at
+  its default size against a demo server, waits for it to show data, and writes `preview.webp`
+  into its folder. Works on the built-ins (`--all`) and on your own widget (`--dir`). See
+  [docs/writing-widgets.md](docs/writing-widgets.md#a-preview-image).
+- **Widget previews in the manifest.** A widget may name a `preview` image (`preview.webp` or
+  `.png`, at most 200 KB, twice its default size in pixels). The installer refuses a package whose
+  preview is missing or is not the image it claims to be, and `pnpm widget:check` checks its
+  dimensions and warns when a widget has none.
+- **Demo mode.** `pnpm demo` (or `FREMKIT_DEMO=1`) starts a server that shows a full, moving
+  dashboard of invented data — calendar, CPU, music, weather, Claude sessions, GitHub and Azure
+  DevOps runs, Dock badges — without reading anything off the Mac or any account, in a data folder
+  of its own. For screenshots, App Store review of the iPad app, and trying Fremkit out. See
+  [docs/demo-mode.md](docs/demo-mode.md).
+- **Command palette.** ⌘K (or Ctrl+K, or **Commands** in the top bar) opens a search field over
+  the editor that reaches everything it can do: add a widget to the page, go to a page or a
+  screen, select a widget by its name, open a connection, jump to a widget's setting by its label,
+  run the fix of a widget that needs attention, and every command of the menus — the selected
+  widget's right-click menu with its submenus (type "move work" to send it to the page Work), the
+  page's and the screen's, undo, redo, Edit/Test, the theme, the history, export and import,
+  diagnostics. Accents and case do not matter; ↑ ↓ choose, Enter runs, → opens a submenu, Escape
+  closes. With nothing typed it starts with the last commands you ran.
+- **Keyboard shortcuts sheet.** Press `?` in the editor, or pick **Keyboard shortcuts** in the
+  command palette, to see every shortcut of the editor in one place.
+- **Tab through the page's widgets.** In the editor, Tab and Shift+Tab select the next and the
+  previous widget of the page, top to bottom; the arrows then move it a cell at a time and
+  Shift+arrows resize it. Holding an arrow down is one step to undo, not one per cell.
 - **Dashboard history.** Screen → History (or the button next to undo) lists every saved version
   of the dashboard for the last month, by day, with what changed in each — pages, widgets,
   screens, theme. Open one to see its pages and restore it in two taps; the version it replaces
@@ -151,6 +187,11 @@ tagged `vX.Y.Z`.
   light-tile layouts, every text in both languages — and has a running server pick it up.
   `pnpm widget:check <folder>` applies the registry's and the installer's rules to a widget
   before you open a pull request on the Sietch.
+- **End-to-end tests, for contributors.** `pnpm e2e` drives the admin and the dashboard in
+  Chromium (and WebKit when installed) against a throwaway server per worker: the library,
+  editing with the mouse and the keyboard, every right-click menu, ⌘K, undo, export and import,
+  the history, widget health, swipes and the night theme, and a security smoke test. Pull
+  requests run it in CI. See `docs/contributing.md`.
 
 ### Changed
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer
@@ -165,6 +206,10 @@ tagged `vX.Y.Z`.
 - **Adding a screen** creates an Edge screen; an iPad screen is now created from a paired iPad.
 
 ### Fixed
+- **Right-clicking a widget in the bar of the editor's preview opens its menu in Safari and in
+  the Mac's admin window too.** WebKit sent the click to the widget itself, so nothing opened.
+- Escape in a right-click menu opened inside a dialog (the Screen panel's bar widgets) closes
+  the menu only, not the dialog under it.
 - **The install instructions say `pnpm run setup`.** They said `pnpm setup`, which runs pnpm's
   own command instead: it edits your shell profile and never sets Fremkit up.
 - **A connection used only by the navigation bar is protected.** A widget shown only in the bar

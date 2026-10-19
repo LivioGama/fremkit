@@ -58,6 +58,7 @@ my-widget/
   manifest.json
   index.html
   CHANGELOG.md     # for the registry; never packed
+  preview.webp     # optional: its picture in the library and on the Sietch
 ```
 
 The folder name and the manifest's `id` must match the shape `[a-z0-9_-]+`. A manifest that does
@@ -111,6 +112,7 @@ author's folder, above, is read only under `FREMKIT_WIDGET_DEV=1`.
 | `homepage` | no | An `https` URL, shown in the admin. Never fetched, never executed |
 | `author` | no | A name, shown in the admin |
 | `license` | no | An [SPDX](https://spdx.org/licenses/) identifier — `MIT`, `Apache-2.0` |
+| `preview` | no | A picture of the widget at work, a `.webp` or `.png` of its own folder — see [A preview image](#a-preview-image) |
 
 Legacy manifests may declare `sizes` instead of `minSize`; the server converts them, doubling the
 coordinates for the current grid.
@@ -606,6 +608,48 @@ dashboard easier to read from across the room:
 
 The tile's own accent and text colour are painted after the theme, so a colour chosen in the
 editor still wins. See [themes.md](themes.md).
+
+## A preview image
+
+The admin shows a widget's preview when a library card is hovered or focused, and the Sietch shows
+it on the widget's card before anybody installs it. It is one file of the widget's folder, named by
+the manifest's `preview`:
+
+- a `.webp` (preferred) or a `.png`, by a relative path inside the folder;
+- at most **200 KB** — the installer refuses a package whose preview is missing, larger, or not the
+  image its name says;
+- about **twice the default size in pixels**: a cell is 40 px, so a `[16, 10]` widget's preview is
+  1280 × 800. `pnpm widget:check` refuses one more than 15 % off, and warns, for now, when a widget
+  has no preview at all.
+
+Make it with the tool rather than by hand:
+
+```bash
+pnpm widget:preview my-widget --dir data/widgets-dev   # an author's widget
+pnpm widget:preview clock                               # a built-in
+pnpm widget:preview --all                               # every built-in
+```
+
+It starts a [demo server](demo-mode.md) in-process (invented data only — nothing of your own ends
+up in the picture), puts the widget alone on a screen of exactly its default size, opens it in
+headless Chromium at twice the resolution, waits until it shows data rather than a loading line,
+captures the tile with transparent corners, encodes it as WebP (lossless if it fits, lossy
+otherwise) and writes `preview.webp` beside the manifest, setting `preview` in it. Look at the
+result: a widget that needs settings to show anything (a list of services, a calendar) is captured
+with its defaults, which may be an empty state — set better defaults, or capture it from a demo
+server you arranged yourself with `--url http://127.0.0.1:4250` (its config is changed for the
+capture and put back after).
+
+A `connection` setting left empty is pointed at a demo connection of its type: the demo's
+Synology NAS, or, for a connection the widget [declares](#declaring-a-connection), one the tool creates with
+placeholder fields (removed again after a `--url` capture). The demo answers a declared
+connection from invented devices, and only the paths it knows (a Homey's, a Key Light's); any
+other path fails as unreachable, so such a widget is captured in its offline state.
+
+Options: `--wait <ms>` waits longer after the data arrives (default 1500), `--png` writes a PNG,
+`--dry-run` captures without writing. Playwright is not a dependency of the project: point
+`PLAYWRIGHT` at an installed `playwright` package and, if its browser is missing, `CHROMIUM` at a
+Chromium executable — the same two variables as `scripts/check-widget-sandbox.ts`.
 
 ## Publishing it
 

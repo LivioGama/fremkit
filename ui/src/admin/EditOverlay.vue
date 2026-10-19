@@ -219,7 +219,7 @@ function onDragLeave(): void { ghost.value = null }
     @contextmenu="onBackgroundMenu"
   >
     <div
-      v-for="w in widgets" :key="w.instanceId" class="hit"
+      v-for="w in widgets" :key="w.instanceId" class="hit" data-test="tile" :data-instance-id="w.instanceId"
       :class="{ selected: w.instanceId === s.state.selectedId, locked: w.locked }" :style="boxStyle(w)"
       @pointerdown="begin($event, w.instanceId, 'move', 'se')"
       @contextmenu="onTileMenu($event, w.instanceId)"
@@ -239,7 +239,7 @@ function onDragLeave(): void { ghost.value = null }
       <span v-if="w.locked" class="lock" :title="t('admin.overlay.locked')"><BaseIcon name="lock" :size="12" /></span>
       <span
         v-for="hnd in HANDLES" v-show="w.instanceId === s.state.selectedId && !w.locked" :key="hnd"
-        class="handle" :class="hnd" @pointerdown="begin($event, w.instanceId, 'resize', hnd)"
+        class="handle" :class="hnd" :data-test="`handle-${hnd}`" @pointerdown="begin($event, w.instanceId, 'resize', hnd)"
       />
     </div>
     <div v-if="ghost" class="ghost" :class="{ bad: !ghostOk }" :style="boxStyle(ghost)" />

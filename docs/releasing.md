@@ -64,7 +64,8 @@ Still to do:
    the changelog section and signs it with the same key, and fills the cask's `version` and `sha256`. Notarization takes a few
    minutes per submission; a refusal prints Apple's log.
 3. Run the commands it prints, in order: commit the cask, tag and push, `gh release create` with
-   the DMG, the zip and `appcast.xml`, then copy the cask into the tap and push it.
+   the DMG, the zip and `appcast.xml` (which also posts the release in the Announcements
+   discussions), then copy the cask into the tap and push it.
 
 `scripts/notarize.sh` alone notarizes whatever `scripts/build-app.sh` left in `native/dist`, and
 checks the result with `codesign --verify --strict`, `spctl` and `stapler validate`.

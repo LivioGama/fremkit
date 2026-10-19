@@ -216,10 +216,18 @@ two screens is the same widget, with the same settings.
   On a bar widget: settings, move left or right, remove. On a screen above the canvas: rename,
   screen settings, delete. The menus work from the
   keyboard too (arrows, Enter, Escape, type-ahead).
-- **Keyboard** — arrows move the selection by one cell, Shift+arrows resize it from the south-east corner, Delete or Backspace removes it,
+- **Command palette** — Cmd+K (Ctrl+K, or *Commands* in the top bar) searches everything the
+  editor can do and runs it from the keyboard: add a widget, go to a page or a screen, select a
+  widget, open a connection, jump to a setting, fix a widget that needs attention, and every item
+  of the right-click menus — the selected widget's included, submenus and all. Its commands are
+  the menus' own, so a new menu item is in the palette too. The last commands run come first.
+- **Keyboard** — Tab and Shift+Tab select the next or previous widget of the page, arrows move the
+  selection by one cell (a held arrow is one undo step), Shift+arrows resize it from the south-east
+  corner — never through another widget, never a locked one — Delete or Backspace removes it,
   Cmd+D duplicates it, Cmd+C and Cmd+V copy it and paste a new one with the same settings on the
   page you are on (any page, any screen), Escape deselects. Cmd+Z and Cmd+Shift+Z undo and redo
-  anywhere, up to 50 steps.
+  anywhere, up to 50 steps. `?` shows every shortcut; the sheet, the key handler and the menus'
+  hints all read the one table in `ui/src/admin/shortcuts.ts`.
 - **Left column** — the pages (drag to reorder, double-click to rename, the rest in their menu or
   behind the "…" on hover) and the widget library, with a
   rescan button that re-reads the `widgets/` folder without restarting the server. Each card says
@@ -498,10 +506,12 @@ The rest, with the reasoning: **[docs/troubleshooting.md](docs/troubleshooting.m
 ```sh
 pnpm dev          # server on 4242 + Vite on 5173; then pnpm open --dev [/admin] to sign in
 pnpm open         # opens http://127.0.0.1:4242 signed in (pnpm open /admin for the admin)
+pnpm demo         # a demo server on :4250, invented data only: see docs/demo-mode.md
 pnpm build        # ui + server
 pnpm start        # production: http://127.0.0.1:4242 and /admin
 pnpm test         # vitest, server + ui
 pnpm typecheck
+pnpm e2e          # Playwright end-to-end tests, after pnpm --filter ui build (docs/contributing.md)
 pnpm helper:build   # native/dist/Fremkit Helper.app
 pnpm helper:install
 pnpm helper:test
@@ -512,6 +522,7 @@ bash scripts/build-app.sh   # native/dist/Fremkit.app: the self-contained app, s
 |---|---|
 | `server/` | Fastify 5 on 127.0.0.1:4242 — config, widget catalog, providers, connections, secrets, the bridge, the WebSocket |
 | `ui/` | Vue 3 — the dashboard, the admin, and the code they share |
+| `e2e/` | Playwright end-to-end tests of the admin and the dashboard, each worker on a throwaway server |
 | `native/` | The Swift helper — kiosk window, HID touch driver, mouse fence, admin window, Dock badges, server supervision, and `fremkit-scan`, the disk map's scanner |
 | `widgets/` | One folder per widget |
 | `scripts/` | Setup, dev, the helper's build and tests, the app's build, notarization and release, the signing identity, kiosk, the Claude Code hooks |
