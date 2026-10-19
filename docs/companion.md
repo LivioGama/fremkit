@@ -138,7 +138,8 @@ Edge*), or press **⌃⇧F** (Control-Shift-F). Press it again to stop. The shor
 - The Edge **switches to the page holding the Fremplay widget**. If the Edge's screen has no
   Fremplay widget, the popup tells you so and nothing is sent. A dashboard that stayed loaded is
   moved once per share; one that has just loaded (the kiosk after a restart of Fremkit) turns to
-  that page when a share is already live, once, and leaves you where you go next.
+  that page once when a share shows within its first 15 seconds (the browser takes a few seconds
+  to bring its share back), and leaves you where you go next.
 - **On the Mac's Edge only.** A Fremplay widget on a paired iPad's screen shows *Fremplay ne
   s'affiche que sur l'Edge du Mac.* / *Fremplay only shows on the Mac's Edge.* and nothing else:
   the picture goes peer to peer between addresses of this Mac, and the iPad's copy of the widget

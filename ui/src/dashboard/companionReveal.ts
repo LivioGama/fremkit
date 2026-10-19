@@ -12,9 +12,14 @@ import { COMPANION_WIDGETS, companionOn } from '../shared/companionGate'
  * A dashboard that has just loaded is another matter (`landingPage`): the kiosk reloads when the
  * server restarts, and a share taken back after that restart is not revealed again (the server
  * counts it as on screen already), so the reloaded page would land on its first page and stay
- * there. Its first snapshot after the load, when it shows a live share, turns to the Fremplay page
- * once.
+ * there. Within `LANDING_WINDOW_MS` of the load, the first snapshot that shows a live share turns
+ * to the Fremplay page, once. The extension comes back on its own backoff, seconds after the
+ * kiosk, so that is rarely the first snapshot. Past the window, or once it has landed, a
+ * dashboard is only ever moved by a new share (`reveal`).
  */
+
+/** How long after a load a resumed share may still bring its page up. */
+export const LANDING_WINDOW_MS = 15_000
 export interface CompanionReveal { seq: number; screenId: string; pageIndex: number }
 
 export function createRevealTracker() {

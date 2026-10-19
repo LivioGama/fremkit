@@ -14,7 +14,7 @@ import NavBar from './NavBar.vue'
 import NavPopover from './NavPopover.vue'
 import { useSwipe } from './useSwipe'
 import CompanionPrompt from './CompanionPrompt.vue'
-import { createRevealTracker, landingPage, type CompanionReveal } from './companionReveal'
+import { createRevealTracker, LANDING_WINDOW_MS, landingPage, type CompanionReveal } from './companionReveal'
 import { useNavPopover } from './useNavPopover'
 import { isRemotePage, useDeviceScreen, type DeviceInfo } from './remote'
 import { useNativeBridge } from './native'
@@ -99,7 +99,11 @@ let unsubCompanion: (() => void) | undefined
 /** The browser extension's pairing request, while one is pending (local dashboard only). */
 const companionPairing = ref<{ requestId: string; code: string; name: string; extension?: string; expiresAt: number; turnedAway?: number } | null>(null)
 const reveal = createRevealTracker()
-/** The first `companion` snapshot since this page loaded has been seen (`landingPage`). */
+/**
+ * When this page loaded, and whether it has landed on a live share's page yet (`landingPage`):
+ * once, within `LANDING_WINDOW_MS` of the load. A reconnect resets neither.
+ */
+const loadedAt = Date.now()
 let landed = false
 let offReload: (() => void) | undefined
 let offScreenReload: (() => void) | undefined
@@ -169,9 +173,12 @@ onMounted(async () => {
       const snap = data as { pairing?: typeof companionPairing.value; reveal?: CompanionReveal | null; tab?: { state?: string } }
       companionPairing.value = snap.pairing ?? null
       const revealed = reveal.observe(snap, screen.value?.id)
-      // Once per page load, never on a reconnect: a share already live lands on its page.
-      const landing = landed || !config.value || !shown.value ? null : landingPage(snap, config.value, shown.value)
-      landed = true
+      // Once per page load, within its first seconds, never on a reconnect: the first snapshot
+      // that shows a live share lands on its page. After a server restart the kiosk is back before
+      // the extension has resumed its share, so that snapshot is rarely the first one.
+      const looking = !landed && Date.now() - loadedAt <= LANDING_WINDOW_MS && config.value && shown.value
+      const landing = looking ? landingPage(snap, config.value!, shown.value!) : null
+      if (landing !== null) landed = true
       const target = revealed ?? landing
       if (target !== null && target !== pageIndex.value && target < (shown.value?.pages.length ?? 0)) select(target)
     })

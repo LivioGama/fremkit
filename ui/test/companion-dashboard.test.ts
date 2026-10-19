@@ -381,21 +381,71 @@ describe('the dashboard and the companion channel', () => {
     w.unmount()
   })
 
-  it('a dashboard that stayed loaded is not moved when its socket comes back over a live share', async () => {
-    const c = withFremplay(true) as unknown as { screens: { nav: unknown[] }[] }
-    c.screens[0].nav = []
-    fake.config = c as unknown as Config
-    const w = await mountApp('http://127.0.0.1:4242/')
-    push('companion', state({ tab: { state: 'idle' } }))
-    await nextTick()
-    fake.status.value = 'connecting'
-    await nextTick()
-    fake.status.value = 'open'
-    await nextTick()
-    push('companion', state({ tab: { state: 'sharing' } }))
-    await nextTick()
-    expect(w.find('.page-stub').text()).toBe('p0')
-    w.unmount()
+  describe('after a server restart, the share coming back seconds after the kiosk', () => {
+    const NOW = 1_800_000_000_000
+    beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(NOW) })
+    afterEach(() => { vi.useRealTimers() })
+    const placed = () => {
+      const c = withFremplay(true) as unknown as { screens: { nav: unknown[] }[] }
+      c.screens[0].nav = []
+      return c as unknown as Config
+    }
+
+    it('lands on the Fremplay page when the share shows a few seconds after the load', async () => {
+      fake.config = placed()
+      const w = await mountApp('http://127.0.0.1:4242/')
+      // The server is back before the extension: the first snapshot has no share.
+      push('companion', state({ tab: { state: 'idle' }, extensions: { connected: 0, paired: 1 } }))
+      await nextTick()
+      expect(w.find('.page-stub').text()).toBe('p0')
+      vi.setSystemTime(NOW + 4_000)
+      push('companion', state({ tab: { state: 'sharing' } }))
+      await nextTick()
+      expect(w.find('.page-stub').text()).toBe('p1')
+      w.unmount()
+    })
+
+    it('does not move once the window after the load has passed', async () => {
+      fake.config = placed()
+      const w = await mountApp('http://127.0.0.1:4242/')
+      push('companion', state({ tab: { state: 'idle' } }))
+      vi.setSystemTime(NOW + 16_000)
+      push('companion', state({ tab: { state: 'sharing' } }))
+      await nextTick()
+      expect(w.find('.page-stub').text()).toBe('p0')
+      w.unmount()
+    })
+
+    it('a dashboard that stayed loaded is not moved when its socket comes back over a live share', async () => {
+      fake.config = placed()
+      const w = await mountApp('http://127.0.0.1:4242/')
+      push('companion', state({ tab: { state: 'idle' } }))
+      await nextTick()
+      vi.setSystemTime(NOW + 60_000)
+      fake.status.value = 'connecting'
+      await nextTick()
+      fake.status.value = 'open'
+      await nextTick()
+      push('companion', state({ tab: { state: 'sharing' } }))
+      await nextTick()
+      expect(w.find('.page-stub').text()).toBe('p0')
+      w.unmount()
+    })
+
+    it('lands once: a share that goes and comes back within the window does not move it again', async () => {
+      fake.config = placed()
+      const w = await mountApp('http://127.0.0.1:4242/')
+      push('companion', state({ tab: { state: 'sharing' } }))
+      await nextTick()
+      expect(w.find('.page-stub').text()).toBe('p1')
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+      push('companion', state({ tab: { state: 'idle' } }))
+      vi.setSystemTime(NOW + 5_000)
+      push('companion', state({ tab: { state: 'sharing' } }))
+      await nextTick()
+      expect(w.find('.page-stub').text()).toBe('p0')
+      w.unmount()
+    })
   })
 
   it('does not land anywhere when nothing is shared, the bar holds the widget, or the switch is off', async () => {
