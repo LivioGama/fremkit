@@ -288,13 +288,10 @@ export const api = {
     fetch(`/api/connections/${encodeURIComponent(id)}/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => json<ConnectionTestResult>(r)),
 
   /**
-   * Answer the browser extension's pairing request the Edge is showing, with the code on show: the
-   * server answers 409 when that is no longer the waiting request's code.
+   * Refuse the browser extension's pairing request the Edge is showing, with the code on show: the
+   * server answers 409 when that is no longer the waiting request's code. There is no approve:
+   * typing the code into the extension is the approval.
    */
-  approveCompanion: (requestId: string, code: string) =>
-    fetch(`/api/companion/requests/${encodeURIComponent(requestId)}/approve`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }),
-    }).then(empty),
   refuseCompanion: (requestId: string, code: string) =>
     fetch(`/api/companion/requests/${encodeURIComponent(requestId)}/refuse`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }),

@@ -2,16 +2,16 @@
 import { ref, watch, onUnmounted } from 'vue'
 import { api } from '../shared/api'
 import { useI18n } from '../shared/i18n'
-import { COMPANION_ALLOW_DELAY_MS, useSettled } from '../shared/useSettled'
 
 /**
- * A browser extension asked to pair: the code it shows and the name it gave, to be matched by eye
- * on this screen before the Mac says yes. Drawn over everything; it hides at `expiresAt` even
- * before the server's next snapshot says the request is gone.
+ * A browser extension asked to pair: the code to type into it, and the name it gave. Drawn over
+ * everything; it hides at `expiresAt` even before the server's next snapshot says the request is
+ * gone, or once the extension has confirmed the code.
  *
- * Allow waits two seconds whenever the request on show changes, so a request swapped in under the
- * user's finger is not the one approved; the answer also carries the code on show, which the
- * server checks against the waiting request.
+ * There is no Allow: typing the code into the browser is the approval, and this screen is the one
+ * place it shows (with the helper, only the real Fremkit gets the kiosk to load its page). Refuse
+ * carries the code on show, which the server checks against the waiting request, so a request
+ * swapped in under the user's finger is not the one refused.
  *
  * While this request waits, any other browser that asks is turned away; how many did is shown, so
  * a request sitting on the slot that the user did not make (a local program holding pairing up)
@@ -24,7 +24,6 @@ const failed = ref(false)
 const busy = ref(false)
 /** Set when the server said the request on show changed (409); any other failure is the generic one. */
 const reason = ref('')
-const settled = useSettled(() => props.pairing.requestId, COMPANION_ALLOW_DELAY_MS)
 let timer: number | undefined
 
 watch(() => [props.pairing.requestId, props.pairing.expiresAt], ([id], previous) => {
@@ -63,12 +62,12 @@ async function answer(call: (id: string, code: string) => Promise<unknown>) {
     <div class="card">
       <p class="ask">{{ t('dashboard.companion.request') }}</p>
       <p class="name">{{ pairing.name }}</p>
-      <p class="code">{{ pairing.code }}</p>
+      <p class="code" data-test="companion-code">{{ pairing.code }}</p>
+      <p class="type">{{ t('dashboard.companion.typeCode') }}</p>
       <p v-if="(pairing.turnedAway ?? 0) > 0" class="turned" data-test="turned-away">{{ t('dashboard.companion.turnedAway', { n: pairing.turnedAway ?? 0 }) }}</p>
       <p v-if="failed" class="error" role="alert">{{ reason || t('dashboard.companion.failed') }}</p>
       <div class="actions">
         <button type="button" class="refuse" :disabled="busy" @click="answer(api.refuseCompanion)">{{ t('dashboard.companion.refuse') }}</button>
-        <button type="button" class="approve" :disabled="busy || !settled" @click="answer(api.approveCompanion)">{{ t('dashboard.companion.approve') }}</button>
       </div>
     </div>
   </div>
@@ -87,6 +86,7 @@ async function answer(call: (id: string, code: string) => Promise<unknown>) {
 .ask { font-size: var(--fs-lg); }
 .name { color: var(--accent); font-size: var(--fs-lg); font-weight: 600; }
 .code { font-family: var(--font-mono); font-size: 96px; line-height: 1; letter-spacing: 0.15em; font-weight: 700; }
+.type { font-size: var(--fs-lg); }
 .error { color: var(--danger); font-size: var(--fs-sm); }
 .turned { color: var(--warn); font-size: var(--fs-sm); max-width: 32em; }
 .actions { display: flex; gap: var(--space-3); }
@@ -95,6 +95,5 @@ button {
   font-size: var(--fs-lg); font-weight: 600; cursor: pointer; border: 1px solid var(--border-strong);
   background: var(--surface-3); color: var(--text);
 }
-button.approve { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 button:disabled { opacity: 0.6; }
 </style>

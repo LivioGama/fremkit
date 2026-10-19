@@ -12,7 +12,6 @@ import { createRevealTracker } from '../src/dashboard/companionReveal'
 const fake = vi.hoisted(() => ({
   subs: new Map<string, Set<(data: unknown) => void>>(),
   config: null as unknown,
-  approve: vi.fn(async (_id: string, _code: string) => {}),
   refuse: vi.fn(async (_id: string, _code: string) => {}),
 }))
 
@@ -34,7 +33,6 @@ vi.mock('../src/shared/api', () => ({
   api: {
     getWidgets: async () => ({ widgets: {} }),
     getConfig: async () => fake.config,
-    approveCompanion: (id: string, code: string) => fake.approve(id, code),
     refuseCompanion: (id: string, code: string) => fake.refuse(id, code),
   },
 }))
@@ -49,61 +47,34 @@ const pairing = (over: Record<string, unknown> = {}) =>
   ({ requestId: 'r1', code: 'K7M2', name: 'Companion on Chrome', expiresAt: NOW + 120_000, ...over })
 
 describe('the pairing prompt', () => {
-  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); fake.approve.mockClear(); fake.refuse.mockClear() })
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); fake.refuse.mockClear() })
   afterEach(() => { vi.useRealTimers() })
 
-  /** Mounts the prompt and, unless told not to, lets Allow's two-second hold run out. */
-  async function mountPrompt(p: unknown, { settle = true } = {}) {
+  async function mountPrompt(p: unknown) {
     const { default: CompanionPrompt } = await import('../src/dashboard/CompanionPrompt.vue')
-    const w = mount(CompanionPrompt, { props: { pairing: p as never } })
-    if (settle) { vi.advanceTimersByTime(2000); await nextTick() }
-    return w
+    return mount(CompanionPrompt, { props: { pairing: p as never } })
   }
 
-  it('shows the code and name and calls approve on Autoriser, with the code on show', async () => {
+  it('shows the code to type in the browser and the name, and no Allow', async () => {
     const w = await mountPrompt(pairing())
-    expect(w.text()).toContain('K7M2')
+    expect(w.find('[data-test="companion-code"]').text()).toBe('K7M2')
     expect(w.text()).toContain('Companion on Chrome')
-    await w.find('button.approve').trigger('click')
-    expect(fake.approve).toHaveBeenCalledWith('r1', 'K7M2')
-    expect(fake.refuse).not.toHaveBeenCalled()
+    expect(w.text()).toContain('Tapez ce code dans votre navigateur')
+    // Typing the code into the extension is the approval: nothing here can give one.
+    expect(w.findAll('button').map((b) => b.classes())).toEqual([['refuse']])
   })
 
-  it('calls refuse on Refuser, with the code on show', async () => {
-    const w = await mountPrompt(pairing(), { settle: false })
-    // Refuse needs no hold: refusing the wrong request costs a retry, not a pairing.
+  it('calls refuse on Refuser at once, with the code on show', async () => {
+    const w = await mountPrompt(pairing())
     await w.find('button.refuse').trigger('click')
     expect(fake.refuse).toHaveBeenCalledWith('r1', 'K7M2')
   })
 
-  it('holds Allow for two seconds after the request on show changes', async () => {
-    const w = await mountPrompt(pairing(), { settle: false })
-    expect(w.find('button.approve').attributes('disabled')).toBeDefined()
-    expect(w.find('button.refuse').attributes('disabled')).toBeUndefined()
-    await w.find('button.approve').trigger('click')
-    expect(fake.approve).not.toHaveBeenCalled()
-    vi.advanceTimersByTime(1999)
-    await nextTick()
-    expect(w.find('button.approve').attributes('disabled')).toBeDefined()
-    vi.advanceTimersByTime(1)
-    await nextTick()
-    expect(w.find('button.approve').attributes('disabled')).toBeUndefined()
-    // A new deadline for the same request does not hold it again; another request does.
-    await w.setProps({ pairing: pairing({ expiresAt: NOW + 60_000 }) as never })
-    expect(w.find('button.approve').attributes('disabled')).toBeUndefined()
-    await w.setProps({ pairing: pairing({ requestId: 'r2', code: 'P4Q9' }) as never })
-    expect(w.find('button.approve').attributes('disabled')).toBeDefined()
-    vi.advanceTimersByTime(2000)
-    await nextTick()
-    await w.find('button.approve').trigger('click')
-    expect(fake.approve).toHaveBeenCalledWith('r2', 'P4Q9')
-  })
-
   it('shows its own short error when the answer fails, not the server\'s sentence', async () => {
     // What the server sends for a request that expired between the snapshot and the tap.
-    fake.approve.mockRejectedValueOnce(Object.assign(new Error('this connection request no longer exists or was already answered'), { status: 404 }))
+    fake.refuse.mockRejectedValueOnce(Object.assign(new Error('this connection request no longer exists or was already answered'), { status: 404 }))
     const w = await mountPrompt(pairing())
-    await w.find('button.approve').trigger('click')
+    await w.find('button.refuse').trigger('click')
     await flushPromises()
     expect(w.find('.error').text()).toBe('Réponse impossible, réessayez')
   })
@@ -116,41 +87,36 @@ describe('the pairing prompt', () => {
   })
 
   it('says the request changed when the server answers 409', async () => {
-    fake.approve.mockRejectedValueOnce(Object.assign(new Error('the request changed: check the code'), { status: 409 }))
+    fake.refuse.mockRejectedValueOnce(Object.assign(new Error('the request changed: check the code'), { status: 409 }))
     const w = await mountPrompt(pairing())
-    await w.find('button.approve').trigger('click')
+    await w.find('button.refuse').trigger('click')
     await flushPromises()
     expect(w.find('.error').text()).toBe('La demande a changé : vérifiez le code')
   })
 
-  it('keeps the buttons disabled after an answer went through, until another request comes', async () => {
-    fake.approve.mockResolvedValue(undefined)
+  it('keeps Refuse disabled after it went through, until another request comes', async () => {
+    fake.refuse.mockResolvedValue(undefined)
     const w = await mountPrompt(pairing())
-    await w.find('button.approve').trigger('click')
+    await w.find('button.refuse').trigger('click')
     await flushPromises()
-    expect(w.find('button.approve').attributes('disabled')).toBeDefined()
     expect(w.find('button.refuse').attributes('disabled')).toBeDefined()
     // A second tap before the snapshot hides the prompt sends nothing and shows no error.
-    await w.find('button.approve').trigger('click')
+    await w.find('button.refuse').trigger('click')
     await flushPromises()
-    expect(fake.approve).toHaveBeenCalledTimes(1)
+    expect(fake.refuse).toHaveBeenCalledTimes(1)
     expect(w.find('.error').exists()).toBe(false)
-    // The same request with a new deadline is still answered; a new request frees the buttons.
     await w.setProps({ pairing: pairing({ expiresAt: NOW + 60_000 }) as never })
-    expect(w.find('button.approve').attributes('disabled')).toBeDefined()
+    expect(w.find('button.refuse').attributes('disabled')).toBeDefined()
     await w.setProps({ pairing: pairing({ requestId: 'r2' }) as never })
     expect(w.find('button.refuse').attributes('disabled')).toBeUndefined()
-    vi.advanceTimersByTime(2000)
-    await nextTick()
-    expect(w.find('button.approve').attributes('disabled')).toBeUndefined()
   })
 
-  it('frees the buttons after a failure, to try again', async () => {
-    fake.approve.mockRejectedValueOnce(new Error('HTTP 500'))
+  it('frees Refuse after a failure, to try again', async () => {
+    fake.refuse.mockRejectedValueOnce(new Error('HTTP 500'))
     const w = await mountPrompt(pairing())
-    await w.find('button.approve').trigger('click')
+    await w.find('button.refuse').trigger('click')
     await flushPromises()
-    expect(w.find('button.approve').attributes('disabled')).toBeUndefined()
+    expect(w.find('button.refuse').attributes('disabled')).toBeUndefined()
   })
 
   it('hides at expiresAt even before the next snapshot', async () => {
