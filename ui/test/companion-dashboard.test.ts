@@ -336,4 +336,75 @@ describe('the dashboard and the companion channel', () => {
     expect(w.find('.page-stub').text()).toBe('p2')
     w.unmount()
   })
+
+  it('a dashboard that has just loaded turns to the Fremplay page when a share is live', async () => {
+    const c = withFremplay(true) as unknown as { screens: { nav: unknown[] }[] }
+    c.screens[0].nav = []
+    fake.config = c as unknown as Config
+    const w = await mountApp('http://127.0.0.1:4242/')
+    push('companion', state({ tab: { state: 'sharing' } }))
+    await nextTick()
+    expect(w.find('.page-stub').text()).toBe('p1')
+    // Once: a later snapshot of the same share leaves the page the user turned to.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    await nextTick()
+    push('companion', state({ tab: { state: 'sharing' } }))
+    await nextTick()
+    expect(w.find('.page-stub').text()).toBe('p0')
+    w.unmount()
+  })
+
+  it('a dashboard that stayed loaded is not moved when its socket comes back over a live share', async () => {
+    const c = withFremplay(true) as unknown as { screens: { nav: unknown[] }[] }
+    c.screens[0].nav = []
+    fake.config = c as unknown as Config
+    const w = await mountApp('http://127.0.0.1:4242/')
+    push('companion', state({ tab: { state: 'idle' } }))
+    await nextTick()
+    fake.status.value = 'connecting'
+    await nextTick()
+    fake.status.value = 'open'
+    await nextTick()
+    push('companion', state({ tab: { state: 'sharing' } }))
+    await nextTick()
+    expect(w.find('.page-stub').text()).toBe('p0')
+    w.unmount()
+  })
+
+  it('does not land anywhere when nothing is shared, the bar holds the widget, or the switch is off', async () => {
+    for (const [cfg, tab] of [
+      [withFremplay(true), { state: 'idle' }],
+      [withFremplay(true), { state: 'sharing' }],
+      [withFremplay(false), { state: 'sharing' }],
+    ] as const) {
+      fake.config = cfg
+      vi.resetModules()
+      const w = await mountApp('http://127.0.0.1:4242/')
+      push('companion', state({ tab }))
+      await nextTick()
+      expect(w.find('.page-stub').text()).toBe('p0')
+      w.unmount()
+    }
+  })
+})
+
+describe('landingPage', () => {
+  const screen = (nav: string[], pages: string[][]) => ({
+    nav: nav.map((instanceId) => ({ instanceId, slot: 'left' as const })),
+    pages: pages.map((ids, i) => ({ id: `p${i}`, name: '', items: ids.map((instanceId) => ({ instanceId, x: 0, y: 0, w: 1, h: 1 })) })),
+  })
+  const cfg = (companion: boolean) => ({
+    labs: { devices: false, companion },
+    widgets: { fp: { widgetId: 'fremplay', showTitle: false, settings: {} }, c: { widgetId: 'clock', showTitle: false, settings: {} } },
+  }) as unknown as Config
+
+  it('is the first page holding Fremplay while a share is live', async () => {
+    const { landingPage } = await import('../src/dashboard/companionReveal')
+    expect(landingPage({ tab: { state: 'sharing' } }, cfg(true), screen([], [['c'], ['c', 'fp'], ['fp']]))).toBe(1)
+    expect(landingPage({ tab: { state: 'idle' } }, cfg(true), screen([], [['c'], ['fp']]))).toBeNull()
+    expect(landingPage({}, cfg(true), screen([], [['c'], ['fp']]))).toBeNull()
+    expect(landingPage({ tab: { state: 'sharing' } }, cfg(false), screen([], [['c'], ['fp']]))).toBeNull()
+    expect(landingPage({ tab: { state: 'sharing' } }, cfg(true), screen(['fp'], [['c'], ['fp']]))).toBeNull()
+    expect(landingPage({ tab: { state: 'sharing' } }, cfg(true), screen([], [['c']]))).toBeNull()
+  })
 })

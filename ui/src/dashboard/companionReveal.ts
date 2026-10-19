@@ -1,10 +1,19 @@
+import type { Config, Screen } from '../shared/types'
+import { COMPANION_WIDGETS, companionOn } from '../shared/companionGate'
+
 /**
  * Which page a browser-extension share should bring up on this dashboard.
  *
  * The server stamps each reveal with a `seq`. This dashboard acts on a seq it has not acted on yet:
  * "differs", not "greater", because the counter restarts at 1 when the server does. The first
- * snapshot after (re)subscribing is only recorded, so a reload or a reconnect never jumps pages
- * on its own over a share that was revealed earlier.
+ * snapshot after (re)subscribing is only recorded, so a reconnect never jumps pages on its own
+ * over a share that was revealed earlier: a dashboard that stayed loaded is not moved.
+ *
+ * A dashboard that has just loaded is another matter (`landingPage`): the kiosk reloads when the
+ * server restarts, and a share taken back after that restart is not revealed again (the server
+ * counts it as on screen already), so the reloaded page would land on its first page and stay
+ * there. Its first snapshot after the load, when it shows a live share, turns to the Fremplay page
+ * once.
  */
 export interface CompanionReveal { seq: number; screenId: string; pageIndex: number }
 
@@ -24,4 +33,22 @@ export function createRevealTracker() {
     /** Forget what was seen: the next snapshot is a fresh baseline. */
     reset() { primed = false; seen = null },
   }
+}
+
+/**
+ * The page a dashboard that has just loaded turns to, from its first `companion` snapshot: the
+ * first page in order holding a Fremplay widget, while a share is live and `labs.companion` is
+ * on. Null when nothing is shared, when the bar holds the widget (it shows there whatever the
+ * page), or when no page does. `screen` is the screen as drawn, so the index is the dashboard's.
+ */
+export function landingPage(
+  snapshot: { tab?: { state?: string } | null },
+  config: Pick<Config, 'labs' | 'widgets'>,
+  screen: Pick<Screen, 'nav' | 'pages'>,
+): number | null {
+  if (snapshot.tab?.state !== 'sharing' || !companionOn(config)) return null
+  const holds = (instanceId: string): boolean => COMPANION_WIDGETS.includes(config.widgets[instanceId]?.widgetId ?? '')
+  if (screen.nav.some((item) => holds(item.instanceId))) return null
+  const index = screen.pages.findIndex((page) => page.items.some((item) => holds(item.instanceId)))
+  return index === -1 ? null : index
 }

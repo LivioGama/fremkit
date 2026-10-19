@@ -136,7 +136,9 @@ Edge*), or press **⌃⇧F** (Control-Shift-F). Press it again to stop. The shor
   Mac's output by default, or on the video in your browser when the widget's **Volume buttons**
   setting says **Video** (and whenever the Mac's volume cannot be read).
 - The Edge **switches to the page holding the Fremplay widget**. If the Edge's screen has no
-  Fremplay widget, the popup tells you so and nothing is sent.
+  Fremplay widget, the popup tells you so and nothing is sent. A dashboard that stayed loaded is
+  moved once per share; one that has just loaded (the kiosk after a restart of Fremkit) turns to
+  that page when a share is already live, once, and leaves you where you go next.
 - The browser can be in the background, on another tab or another desktop. Quitting it, or
   closing the tab, ends the share.
 - The video travels directly between the browser and the Edge over WebRTC, between addresses of

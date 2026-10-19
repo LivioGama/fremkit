@@ -14,7 +14,7 @@ import NavBar from './NavBar.vue'
 import NavPopover from './NavPopover.vue'
 import { useSwipe } from './useSwipe'
 import CompanionPrompt from './CompanionPrompt.vue'
-import { createRevealTracker, type CompanionReveal } from './companionReveal'
+import { createRevealTracker, landingPage, type CompanionReveal } from './companionReveal'
 import { useNavPopover } from './useNavPopover'
 import { isRemotePage, useDeviceScreen, type DeviceInfo } from './remote'
 import { useNativeBridge } from './native'
@@ -99,6 +99,8 @@ let unsubCompanion: (() => void) | undefined
 /** The browser extension's pairing request, while one is pending (local dashboard only). */
 const companionPairing = ref<{ requestId: string; code: string; name: string; extension?: string; expiresAt: number; turnedAway?: number } | null>(null)
 const reveal = createRevealTracker()
+/** The first `companion` snapshot since this page loaded has been seen (`landingPage`). */
+let landed = false
 let offReload: (() => void) | undefined
 let offScreenReload: (() => void) | undefined
 
@@ -164,9 +166,13 @@ onMounted(async () => {
   })
   if (!remote) {
     unsubCompanion = socket.subscribe('companion', (data) => {
-      const snap = data as { pairing?: typeof companionPairing.value; reveal?: CompanionReveal | null }
+      const snap = data as { pairing?: typeof companionPairing.value; reveal?: CompanionReveal | null; tab?: { state?: string } }
       companionPairing.value = snap.pairing ?? null
-      const target = reveal.observe(snap, screen.value?.id)
+      const revealed = reveal.observe(snap, screen.value?.id)
+      // Once per page load, never on a reconnect: a share already live lands on its page.
+      const landing = landed || !config.value || !shown.value ? null : landingPage(snap, config.value, shown.value)
+      landed = true
+      const target = revealed ?? landing
       if (target !== null && target !== pageIndex.value && target < (shown.value?.pages.length ?? 0)) select(target)
     })
     // A reconnect replays a snapshot that must not move the page on its own. And the code on show
