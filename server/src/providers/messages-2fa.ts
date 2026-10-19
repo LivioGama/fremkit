@@ -10,12 +10,17 @@ const APPLE_EPOCH_MS = 978_307_200_000
 const WINDOW_MS = 5 * 60_000
 const QUERY_LIMIT = 100
 const COMMAND_TIMEOUT_MS = 2_500
+// 100 rows can contain either 4 KiB of JSON-escaped text or 4 KiB of hex BLOB data.
+// Keep the whole result bounded while allowing the full recent-message window through.
+const MAX_QUERY_OUTPUT_BYTES = 3 * 1024 * 1024
 const CODE_LENGTH = /^\d{4,8}$/
+const MAX_ATTRIBUTED_BODY_BYTES = 4_096
 const RequestSchema = z.null()
 
 interface MessageRow {
-  text?: unknown
-  date?: unknown
+  text?: string
+  attributedHex?: string
+  date?: number | string
 }
 
 type Run = (file: string, args: string[]) => Promise<string>
@@ -28,7 +33,7 @@ interface Messages2FAOptions {
 }
 
 const defaultRun: Run = (file, args) => new Promise((resolve, reject) => {
-  execFile(file, args, { timeout: COMMAND_TIMEOUT_MS, maxBuffer: 128 * 1024, shell: false }, (error, stdout) => {
+  execFile(file, args, { timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_QUERY_OUTPUT_BYTES, shell: false }, (error, stdout) => {
     if (error) reject(new Error('Messages could not be read.'))
     else resolve(stdout)
   })
@@ -68,15 +73,68 @@ function verificationCode(text: string): string | undefined {
   return undefined
 }
 
+function decodeTypedstreamAttributedBody(hex: string): string | undefined {
+  if (hex.length === 0 || hex.length > MAX_ATTRIBUTED_BODY_BYTES * 2 || hex.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(hex)) return undefined
+  const bytes = Buffer.from(hex, 'hex')
+  const isTypedstream = bytes.length >= 13 && bytes[0] === 4 && bytes[1] === 11 && bytes.subarray(2, 13).toString('ascii') === 'streamtyped'
+  if (!isTypedstream) {
+    // Keep compatibility with older/test databases that stored plain UTF-8 in attributedBody;
+    // reject binary/control-heavy payloads rather than heuristically scraping them.
+    try {
+      const plain = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+      return plain && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(plain) ? plain : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  // Messages stores NSAttributedString bodies as NSArchiver typedstreams. The actual plaintext
+  // is the unshared NSString value immediately following its class declaration. Parse its
+  // length prefix as bytes; decoding the whole archive as SQLite TEXT stops at embedded NULs.
+  const stringClass = Buffer.from('NSString', 'ascii')
+  const classIndex = bytes.indexOf(stringClass, 13)
+  if (classIndex < 0) return undefined
+  const classEnd = classIndex + stringClass.length
+  const markerIndex = bytes.indexOf(0x2b, classEnd)
+  if (markerIndex < classEnd || markerIndex - classEnd > 32) return undefined
+
+  let cursor = markerIndex + 1
+  const tag = bytes[cursor++]
+  let length: number
+  if (tag <= 0x7f) length = tag
+  else if (tag === 0x81 && cursor + 2 <= bytes.length) {
+    length = bytes.readUInt16LE(cursor)
+    cursor += 2
+  } else if (tag === 0x82 && cursor + 4 <= bytes.length) {
+    length = bytes.readUInt32LE(cursor)
+    cursor += 4
+  } else if (tag === 0x83 && cursor + 8 <= bytes.length) {
+    const longLength = bytes.readBigUInt64LE(cursor)
+    if (longLength > BigInt(MAX_ATTRIBUTED_BODY_BYTES)) return undefined
+    length = Number(longLength)
+    cursor += 8
+  } else return undefined
+
+  if (length <= 0 || length > MAX_ATTRIBUTED_BODY_BYTES || cursor + length > bytes.length) return undefined
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(cursor, cursor + length))
+  } catch {
+    return undefined
+  }
+}
+
 async function latestVerificationCode(
   databasePath: string,
   now: number,
   run: Run,
 ): Promise<string | undefined> {
   const bounds = timestampBounds(now)
-  const query = `SELECT trim(coalesce(text, '') || ' ' || coalesce(cast(attributedBody AS text), '')) AS text, date FROM message
+  const query = `SELECT coalesce(text, '') AS text,
+      CASE WHEN text IS NULL OR text = '' THEN coalesce(hex(attributedBody), '') ELSE '' END AS attributedHex,
+      date FROM message
     WHERE is_from_me = 0 AND (text IS NOT NULL OR attributedBody IS NOT NULL)
-      AND length(coalesce(text, '') || ' ' || coalesce(cast(attributedBody AS text), '')) <= 4096
+      AND length(coalesce(text, '')) <= 4096
+      AND (attributedBody IS NULL OR length(attributedBody) <= ${MAX_ATTRIBUTED_BODY_BYTES})
       AND ((date > 1000000000000 AND date >= ${bounds.appleNanoseconds})
         OR (date <= 1000000000000 AND date >= ${bounds.appleSeconds}))
     ORDER BY date DESC LIMIT ${QUERY_LIMIT};`
@@ -89,13 +147,14 @@ async function latestVerificationCode(
   ])
   let rows: unknown
   try { rows = JSON.parse(stdout || '[]') } catch { throw new Error('Messages could not be read.') }
-  const parsed = z.array(z.object({ text: z.string().max(4096), date: z.union([z.number(), z.string()]) })).safeParse(rows)
+  const parsed = z.array(z.object({ text: z.string().max(4096), attributedHex: z.string().max(MAX_ATTRIBUTED_BODY_BYTES * 2), date: z.union([z.number(), z.string()]) })).safeParse(rows)
   if (!parsed.success) throw new Error('Messages could not be read.')
 
   for (const row of parsed.data as MessageRow[]) {
     const sentAt = appleDateToUnixMs(row.date)
     if (sentAt === undefined || sentAt < now - WINDOW_MS || sentAt > now + 60_000) continue
-    const code = verificationCode(row.text as string)
+    const body = row.text || decodeTypedstreamAttributedBody(row.attributedHex ?? '') || ''
+    const code = verificationCode(body)
     if (code) return code
   }
   return undefined
