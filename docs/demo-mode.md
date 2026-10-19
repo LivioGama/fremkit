@@ -4,7 +4,9 @@ A Fremkit server that shows a full, living dashboard without reading anything of
 on, and without any account. Every channel publishes invented data: calendar events ("Weekly
 sync", "Design review"), CPU, memory and disks that drift, a battery that drains, a music player
 whose track plays, the weather, Claude Code sessions and limits, GitHub and Azure DevOps runs,
-Dock badges, brightness, the disk map, and so on.
+Dock badges, brightness, the disk map, and so on — and, for the Sietch's widgets, Codex sessions
+and quotas, local AI models, a MuteDeck meeting, a Synology NAS, a Homey's devices and flows and
+an Elgato Key Light.
 
 It is what to use when the real data must not be on screen:
 
@@ -40,8 +42,9 @@ A demo writes into a folder of its own, never into your dashboard's:
   `fremkit.json` that is not a demo's.
 
 A fresh folder is seeded with a two-page dashboard that shows every built-in widget, a bar with a
-clock, the weather, Claude's limits and the CPU, two ICS calendars (`Work`, `Home`) and the
-settings each widget needs to show something (a service list, shortcut buttons, cities for the
+clock, the weather, Claude's limits and the CPU, two ICS calendars (`Work`, `Home`), a Synology
+connection (`NAS`, for the Sietch's Synology widgets, which are not on the dashboard), the Codex
+privacy switches turned on, and the settings each widget needs to show something (a service list, shortcut buttons, cities for the
 clock). Everything can be edited in the admin as usual; nothing you change there leaves the folder.
 
 ## What it does not do
@@ -57,11 +60,15 @@ sure of it. In particular:
   succeeds without contacting anything and their channels publish invented data; the secrets
   typed in are stored in the demo folder and never used;
 - the widget proxy runs all of its checks, then answers the two Open-Meteo endpoints itself; any
-  other host gets a 503, and a declared connection's request is refused before it leaves.
+  other host gets a 503;
+- a connection a widget *declares* (Homey, Key Light) runs every check too, then is answered by
+  invented devices whatever its address (`declared.ts`): lights switch, flows run, nothing is
+  dialled. Its **Test** button goes there too. A path the demo does not know fails as unreachable.
 
 Commands are accepted and acted out on the invented state: play/pause and next track work, the
 volume and brightness sliders move, a disk map rescan "finishes" at once, a clipboard can be
-cleared, a Claude session can be dismissed. Commands that would act on the Mac — open an
+cleared, a Claude session can be dismissed, MuteDeck's microphone and camera toggle and leaving
+ends the call (another starts a minute later), a Homey light or a Key Light switches. Commands that would act on the Mac — open an
 application, reveal a folder in Finder, focus a terminal — answer as if they had worked and do
 nothing.
 
@@ -74,6 +81,7 @@ that site's icon. Leave both alone when the network must stay quiet.
 All of it is invented and generic, like the rest of the project: placeholder names
 (`Alex Example`), `example.com` and `example-org`, documentation address ranges (`192.0.2.x`,
 `198.51.100.x`). The invented machine lives in `server/src/demo/world.ts`, the providers in
-`providers.ts`, the connection types in `connections.ts`, the weather in `fetch.ts` and the seeded
-dashboard in `seed.ts`. A widget that reads a new channel needs a fake there too; the demo test
+`providers.ts` (Codex in `codex.ts`), the connection types in `connections.ts`, the weather in
+`fetch.ts`, the declared connections' devices in `declared.ts` and the seeded dashboard in
+`seed.ts`. A widget that reads a new channel needs a fake there too; the demo test
 fails when a built-in widget subscribes to a channel the demo does not publish.
