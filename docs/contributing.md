@@ -92,7 +92,8 @@ A second checkout on `FREMKIT_PORT=4301` writes `access-4301.token` and names it
 its port, so it never signs the live one out: `FREMKIT_PORT=4301 pnpm open`. Vite follows
 `FREMKIT_PORT` too. Its remote listener (paired devices) stays on 4243 unless
 `FREMKIT_REMOTE_PORT` moves it: set that too before turning remote access on in a second checkout,
-or the two servers fight over the port.
+or the two servers fight over the port. It takes a whole number from 1 to 65535 other than
+`FREMKIT_PORT`; the server refuses to start on anything else and says why.
 
 ### Installing from a registry you are building
 

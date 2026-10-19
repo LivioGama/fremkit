@@ -19,6 +19,21 @@ import { isLanPeer } from '../net/lan.js'
 
 export const REMOTE_PORT = 4243
 
+/**
+ * `FREMKIT_REMOTE_PORT` read for the server: unset (or empty) leaves 4243, a whole number from 1
+ * to 65535 that is not the loopback port moves the listener there, and anything else is an error
+ * to stop on, named in plain words: a typo should not leave a bench fighting the live server for
+ * 4243, nor put the remote listener on the dashboard's own port.
+ */
+export function remotePortFrom(raw: string | undefined, loopbackPort: number): { port?: number; error?: string } {
+  if (raw === undefined || raw === '') return {}
+  if (!/^[0-9]{1,5}$/.test(raw)) return { error: `FREMKIT_REMOTE_PORT must be a whole number from 1 to 65535, got ${JSON.stringify(raw)}` }
+  const port = Number(raw)
+  if (port < 1 || port > 65535) return { error: `FREMKIT_REMOTE_PORT must be a whole number from 1 to 65535, got ${raw}` }
+  if (port === loopbackPort) return { error: `FREMKIT_REMOTE_PORT must differ from the dashboard's port (${loopbackPort})` }
+  return { port }
+}
+
 /** Every listener running in this process, for `closeRemoteListenersNow`. */
 const running = new Set<RemoteListener>()
 

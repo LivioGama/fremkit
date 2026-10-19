@@ -6,7 +6,7 @@ import { connect as tlsConnect } from 'node:tls'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { closeRemoteListenersNow, RemoteListener } from '../src/devices/listener.js'
+import { closeRemoteListenersNow, RemoteListener, remotePortFrom } from '../src/devices/listener.js'
 import { Hub } from '../src/ws/hub.js'
 import { hasOpenssl, remote, tlsMaterial, upgrade } from './helpers/remote.js'
 
@@ -176,5 +176,22 @@ describe.skipIf(!hasOpenssl)('RemoteListener', () => {
     const second = new RemoteListener(app, port)
     await expect(second.start(tls.key, tls.cert)).rejects.toMatchObject({ code: 'EADDRINUSE' })
     expect(second.running).toBe(false)
+  })
+})
+
+describe('FREMKIT_REMOTE_PORT', () => {
+  it('leaves the default when unset, and takes a whole port number other than the dashboard\'s', () => {
+    expect(remotePortFrom(undefined, 4242)).toEqual({})
+    expect(remotePortFrom('', 4242)).toEqual({})
+    expect(remotePortFrom('4302', 4301)).toEqual({ port: 4302 })
+    expect(remotePortFrom('1', 4242)).toEqual({ port: 1 })
+    expect(remotePortFrom('65535', 4242)).toEqual({ port: 65535 })
+  })
+
+  it('refuses anything else, saying what it wants', () => {
+    for (const raw of ['0x10F3', ' 4300 ', '4300.0', '-1', '1e3', 'abc', '0', '65536', '123456']) {
+      expect(remotePortFrom(raw, 4242).error, raw).toMatch(/^FREMKIT_REMOTE_PORT must be a whole number from 1 to 65535/)
+    }
+    expect(remotePortFrom('4301', 4301)).toEqual({ error: "FREMKIT_REMOTE_PORT must differ from the dashboard's port (4301)" })
   })
 })

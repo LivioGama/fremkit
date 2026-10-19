@@ -10,6 +10,7 @@ import { accessTokenPath, removeAccessToken, resolveAccessToken, writeAccessToke
 
 import { helperLogPath, LogTail } from './diagnostics/log-tail.js'
 import { closeAppListenersNow, installShutdown } from './shutdown.js'
+import { remotePortFrom } from './devices/listener.js'
 
 // Every file and folder this process (and its children) creates is this account's alone; the data
 // folder's older files are brought to the same modes at start (data-permissions.ts).
@@ -43,8 +44,12 @@ const port = Number(process.env.FREMKIT_PORT) || (demo ? 4250 : 4242)
  * The remote listener's port (paired devices), 4243 unless told otherwise. A second checkout or a
  * test bench sets it so its listener never fights the live one's.
  */
-const remotePortEnv = Number(process.env.FREMKIT_REMOTE_PORT)
-const remotePort = Number.isInteger(remotePortEnv) && remotePortEnv > 0 && remotePortEnv < 65536 ? remotePortEnv : undefined
+const remote = remotePortFrom(process.env.FREMKIT_REMOTE_PORT, port)
+if (remote.error) {
+  console.error(`fremkit: ${remote.error}`)
+  process.exit(1)
+}
+const remotePort = remote.port
 // The WebSocket's origin check reads the port from the environment (ws/routes.ts).
 if (demo && !process.env.FREMKIT_PORT) process.env.FREMKIT_PORT = String(port)
 
