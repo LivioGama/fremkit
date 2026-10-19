@@ -42,7 +42,8 @@ function config(): Config {
 describe('screenChannels', () => {
   it('collects the channels of the widgets on the screen\'s pages and in its bar, and no other', () => {
     const channels = screenChannels(config(), 'tablet', manifests)
-    expect(channels.subscriptions.sort()).toEqual(['calendar:*', 'system'])
+    // `calendar:*` with no connection bound on the screen grants no calendar at all.
+    expect(channels.subscriptions.sort()).toEqual(['system'])
     // `clock` names `weather` in a preview but not in `commands`: a manifest the schema refuses
     // today, and one that must not widen a device's policy even if it got through.
     expect(channels.commands.sort()).toEqual(['system-cmd'])
@@ -56,6 +57,68 @@ describe('screenChannels', () => {
 
   it('gives an unknown screen nothing', () => {
     expect(screenChannels(config(), 'nowhere', manifests)).toEqual({ subscriptions: [], commands: [] })
+  })
+})
+
+describe('screenChannels and per-connection channels', () => {
+  const cal: ChannelManifest = {
+    subscriptions: ['calendar:*'], commands: [],
+    settingsSchema: { source: { type: 'connection' }, extra: { type: 'connections' }, title: { type: 'string' } },
+  }
+  const gh: ChannelManifest = {
+    subscriptions: ['github:*'], commands: ['github:*', 'github:gh-edge'],
+    settingsSchema: { account: { type: 'connection' } },
+  }
+  const set = new Map([['cal', cal], ['gh', gh]])
+  const channelOf = (c: { id: string; type: string }) => `${c.type === 'ics' ? 'calendar' : c.type}:${c.id}`
+  const withConnections = (widgets: Record<string, unknown>, tablet: string[]): Config => ConfigSchema.parse({
+    ...structuredClone(DEFAULT_CONFIG),
+    connections: [
+      { id: 'ics-a', type: 'ics', name: 'A', fields: {} },
+      { id: 'ics-b', type: 'ics', name: 'B', fields: {} },
+      { id: 'ics-c', type: 'ics', name: 'C', fields: {} },
+      { id: 'gh-a', type: 'github', name: 'Mine', fields: {} },
+      { id: 'gh-edge', type: 'github', name: 'Work', fields: {} },
+    ],
+    widgets,
+    screens: [
+      { id: 'edge', name: 'Edge', kind: 'edge', nav: [], pages: [{ id: 'p', name: 'P', items: [] }] },
+      { id: 'tablet', name: 'Tablet', kind: 'device', nav: [],
+        pages: [{ id: 'p', name: 'P', items: tablet.map((instanceId, i) => ({ instanceId, x: i * 4, y: 0, w: 4, h: 2 })) }] },
+    ],
+  })
+
+  it('turns a wildcard into the channels of the connections the screen names, and nothing broader', () => {
+    const cfg = withConnections({
+      'cal-1': { widgetId: 'cal', settings: { source: 'ics-a', extra: ['ics-b', 'gone', 7], title: 'ics-c' } },
+    }, ['cal-1'])
+    const channels = screenChannels(cfg, 'tablet', set, channelOf)
+    expect(channels.subscriptions.sort()).toEqual(['calendar:ics-a', 'calendar:ics-b'])
+    expect(channels.subscriptions.some((c) => c.endsWith('*'))).toBe(false)
+  })
+
+  it('keeps a literal connection channel only when an instance of the screen names it', () => {
+    const own = withConnections({ 'gh-1': { widgetId: 'gh', settings: { account: 'gh-a' } } }, ['gh-1'])
+    expect(screenChannels(own, 'tablet', set, channelOf)).toEqual({ subscriptions: ['github:gh-a'], commands: ['github:gh-a'] })
+    const both = withConnections({ 'gh-1': { widgetId: 'gh', settings: { account: 'gh-edge' } } }, ['gh-1'])
+    expect(screenChannels(both, 'tablet', set, channelOf).commands).toEqual(['github:gh-edge'])
+  })
+
+  it('follows a connection the manifest gives as a default, as the widget does', () => {
+    const withDefault = new Map([['cal', { ...cal, settingsSchema: { source: { type: 'connection', default: 'ics-c' } } }]])
+    const unset = withConnections({ 'cal-1': { widgetId: 'cal', settings: {} } }, ['cal-1'])
+    expect(screenChannels(unset, 'tablet', withDefault, channelOf).subscriptions).toEqual(['calendar:ics-c'])
+    // A saved value wins over the default.
+    const saved = withConnections({ 'cal-1': { widgetId: 'cal', settings: { source: 'ics-a' } } }, ['cal-1'])
+    expect(screenChannels(saved, 'tablet', withDefault, channelOf).subscriptions).toEqual(['calendar:ics-a'])
+  })
+
+  it('grants nothing for a connection used only on another screen', () => {
+    const cfg = withConnections({
+      'cal-1': { widgetId: 'cal', settings: { source: 'ics-a' } },
+      'cal-edge': { widgetId: 'cal', settings: { source: 'ics-b' } },
+    }, ['cal-1'])
+    expect(screenChannels(cfg, 'tablet', set, channelOf).subscriptions).toEqual(['calendar:ics-a'])
   })
 })
 

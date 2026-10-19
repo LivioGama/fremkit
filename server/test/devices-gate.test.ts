@@ -157,6 +157,7 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
       'GET /fremkit.js',
       'GET /widgets/:id/*',
       'GET /ws',
+      'POST /api/devices/me/brightness',
       'POST /api/pair',
       'POST /api/proxy/:widgetId/conn',
     ])
@@ -174,6 +175,17 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
       // The same answer as a route that does not exist at all.
       expect(JSON.parse(res.body)).toMatchObject({ statusCode: 404, error: 'Not Found' })
     }
+  })
+
+  it('keeps the helper\'s brightness hook off the remote listener, even from this Mac', async () => {
+    // The request comes from 127.0.0.1, as the helper's would, but over the remote listener.
+    const res = await remote(port, {
+      method: 'POST', path: '/api/hooks/brightness',
+      headers: { ...cookie(token), 'content-type': 'application/json' },
+      body: JSON.stringify({ available: true, value: 10 }),
+    })
+    expect(res.status).toBe(404)
+    expect((await app.inject({ method: 'POST', url: '/api/hooks/brightness', payload: { available: true, value: 10 } })).statusCode).toBe(204)
   })
 
   it('serves the public shell without a token', async () => {

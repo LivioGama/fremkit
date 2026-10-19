@@ -35,6 +35,14 @@ Fremkit turns a Corsair Xeneon Edge (a 2560 × 720 touch strip) into a widget da
   Xcode project), tested with `scripts/test-helper.sh`. The bundle also carries `fremkit-scan`
   (`native/Sources/FremkitScan`), the disk map's scanner, which the server runs by the path the
   helper passes in `FREMKIT_SCANNER`; without it the server falls back to `du`.
+- `ios/` — the iPad app, which shows a paired device's screen over the pinned TLS listener
+  (4243). `ios/FremkitKit` is a Swift package holding everything that needs no UI — pairing
+  links, the key pin, the connect order, the stored pairing, the app's state machine
+  (`AppModel`) — and is tested on the Mac with `swift test`. `ios/Fremkit.xcodeproj` (one target,
+  folder-synchronized with `ios/Fremkit/`) is the thin SwiftUI + `WKWebView` shell over it. Signing
+  values live in the git-ignored `ios/Local.xcconfig` (start from `ios/Local.example.xcconfig`);
+  the simulator build needs none. Built and tested with `scripts/build-ios.sh`, which picks Xcode
+  over the Command Line Tools by itself.
 - `scripts/` — setup, dev, build/install/test of the helper, signing identity, and the
   downloadable app: `build-app.sh` (self-contained, signed `Fremkit.app` with Sparkle and the
   server as a Node single executable), `notarize.sh`, `release.sh` (builds a release and stops
@@ -67,6 +75,8 @@ pnpm e2e                          # Playwright on the built UI, one throwaway se
                                   # E2E_FIRST_PORT=43x0 moves it when another checkout is running the suite)
 pnpm dev                          # server + Vite with hot reload for the UI
 pnpm helper:build && pnpm helper:install && pnpm helper:test
+pnpm ios:build && pnpm ios:test   # iPad app for the simulator, unsigned; FremkitKit's tests
+FREMKIT_IOS_DEVICE=<udid> scripts/build-ios.sh install [-FremkitSeedLink 'fremkit://pair?…']
 ```
 
 **Every request needs the local access secret** (SECURITY.md): a `curl` without
@@ -323,5 +333,6 @@ Each line here was a real hole once. Break one only with the owner's explicit sa
 | bug reports, diagnostics | `server/src/diagnostics/` (report, `redact.ts`, log tail), `ui/src/admin/DiagnosticsSection.vue`, the helper's `StatusMenu.swift` |
 | change what the editor says about a failing widget | `ui/src/admin/health.ts` (pure, tested), `useHealth.ts` (stores, socket, the fixes), `server/src/providers/health.ts` (the `config:health` channel) |
 | pair a device, the remote listener | `server/src/devices/`, `ui/src/admin/DevicesSection.vue` |
+| change the iPad app | `ios/FremkitKit/Sources/FremkitKit/` (logic, `AppModel.swift` for the screens' state, `PairingFlow.swift` for pairing; test there), `ios/Fremkit/` (`RootView.swift`, `DashboardView.swift` for the web view, `LocalNetwork.swift` for Bonjour), `ui/src/dashboard/native.ts` (what the page tells the app), `scripts/build-ios.sh` |
 | demo mode, widget previews | `server/src/demo/` (fakes, seed), `server/src/cli/preview.ts`, `previewProblems` in `server/src/widgets/manifest.ts` (vendored by the Sietch), `ui/src/admin/WidgetPreviewPopover.vue` |
 | export or import a layout | `server/src/share/` (file format, export, import), `ui/src/admin/share.ts`, `shareApply.ts`, `Share*Dialog.vue`, `docs/sharing.md` |

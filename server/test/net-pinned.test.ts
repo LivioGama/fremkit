@@ -22,7 +22,7 @@ describe('guardedLookup', () => {
     expect(all.result).toHaveLength(2)
   })
   it('refuses the lot when any address is private, in any spelling', async () => {
-    for (const address of ['127.0.0.1', '192.0.2.1', '10.0.0.1', '::1', 'fe80::1', '::ffff:7f00:1', '169.254.169.254']) {
+    for (const address of ['127.0.0.1', '192.0.2.1', '10.1.0.1', '::1', 'fe80::1', '::ffff:7f00:1', '169.254.169.254']) {
       const { err } = await run([{ address: '198.51.100.7', family: 4 }, { address, family: address.includes(':') ? 6 : 4 }], true)
       expect(err, address).toBeInstanceOf(PrivateAddressError)
     }

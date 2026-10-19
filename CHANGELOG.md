@@ -13,6 +13,33 @@ tagged `vX.Y.Z`.
 ## Unreleased
 
 ### Added
+
+- **iPad and extra screens are experimental until the iPad app is available.** Until you tick
+  **iPad and extra screens** under **Experimental features**, the admin hides **Settings → Devices**
+  and, on a dashboard with a single screen, the screen selector with its **+ Add a screen**;
+  importing a layout skips its iPad screens and says so. To show the option, click the version
+  number in **Settings → About** seven times (or focus it and press Enter seven times). Unticking it
+  hides the same things again. Whatever the option says, a dashboard with several screens keeps
+  its selector and **+ Add a screen**, and **Settings → Devices** stays in sight while pairing is on
+  or an iPad is paired, so it can always be switched off or the iPad unpaired. A dashboard that
+  already has several screens or an iPad screen starts with the option on. A backup restore or
+  a restored version keeps the option as it is on this Mac.
+- **The iPad follows the brightness set for its screen.** What you set in the admin or with the
+  Brightness widget, the day/night schedule included, is applied on the iPad, which reports its own
+  level back, so a change in Control Center shows in the admin. When the app is closed or not open
+  on that screen, the controls say so within 30 seconds.
+- **The Fremkit iPad app pairs on its own.** Scan the QR code the admin shows, or open its
+  `fremkit://` link from the Camera app; without the camera, pick the Mac in the list, check that it
+  shows the same four words as the iPad, and type the code. Opening a link while the iPad is paired
+  asks before replacing the pairing. The iPad reports the size its dashboard really gets, so it lands
+  on the matching screen. After **Reset the certificate**, the iPad says the Mac's key has changed
+  and offers **Pair again**. When the address it uses goes away (the Ethernet cable unplugged), the
+  iPad finds the Mac at its other network addresses by itself, even when the local network's name
+  lookup fails.
+- **A fingerprint for your Mac's key.** Under the pairing code, the Devices section shows four words
+  derived from the Mac's key; a device that shows the same four words is talking to this Mac. The Mac
+  is also announced on the network under its computer name rather than "Fremkit", with its address,
+  so an iPad finds it even where the Mac's `.local` name does not resolve.
 - **See a widget before placing it.** Hovering a card of the editor's widget library (or reaching
   it with Tab) shows its preview with its name, what it does, its default size and what it may
   read, control and reach.
@@ -49,7 +76,7 @@ tagged `vX.Y.Z`.
 - **Tab through the page's widgets.** In the editor, Tab and Shift+Tab select the next and the
   previous widget of the page, top to bottom; the arrows then move it a cell at a time and
   Shift+arrows resize it. Holding an arrow down is one step to undo, not one per cell.
-- **Dashboard history.** Screen → History (or the button next to undo) lists every saved version
+- **Dashboard history.** Settings → History & backup (or the button next to undo) lists every saved version
   of the dashboard for the last month, by day, with what changed in each — pages, widgets,
   screens, theme. Open one to see its pages and restore it in two taps; the version it replaces
   stays in the list, so a restore is undone the same way. The version before a backup restore or
@@ -67,7 +94,7 @@ tagged `vX.Y.Z`.
   Sietch button counts updates. It follows the dashboard live; a widget whose page has not been
   on screen since Fremkit started has nothing to report yet.
 - **Share a page, a screen or your whole setup.** **Export page…** in a page's right-click menu,
-  **Export screen…** and **Export the whole setup…** in a screen's, or **Screen → Share your setup**
+  **Export screen…** and **Export the whole setup…** in a screen's, or **Settings → Share → Share your setup**
   write a `.fremkit-layout.json` holding the pages, the bar, the tiles' look and settings, the
   theme and the background images. The export shows what is in the file before you download or
   copy it: connections, secrets, host names, e-mail addresses, device names, privacy choices and
@@ -108,26 +135,27 @@ tagged `vX.Y.Z`.
   the same settings and look on the page you are on, on any screen.
 - **Lock a widget in place.** From its menu or the inspector: a locked widget can no longer be
   dragged, resized or nudged in the editor, and wears a small padlock.
-- **Several screens per dashboard.** Add a screen in the admin, empty or pre-filled from another
-  one, and give each its own layout. A pre-fill is shown as a preview first, naming the widgets
-  that do not fit the new screen, and the Screen panel gives each screen its own address. A
-  widget shown on more than one screen is the same widget: edit its settings once and every
-  screen follows. Removing it from one screen keeps it on the others; on its last screen the
-  admin names it and asks before deleting it. The widget library lists what your other screens
-  show, to place the same widget here, and a tile shown on several screens wears the number of
-  screens.
+- **Several screens per dashboard** (an experimental feature for now, see above). Add a screen in
+  the admin, empty or pre-filled from another one, and give each its own layout. A pre-fill is shown
+  as a preview first, naming the widgets that do not fit the new screen, and the Screen panel gives
+  each screen its own address. A widget shown on more than one screen is the same widget: edit its
+  settings once and every screen follows. Removing it from one screen keeps it on the others; on its
+  last screen the admin names it and asks before deleting it. The widget library lists what your
+  other screens show, to place the same widget here, and a tile shown on several screens wears the
+  number of screens.
 - **Choose page names in the bar.** Each screen can keep the familiar page dots or show
   scrolling names with a current-page marker. Arrows move by a visible page, and the admin
   reserves room for compact widgets. Page taps still work with the admin gestures
   (@FlorianBruniaux, #18).
-- **Pair an iPad** (Mac side). **Screen → Devices** turns on an encrypted listener on the local
-  network, shows a pairing QR code, lists the paired devices with the screen each shows, and
-  unpairs one after you confirm. An iPad screen is created from the paired iPad, at its exact size. The
-  iPad app comes next.
+- **Pair an iPad** (Mac side, an experimental feature for now, see above). **Settings → Devices**
+  turns on an encrypted listener on the local network, shows a pairing QR code, lists the paired
+  devices with the screen each shows, and unpairs one after you confirm. An iPad screen is created
+  from the paired iPad, at its exact size. The iPad app is described above;
+  [docs/devices.md](docs/devices.md) walks through it.
 - **Screen brightness.** A new built-in *Brightness* widget sets the brightness of the screen
   the dashboard is on, from a tile or from the bar, by sliding a finger along it; the
   helper's menu has the same slider. It works over DDC/CI on Apple silicon Macs; a display that
-  does not answer DDC says so instead of failing silently. In **Screen → Brightness**, each
+  does not answer DDC says so instead of failing silently. In **Settings → *a screen* → Brightness**, each
   screen can switch between a day and a night level at sunrise and sunset (computed on the Mac
   from coordinates you type, or find with a city search that asks Open-Meteo only when you press
   *Search*) or at fixed times, with a gradual change, and can follow
@@ -147,7 +175,7 @@ tagged `vX.Y.Z`.
   search ignores accents too now.
 - **Tidy the widget list.** Two buttons beside the Widgets title open or fold every shelf at once,
   and a box hides the widgets the selected screen already shows, on a page or in its bar.
-- **Copy diagnostics for a bug report.** **Screen → About** prepares a report to paste into a
+- **Copy diagnostics for a bug report.** **Settings → About** prepares a report to paste into a
   GitHub issue: the versions, the widgets and connection types in use with their state, and the
   recent server log. Secrets, IP addresses, e-mails, host names and the names you gave things are
   removed, and the report is shown before you copy it. A link opens the bug form. The menu bar
@@ -215,6 +243,18 @@ tagged `vX.Y.Z`.
   page saying so.
   Scripts calling the server read the secret from
   `~/Library/Application Support/Fremkit/access-4242.token` (see the README).
+- **An iPad pairs only from your local network, and only while a code is showing.** With
+  *Allow an iPad on the local network* on, the Mac now answers only private and link-local addresses
+  (and itself): a public address, IPv4 or IPv6, and Tailscale get no answer. A VPN that hands out the
+  same private addresses as a home network cannot be told apart from it and still reaches the Mac,
+  though not without a pairing code or a paired iPad's key. Pairing answers
+  only while the admin shows a code; the iPad says so when the code has run out, so make a new one.
+  Wrong codes are counted per address (per network prefix for most IPv6 addresses), and when the
+  Mac answers "too many tries" on one of its addresses the iPad tries the others, so a single machine
+  guessing no longer keeps your iPad from pairing. Scanning the QR code can no longer be blocked at
+  all: it carries a long one-time secret that pairs even while the Mac is refusing codes. A machine
+  guessing from many addresses at once can still hold the typed code until it stops; scan the QR code
+  instead.
 - **A browser holds a session, not the key.** Signing a browser in now gives it a session of its
   own that ends after a day unused, after a week at most, or when Fremkit restarts, instead of
   the key itself. Another program listening on your Mac can no longer pick the key up from the

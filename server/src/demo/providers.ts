@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { Provider } from '../providers/types.js'
 import type { Config } from '../config/schema.js'
-import { findInstance } from '../config/instances.js'
+import { findInstance, type InstanceLookup } from '../config/instances.js'
 import { resolveServices, type ServiceResult } from '../providers/service-status.js'
 import { buildView, findNode, type DiskNode } from '../providers/disk-map-tree.js'
 import { codexProviders } from './codex.js'
@@ -30,6 +30,11 @@ export interface DemoProviderOptions {
   /** The live config: the brightness screens and the service list are read from it. */
   config: () => Config
   now?: () => number
+  /**
+   * How a command finds the instance it names, scoped to a paired device's own screen as the real
+   * providers are. Every instance of the config when left out.
+   */
+  instances?: InstanceLookup
 }
 
 /** What a demo command answers when it would have acted on the Mac. */
@@ -57,7 +62,7 @@ export function createDemoProviders(opts: DemoProviderOptions): Provider[] {
     { channel: 'cleanshot', commands: { run: ACTED } },
     rtkProvider(now),
     { channel: 'shortcuts', commands: { open: ACTED } },
-    serviceStatusProvider(now, opts.config),
+    serviceStatusProvider(now, opts.instances ?? ((id) => findInstance(opts.config(), id))),
   ]
 }
 
@@ -575,16 +580,16 @@ function mutedeckProvider(now: () => number): Provider {
   }
 }
 
-function serviceStatusProvider(now: () => number, config: () => Config): Provider {
+function serviceStatusProvider(now: () => number, instances: InstanceLookup): Provider {
   return {
     channel: 'service-status',
     intervalMs: 60_000,
     poll: async () => ({ ok: true }),
     commands: {
-      probe: async (payload) => {
+      probe: async (payload, ctx) => {
         const instanceId = (payload as { instanceId?: unknown } | null)?.instanceId
         if (typeof instanceId !== 'string') return { ok: false, error: 'invalid payload' }
-        const resolved = resolveServices((id) => findInstance(config(), id), instanceId)
+        const resolved = resolveServices((id) => instances(id, ctx), instanceId)
         if (!resolved.ok) return resolved
         const t = now()
         const results: ServiceResult[] = resolved.services.map((s, i) => {

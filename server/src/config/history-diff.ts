@@ -33,7 +33,7 @@ export interface ChangeSummary {
   theme?: Rename
   /** Screens (by name) whose display settings, bar or brightness changed. */
   screensEdited: string[]
-  /** Anything else: language, night theme, privacy switches, connections, marketplace records. */
+  /** Anything else: language, night theme, privacy switches, experimental features, connections, marketplace records. */
   other: boolean
 }
 
@@ -106,6 +106,7 @@ export function summarizeChange(before: Config | null, after: Config): ChangeSum
   summary.other = !same(before.locale, after.locale)
     || !same(before.themeSchedule, after.themeSchedule)
     || !same(before.privacy, after.privacy)
+    || !same(before.labs, after.labs)
     || !same(before.connections, after.connections)
     || !same(before.marketplace, after.marketplace)
     || !same(before.secrets, after.secrets)

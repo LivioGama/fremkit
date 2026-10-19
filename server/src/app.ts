@@ -64,9 +64,10 @@ import { createServiceStatusProvider } from './providers/service-status.js'
 import { createSystemProvider } from './providers/system.js'
 import { createDiskMapProvider } from './providers/disk-map.js'
 import { BrightnessService } from './brightness/service.js'
-import { createBrightnessProvider } from './brightness/provider.js'
+import { createBrightnessProvider, BRIGHTNESS_INTERVAL_MS } from './brightness/provider.js'
 import { brightnessRoutes } from './brightness/routes.js'
-import { findInstance, findInstances } from './config/instances.js'
+import { findInstance, findInstances, type InstanceLookup } from './config/instances.js'
+import { commandScope, instanceInScope, type ScreenOfDevice } from './devices/scope.js'
 import { migrateHomeySecret } from './config/migrate.js'
 import { BYTES_CSP, hostCsp, isByteRoute } from './http/headers.js'
 import { isAllowedHost, isReadMethod } from './http/guard.js'
@@ -164,6 +165,8 @@ export interface AppOptions {
   onRoute?: (route: RouteOptions) => void
   /** The port paired devices reach the remote listener on. 4243; the tests pass 0. */
   devicesPort?: number
+  /** Tests: the brightness service to use instead of one over the live config. */
+  brightness?: BrightnessService
   /**
    * Test seam for the device service: a fixed host name and addresses, and an advertiser that
    * does not run `dns-sd`.
@@ -250,17 +253,32 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const usage = new ClaudeUsage({ filePath: join(opts.dataDir, 'claude-usage.json'), transcriptsDir: demo ? join(opts.dataDir, 'demo-transcripts') : opts.claudeTranscriptsDir ?? join(homedir(), '.claude', 'projects') })
   await usage.load()
 
+  /**
+   * The device screen a paired device is attached to, asked of the device service at call time:
+   * the one rule (devices/scope.ts) the proxy, the commands and the config projection share. The
+   * service is built further down, after the hub; nothing calls this before a request comes in.
+   */
+  const screenOfDevice: ScreenOfDevice = (deviceId) => deviceService.deviceScreenOf(deviceId)
+
   // Per-screen settings from the store, reports from the helper: see brightness/service.ts.
-  const brightness = new BrightnessService({ config: () => store.get() })
+  const brightness = opts.brightness ?? new BrightnessService({ config: () => store.get() })
+  // The service decides (and tells the devices) on every command and report itself; this only
+  // asks the channel's watchers for an immediate poll.
   const brightnessChanged = (): void => registry.refresh('brightness')
-  // A paired device may set only its own screen's brightness: see mayCommandBrightness. Read
-  // at command time, so a device moved to another screen (or unpaired) is judged as it is now.
   let hub!: Hub
   const registry = new ProviderRegistry(
     (channel, data) => hub.broadcast(channel, data),
     (channel) => hub.forget(channel),
   )
   hub = new Hub(registry)
+  // These act on the user's behalf — opening an application, knocking on a host — so they
+  // resolve what to act on from the saved dashboard rather than from the widget's message.
+  // A paired device resolves only the instances of its own screen: see devices/scope.ts. The
+  // demo's fakes resolve through it too, so a demo scopes a device exactly like the real thing.
+  const instances: InstanceLookup = (instanceId, ctx) => {
+    const config = store.get()
+    return instanceInScope(config, commandScope(ctx, screenOfDevice), instanceId) ? findInstance(config, instanceId) : null
+  }
   /** Every real provider: the Mac, the accounts, the helper's reports. Never called in demo mode. */
   function registerRealProviders(): void {
     for (const p of opts.providers ?? []) registry.register(p)
@@ -283,16 +301,17 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     registry.register(createDockProvider(dock))
     // Registered here, not in providers/index.ts, because its last scan is saved under the data dir.
     registry.register(createDiskMapProvider({ dataDir: opts.dataDir }))
-    // These two act on the user's behalf — opening an application, knocking on a host — so they
-    // resolve what to act on from the saved dashboard rather than from the widget's message.
     // Registered here, not in providers/index.ts, because that is where the config store lives.
-    const instances = (instanceId: string) => findInstance(store.get(), instanceId)
     registry.register(createShortcutsProvider(undefined, instances))
     registry.register(createServiceStatusProvider({}, instances))
-    registry.register(createBrightnessProvider(brightness, brightnessChanged, (id) => deviceService.me(id)?.screenId ?? null))
+    // A paired device may set only its own screen's brightness: see mayCommandBrightness. Read
+    // at command time, so a device moved to another screen (or unpaired) is judged as it is now.
+    registry.register(createBrightnessProvider(brightness, brightnessChanged, (id) => deviceService.deviceScreenOf(id)))
   }
   if (demo) {
-    for (const p of createDemoProviders({ config: () => store.get() })) registry.register(p)
+    // The demo has its own `brightness` channel; the service above still serves the routes and
+    // the paired devices.
+    for (const p of createDemoProviders({ config: () => store.get(), instances })) registry.register(p)
   } else {
     registerRealProviders()
   }
@@ -359,6 +378,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     }
     syncDeclared()
     hub.broadcast('config', cfg)
+    brightness.snapshot()
     brightnessChanged()
     registry.refresh('theme')
     // Fire and forget: a failed sync must not break the save that triggered it.
@@ -430,7 +450,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // which is the built-in one or the installed one depending on who owns the id.
   await app.register(fastifyStatic, { root: opts.widgetsDir, serve: false, decorateReply: true })
 
-  await app.register(configRoutes, { store, catalog })
+  await app.register(configRoutes, { store, catalog, screenOfDevice })
   await app.register(connectionRoutes, { store, catalog, types: connectionTypes, manager: connections, secrets, connCache })
   await app.register(widgetRoutes, {
     catalog,
@@ -438,11 +458,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     bridgePath: opts.bridgePath ?? shippedPaths().bridgePath,
     port: opts.port,
     dev: process.env.FREMKIT_DEV === '1',
+    screenOfDevice,
     ...(opts.webrtcLocalBuiltins ? { webrtcLocalBuiltins: opts.webrtcLocalBuiltins } : {}),
   })
   await app.register(themeRoutes, { catalog: themes, config: () => store.get() })
   await app.register(proxyRoutes, {
-    catalog, store, secrets, cache: connCache,
+    catalog, store, secrets, cache: connCache, screenOfDevice,
     // The proxy's checks all run; only the last step, the request itself, is answered locally.
     ...(demo ? { publicFetch: demoPublicFetch(), fetch: connectionFetch, isPrivate: async () => false } : {}),
   })
@@ -472,12 +493,16 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     // A version put back brings its connections back as they were, exactly like a backup.
     onRestored: async (config) => { await connections.sync(config.connections); retainCameras(config) },
   })
-  await app.register(faviconRoutes, { dir: join(opts.dataDir, 'icons', 'favicons') })
+  await app.register(faviconRoutes, { dir: join(opts.dataDir, 'icons', 'favicons'), config: () => store.get(), screenOfDevice })
   await app.register(claudeRoutes, { tracker, usage })
-  await app.register(dockRoutes, { state: dock, ...(appIcons ? { appIcons } : {}) })
+  await app.register(dockRoutes, {
+    state: dock,
+    ...(appIcons ? { appIcons } : {}),
+    deviceMayListApps: (id) => deviceService.maySubscribe(id, 'dock'),
+  })
   /** Whether this is a demo server: `pnpm widget:preview` refuses to capture anything else. */
   app.get('/api/demo', async () => ({ demo }))
-  await app.register(appsRoutes, { apps: installedApps })
+  await app.register(appsRoutes, { apps: installedApps, deviceMayListApps: (id) => deviceService.maySubscribe(id, 'dock') })
   await app.register(helperRoutes)
   await app.register(brightnessRoutes, { service: brightness, changed: brightnessChanged })
   await app.register(bambuRoutes, { cameras: bambuCameras })
@@ -492,10 +517,27 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     config: store,
     hub,
     catalog,
+    channelOf: (connection) => connections.channelFor(connection),
+    brightnessOf: (screenId) => {
+      const s = brightness.snapshot().screens[screenId]
+      return s ? { target: s.target, seq: s.seq } : null
+    },
     listenerPort: opts.devicesPort ?? REMOTE_PORT,
     ...opts.devices,
   })
-  await app.register(deviceRoutes, { service: deviceService, config: store })
+  // A new target for a screen reaches the devices bound to it over the `device` channel.
+  brightness.onChange((screens) => deviceService.screensChanged(screens))
+  // The clock moves a ramp and ends a manual hold with nobody asking, and a paired device does
+  // not watch the `brightness` channel: something has to keep deciding for it. Started here, after
+  // the last await that can throw, so a failed start leaves no timer behind.
+  const brightnessTick = setInterval(() => brightness.snapshot(), BRIGHTNESS_INTERVAL_MS)
+  brightnessTick.unref()
+  app.addHook('onClose', async () => { clearInterval(brightnessTick) })
+  await app.register(deviceRoutes, {
+    service: deviceService,
+    config: store,
+    reportBrightness: (screenId, report) => { brightness.deviceReport(screenId, report); brightnessChanged() },
+  })
   await app.register(diagnosticsRoutes, {
     deps: {
       config: () => store.get(),

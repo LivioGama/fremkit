@@ -86,6 +86,21 @@ describe('useConfigTheme with a night theme', () => {
     expect(seen.filter(Boolean)).not.toContain('#d9b36a')
   })
 
+  it('switches a paired device, whose config names only the night theme, at night', async () => {
+    // What `deviceConfigView` sends: the night id and nothing about where or when.
+    vi.resetModules()
+    const { followThemeSchedule, useConfigTheme } = await import('../src/shared/theme')
+    serve(day)
+    const socket = fakeSocket()
+    followThemeSchedule(socket)
+    useConfigTheme(ref(config({ themeSchedule: { night: 'edge' } as Config['themeSchedule'] })))
+    await settle()
+    expect(accent()).toBe('#d9b36a')
+    socket.push('theme', night)
+    await settle()
+    expect(accent()).toBe('#ffae42')
+  })
+
   it('switches live on the theme channel, through a view transition where there is one', async () => {
     vi.resetModules()
     const { followThemeSchedule, useConfigTheme } = await import('../src/shared/theme')

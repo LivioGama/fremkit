@@ -11,8 +11,9 @@ test('the settings window lists the screens and the app panes, each on its own',
   await openAdmin()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await expect(settings(page)).toBeVisible()
+  // No Devices: iPad pairing is an experimental feature, off on a fresh dashboard (`labs.devices`).
   await expect(sidebar(page).getByRole('button')).toHaveText(
-    ['Xeneon Edge', 'General', 'Appearance', 'Share', 'History & backup', 'Privacy', 'Devices', 'About'])
+    ['Xeneon Edge', 'General', 'Appearance', 'Share', 'History & backup', 'Privacy', 'About'])
 
   // The screen pane: its name field and its sections, with the fold buttons.
   await expect(heading(page)).toHaveText('Xeneon Edge')

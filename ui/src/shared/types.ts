@@ -146,16 +146,26 @@ export interface Privacy {
   macmonTemperature: boolean
 }
 
+/**
+ * Features shipped but kept out of the admin until they are ready. `devices` is iPad pairing and
+ * adding screens; the server infers it for a config written before it existed.
+ */
+export interface Labs {
+  devices: boolean
+}
+
 export interface Config {
   version: 4
   /** Id of a theme in `themes/`, the same on every screen; an unknown id paints the built-in one. */
   theme?: string
-  /** A night theme and when it takes over; absent means one theme, day and night. */
+  /** A night theme and when it takes over; absent means one theme, day and night. A paired device gets only `night`. */
   themeSchedule?: ThemeSchedule
   connections: Connection[]
   secrets: { backend: SecretsBackend }
   locale?: Locale
   privacy: Privacy
+  /** Absent in a config the server has not answered with yet, which reads as all off. */
+  labs?: Labs
   /** Every widget instance, keyed by instance id, however many screens show it. */
   widgets: Record<string, Widget>
   /** At least one; the first `edge` one is what the Edge shows. */

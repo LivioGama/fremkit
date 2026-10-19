@@ -6,11 +6,12 @@ import type { FastifyInstance } from 'fastify'
 import { BrightnessSettingsSchema, ConfigSchema, type BrightnessSettings, type Config } from '../src/config/schema.js'
 import { phaseAt, sunEvents, transitionsAround } from '../src/brightness/schedule.js'
 import { decide, FOLLOW_RELEASE, followLevel, type Held } from '../src/brightness/decide.js'
-import { BrightnessService, HELPER_STALE_MS, HelperReportSchema } from '../src/brightness/service.js'
+import { BrightnessService, DEVICE_STALE_MS, DeviceReportSchema, HELPER_STALE_MS, HelperReportSchema } from '../src/brightness/service.js'
 import { createBrightnessProvider, mayCommandBrightness } from '../src/brightness/provider.js'
 import { buildApp } from '../src/app.js'
 import Fastify from 'fastify'
 import { brightnessRoutes } from '../src/brightness/routes.js'
+import { markRemoteSocket } from '../src/net/remote.js'
 import { GEOCODE_URL, GeocodeError, searchPlaces } from '../src/brightness/geocode.js'
 
 const MIN = 60_000
@@ -160,14 +161,60 @@ describe('BrightnessService', () => {
     expect(svc.snapshot().screens.edge).toMatchObject({ available: false, reason: 'no-ddc' })
     expect(() => svc.set(undefined, 50)).toThrow('unavailable')
   })
-  it('marks a device screen unsupported and a second Edge screen without a helper', () => {
+  it('marks a device screen without a device and a second Edge screen without a helper', () => {
     cfg = config([{}, { kind: 'device' }, {}])
     svc.helperReport(report())
     const s = svc.snapshot().screens
-    expect(s.s1).toMatchObject({ available: false, reason: 'device-unsupported' })
+    expect(s.s1).toMatchObject({ available: false, reason: 'no-device' })
     expect(s.s2).toMatchObject({ available: false, reason: 'no-helper' })
     expect(() => svc.set('s1', 50)).toThrow('unavailable')
     expect(() => svc.set('nope', 50)).toThrow('unknown-screen')
+  })
+  it('makes a device screen available while its device reports, and unavailable once it goes quiet', () => {
+    cfg = config([{}, { kind: 'device' }])
+    expect(DeviceReportSchema.safeParse({ value: 101 }).success).toBe(false)
+    expect(DeviceReportSchema.safeParse({ value: 50.5 }).success).toBe(false)
+    svc.deviceReport('s1', DeviceReportSchema.parse({ value: 64 }))
+    expect(svc.snapshot().screens.s1).toMatchObject({ available: true, value: 64, builtin: false })
+    now += DEVICE_STALE_MS - 1
+    expect(svc.snapshot().screens.s1.available).toBe(true)
+    now += 1
+    expect(svc.snapshot().screens.s1).toMatchObject({ available: false, reason: 'no-device', value: null, target: null })
+    svc.deviceReport('s1', { value: 40 })
+    expect(svc.snapshot().screens.s1).toMatchObject({ available: true, value: 40 })
+  })
+  it('keeps one device\'s report off every other screen', () => {
+    cfg = config([{}, { kind: 'device' }, { kind: 'device' }])
+    svc.deviceReport('s1', { value: 64 })
+    expect(svc.snapshot().screens.s2).toMatchObject({ available: false, reason: 'no-device' })
+  })
+  it('sets a device screen, and takes its read-back once it applied the latest seq', () => {
+    cfg = config([{}, { kind: 'device' }])
+    svc.deviceReport('s1', { value: 64 })
+    expect(svc.set('s1', 30)).toEqual({ screen: 's1', value: 30 })
+    expect(svc.snapshot().screens.s1).toMatchObject({ target: 30, seq: 1, value: 30 })
+    svc.deviceReport('s1', { value: 64 })
+    expect(svc.snapshot().screens.s1.value).toBe(30)
+    svc.deviceReport('s1', { value: 31, applied: 1 })
+    expect(svc.snapshot().screens.s1).toMatchObject({ value: 31, target: 30, seq: 1 })
+    // A level chosen on the device itself afterwards is reported, not fought.
+    svc.deviceReport('s1', { value: 80, applied: 1 })
+    expect(svc.snapshot().screens.s1).toMatchObject({ value: 80, seq: 1 })
+  })
+  it('tells listeners which screens got a new target or seq', () => {
+    cfg = config([{}, { kind: 'device' }])
+    const seen: string[][] = []
+    svc.onChange((ids) => seen.push(ids))
+    svc.snapshot()
+    svc.deviceReport('s1', { value: 64 })
+    svc.set('s1', 30)
+    svc.snapshot()
+    expect(seen).toEqual([['s1']])
+    svc.snapshot()
+    expect(seen).toHaveLength(1)
+    svc.set('s1', 30)
+    svc.snapshot()
+    expect(seen).toEqual([['s1'], ['s1']])
   })
   it('drives the screen the kiosk names, when it names an Edge screen', () => {
     cfg = config([{}, {}])
@@ -321,6 +368,28 @@ describe('POST /api/hooks/brightness', () => {
     expect((await app.inject({ method: 'POST', url: '/api/hooks/brightness', payload: { available: true, value: 101 } })).statusCode).toBe(400)
     const remote = await app.inject({ method: 'POST', url: '/api/hooks/brightness', payload: { available: true }, remoteAddress: '203.0.113.7' })
     expect(remote.statusCode).toBe(403)
+  })
+})
+
+describe('POST /api/hooks/brightness on the remote listener', () => {
+  // The route alone, past any allow-list: a request on a socket the remote listener marked, from
+  // a loopback address, as one sent to port 4243 by the Mac itself would be. The socket decides.
+  it('refuses a request from this Mac that came in on the remote listener', async () => {
+    const reports: unknown[] = []
+    const service = { helperReport: (r: unknown) => { reports.push(r) } } as unknown as BrightnessService
+    const f = Fastify({ logger: false })
+    f.decorateRequest('deviceId', null)
+    f.addHook('onRequest', async (req) => { if (req.headers['x-remote'] === '1') markRemoteSocket(req.raw.socket) })
+    await f.register(brightnessRoutes, { service, changed: () => {} })
+    const send = (remote: boolean) => f.inject({
+      method: 'POST', url: '/api/hooks/brightness', remoteAddress: '127.0.0.1',
+      headers: remote ? { 'x-remote': '1' } : {}, payload: { available: true, value: 10 },
+    })
+    expect((await send(true)).statusCode).toBe(403)
+    expect(reports).toEqual([])
+    expect((await send(false)).statusCode).toBe(204)
+    expect(reports).toHaveLength(1)
+    await f.close()
   })
 })
 

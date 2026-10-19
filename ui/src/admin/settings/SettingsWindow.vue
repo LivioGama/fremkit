@@ -11,12 +11,14 @@
  * A search runs across every pane at once and shows what it found, pane by pane, opened; the
  * screen pane searched is the selected screen's. Escape clears it.
  */
-import { computed, type Component } from 'vue'
+import { computed, onMounted, ref, watch, type Component } from 'vue'
 import BaseIcon from '../../shared/ui/BaseIcon.vue'
 import BaseInput from '../../shared/ui/BaseInput.vue'
 import ScrollPanel from '../../shared/ui/ScrollPanel.vue'
 import { useI18n } from '../../shared/i18n'
 import { useAdminStore } from '../store'
+import { useDevices } from '../devices'
+import { labsDevices, showsDevices } from '../labs'
 import { APP_PANES, foldableSections, paneLabel, searchSettings, settingsPane, settingsQuery, SETTINGS_INDEX,
   type SettingsPane } from '../settingsWindow'
 import SettingsScope from './SettingsScope.vue'
@@ -39,7 +41,27 @@ const PANES: Record<SettingsPane, Component> = {
 /** A pane of one block shows it bare: a fold with nothing beside it only hides the setting. */
 const bare = (pane: SettingsPane): boolean => SETTINGS_INDEX.filter((e) => e.pane === pane).length <= 1
 
-const found = computed(() => searchSettings(settingsQuery.value, t))
+/**
+ * iPad pairing is hidden until `labs.devices` is on (`labs.ts`), and also shows while pairing is in
+ * use, flag or not. The status is read once here — the pane polls it itself once shown — and once
+ * shown it stays for as long as the window is open, so unpairing the last device does not pull
+ * the pane from under the pointer.
+ */
+const devices = useDevices()
+const devicesOn = computed(() => labsDevices(s.state.config))
+const devicesShown = ref(false)
+watch(() => showsDevices(s.state.config, devices.status.value), (on) => { if (on) devicesShown.value = true }, { immediate: true })
+watch(devicesOn, (on) => { if (!on) devicesShown.value = showsDevices(s.state.config, devices.status.value) })
+onMounted(() => { if (!devicesOn.value) void devices.refresh() })
+const appPanes = computed(() => APP_PANES.filter((p) => p.id !== 'devices' || devicesShown.value))
+// A reveal or a remembered pane may name Devices while it is hidden: show the screen instead.
+watch([settingsPane, devicesShown], ([pane, shown]) => { if (pane === 'devices' && !shown) settingsPane.value = 'screen' }, { immediate: true })
+
+const found = computed(() => {
+  const all = searchSettings(settingsQuery.value, t)
+  if (all && !devicesShown.value) all.delete('devices')
+  return all
+})
 const screens = computed(() => s.state.config?.screens ?? [])
 
 const titleOf = (pane: SettingsPane): string => (pane === 'screen' ? s.screen.value?.name ?? '' : t(paneLabel(pane)))
@@ -72,7 +94,7 @@ const isCurrent = (pane: SettingsPane, screenId?: string): boolean =>
           <BaseIcon :name="x.kind === 'device' ? 'tablet' : 'monitor'" :size="16" /><span class="label">{{ x.name }}</span>
         </button>
         <p class="group">{{ t('admin.settings.app') }}</p>
-        <button v-for="p in APP_PANES" :key="p.id" type="button" class="entry" :class="{ on: isCurrent(p.id) }"
+        <button v-for="p in appPanes" :key="p.id" type="button" class="entry" :class="{ on: isCurrent(p.id) }"
           :aria-current="isCurrent(p.id) ? 'page' : undefined" @click="showPane(p.id)">
           <BaseIcon :name="p.icon" :size="16" /><span class="label">{{ t(paneLabel(p.id)) }}</span>
         </button>

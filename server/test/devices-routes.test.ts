@@ -7,14 +7,17 @@ import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { CONFIG_VERSION } from '../src/config/schema.js'
-import { noAdvertise } from '../src/devices/bonjour.js'
+import { CONFIG_VERSION, ConfigSchema } from '../src/config/schema.js'
+import { BrightnessService } from '../src/brightness/service.js'
+import { noAdvertise, type Advertiser } from '../src/devices/bonjour.js'
 import { RemoteListener } from '../src/devices/listener.js'
+import { fingerprintWords } from '../src/devices/fingerprint.js'
 import { execFileAsync, type Exec } from '../src/secrets/keychain.js'
 import { Hub } from '../src/ws/hub.js'
 import { readZip } from '../src/backup/zip.js'
 import { readKey, spkiHash, TLS_KEY_SECRET } from '../src/devices/certificate.js'
 import { FileSecretStore } from '../src/secrets/file.js'
+import { MAX_WRONG_PER_MINUTE, PairingCodes } from '../src/devices/codes.js'
 import { hasOpenssl, remote } from './helpers/remote.js'
 
 const ADDRESS = '192.0.2.10'
@@ -44,6 +47,7 @@ const CONFIG = {
 }
 
 let dir: string
+let brightness: BrightnessService
 let app: FastifyInstance
 let port: number
 
@@ -51,10 +55,15 @@ const host = () => `example.local:${port}`
 const cookie = (t: string) => ({ cookie: `fremkit_device=${t}` })
 const json = { 'content-type': 'application/json' }
 
-async function issueCode(): Promise<string> {
+async function issueOffer(): Promise<{ code: string; secret: string; url: string }> {
   const res = await app.inject({ method: 'POST', url: '/api/devices/code' })
   expect(res.statusCode).toBe(200)
-  return res.json().code as string
+  const offer = res.json()
+  return { ...offer, secret: new URL(offer.url).searchParams.get('s') as string }
+}
+
+async function issueCode(): Promise<string> {
+  return (await issueOffer()).code
 }
 
 function pair(body: unknown) {
@@ -77,12 +86,14 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'fremkit-devices-'))
     await writeFile(join(dir, 'fremkit.json'), JSON.stringify(CONFIG))
+    brightness = new BrightnessService({ config: () => ConfigSchema.parse(CONFIG) })
     app = await buildApp({
       accessToken: null,
       dataDir: dir,
       widgetsDir: join(process.cwd(), '..', 'widgets'),
       providers: [],
       devicesPort: 0,
+      brightness,
       devices: { exec, advertise: noAdvertise, lanAddresses: () => [ADDRESS] },
     })
     const on = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
@@ -102,15 +113,25 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     const offer = res.json()
     expect(offer.code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/)
     const status = (await app.inject({ url: '/api/devices' })).json()
-    expect(offer.url).toBe(`fremkit://pair?h=example.local&a=${ADDRESS}&p=${port}&c=${offer.code}&k=${status.keyHash}`)
+    const secret = new URL(offer.url).searchParams.get('s')
+    expect(secret).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(offer.url).toBe(`fremkit://pair?h=example.local&a=${ADDRESS}&p=${port}&c=${offer.code}&s=${secret}&k=${status.keyHash}`)
+    // The secret is in the link and nowhere else: no field of its own, not in the status.
+    expect(Object.keys(offer).sort()).toEqual(['code', 'expiresAt', 'url'])
+    expect(res.headers['cache-control']).toBe('no-store')
+    expect(JSON.stringify(status)).not.toContain(secret)
+    const settings = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
+    expect(settings.body).not.toContain(secret)
     expect(status.keyHash).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(status.fingerprint).toEqual(fingerprintWords(status.keyHash))
+    expect(status.fingerprint).toHaveLength(4)
   })
 
   it('pairs a device and tells it its screen', async () => {
     const { token, deviceId } = await pairWith({ width: 1180, height: 820 })
     const res = await me(token)
     expect(res.status).toBe(200)
-    expect(JSON.parse(res.body)).toEqual({ id: deviceId, name: 'iPad', screenId: 'ipad' })
+    expect(JSON.parse(res.body)).toEqual({ id: deviceId, name: 'iPad', screenId: 'ipad', brightness: { target: null, seq: 0 } })
   })
 
   it('attaches by viewport in either orientation, and only when one screen fits', async () => {
@@ -128,6 +149,27 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     expect((await pair({ code: 'AAAA', name: '', viewport: { width: 1, height: 1 } })).status).toBe(400)
     expect((await pair({ code: 'AAAA', name: 'x'.repeat(61), viewport: { width: 1, height: 1 } })).status).toBe(400)
     expect((await pair({ code: 'AAAA', name: 'x', viewport: { width: 0, height: 1 } })).status).toBe(400)
+    const viewport = { width: 640, height: 480 }
+    // Neither, both, or a secret of the wrong shape.
+    expect((await pair({ name: 'x', viewport })).status).toBe(400)
+    expect((await pair({ code: 'AAAA', secret: 'A'.repeat(43), name: 'x', viewport })).status).toBe(400)
+    expect((await pair({ secret: 'A'.repeat(42), name: 'x', viewport })).status).toBe(400)
+    expect((await pair({ secret: 'A'.repeat(44), name: 'x', viewport })).status).toBe(400)
+    expect((await pair({ secret: `${'A'.repeat(42)}=`, name: 'x', viewport })).status).toBe(400)
+  })
+
+  it('answers /api/pair 404, as a route that does not exist, while no code is live', async () => {
+    // The code `pairWith` used is spent: nothing is live now.
+    await pairWith({ width: 640, height: 480 })
+    const body = { code: 'AAAAAAAA', name: 'x', viewport: { width: 640, height: 480 } }
+    const closed = await pair(body)
+    expect(closed.status).toBe(404)
+    expect(JSON.parse(closed.body)).toMatchObject({ statusCode: 404, error: 'Not Found' })
+    // Nor are guesses counted while it is closed.
+    for (let i = 0; i < 6; i++) expect((await pair(body)).status).toBe(404)
+    const code = await issueCode()
+    expect((await pair({ ...body, code })).status).toBe(200)
+    expect((await pair(body)).status).toBe(404)
   })
 
   it('refuses to attach a device to a screen that is not a device screen', async () => {
@@ -230,11 +272,75 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     expect((await app.inject({ method: 'PATCH', url: `/api/devices/${b.deviceId}`, payload: { screenId: 'tab-a' } })).statusCode).toBe(200)
     const meA = JSON.parse((await me(a.token)).body)
     const meB = JSON.parse((await me(b.token)).body)
-    expect(meA).toEqual({ id: a.deviceId, name: 'Kitchen', screenId: null })
-    expect(meB).toEqual({ id: b.deviceId, name: 'Hall', screenId: 'tab-a' })
+    expect(meA).toEqual({ id: a.deviceId, name: 'Kitchen', screenId: null, brightness: null })
+    expect(meB).toEqual({ id: b.deviceId, name: 'Hall', screenId: 'tab-a', brightness: { target: null, seq: 0 } })
     // Whatever the query asks for.
     const asked = await remote(port, { path: `/api/devices/me?id=${b.deviceId}`, host: host(), headers: cookie(a.token) })
     expect(JSON.parse(asked.body).id).toBe(a.deviceId)
+  })
+
+  describe('brightness', () => {
+    const report = (token: string | null, body: unknown, method = 'POST') =>
+      remote(port, { method, path: '/api/devices/me/brightness', host: host(), headers: { ...(token ? cookie(token) : {}), ...json }, body: JSON.stringify(body) })
+    const value = (screen: string) => brightness.snapshot().screens[screen]
+
+    const attach = async (deviceId: string, screenId: string) =>
+      expect((await app.inject({ method: 'PATCH', url: `/api/devices/${deviceId}`, payload: { screenId } })).statusCode).toBe(200)
+
+    it('takes a level from the device for its own screen, and from no other device', async () => {
+      const a = await pairWith({ width: 640, height: 480 }, 'A')
+      const b = await pairWith({ width: 640, height: 480 }, 'B')
+      await attach(a.deviceId, 'tab-a')
+      await attach(b.deviceId, 'tab-b')
+      const res = await report(a.token, { value: 42 })
+      expect(res.status).toBe(204)
+      expect(res.headers['cache-control']).toBe('no-store')
+      expect(value('tab-a')).toMatchObject({ available: true, value: 42 })
+      expect(value('tab-b')).toMatchObject({ available: false, reason: 'no-device' })
+      expect((await report(b.token, { value: 10 })).status).toBe(204)
+      expect(value('tab-a').value).toBe(42)
+      expect(value('tab-b').value).toBe(10)
+    })
+
+    it('needs the token, and is not answered on this Mac', async () => {
+      expect((await report(null, { value: 5 })).status).toBe(401)
+      expect((await app.inject({ method: 'POST', url: '/api/devices/me/brightness', payload: { value: 5 } })).statusCode).toBe(404)
+    })
+
+    it('refuses a bad level, and a device with no device screen', async () => {
+      const a = await pairWith({ width: 640, height: 480 }, 'A')
+      await attach(a.deviceId, 'tab-a')
+      expect((await report(a.token, { value: 101 })).status).toBe(400)
+      expect((await report(a.token, { value: 'x' })).status).toBe(400)
+      const none = await pairWith({ width: 640, height: 480 }, 'None')
+      const res = await report(none.token, { value: 50 })
+      expect(res.status).toBe(409)
+      expect(JSON.parse(res.body).error).toEqual(expect.any(String))
+    })
+
+    it('reads the screen at request time: a device moved to another screen reports for that one', async () => {
+      const a = await pairWith({ width: 640, height: 480 }, 'Mover')
+      expect((await app.inject({ method: 'PATCH', url: `/api/devices/${a.deviceId}`, payload: { screenId: 'tab-b' } })).statusCode).toBe(200)
+      expect((await report(a.token, { value: 33 })).status).toBe(204)
+      expect(value('tab-b').value).toBe(33)
+    })
+
+    it('puts the new target and seq on the device channel when the admin side sets one', async () => {
+      const a = await pairWith({ width: 640, height: 480 }, 'Pushed')
+      expect((await app.inject({ method: 'PATCH', url: `/api/devices/${a.deviceId}`, payload: { screenId: 'tab-a' } })).statusCode).toBe(200)
+      expect((await report(a.token, { value: 20 })).status).toBe(204)
+      const refresh = vi.spyOn(Hub.prototype, 'refreshDevice')
+      try {
+        const before = JSON.parse((await me(a.token)).body).brightness.seq as number
+        brightness.set('tab-a', 55)
+        expect(refresh).toHaveBeenCalledWith(a.deviceId)
+        const after = JSON.parse((await me(a.token)).body).brightness
+        expect(after.target).toBe(55)
+        expect(after.seq).toBeGreaterThan(before)
+      } finally {
+        refresh.mockRestore()
+      }
+    })
   })
 
   it('resetting the certificate changes the pin and unpairs every device', async () => {
@@ -262,19 +368,175 @@ describe.skipIf(!hasOpenssl)('device routes', () => {
     }
   })
 
-  it('refuses every code after five wrong ones in a minute', async () => {
+  it('pairs with the QR secret, once', async () => {
+    const { secret } = await issueOffer()
+    const viewport = { width: 1180, height: 820 }
+    const res = await pair({ secret, name: 'iPad', viewport })
+    expect(res.status).toBe(200)
+    expect(res.headers['cache-control']).toBe('no-store')
+    const { token } = JSON.parse(res.body)
+    expect((await me(token)).status).toBe(200)
+    // Spent with its code: nothing is live, so the route is not there at all.
+    expect((await pair({ secret, name: 'iPad', viewport })).status).toBe(404)
+  })
+
+  /** Blocks the next read of the TLS key until `release()`: `pairingCode` waits there before issuing. */
+  function holdKeyRead(): { reached: Promise<void>; release: () => void; restore: () => void } {
+    let reach!: () => void
+    let release!: () => void
+    const reached = new Promise<void>((r) => { reach = r })
+    const gate = new Promise<void>((r) => { release = r })
+    const original = FileSecretStore.prototype.get
+    let armed = true
+    const spy = vi.spyOn(FileSecretStore.prototype, 'get').mockImplementation(async function (this: FileSecretStore, name: string) {
+      if (armed && name === TLS_KEY_SECRET) {
+        armed = false
+        reach()
+        await gate
+      }
+      return original.call(this, name)
+    })
+    return { reached, release, restore: () => spy.mockRestore() }
+  }
+
+  async function settle(): Promise<void> {
+    await new Promise((r) => setTimeout(r, 50))
+  }
+
+  /** Records `issue` and `clear` on the codes, in order: no `issue` may come after the last `clear`. */
+  function recordCodes(): { calls: string[]; restore: () => void } {
+    const calls: string[] = []
+    const { issue: realIssue, clear: realClear } = PairingCodes.prototype
+    const issue = vi.spyOn(PairingCodes.prototype, 'issue').mockImplementation(function (this: PairingCodes) {
+      calls.push('issue')
+      return realIssue.call(this)
+    })
+    const clear = vi.spyOn(PairingCodes.prototype, 'clear').mockImplementation(function (this: PairingCodes) {
+      calls.push('clear')
+      realClear.call(this)
+    })
+    return { calls, restore: () => { issue.mockRestore(); clear.mockRestore() } }
+  }
+
+  it('never leaves a code live from a request that raced the switch going off', async () => {
+    const hold = holdKeyRead()
+    const codes = recordCodes()
+    try {
+      const code = app.inject({ method: 'POST', url: '/api/devices/code' })
+      await hold.reached
+      const off = app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: false } })
+      // Unserialized, the switch would go off here, and the code be issued after it.
+      await settle()
+      hold.release()
+      expect([200, 409]).toContain((await code).statusCode)
+      expect((await off).statusCode).toBe(200)
+      // Issued before the switch-off dropped it, or not at all: never after.
+      expect(codes.calls.lastIndexOf('issue')).toBeLessThan(codes.calls.lastIndexOf('clear'))
+    } finally {
+      hold.restore()
+      codes.restore()
+    }
+    const on = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
+    expect(on.statusCode).toBe(200)
+    port = on.json().port
+    // No code is live: the route is not there.
+    expect((await pair({ code: 'AAAAAAAA', name: 'x', viewport: { width: 640, height: 480 } })).status).toBe(404)
+  })
+
+  it('never issues a code carrying the old pin from a request that raced a certificate reset', async () => {
+    const hold = holdKeyRead()
+    const codes = recordCodes()
+    let offer: { statusCode: number; json: () => { url: string } }
+    try {
+      const code = app.inject({ method: 'POST', url: '/api/devices/code' })
+      await hold.reached
+      const reset = app.inject({ method: 'POST', url: '/api/devices/reset-certificate' })
+      await settle()
+      hold.release()
+      offer = await code
+      expect((await reset).statusCode).toBe(200)
+      expect(codes.calls.lastIndexOf('issue')).toBeLessThan(codes.calls.lastIndexOf('clear'))
+    } finally {
+      hold.restore()
+      codes.restore()
+    }
+    expect(offer.statusCode).toBe(200)
+    // Issued before the reset, so dropped by it: nothing is live, its secret pairs nothing.
+    const secret = new URL(offer.json().url).searchParams.get('s')
+    expect((await pair({ secret, name: 'x', viewport: { width: 640, height: 480 } })).status).toBe(404)
+  })
+
+  it('kills a live code and its secret when pairing is switched off', async () => {
+    const { secret } = await issueOffer()
+    const clear = vi.spyOn(PairingCodes.prototype, 'clear')
+    try {
+      const off = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: false } })
+      expect(off.statusCode).toBe(200)
+      expect(clear).toHaveBeenCalled()
+      clear.mockClear()
+      const on = await app.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
+      expect(on.statusCode).toBe(200)
+      port = on.json().port
+    } finally {
+      clear.mockRestore()
+    }
+    // Back on, no code is live (the route is not there), and the old secret pairs nothing.
+    expect((await pair({ secret, name: 'x', viewport: { width: 640, height: 480 } })).status).toBe(404)
+  })
+
+  it('kills a live code and its secret when the certificate is reset', async () => {
+    const { secret } = await issueOffer()
+    const clear = vi.spyOn(PairingCodes.prototype, 'clear')
+    try {
+      expect((await app.inject({ method: 'POST', url: '/api/devices/reset-certificate' })).statusCode).toBe(200)
+      expect(clear).toHaveBeenCalled()
+    } finally {
+      clear.mockRestore()
+    }
+    expect((await pair({ secret, name: 'x', viewport: { width: 640, height: 480 } })).status).toBe(404)
+  })
+
+  it('refuses every code after five wrong ones in a minute, a wrong secret counted as one', async () => {
+    const stale = (await issueOffer()).secret
     const code = await issueCode()
     const wrong = code === 'AAAAAAAA' ? 'BBBBBBBB' : 'AAAAAAAA'
     const viewport = { width: 640, height: 480 }
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 4; i++) {
       const res = await pair({ code: wrong, name: 'x', viewport })
       expect(res.status).toBe(403)
       expect(JSON.parse(res.body).error).toBe('wrong pairing code')
     }
+    // The secret of a code replaced since: dead, and failing exactly as a wrong code does.
+    const res = await pair({ secret: stale, name: 'x', viewport })
+    expect(res.status).toBe(403)
+    expect(res.body).toBe(JSON.stringify({ error: 'wrong pairing code' }))
+    expect(res.body).not.toContain(stale)
     const limited = await pair({ code, name: 'x', viewport })
     expect(limited.status).toBe(429)
     expect(JSON.parse(limited.body).error).toBe('too many wrong codes: try again in a minute')
     expect((await app.inject({ url: '/api/devices' })).json().guessing).toBe(true)
+  })
+
+  it('pairs with the QR secret while this peer is refused codes', async () => {
+    // A fresh minute, whatever the tests above spent: this one spends the allowance itself.
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 61_000 })
+    try {
+      const { code, secret } = await issueOffer()
+      const wrongCode = code === 'AAAAAAAA' ? 'BBBBBBBB' : 'AAAAAAAA'
+      const viewport = { width: 640, height: 480 }
+      for (let i = 0; i < MAX_WRONG_PER_MINUTE; i++) {
+        expect((await pair({ code: wrongCode, name: 'x', viewport })).status).toBe(403)
+      }
+      expect((await pair({ code, name: 'x', viewport })).status).toBe(429)
+      const wrong = await pair({ secret: secret.startsWith('A') ? 'B'.repeat(43) : 'A'.repeat(43), name: 'x', viewport })
+      expect(wrong.status).toBe(429)
+      expect(JSON.parse(wrong.body).error).toBe('too many wrong codes: try again in a minute')
+      const res = await pair({ secret, name: 'QR', viewport })
+      expect(res.status).toBe(200)
+      expect((await me(JSON.parse(res.body).token)).status).toBe(200)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   // Last: it turns remote access off.
@@ -330,6 +592,13 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
   let adir: string
   let aapp: FastifyInstance
   let addresses = ['192.0.2.10']
+  /** Every advertisement started, as `[address, stopped]`. */
+  const ads: { address: string | null | undefined; stopped: boolean }[] = []
+  const recordingAdvertise: Advertiser = (_port, _name, address) => {
+    const ad = { address, stopped: false }
+    ads.push(ad)
+    return { stop: () => { ad.stopped = true } }
+  }
 
   beforeAll(async () => {
     adir = await mkdtemp(join(tmpdir(), 'fremkit-devices-addr-'))
@@ -340,7 +609,7 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
       widgetsDir: join(process.cwd(), '..', 'widgets'),
       providers: [],
       devicesPort: 0,
-      devices: { exec, advertise: noAdvertise, lanAddresses: () => addresses, preferredAddress: async (a) => a[0] ?? null },
+      devices: { exec, advertise: recordingAdvertise, lanAddresses: () => addresses, preferredAddress: async (a) => a[0] ?? null },
     })
   })
   afterAll(async () => {
@@ -379,6 +648,9 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
       expect(cert.subjectAltName).not.toContain('192.0.2.10')
       // Same key, so the pin every paired device holds still matches.
       expect(spkiHash(cert.toString())).toBe(keyHash)
+      // The Bonjour TXT record follows: the old advertisement withdrawn, the new address announced.
+      await expect.poll(() => ads.length).toBe(2)
+      expect(ads).toEqual([{ address: '192.0.2.10', stopped: true }, { address: '198.51.100.7', stopped: false }])
       expect((await aapp.inject({ url: '/api/devices' })).json().keyHash).toBe(keyHash)
       // The gate follows: the new authority is in, the old one out.
       expect((await remote(aport, { path: '/', host: `198.51.100.7:${aport}` })).status).not.toBe(421)
@@ -387,9 +659,96 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
       const off = await aapp.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: false } })
       expect(off.json()).toMatchObject({ enabled: false, listening: false })
       expect(vi.getTimerCount()).toBe(before)
+      expect(ads[1].stopped).toBe(true)
     } finally {
       setCertificate.mockRestore()
       vi.useRealTimers()
     }
+  })
+})
+
+describe.skipIf(!hasOpenssl)('telling a paired device where else to find the Mac', () => {
+  let mdir: string
+  let mapp: FastifyInstance
+  let mport: number
+  let devicePayload: (deviceId: string) => unknown = () => null
+  // What the interfaces report, the listener's Host set included: ten RFC 1918 addresses,
+  // documentation ranges standing for public addresses, CGNAT, link-local and IPv6. Only RFC 1918
+  // ones may reach the device app, the default route's first, eight at most.
+  const PRIVATE = ['10.20.30.40', '10.20.30.41', '10.20.30.42', '10.20.30.43', '172.16.4.2', '172.16.4.3', '172.16.4.4',
+    '192.168.1.20', '192.168.1.21', '192.168.1.22']
+  const DEFAULT_ROUTE = '192.168.1.20'
+  const OTHERS = ['192.0.2.10', '198.51.100.7', '100.100.1.1', '169.254.1.1', 'fd00::1', '2001:db8::1']
+  const picked: string[][] = []
+
+  beforeAll(async () => {
+    mdir = await mkdtemp(join(tmpdir(), 'fremkit-devices-me-'))
+    await writeFile(join(mdir, 'fremkit.json'), JSON.stringify(CONFIG))
+    // Keeps what the service gives the hub for the `device` channel; the call goes through.
+    const capture = vi.spyOn(Hub.prototype, 'setDevicePayload')
+    mapp = await buildApp({
+      accessToken: null,
+      dataDir: mdir,
+      widgetsDir: join(process.cwd(), '..', 'widgets'),
+      providers: [],
+      devicesPort: 0,
+      devices: {
+        exec, advertise: noAdvertise, lanAddresses: () => [...OTHERS, ...PRIVATE].sort(),
+        preferredAddress: async (a) => { picked.push(a); return a.includes(DEFAULT_ROUTE) ? DEFAULT_ROUTE : a[0] ?? null },
+      },
+    })
+    devicePayload = capture.mock.calls[0][0]
+    capture.mockRestore()
+    const on = await mapp.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
+    mport = on.json().port
+  })
+  afterAll(async () => {
+    await mapp?.close()
+    await rm(mdir, { recursive: true, force: true })
+  })
+
+  it('lists the RFC 1918 addresses the listener answers on, default route first, eight at most, to the app that asks', async () => {
+    const offer = (await mapp.inject({ method: 'POST', url: '/api/devices/code' })).json()
+    const paired = await remote(mport, {
+      method: 'POST', path: '/api/pair', host: `example.local:${mport}`, headers: json,
+      body: JSON.stringify({ code: offer.code, name: 'iPad', viewport: { width: 640, height: 480 } }),
+    })
+    expect(paired.status).toBe(200)
+    const { token, deviceId } = JSON.parse(paired.body)
+
+    const res = await remote(mport, { path: '/api/devices/me?addresses=1', host: `example.local:${mport}`, headers: cookie(token) })
+    expect(res.status).toBe(200)
+    const body = JSON.parse(res.body)
+    const sorted = [...PRIVATE].sort()
+    expect(body.addresses).toEqual([DEFAULT_ROUTE, ...sorted.filter((a) => a !== DEFAULT_ROUTE)].slice(0, 8))
+    expect(body.addresses).toHaveLength(8)
+    // The default route is picked among the private addresses only, and looked up once for two
+    // quick asks with the same addresses (each iPad asks about every 30 s).
+    expect(picked.at(-1)).toEqual(sorted)
+    const lookups = picked.length
+    const again = await remote(mport, { path: '/api/devices/me?addresses=1', host: `example.local:${mport}`, headers: cookie(token) })
+    expect(JSON.parse(again.body).addresses).toEqual(body.addresses)
+    expect(picked).toHaveLength(lookups)
+    for (const other of OTHERS) expect(res.body).not.toContain(other)
+    // Each address listed is one the listener answers on, so the app is never sent to a 421.
+    for (const address of body.addresses) {
+      expect((await remote(mport, { path: '/api/devices/me', host: `${address}:${mport}`, headers: cookie(token) })).status).toBe(200)
+    }
+
+    // The dashboard page's own request does not ask, and is not told.
+    for (const path of ['/api/devices/me', '/api/devices/me?addresses=0', '/api/devices/me?addresses=true']) {
+      const plain = await remote(mport, { path, host: `example.local:${mport}`, headers: cookie(token) })
+      expect(plain.status, path).toBe(200)
+      expect(JSON.parse(plain.body), path).not.toHaveProperty('addresses')
+      for (const address of PRIVATE) expect(plain.body, path).not.toContain(address)
+    }
+    // Nor is the `device` channel, which the page reads.
+    const payload = devicePayload(deviceId)
+    expect(payload).toMatchObject({ id: deviceId })
+    expect(payload).not.toHaveProperty('addresses')
+    for (const address of PRIVATE) expect(JSON.stringify(payload)).not.toContain(address)
+    // Without a token the gate refuses it; locally the route does not exist.
+    expect((await remote(mport, { path: '/api/devices/me?addresses=1', host: `example.local:${mport}` })).status).toBe(401)
+    expect((await mapp.inject({ url: '/api/devices/me?addresses=1' })).statusCode).toBe(404)
   })
 })
