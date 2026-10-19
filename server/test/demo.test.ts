@@ -38,6 +38,8 @@ const { buildApp } = await import('../src/app.js')
 const { createDemoProviders } = await import('../src/demo/providers.js')
 const { demoConfig, prepareDemoDataDir, DEMO_MARKER, DemoDataDirError } = await import('../src/demo/seed.js')
 const { demoPublicFetch } = await import('../src/demo/fetch.js')
+const { demoConnectionTypes } = await import('../src/demo/connections.js')
+const { defaultConnectionTypes } = await import('../src/connections/types/index.js')
 const { ConfigSchema } = await import('../src/config/schema.js')
 const { errorCode } = await import('../src/providers/registry.js')
 
@@ -155,6 +157,16 @@ describe('demo mode', () => {
     expect(((await providers.find((p) => p.channel === 'codex-live')!.poll!()) as { error: string }).error).toBe('unconfigured')
   })
 
+  it('publishes a Synology snapshot for the seeded NAS', async () => {
+    const synology = demoConnectionTypes(defaultConnectionTypes()).find((t) => t.id === 'synology')!
+    const provider = synology.createProvider!({ id: 'demo-nas', channel: 'synology:demo-nas', fields: {} } as never)
+    const snap = await provider.poll!() as { error?: string; volumes: unknown[]; disks: unknown[]; cpu: number }
+    expect(snap.error).toBeUndefined()
+    expect(snap.volumes.length).toBeGreaterThan(0)
+    expect(snap.disks.length).toBeGreaterThan(0)
+    expect(ConfigSchema.parse(demoConfig()).connections.map((c) => c.type)).toContain('synology')
+  })
+
   it('seeds a dashboard the config schema accepts, with every built-in on it', async () => {
     const config = ConfigSchema.parse(demoConfig())
     const { readdir } = await import('node:fs/promises')
@@ -172,7 +184,9 @@ describe('the demo data folder', () => {
       expect(existsSync(join(prepared.dir, DEMO_MARKER))).toBe(true)
       expect(existsSync(join(prepared.dir, 'fremkit.json'))).toBe(true)
       // The calendars' required address, so the editor does not list them as broken.
-      expect(Object.keys(JSON.parse(await readFile(join(prepared.dir, 'secrets.json'), 'utf8')))).toContain('demo-work/url')
+      const stored = Object.keys(JSON.parse(await readFile(join(prepared.dir, 'secrets.json'), 'utf8')))
+      expect(stored).toContain('demo-work/url')
+      expect(stored).toContain('demo-nas/password')
     } finally {
       await rm(prepared.dir, { recursive: true, force: true })
     }

@@ -1,6 +1,6 @@
 import type { ConnectionType, PickOption } from '../connections/types.js'
 import type { Provider } from '../providers/types.js'
-import { EMPTY_SNAPSHOT as SYNOLOGY_EMPTY } from '../providers/synology.js'
+import type { SynologySnapshot } from '../providers/synology.js'
 import { clamp, demoEvents, wander } from './world.js'
 
 /**
@@ -30,7 +30,7 @@ function demoConnectionProvider(type: string, ctx: { id: string; channel: string
     case 'github': return { channel: ctx.channel, intervalMs: 60_000, poll: async () => githubSnapshot(now()) }
     case 'azure-devops': return { channel: ctx.channel, intervalMs: 10_000, poll: async () => azureSnapshot(now()) }
     case 'bambu': return { channel: ctx.channel, intervalMs: 1000, poll: async () => bambuSnapshot(now()) }
-    case 'synology': return { channel: ctx.channel, intervalMs: 60_000, poll: async () => ({ ...SYNOLOGY_EMPTY, error: 'unconfigured' }) }
+    case 'synology': return { channel: ctx.channel, intervalMs: 15_000, poll: async () => synologySnapshot(now()) }
     // A type added later that nobody taught demo mode about: an honest "not set up" rather than
     // a real provider that would go out onto the network.
     default: return { channel: ctx.channel, intervalMs: 60_000, poll: async () => ({ error: 'unconfigured' }) }
@@ -98,5 +98,38 @@ function bambuSnapshot(t: number): unknown {
     nozzleTemp: Math.round(clamp(wander(t, 220, 1.5, 20_000), 200, 240)), nozzleTarget: 220,
     bedTemp: Math.round(clamp(wander(t, 55, 0.8, 30_000), 40, 70)), bedTarget: 55,
     speedLevel: 2,
+  }
+}
+
+const TB = 1000 ** 4
+
+/** A four-bay NAS: two volumes, one of them getting full, four disks that warm up a little. */
+function synologySnapshot(t: number): SynologySnapshot {
+  const disk = (n: number, model: string, base: number, container: string): SynologySnapshot['disks'][number] => ({
+    id: `sata${n}`, name: `Drive ${n}`, model,
+    temperature: Math.round(clamp(wander(t, base, 1.5, 40 * MIN, n * 0.4), 25, 60)),
+    smart: 'normal', status: 'normal', container,
+  })
+  return {
+    cpu: Math.round(clamp(wander(t, 9, 6, 90_000), 1, 100)),
+    memory: { usedPercent: Math.round(wander(t, 38, 3, 10 * MIN)), totalBytes: 8 * 1024 ** 3 },
+    network: {
+      rx: Math.round(clamp(wander(t, 1_800_000, 1_600_000, 45_000), 20_000, 110_000_000)),
+      tx: Math.round(clamp(wander(t, 420_000, 380_000, 35_000, 0.6), 8_000, 110_000_000)),
+    },
+    uptimeSeconds: 41 * 86_400 + 6 * 3_600 + Math.floor((t / 1000) % 3_600),
+    model: 'DS-Example',
+    dsmVersion: 'DSM 7.2.2',
+    volumes: [
+      { id: 'Volume 1', size: Math.round(10.5 * TB), used: Math.round(6.1 * TB), status: 'normal', fsType: 'btrfs' },
+      { id: 'Volume 2', size: Math.round(3.6 * TB), used: Math.round(3.18 * TB), status: 'normal', fsType: 'btrfs' },
+    ],
+    disks: [
+      disk(1, 'Example NAS HDD 8TB', 36, 'Volume 1'),
+      disk(2, 'Example NAS HDD 8TB', 38, 'Volume 1'),
+      disk(3, 'Example NAS HDD 4TB', 35, 'Volume 2'),
+      disk(4, 'Example NAS HDD 4TB', 37, 'Volume 2'),
+    ],
+    at: t,
   }
 }

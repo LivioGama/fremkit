@@ -6,7 +6,7 @@ import { CONFIG_VERSION, type Config, type Placement } from '../config/schema.js
 import { BUILTIN_THEME } from '../themes/theme.js'
 import { DEFAULT_BACKGROUND } from '../backgrounds/seed.js'
 import { FileSecretStore } from '../secrets/file.js'
-import { DEMO_APPS, DEMO_CALENDARS } from './world.js'
+import { DEMO_APPS, DEMO_CALENDARS, DEMO_NAS } from './world.js'
 
 /**
  * The settings each built-in widget is shown with in demo mode and in its preview image.
@@ -102,7 +102,11 @@ export function demoConfig(locale: 'fr' | 'en' = 'en'): Config {
   return {
     version: CONFIG_VERSION,
     theme: BUILTIN_THEME,
-    connections: DEMO_CALENDARS.map((c) => ({ id: c.id, type: 'ics', name: c.name, fields: { color: c.color } })),
+    connections: [
+      ...DEMO_CALENDARS.map((c) => ({ id: c.id, type: 'ics', name: c.name, fields: { color: c.color } })),
+      // For the Synology widgets of the Sietch: not on the dashboard, but there to pick.
+      { id: DEMO_NAS.id, type: 'synology', name: DEMO_NAS.name, fields: { host: DEMO_NAS.host, account: DEMO_NAS.account } },
+    ],
     // A file next to the config, never the keychain: a demo has nothing to keep secret.
     secrets: { backend: 'file' },
     locale,
@@ -155,6 +159,7 @@ export async function prepareDemoDataDir(opts: { configured?: string; liveDataDi
     // Never fetched — the demo connection types publish invented events.
     const secrets = new FileSecretStore(join(dir, 'secrets.json'))
     for (const c of DEMO_CALENDARS) await secrets.set(`${c.id}/url`, `https://calendar.example.com/${c.id}.ics`)
+    await secrets.set(`${DEMO_NAS.id}/password`, 'demo')
   }
   return { dir, temporary }
 }
