@@ -21,7 +21,8 @@ describe('the companion extension', () => {
   it('the manifest asks for exactly the permitted permissions and no <all_urls>', () => {
     expect(manifest.manifest_version).toBe(3)
     expect([...manifest.permissions].sort()).toEqual(['activeTab', 'offscreen', 'scripting', 'storage', 'tabCapture'])
-    expect(manifest.host_permissions).toEqual(['http://127.0.0.1/*'])
+    // Fremkit's port only (worker.js PORT): not every local server on the Mac.
+    expect(manifest.host_permissions).toEqual(['http://127.0.0.1:4242/*'])
     expect([...manifest.optional_host_permissions].sort()).toEqual(['http://*/*', 'https://*/*'])
     expect(manifest.optional_permissions).toBeUndefined()
     expect(manifest.content_scripts).toBeUndefined()

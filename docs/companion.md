@@ -46,6 +46,11 @@ If you work on the extension with a different `key` (so a different ID), list yo
 from `a` to `p`; anything else in the list is ignored, with a warning in the log. The listed IDs are
 let in on top of Companion's.
 
+The extension speaks to `127.0.0.1:4242` only, and its manifest asks for that origin alone
+(`host_permissions`), not every port on the Mac. To pair it with a development server on another
+port (`FREMKIT_PORT=4301`, say), edit your local copy: `PORT` in `companion/worker.js` and the port
+in `host_permissions` in `companion/manifest.json`, then reload the extension.
+
 ## Link it to Fremkit
 
 1. Click the Fremkit icon and press **Connecter à Fremkit** (*Connect to Fremkit*).
