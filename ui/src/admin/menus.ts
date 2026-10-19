@@ -16,6 +16,7 @@ import { navItemsOf } from '../shared/types'
 import { screensShowing } from '../shared/screens'
 import type { AdminStore } from './store'
 import { openExport, pickLayoutFile } from './share'
+import { openSettings } from './settingsWindow'
 
 /** What the pages list adds to a menu: the inline rename lives in the list itself. */
 export interface PageMenuUi extends MenuUi {
@@ -88,7 +89,7 @@ export function navWidgetMenu(s: AdminStore, instanceId: string, ui: MenuUi): Me
       label: t('admin.menu.settings'),
       run: () => {
         toggleNavSettings(instanceId, true)
-        if (s.state.modal !== 'screen') s.openModal('screen')
+        if (s.state.modal !== 'settings') s.openModal('settings')
         ui.revealSection(NAV_WIDGETS_SECTION)
       },
     },
@@ -150,7 +151,7 @@ export function libraryMenu(s: AdminStore, market: MarketplaceStore, widgetId: s
 /** The menu of the bar's own background, in the canvas: what the bar is set up from. */
 export function navBarMenu(s: AdminStore, ui: MenuUi): MenuEntry[] {
   if (!s.state.config) return []
-  const reveal = (id: string): void => { s.openModal('screen'); ui.revealSection(id) }
+  const reveal = (id: string): void => { s.openModal('settings'); ui.revealSection(id) }
   return tidy([
     { label: t('admin.menu.newPage'), run: () => s.addPage() },
     { label: t('admin.menu.addNavWidget'), run: () => reveal('screen.navWidgets') },
@@ -174,7 +175,7 @@ export function screenMenu(s: AdminStore, screenId: string, ui: ScreenMenuUi, de
   const onlyHere = [...ids].filter((id) => screensShowing(cfg, id).every((x) => x.id === scr.id)).length
   return tidy([
     { label: t('admin.screens.rename'), run: () => ui.rename(screenId) },
-    { label: t('admin.menu.screenSettings'), run: () => { s.selectScreen(screenId); s.openModal('screen') } },
+    { label: t('admin.menu.screenSettings'), run: () => { s.selectScreen(screenId); openSettings(s, 'screen') } },
     SEPARATOR,
     { label: t('admin.menu.exportScreen'), run: () => openExport(s, { scope: 'screen', screen: screenId }) },
     { label: t('admin.menu.exportSetup'), run: () => openExport(s, { scope: 'setup' }) },

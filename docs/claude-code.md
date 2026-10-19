@@ -106,7 +106,7 @@ may change without notice.
 
 Nothing the Claude providers publish carries the account's e-mail address. Should one ever do so,
 it is held to the rule every account provider is: the address is left out unless **/admin →
-Screen → Privacy → Show the account e-mail address** is ticked (see
+Settings → Privacy → Show the account e-mail address** is ticked (see
 [connections.md](connections.md#the-accounts-e-mail-address)).
 
 The usage tile also shows a plan badge when the local Claude CLI reports a known subscription.

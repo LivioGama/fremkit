@@ -155,6 +155,6 @@ test('screen selector menu: rename, open the screen settings', async ({ page, op
 
   await screenTab(page, 'Xeneon Edge').click({ button: 'right' })
   await menuItem(page, 'Screen settings…').click()
-  await expect(page.getByRole('dialog', { name: 'Screen' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible()
   await expect(screenTab(page, 'Xeneon Edge')).toHaveAttribute('aria-selected', 'true')
 })

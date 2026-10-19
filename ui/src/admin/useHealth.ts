@@ -14,6 +14,7 @@ import { NAV_WIDGETS_SECTION, toggleNavSettings } from './menus'
 import type { MenuUi } from './canvasMenu'
 import { t } from '../shared/i18n'
 import { editorFocus } from './editorFocus'
+import { openSettings as openSettingsWindow } from './settingsWindow'
 
 /** The server's channel; see `server/src/providers/health.ts`. */
 export const HEALTH_CHANNEL = 'config:health'
@@ -91,9 +92,9 @@ export function createHealth(deps: HealthDeps): Health {
     if (!where) return
     if (where.screenId !== s.screen.value?.id) s.selectScreen(where.screenId)
     if (where.pageIndex === null) {
-      // A bar widget's settings are in the Screen panel, under its entry.
+      // A bar widget's settings are in the settings window's screen pane, under its entry.
       toggleNavSettings(instanceId, true)
-      if (s.state.modal !== 'screen') s.openModal('screen')
+      if (s.state.modal !== 'settings') s.openModal('settings')
       deps.ui.revealSection(NAV_WIDGETS_SECTION)
       return
     }
@@ -112,7 +113,7 @@ export function createHealth(deps: HealthDeps): Health {
       case 'connection': s.openConnection(action.id); return
       case 'newConnection': s.openNewConnection(action.type); return
       case 'settings': openSettings(instanceId, action.field); return
-      case 'screen': s.openModal('screen'); return
+      case 'screen': openSettingsWindow(s, 'screen'); return
       case 'reload': s.reloadWidget(instanceId); return
       case 'rescan': void s.rescan(); return
       case 'install':

@@ -189,7 +189,7 @@ describe('canvasMenu', () => {
     find(menu, 'Add a widget').run!()
     expect(u.focusLibrarySearch).toHaveBeenCalled()
     find(menu, 'Screen settings').run!()
-    expect(s.state.modal).toBe('screen')
+    expect(s.state.modal).toBe('settings')
   })
 })
 

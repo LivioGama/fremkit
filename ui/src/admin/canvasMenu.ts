@@ -9,6 +9,7 @@ import { screensShowing } from '../shared/screens'
 import { SEPARATOR, tidy, type MenuEntry, type MenuItem } from '../shared/ui/contextMenu'
 import { STYLE_KEYS, type AdminStore } from './store'
 import { shortcutHint } from './shortcuts'
+import { openSettings } from './settingsWindow'
 import type { SettingField, Widget, WidgetManifest } from '../shared/types'
 
 /** What a menu does outside the store: moving the eye to a part of the editor. */
@@ -165,6 +166,6 @@ export function canvasMenu(s: AdminStore, ui: MenuUi): MenuEntry[] {
     { label: t('admin.menu.newPage'), run: () => s.addPage() },
     SEPARATOR,
     { label: t('admin.menu.pageBackground'), run: () => revealPageBackground(s, s.state.pageIndex, ui) },
-    { label: t('admin.menu.screenSettings'), run: () => s.openModal('screen') },
+    { label: t('admin.menu.screenSettings'), run: () => openSettings(s, 'screen') },
   ])
 }

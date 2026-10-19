@@ -129,8 +129,8 @@ tokens: no code, nothing served, nothing subscribed to, no network host. So:
 - **Removing the one in use is refused**, naming it, rather than repainting the screen in
   something nobody chose.
 
-Install them from *Sietch* → **Themes**; they land in `data/themes/` and show up in Screen →
-Theme at once. See [themes.md](themes.md).
+Install them from *Sietch* → **Themes**; they land in `data/themes/` and show up in Settings →
+Appearance → Theme at once. See [themes.md](themes.md).
 
 ## When a widget declares a connection
 

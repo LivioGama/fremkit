@@ -1111,8 +1111,8 @@ describe('modals', () => {
 
   it('opens, switches and closes a modal', () => {
     const { store } = make()
-    store.openModal('screen')
-    expect(store.state.modal).toBe('screen')
+    store.openModal('settings')
+    expect(store.state.modal).toBe('settings')
     store.openModal('connections')
     expect(store.state.modal).toBe('connections')
     store.closeModal()

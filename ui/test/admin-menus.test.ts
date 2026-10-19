@@ -184,11 +184,11 @@ describe('navWidgetMenu', () => {
     expect(s.state.config!.widgets['clock-bar']).toBeUndefined()
   })
 
-  it('opens its settings in the Screen panel', async () => {
+  it('opens its settings in the settings window', async () => {
     const s = await make()
     const u = pageUi()
     find(navWidgetMenu(s, 'clock-bar2', u), 'Settings').run!()
-    expect(s.state.modal).toBe('screen')
+    expect(s.state.modal).toBe('settings')
     expect(navSettingsOpen).toContain('clock-bar2')
     expect(u.revealSection).toHaveBeenCalledWith('screen.navWidgets')
   })
@@ -216,7 +216,7 @@ describe('navBarMenu', () => {
     ;(menu[0] as MenuItem).run!()
     expect(s.screen.value!.pages).toHaveLength(pages + 1)
     ;(menu[1] as MenuItem).run!()
-    expect(s.state.modal).toBe('screen')
+    expect(s.state.modal).toBe('settings')
     expect(ui.revealSection).toHaveBeenLastCalledWith('screen.navWidgets')
     ;(menu[3] as MenuItem).run!()
     expect(ui.revealSection).toHaveBeenLastCalledWith('screen.layout')
@@ -264,7 +264,7 @@ describe('screenMenu', () => {
     expect(rename).toHaveBeenCalledWith('pad')
     find(menu, 'Screen settings').run!()
     expect(s.screen.value!.id).toBe('pad')
-    expect(s.state.modal).toBe('screen')
+    expect(s.state.modal).toBe('settings')
     const confirm = find(menu, 'Delete this screen').children!
     expect(labels(confirm)).toEqual(['Leaves without a screen: Kitchen iPad', 'Delete “iPad” and its 1 own widget(s)'])
     expect(find(confirm, 'Leaves').disabled).toBe(true)

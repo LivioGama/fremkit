@@ -556,7 +556,7 @@ one from elsewhere.
 ## Compact widgets
 
 `"compact": { "width": 4 }` says the widget also has a rendering fit for the navigation bar:
-`width` grid cells wide, the bar's height tall. The admin's Screen panel then offers it in the
+`width` grid cells wide, the bar's height tall. The admin's settings window (your screen → Navigation bar widgets) then offers it in the
 bar's widget list.
 
 There the frame draws no title and no surface — the bar is the surface — `Fremkit.compact` is

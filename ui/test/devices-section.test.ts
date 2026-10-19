@@ -34,7 +34,7 @@ vi.mock('../src/shared/api', async (importOriginal) => {
 })
 
 const { default: DevicesSection } = await import('../src/admin/DevicesSection.vue')
-const { default: ScreenInspector } = await import('../src/admin/ScreenInspector.vue')
+const { default: ScreenPane } = await import('../src/admin/settings/ScreenPane.vue')
 const { useDevices } = await import('../src/admin/devices')
 const { useAdminStore } = await import('../src/admin/store')
 
@@ -228,7 +228,7 @@ describe('removing a screen', () => {
     deviceApi.getDevices.mockResolvedValue(status({ devices: [device({ screenId: 'kitchen' })] }))
     const s = useAdminStore()
     s.selectScreen('kitchen')
-    const wrapper = mount(ScreenInspector, {
+    const wrapper = mount(ScreenPane, {
       attachTo: document.body,
       global: { stubs: { ...stubs, DevicesSection: true, NavWidgetsEditor: true, BackgroundPicker: true } },
     })
