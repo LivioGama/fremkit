@@ -3,7 +3,8 @@ import { expect, test } from '../fixtures/test.js'
 
 const settings = (page: Page) => page.getByRole('dialog', { name: 'Settings' })
 const sidebar = (page: Page) => settings(page).getByRole('navigation', { name: 'Settings' })
-const heading = (page: Page) => settings(page).locator('h3')
+// The pane's title is the first h3: a pane may hold its own (About's Diagnostics).
+const heading = (page: Page) => settings(page).locator('h3').first()
 const search = (page: Page) => sidebar(page).getByPlaceholder('Search settings')
 
 test('the settings window lists the screens and the app panes, each on its own', async ({ page, openAdmin }) => {
