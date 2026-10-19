@@ -18,6 +18,12 @@
  * 2. a watchdog on a worker thread, whose event loop the main thread's cannot hold, kills the
  *    process when the deadline passes and the main thread has not exited by then. SIGKILL skips
  *    the `exit` hooks; the next start reaps a `dns-sd` that left behind (`bonjour.ts`).
+ *
+ * Both run from the JavaScript signal handler, which is on the main thread. A signal that arrives
+ * while the thread is already held waits for it like everything else: neither the ports nor the
+ * watchdog move until it lets go. Under the helper, its SIGKILL three seconds after the SIGTERM is
+ * the backstop for that case; a server started from a terminal has none, and stops when the
+ * thread lets go.
  */
 
 import { Worker } from 'node:worker_threads'
