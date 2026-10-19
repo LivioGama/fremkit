@@ -678,6 +678,7 @@ export const fr: Record<string, string> = {
   'admin.share.import.apply': 'Importer',
   'admin.share.import.done': 'Disposition importée.',
   'admin.share.import.doneLeftOut': 'Disposition importée ; {n} widget(s) sans place.',
+  'admin.share.import.devicesSkipped': '{n} écran(s) d’iPad ignoré(s) : ils demandent les Fonctions expérimentales (Écran → À propos).',
   'admin.share.import.tooLarge': 'Ce fichier est trop gros pour être une disposition.',
   'admin.share.import.notJson': '« {name} » n’est pas un fichier de disposition.',
 }

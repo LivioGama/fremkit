@@ -14,6 +14,7 @@ import {
 } from '../shared/types'
 import { arrangeInto } from './arrange'
 import { freeInstanceId, freePageId, freeScreenId } from './store'
+import { labsDevices } from './labs'
 
 export type ImportMode = 'add' | 'replace'
 
@@ -27,8 +28,21 @@ export interface ImportChoices {
   theme: boolean
 }
 
-/** Where the import landed, for the editor to show it, and what had no room. */
-export interface ImportOutcome { screenId: string; pageIndex: number; leftOut: number }
+/**
+ * Where the import landed, for the editor to show it, what had no room, and how many of the
+ * file's device screens were skipped because iPad screens are an experimental feature that is off.
+ */
+export interface ImportOutcome { screenId: string; pageIndex: number; leftOut: number; skippedDevices: number }
+
+/**
+ * The file's device screens this import leaves out: all of them while `labs.devices` is off, for a
+ * screen or setup file (a page file lands on the screen being edited, whatever it came from).
+ * Their widgets go with them. Edge screens import as they always have.
+ */
+export function skippedDeviceScreens(cfg: Config, layout: LayoutFile): number {
+  if (labsDevices(cfg) || layout.scope === 'page') return 0
+  return layout.screens.filter((x) => x.kind === 'device').length
+}
 
 /** The display keys a screen takes from a file it is replaced by: its look, not its geometry. */
 const LOOK_KEYS = ['autoCycleSeconds', 'navStyle', 'navOpacity', 'tileOpacity', 'adminGesture'] as const
@@ -55,6 +69,9 @@ export function mergeLayout(
   manifests: Record<string, WidgetManifest>,
 ): ImportOutcome {
   let leftOut = 0
+  const skippedDevices = skippedDeviceScreens(cfg, layout)
+  // Only what this Mac may show: with iPad screens hidden, a device screen in the file is skipped.
+  const fileScreens = skippedDevices ? layout.screens.filter((x) => x.kind !== 'device') : layout.screens
   const bg = (b: SharedBackground | undefined): Background | undefined => {
     if (!b) return undefined
     const out: Background = {}
@@ -173,7 +190,7 @@ export function mergeLayout(
   }
 
   const current = cfg.screens.find((s) => s.id === at.screenId) ?? cfg.screens[0]
-  let outcome: ImportOutcome = { screenId: current.id, pageIndex: at.pageIndex, leftOut: 0 }
+  let outcome = { screenId: current.id, pageIndex: at.pageIndex }
 
   if (layout.scope === 'page') {
     const { pages } = translate(layout.screens[0])
@@ -183,15 +200,17 @@ export function mergeLayout(
       const [first, ...more] = laid
       current.pages.splice(at.pageIndex, 1, { ...first, id: old.id }, ...more.map((p) => ({ ...p, id: freePageId(current.pages, p.id) })))
       dropUnplaced(cfg, old.items.map((i) => i.instanceId))
-      outcome = { screenId: current.id, pageIndex: at.pageIndex, leftOut: 0 }
+      outcome = { screenId: current.id, pageIndex: at.pageIndex }
     } else {
       const index = current.pages.length
       for (const p of laid) current.pages.push({ ...p, id: freePageId(current.pages, p.id) })
-      outcome = { screenId: current.id, pageIndex: index, leftOut: 0 }
+      outcome = { screenId: current.id, pageIndex: index }
     }
+  } else if (!fileScreens.length) {
+    // A screen or setup file of device screens only, skipped: nothing lands, the editor stays put.
   } else if (layout.scope === 'screen') {
-    if (choices.mode === 'replace') { replaceScreen(current, layout.screens[0]); outcome = { screenId: current.id, pageIndex: 0, leftOut: 0 } }
-    else outcome = { screenId: addScreen(layout.screens[0]).id, pageIndex: 0, leftOut: 0 }
+    if (choices.mode === 'replace') { replaceScreen(current, fileScreens[0]); outcome = { screenId: current.id, pageIndex: 0 } }
+    else outcome = { screenId: addScreen(fileScreens[0]).id, pageIndex: 0 }
   } else if (choices.mode === 'replace') {
     // Each file screen takes the place of an existing screen of its kind, in order, so the Edge
     // and the paired devices keep showing the screen they were set to; the rest are added, and the
@@ -200,7 +219,7 @@ export function mergeLayout(
     const kept: Screen[] = []
     const before = cfg.screens.flatMap(shownOn)
     let first: Screen | null = null
-    for (const shared of layout.screens) {
+    for (const shared of fileScreens) {
       const i = free.findIndex((s) => s.kind === shared.kind)
       let screen: Screen
       if (i >= 0) {
@@ -213,17 +232,18 @@ export function mergeLayout(
       kept.push(screen)
       first ??= screen
     }
-    cfg.screens = cfg.screens.filter((s) => kept.includes(s))
+    // The device screens already here stay when the file's were skipped: they were not replaced.
+    cfg.screens = cfg.screens.filter((s) => kept.includes(s) || (skippedDevices > 0 && s.kind === 'device'))
     dropUnplaced(cfg, before)
-    outcome = { screenId: first!.id, pageIndex: 0, leftOut: 0 }
+    outcome = { screenId: first!.id, pageIndex: 0 }
   } else {
     let first: Screen | null = null
     // Every screen is added; `first ??= addScreen(…)` would have stopped calling it after one.
-    for (const shared of layout.screens) {
+    for (const shared of fileScreens) {
       const screen = addScreen(shared)
       first ??= screen
     }
-    outcome = { screenId: first!.id, pageIndex: 0, leftOut: 0 }
+    outcome = { screenId: first!.id, pageIndex: 0 }
   }
 
   if (choices.theme && layout.theme) {
@@ -231,5 +251,5 @@ export function mergeLayout(
     if (layout.theme.night && cfg.themeSchedule) cfg.themeSchedule.night = layout.theme.night
   }
   dropUnplaced(cfg, made)
-  return { ...outcome, leftOut }
+  return { ...outcome, leftOut, skippedDevices }
 }

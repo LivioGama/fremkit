@@ -22,7 +22,7 @@ import ConsentDialog from './ConsentDialog.vue'
 import { useAdminStore } from './store'
 import { useMarketplaceStore } from './marketplace'
 import { useConnectionsStore } from './connections'
-import { mergeLayout, type ImportMode } from './shareApply'
+import { mergeLayout, skippedDeviceScreens, type ImportMode, type ImportOutcome } from './shareApply'
 import { share } from './share'
 
 const s = useAdminStore()
@@ -122,6 +122,9 @@ async function storeImages(): Promise<Record<string, string>> {
   return out
 }
 
+/** The file's iPad screens this import will skip while they are an experimental feature that is off. */
+const skipping = computed(() => (preview.value && s.state.config ? skippedDeviceScreens(s.state.config, preview.value.layout) : 0))
+
 async function apply(): Promise<void> {
   const p = preview.value
   if (!p || busy.value) return
@@ -134,7 +137,7 @@ async function apply(): Promise<void> {
       const id = chosen[`${c.widget}:${c.setting}`]
       if (id) picks[`${c.widget}:${c.setting}`] = c.multiple ? [id] : id
     }
-    let outcome = { screenId: '', pageIndex: 0, leftOut: 0 }
+    let outcome: ImportOutcome = { screenId: '', pageIndex: 0, leftOut: 0, skippedDevices: 0 }
     const at = { screenId: s.screen.value?.id ?? '', pageIndex: s.state.pageIndex }
     s.apply((cfg) => {
       outcome = mergeLayout(cfg, p.layout, at, {
@@ -143,9 +146,12 @@ async function apply(): Promise<void> {
     })
     s.selectScreen(outcome.screenId)
     s.selectPage(outcome.pageIndex)
-    s.state.toast = outcome.leftOut
+    const done = outcome.leftOut
       ? t('admin.share.import.doneLeftOut', { n: outcome.leftOut })
       : t('admin.share.import.done')
+    s.state.toast = outcome.skippedDevices
+      ? `${done} ${t('admin.share.import.devicesSkipped', { n: outcome.skippedDevices })}`
+      : done
     share.importing = null
     s.closeModal()
   } catch (e) {
@@ -208,6 +214,7 @@ async function apply(): Promise<void> {
 
       <p v-if="report.images.length" class="ro">{{ t('admin.share.import.images', { n: report.images.length }) }}</p>
       <p v-if="dropped" class="ro warn">{{ t('admin.share.import.dropped', dropped) }}</p>
+      <p v-if="skipping" class="ro warn" data-test="devices-skipped">{{ t('admin.share.import.devicesSkipped', { n: skipping }) }}</p>
 
       <section>
         <h3>{{ t('admin.share.import.where') }}</h3>
