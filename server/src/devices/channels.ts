@@ -9,7 +9,8 @@ export interface ChannelConnection { id: string; type: string }
  * `grep subscribe( ui/src` over the dashboard and the shared frame code: the page listens to
  * `config`, and every widget frame to `widget-dev` (`ui/src/shared/widgetDev.ts`), which carries
  * nothing but the ids of widgets whose files were just saved and is silent unless the server
- * runs with `FREMKIT_WIDGET_DEV=1`. `theme` is the theme in force, day or night
+ * runs with `FREMKIT_WIDGET_DEV=1` — and which a paired device subscribes to but never hears,
+ * since `deviceHostView` has no case for it. `theme` is the theme in force, day or night
  * (`themes/schedule.ts`): an id, a phase and the time of the next switch.
  */
 export const HOST_CHANNELS: readonly string[] = ['config', 'widget-dev', 'theme']

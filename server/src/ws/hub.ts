@@ -228,21 +228,26 @@ export class Hub {
   private messageFor(socket: SocketLike, channel: string, data: unknown, shared: string): string | null {
     const ctx = this.contextOf(socket)
     if (!ctx.paired || !this.viewChannels.has(channel)) return shared
-    if (ctx.deviceId === undefined) return null
-    let msg: string
-    try {
-      const view = this.hostView(ctx.deviceId, channel, data)
-      if (view === null || view === undefined) return null
-      msg = JSON.stringify({ type: 'data', channel, data: view })
-    } catch {
-      // Nothing logged: the error may quote the config.
-      return null
-    }
+    const msg = this.viewMessage(ctx, channel, data)
+    if (msg === null) return null
     let sent = this.hostSent.get(socket)
     if (!sent) this.hostSent.set(socket, (sent = new Map()))
     if (sent.get(channel) === msg) return null
     sent.set(channel, msg)
     return msg
+  }
+
+  /** A paired context's view of a host channel as a message, or null for nothing. */
+  private viewMessage(ctx: CommandContext, channel: string, data: unknown): string | null {
+    if (ctx.deviceId === undefined) return null
+    try {
+      const view = this.hostView(ctx.deviceId, channel, data)
+      if (view === null || view === undefined) return null
+      return JSON.stringify({ type: 'data', channel, data: view })
+    } catch {
+      // Nothing logged: the error may quote the config.
+      return null
+    }
   }
 
   /**
@@ -251,11 +256,17 @@ export class Hub {
    * For an event rather than a state: `broadcast` replays the last value to every new
    * subscriber, which is right for "the CPU is at 40 %" and wrong for "this widget's files just
    * changed" — a page opened a minute later would reload its widgets for a save it never saw.
+   *
+   * A paired socket on a host channel gets its device's view, as with `broadcast`, but never
+   * deduplicated against the last one: two events alike are still two events.
    */
   notify(channel: string, data: unknown): void {
     const msg = JSON.stringify({ type: 'data', channel, data })
     for (const [socket, channels] of this.clients) {
-      if (channels.has(channel)) this.safeSend(socket, msg)
+      if (!channels.has(channel)) continue
+      const ctx = this.contextOf(socket)
+      const out = ctx.paired && this.viewChannels.has(channel) ? this.viewMessage(ctx, channel, data) : msg
+      if (out !== null) this.safeSend(socket, out)
     }
   }
 

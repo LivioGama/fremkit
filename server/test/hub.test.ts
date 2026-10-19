@@ -504,6 +504,29 @@ describe('a paired socket', () => {
     registry.stop()
   })
 
+  it('hears a notified event on a host channel through its view, and nothing when the view has none', () => {
+    const { hub, paired, registry } = pairedSetup()
+    hub.setHostView((_id, channel, data) => (channel === 'theme' ? { seen: data } : null))
+    const socket = paired('dev-a')
+    const local = new FakeSocket()
+    hub.attach(local, { loopback: true, paired: false })
+    for (const s of [socket, local]) {
+      s.receive({ type: 'subscribe', channel: 'theme' })
+      s.receive({ type: 'subscribe', channel: 'widget-dev' })
+    }
+    hub.notify('widget-dev', { ids: ['w'], manifest: false })
+    hub.notify('theme', 1)
+    // Twice the same event is two events: no deduplication on a notify.
+    hub.notify('theme', 1)
+    expect(socket.sent).toEqual([
+      { type: 'data', channel: 'theme', data: { seen: 1 } },
+      { type: 'data', channel: 'theme', data: { seen: 1 } },
+    ])
+    expect(local.sent).toHaveLength(3)
+    expect(local.sent[0]).toEqual({ type: 'data', channel: 'widget-dev', data: { ids: ['w'], manifest: false } })
+    registry.stop()
+  })
+
   it('with no screen, is held to the host channels', () => {
     const { paired, registry } = pairedSetup()
     const socket = paired('dev-unknown')
