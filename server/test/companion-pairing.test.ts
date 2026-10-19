@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DeviceStore } from '../src/devices/store.js'
 import { CODE_ALPHABET } from '../src/devices/codes.js'
-import { CompanionPairing, MAX_TURNED_AWAY, REFUSED_COOLDOWN_MS, REQUEST_TTL_MS } from '../src/companion/pairing.js'
+import { CompanionPairing, MAX_CONFIRMATIONS, MAX_TURNED_AWAY, REFUSED_COOLDOWN_MS, REQUEST_TTL_MS } from '../src/companion/pairing.js'
+import { PAIR_CLIENT_LABEL, PAIR_KEY_ITERATIONS, PAIR_SERVER_LABEL, pairKey, pairMac } from '../src/companion/pairProof.js'
 
 const ORIGIN = `chrome-extension://${'a'.repeat(32)}`
 const OTHER = `chrome-extension://${'b'.repeat(32)}`
@@ -38,9 +39,22 @@ function accepted(r: ReturnType<typeof ask>) {
   if (typeof r === 'string') throw new Error(r)
   return r
 }
-/** Answers with the code the request showed, as the Edge does. */
-const approve = (r: { requestId: string; code: string }) => pairing.approve(r.requestId, r.code)
 const refuse = (r: { requestId: string; code: string }) => pairing.refuse(r.requestId, r.code)
+
+const NONCE_E = Buffer.alloc(32, 7).toString('base64url')
+
+/**
+ * What the extension does with `typed`: confirm, check the server's mac against the code, and
+ * finish with its own (or give up, when the server's does not match). The finish's answer.
+ */
+async function typeCode(r: { requestId: string; code: string }, typed = r.code, origin = ORIGIN) {
+  const c = await pairing.confirm(r.requestId, origin, NONCE_E)
+  if (c.state !== 'confirm') return c
+  const key = await pairKey(typed, r.requestId)
+  if (c.mac !== pairMac(key, PAIR_SERVER_LABEL, r.requestId, NONCE_E, c.nonce)) return pairing.finish(r.requestId, origin, null)
+  return pairing.finish(r.requestId, origin, pairMac(key, PAIR_CLIENT_LABEL, r.requestId, NONCE_E, c.nonce))
+}
+const otherCode = (code: string) => (code === 'ZZZZ' ? 'YYYY' : 'ZZZZ')
 
 describe('CompanionPairing', () => {
   it('counts the distinct installs turned away while a request waits, for the Edge to show', () => {
@@ -73,7 +87,7 @@ describe('CompanionPairing', () => {
     expect(pairing.pending()?.turnedAway).toBe(0)
     expect(ask(ORIGIN, fresh())).toBe('busy')
     expect(pairing.pending()?.turnedAway).toBe(1)
-    expect(await approve(second)).toBe('ok')
+    expect((await typeCode(second)).state).toBe('paired')
     clock += REQUEST_TTL_MS
     accepted(ask(ORIGIN, fresh()))
     expect(pairing.pending()?.turnedAway).toBe(0)
@@ -133,7 +147,7 @@ describe('CompanionPairing', () => {
     // Another origin with the same install id is not the same extension either.
     expect(ask(OTHER, INSTALL)).toBe('busy')
     expect(pairing.pending()?.requestId).toBe(first.requestId)
-    expect(await approve(first)).toBe('ok')
+    expect((await typeCode(first)).state).toBe('paired')
     accepted(ask(ORIGIN, INSTALL_2))
     clock += REQUEST_TTL_MS + 1
     accepted(ask(OTHER, fresh()))
@@ -164,92 +178,142 @@ describe('CompanionPairing', () => {
     accepted(ask())
   })
 
-  it('approve and refuse need the code on show', async () => {
+  it('refuse needs the code on show', () => {
     const r = accepted(ask())
-    expect(await pairing.approve(r.requestId, 'ZZZZ' === r.code ? 'YYYY' : 'ZZZZ')).toBe('changed')
-    expect(await pairing.approve(r.requestId, undefined)).toBe('changed')
+    expect(pairing.refuse(r.requestId, otherCode(r.code))).toBe('changed')
+    expect(pairing.refuse(r.requestId, undefined)).toBe('changed')
     expect(pairing.refuse(r.requestId, '')).toBe('changed')
-    expect(store.list()).toEqual([])
     expect(pairing.pending()?.requestId).toBe(r.requestId)
-    expect(await approve(r)).toBe('ok')
+    expect(refuse(r)).toBe('ok')
   })
 
-  it('an answer given for a request that was replaced is a changed request', async () => {
+  it('a refusal given for a request that was replaced is a changed request', () => {
     const old = accepted(ask())
     const now = accepted(ask())
-    expect(await approve(old)).toBe('changed')
-    // The new id with the old code is no better: the user read the old one.
-    expect(await pairing.approve(now.requestId, old.code === now.code ? 'ZZZZ' : old.code)).toBe('changed')
     expect(refuse(old)).toBe('changed')
-    expect(store.list()).toEqual([])
-    expect(await approve(now)).toBe('ok')
+    // The new id with the old code is no better: the user read the old one.
+    expect(pairing.refuse(now.requestId, old.code === now.code ? otherCode(now.code) : old.code)).toBe('changed')
+    expect(refuse(now)).toBe('ok')
   })
 
-  it('an answer with nothing waiting is not found', async () => {
+  it('a refusal with nothing waiting is not found', () => {
     const r = accepted(ask())
     expect(refuse(r)).toBe('ok')
-    expect(await approve(r)).toBe('notFound')
     expect(refuse(r)).toBe('notFound')
   })
 
-  it('approving creates an extension device and collect returns its token once, then expired', async () => {
+  it('typing the code pairs the extension and hands its token out once', async () => {
     const r = accepted(ask())
-    const { requestId } = r
-    expect(await approve(r)).toBe('ok')
-    expect(pairing.pending()).toBeNull()
-    const got = pairing.collect(requestId, ORIGIN)
-    if (got.state !== 'approved') throw new Error(`expected approved, got ${got.state}`)
+    const got = await typeCode(r)
+    if (got.state !== 'paired') throw new Error(`expected paired, got ${got.state}`)
     expect(store.findByToken(got.token, 'extension')).toMatchObject({ id: got.deviceId, kind: 'extension', origin: ORIGIN, installId: INSTALL, name: 'Chrome' })
-    expect(pairing.collect(requestId, ORIGIN)).toEqual({ state: 'expired' })
-  })
-
-  it('drops an approved token nobody collected once the request expires', async () => {
-    const r = accepted(ask())
-    const { requestId } = r
-    await approve(r)
-    clock += REQUEST_TTL_MS + 1
-    expect(pairing.collect(requestId, ORIGIN)).toEqual({ state: 'expired' })
-  })
-
-  it('removes the device of an approved request nobody collected once it expires', async () => {
-    const r = accepted(ask())
-    const { requestId } = r
-    await approve(r)
-    expect(store.list()).toHaveLength(1)
-    clock += REQUEST_TTL_MS + 1
-    pairing.pending()
-    await vi.waitFor(() => expect(store.list()).toEqual([]))
-  })
-
-  it('keeps the device of an approved request that was collected', async () => {
-    const r = accepted(ask())
-    const { requestId } = r
-    await approve(r)
-    pairing.collect(requestId, ORIGIN)
-    clock += REQUEST_TTL_MS + 1
-    pairing.pending()
-    await new Promise((r) => setTimeout(r, 20))
+    expect(pairing.pending()).toBeNull()
+    expect(pairing.collect(r.requestId, ORIGIN)).toEqual({ state: 'expired' })
+    expect(await typeCode(r)).toEqual({ state: 'expired' })
     expect(store.list()).toHaveLength(1)
   })
 
-  it('approving an expired request fails and creates no device', async () => {
+  it('the server proves the code first: its mac matches the code only', async () => {
     const r = accepted(ask())
-    const { requestId } = r
+    const c = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
+    if (c.state !== 'confirm') throw new Error(c.state)
+    expect(c.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(c.nonce).not.toBe(NONCE_E)
+    expect(c.mac).toBe(pairMac(await pairKey(r.code, r.requestId), PAIR_SERVER_LABEL, r.requestId, NONCE_E, c.nonce))
+    expect(c.mac).not.toBe(pairMac(await pairKey(otherCode(r.code), r.requestId), PAIR_SERVER_LABEL, r.requestId, NONCE_E, c.nonce))
+    // A fresh nonce each time.
+    const again = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
+    expect(again.state === 'confirm' && again.nonce).not.toBe(c.nonce)
+  })
+
+  it('a wrong code pairs nothing, and the third try refuses the request', async () => {
+    const r = accepted(ask())
+    expect(await typeCode(r, otherCode(r.code))).toEqual({ state: 'wrong' })
+    expect(await typeCode(r, otherCode(r.code))).toEqual({ state: 'wrong' })
+    expect(store.list()).toEqual([])
+    expect(pairing.pending()?.requestId).toBe(r.requestId)
+    expect(await typeCode(r, otherCode(r.code))).toEqual({ state: 'refused' })
+    expect(pairing.pending()).toBeNull()
+    expect(pairing.collect(r.requestId, ORIGIN)).toEqual({ state: 'refused' })
+    // Even the right code is too late now, and the install waits like after a refusal.
+    expect(await typeCode(r)).toEqual({ state: 'refused' })
+    expect(store.list()).toEqual([])
+    expect(ask()).toBe('cooldown')
+  })
+
+  it('a wrong mac from the extension counts like a wrong code', async () => {
+    const r = accepted(ask())
+    for (let i = 1; i <= MAX_CONFIRMATIONS; i++) {
+      const c = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
+      expect(c.state).toBe('confirm')
+      expect((await pairing.finish(r.requestId, ORIGIN, 'A'.repeat(43))).state).toBe(i < MAX_CONFIRMATIONS ? 'wrong' : 'refused')
+    }
+    expect(store.list()).toEqual([])
+  })
+
+  it('a request gets three confirmations, finished or not', async () => {
+    const r = accepted(ask())
+    for (let i = 0; i < MAX_CONFIRMATIONS; i++) expect((await pairing.confirm(r.requestId, ORIGIN, NONCE_E)).state).toBe('confirm')
+    expect(await pairing.confirm(r.requestId, ORIGIN, NONCE_E)).toEqual({ state: 'refused' })
+    expect(pairing.pending()).toBeNull()
+  })
+
+  it('one confirmation is live at a time: a new one replaces it, and a finish answers it once', async () => {
+    const r = accepted(ask())
+    const key = await pairKey(r.code, r.requestId)
+    const first = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
+    const second = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
+    if (first.state !== 'confirm' || second.state !== 'confirm') throw new Error('no confirmation')
+    // The first one's mac answers a confirmation that is no longer live.
+    expect(await pairing.finish(r.requestId, ORIGIN, pairMac(key, PAIR_CLIENT_LABEL, r.requestId, NONCE_E, first.nonce))).toEqual({ state: 'wrong' })
+    // That finish used the live one up: the right mac for it now finds none.
+    expect(await pairing.finish(r.requestId, ORIGIN, pairMac(key, PAIR_CLIENT_LABEL, r.requestId, NONCE_E, second.nonce))).toEqual({ state: 'noConfirm' })
+    expect(store.list()).toEqual([])
+  })
+
+  it('a finish with no confirmation is noConfirm and counts nothing', async () => {
+    const r = accepted(ask())
+    for (let i = 0; i < 5; i++) expect(await pairing.finish(r.requestId, ORIGIN, 'A'.repeat(43))).toEqual({ state: 'noConfirm' })
+    expect((await typeCode(r)).state).toBe('paired')
+  })
+
+  it('two finishes racing on one confirmation pair once', async () => {
+    const r = accepted(ask())
+    const c = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
+    if (c.state !== 'confirm') throw new Error(c.state)
+    const mac = pairMac(await pairKey(r.code, r.requestId), PAIR_CLIENT_LABEL, r.requestId, NONCE_E, c.nonce)
+    const results = await Promise.all([pairing.finish(r.requestId, ORIGIN, mac), pairing.finish(r.requestId, ORIGIN, mac)])
+    expect(results.map((x) => x.state).sort()).toEqual(['noConfirm', 'paired'])
+    expect(store.list()).toHaveLength(1)
+  })
+
+  it('a refusal on the Edge ends a confirmation in flight', async () => {
+    const r = accepted(ask())
+    const c = await pairing.confirm(r.requestId, ORIGIN, NONCE_E)
+    if (c.state !== 'confirm') throw new Error(c.state)
+    expect(refuse(r)).toBe('ok')
+    const mac = pairMac(await pairKey(r.code, r.requestId), PAIR_CLIENT_LABEL, r.requestId, NONCE_E, c.nonce)
+    expect(await pairing.finish(r.requestId, ORIGIN, mac)).toEqual({ state: 'refused' })
+    expect(store.list()).toEqual([])
+  })
+
+  it('an expired request confirms nothing and creates no device', async () => {
+    const r = accepted(ask())
     clock += REQUEST_TTL_MS + 1
     expect(pairing.pending()).toBeNull()
-    expect(await approve(r)).toBe('notFound')
+    expect(await typeCode(r)).toEqual({ state: 'expired' })
     expect(store.list()).toEqual([])
-    expect(pairing.collect(requestId, ORIGIN)).toEqual({ state: 'expired' })
+    expect(pairing.collect(r.requestId, ORIGIN)).toEqual({ state: 'expired' })
   })
 
-  it('collect from another origin is refused', async () => {
+  it('another origin can neither confirm, finish nor collect, and leaves the request as it was', async () => {
     const r = accepted(ask())
-    const { requestId } = r
-    await approve(r)
-    expect(pairing.belongsTo(requestId, OTHER)).toBe(false)
-    expect(pairing.collect(requestId, OTHER)).toEqual({ state: 'refused' })
-    // The rightful owner still gets its token.
-    expect(pairing.collect(requestId, ORIGIN).state).toBe('approved')
+    expect(pairing.belongsTo(r.requestId, OTHER)).toBe(false)
+    expect(await pairing.confirm(r.requestId, OTHER, NONCE_E)).toEqual({ state: 'refused' })
+    expect(await pairing.finish(r.requestId, OTHER, null)).toEqual({ state: 'refused' })
+    expect(pairing.collect(r.requestId, OTHER)).toEqual({ state: 'refused' })
+    // The rightful owner still pairs, with all its tries.
+    expect((await typeCode(r)).state).toBe('paired')
   })
 
   it('refuse makes collect answer refused', () => {
@@ -269,16 +333,33 @@ describe('CompanionPairing', () => {
     refuse(a)
     expect(calls).toBe(2)
     const b = accepted(ask(ORIGIN, INSTALL_2))
-    await approve(b)
+    expect(calls).toBe(3)
+    await typeCode(b)
     expect(calls).toBe(4)
-    pairing.collect(b.requestId, ORIGIN)
-    expect(calls).toBe(5)
     accepted(ask(ORIGIN, INSTALL_2))
     clock += REQUEST_TTL_MS + 1
     expect(pairing.pending()).toBeNull()
-    expect(calls).toBe(7)
+    expect(calls).toBe(6)
     off()
     accepted(ask(ORIGIN, INSTALL_2))
-    expect(calls).toBe(7)
+    expect(calls).toBe(6)
+  })
+})
+
+/**
+ * K(code) and both macs for fixed inputs. The same vector is in companion-extension-lib.test.ts,
+ * run through companion/lib/pairProof.js: keep the two in step.
+ */
+describe('the typed-code proof vector', () => {
+  const requestId = '3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b'
+  const nonceE = Buffer.alloc(32, 1).toString('base64url')
+  const nonceS = Buffer.alloc(32, 2).toString('base64url')
+
+  it('pins K(code) and the server and client macs', async () => {
+    expect(PAIR_KEY_ITERATIONS).toBe(600_000)
+    const key = await pairKey('K7QM', requestId)
+    expect(key.toString('hex')).toBe('a4cf5dbd6f76bcf8117a2098cfdd2aa40310b26b00d984e897968c829796b0b8')
+    expect(pairMac(key, PAIR_SERVER_LABEL, requestId, nonceE, nonceS)).toBe('zmpz29L7bwyvBl7bCYR3wAVbWK86PKl4QGHYHj3cvak')
+    expect(pairMac(key, PAIR_CLIENT_LABEL, requestId, nonceE, nonceS)).toBe('m0kTJZhVO_hpRSFRV_B8N1lgNrozNintFWLnhPq00Jw')
   })
 })

@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { PAIR_CLIENT_LABEL, pairKey, pairMac } from '../src/companion/pairProof.js'
 import { CONFIG_VERSION, ConfigSchema } from '../src/config/schema.js'
 import { BrightnessService } from '../src/brightness/service.js'
 import { noAdvertise, type Advertiser } from '../src/devices/bonjour.js'
@@ -712,12 +713,20 @@ describe('browser extensions in the device list', () => {
       headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' },
       payload: JSON.stringify({ name: 'Chrome', installId }),
     })
-    const { requestId, code } = asked.json()
+    const { requestId } = asked.json()
     const status = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
     expect(status.companionRequest).toMatchObject({ requestId, name: 'Chrome' })
-    expect((await eapp.inject({ method: 'POST', url: `/api/companion/requests/${requestId}/approve`, headers: { host: HOST }, payload: { code } })).statusCode).toBe(200)
-    const collected = (await eapp.inject({ method: 'POST', url: `/api/companion/pair/${requestId}`, headers: { host: HOST, origin: ORIGIN } })).json()
-    return { requestId, deviceId: collected.deviceId }
+    // The user types the Edge's code into the extension, which proves it (companion/pairProof.ts).
+    const key = await pairKey(status.companionRequest.code, requestId)
+    const nonce = Buffer.alloc(32, 3).toString('base64url')
+    const step = (verb: string, body: unknown) => eapp.inject({
+      method: 'POST', url: `/api/companion/pair/${requestId}/${verb}`,
+      headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' }, payload: JSON.stringify(body),
+    })
+    const confirmed = (await step('confirm', { nonce })).json()
+    const paired = (await step('finish', { mac: pairMac(key, PAIR_CLIENT_LABEL, requestId, nonce, confirmed.nonce) })).json()
+    expect(paired.state).toBe('paired')
+    return { requestId, deviceId: paired.deviceId }
   }
 
   beforeAll(async () => {
@@ -746,9 +755,9 @@ describe('browser extensions in the device list', () => {
       headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' },
       payload: JSON.stringify({ name: 'Chrome', installId: INSTALL }),
     })
-    const { requestId, code } = asked.json()
+    const { requestId } = asked.json()
     const waiting = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
-    expect(waiting.companionRequest).toEqual({ requestId, code, name: 'Chrome', expiresAt: expect.any(Number) })
+    expect(waiting.companionRequest).toEqual({ requestId, code: expect.stringMatching(/^[A-HJ-NP-Z2-9]{4}$/), name: 'Chrome', expiresAt: expect.any(Number) })
 
     // The same install asking again replaces its waiting request; another install would be busy.
     const { deviceId } = await pairExtension(INSTALL)

@@ -1,13 +1,16 @@
 /**
  * Pairing the browser extension. Two audiences, never mixed:
  *
- * - the extension: `POST /api/companion/pair` and `POST /api/companion/pair/:requestId`. They answer
- *   without the access secret (see `isCompanionRoute`), so each one checks the extension origin
- *   itself; a web page cannot send a `chrome-extension://` origin. Collecting is a POST, not a GET:
- *   Chrome leaves `Origin` off an extension's GET to a host it has a permission for.
- * - the Edge and the admin, on this Mac: approve and refuse, behind the access secret like
- *   everything else. Each carries the code it showed, so an answer never lands on a request that
- *   took the shown one's place.
+ * - the extension: `POST /api/companion/pair` (ask; the code goes to the Edge, not here),
+ *   `POST /api/companion/pair/:requestId` (where the request stands), and `…/confirm` and
+ *   `…/finish`, the two halves of proving the code the user typed (pairProof.ts), the second of
+ *   which hands out the token. They answer without the access secret (see `isCompanionRoute`), so
+ *   each one checks the extension origin itself; a web page cannot send a `chrome-extension://`
+ *   origin. They are POSTs: Chrome leaves `Origin` off an extension's GET to a host it has a
+ *   permission for.
+ * - the Edge and the admin, on this Mac: refuse, behind the access secret like everything else.
+ *   It carries the code it showed, so a refusal never lands on a request that took the shown one's
+ *   place. There is no approve: typing the code into the extension is the approval.
  *
  * None of them is on the remote listener's allow-list, so a paired iPad gets 404; each also
  * refuses a remote request itself, in case the allow-list ever grows by mistake.
@@ -41,6 +44,12 @@ const PairSchema = z.strictObject({
 
 /** The code the Edge or the admin showed when the user answered. */
 const AnswerSchema = z.object({ code: z.string().max(16) })
+
+/** 32 random bytes, or an HMAC-SHA256, in base64url, unpadded: exactly 43 characters. */
+const B64_32 = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
+const ConfirmSchema = z.strictObject({ nonce: B64_32 })
+/** `abandon`: the server's mac did not match the code typed, so the extension sends none. */
+const FinishSchema = z.union([z.strictObject({ mac: B64_32 }), z.strictObject({ abandon: z.literal(true) })])
 
 const RequestIdSchema = z.uuid()
 
@@ -86,10 +95,11 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
       req.log.warn({ origin }, 'companion pairing request refused: another one is waiting')
       return fail(reply, 409, 'companion.pairBusy', 'busy')
     }
-    // Never the code. The id is no secret on its own: collecting also needs the request's origin.
+    // Never the code, here or in the log: the user types it from the Edge. The id is no secret on
+    // its own: every later step also needs the request's origin.
     req.log.info({ origin }, 'companion pairing requested')
     reply.header('cache-control', 'no-store')
-    return result
+    return { requestId: result.requestId, expiresAt: result.expiresAt }
   })
 
   app.post<Params>('/api/companion/pair/:requestId', { onRequest: localOnly }, async (req, reply) => {
@@ -99,8 +109,37 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
     const id = RequestIdSchema.safeParse(req.params.requestId)
     if (!id.success) return { state: 'expired' }
     if (!pairing.belongsTo(id.data, origin)) return fail(reply, 403, 'companion.originNotAllowed')
-    const result = pairing.collect(id.data, origin)
-    if (result.state === 'approved') req.log.info({ origin, deviceId: result.deviceId }, 'companion token collected')
+    return pairing.collect(id.data, origin)
+  })
+
+  app.post<Params>('/api/companion/pair/:requestId/confirm', { onRequest: localOnly }, async (req, reply) => {
+    const origin = extensionOrigin(req)
+    if (origin === null) return fail(reply, 403, 'companion.originNotAllowed')
+    reply.header('cache-control', 'no-store')
+    const id = RequestIdSchema.safeParse(req.params.requestId)
+    if (!id.success) return { state: 'expired' }
+    if (!pairing.belongsTo(id.data, origin)) return fail(reply, 403, 'companion.originNotAllowed')
+    const body = ConfirmSchema.safeParse(req.body)
+    if (!body.success) return reply.code(400).send({ errors: body.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`) })
+    const result = await pairing.confirm(id.data, origin, body.data.nonce)
+    if (result.state === 'refused') req.log.warn({ origin }, 'companion pairing refused: code tried too often')
+    return result
+  })
+
+  app.post<Params>('/api/companion/pair/:requestId/finish', { onRequest: localOnly }, async (req, reply) => {
+    const origin = extensionOrigin(req)
+    if (origin === null) return fail(reply, 403, 'companion.originNotAllowed')
+    reply.header('cache-control', 'no-store')
+    const id = RequestIdSchema.safeParse(req.params.requestId)
+    if (!id.success) return { state: 'expired' }
+    if (!pairing.belongsTo(id.data, origin)) return fail(reply, 403, 'companion.originNotAllowed')
+    const body = FinishSchema.safeParse(req.body)
+    if (!body.success) return reply.code(400).send({ errors: body.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`) })
+    const result = await pairing.finish(id.data, origin, 'mac' in body.data ? body.data.mac : null)
+    if (result.state === 'noConfirm') return reply.code(409).send({ state: 'noConfirm' })
+    if (result.state === 'paired') req.log.info({ origin, deviceId: result.deviceId }, 'companion paired by its code')
+    else if (result.state === 'wrong') req.log.warn({ origin }, 'companion pairing: wrong code')
+    else if (result.state === 'refused') req.log.warn({ origin }, 'companion pairing refused: code tried too often')
     return result
   })
 
@@ -116,13 +155,6 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
     if (result === 'changed') return fail(reply, 409, 'companion.requestChanged')
     return null
   }
-
-  app.post<Params>('/api/companion/requests/:requestId/approve', { onRequest: localOnly }, async (req, reply) => {
-    const failed = answered(reply, await pairing.approve(req.params.requestId, answerCode(req.body)))
-    if (failed) return failed
-    req.log.info('companion pairing approved')
-    return { ok: true }
-  })
 
   app.post<Params>('/api/companion/requests/:requestId/refuse', { onRequest: localOnly }, async (req, reply) => {
     const failed = answered(reply, pairing.refuse(req.params.requestId, answerCode(req.body)))

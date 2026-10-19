@@ -141,7 +141,8 @@ describe.skipIf(!hasOpenssl)('the remote gate, through a real TLS listener', () 
     // leave off, the walk would silently stop covering them.
     expect(walked.map((r) => `${r.method} ${r.url}`)).toEqual(expect.arrayContaining([
       'POST /api/companion/pair', 'POST /api/companion/pair/:requestId',
-      'POST /api/companion/requests/:requestId/approve', 'POST /api/companion/requests/:requestId/refuse',
+      'POST /api/companion/pair/:requestId/confirm', 'POST /api/companion/pair/:requestId/finish',
+      'POST /api/companion/requests/:requestId/refuse',
       'GET /companion/ws',
     ]))
     for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']) {
