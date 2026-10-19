@@ -15,6 +15,10 @@ import { DEMO_APPS, DEMO_CALENDARS, DEMO_NAS } from './world.js'
  * a calendar with no calendar selected, a service list with no service, a shortcuts grid with no
  * button would all be empty states. A widget missing from this table is shown with its defaults,
  * which is what an author's widget gets from `pnpm widget:preview`.
+ *
+ * A few Sietch widgets are here too, for their previews only (none is on the seeded dashboard):
+ * their defaults show nothing until something is ticked. A `connection` setting needs no entry;
+ * the preview points it at a demo connection of its type.
  */
 export const DEMO_SETTINGS: Record<string, Record<string, unknown>> = {
   calendar: { calendars: DEMO_CALENDARS.map((c) => c.id) },
@@ -47,6 +51,9 @@ export const DEMO_SETTINGS: Record<string, Record<string, unknown>> = {
     ],
   },
   weather: { location: 'Paris' },
+  // Sietch widgets.
+  'homey-devices': { all: true },
+  'homey-flows': { all: true },
 }
 
 /** The instance ids and places of the seeded dashboard: two pages that show every built-in. */

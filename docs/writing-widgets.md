@@ -640,6 +640,12 @@ with its defaults, which may be an empty state — set better defaults, or captu
 server you arranged yourself with `--url http://127.0.0.1:4250` (its config is changed for the
 capture and put back after).
 
+A `connection` setting left empty is pointed at a demo connection of its type: the demo's
+Synology NAS, or, for a connection the widget [declares](#declaring-a-connection), one the tool creates with
+placeholder fields (removed again after a `--url` capture). The demo answers a declared
+connection from invented devices, and only the paths it knows (a Homey's, a Key Light's); any
+other path fails as unreachable, so such a widget is captured in its offline state.
+
 Options: `--wait <ms>` waits longer after the data arrives (default 1500), `--png` writes a PNG,
 `--dry-run` captures without writing. Playwright is not a dependency of the project: point
 `PLAYWRIGHT` at an installed `playwright` package and, if its browser is missing, `CHROMIUM` at a
