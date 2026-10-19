@@ -604,7 +604,7 @@ describe.skipIf(!hasOpenssl)('a remote port already taken', () => {
       widgetsDir: join(process.cwd(), '..', 'widgets'),
       providers: [],
       devicesPort: (taken.address() as AddressInfo).port,
-      devices: { exec, advertise: noAdvertise, lanAddresses: () => [ADDRESS] },
+      devices: { exec, advertise: noAdvertise, lanAddresses: () => [ADDRESS], bindRetry: { attempts: 2, delayMs: 10 } },
     })
   })
   afterAll(async () => {
@@ -618,6 +618,85 @@ describe.skipIf(!hasOpenssl)('a remote port already taken', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ enabled: false, listening: false, error: 'portInUse', message: 'the remote access port is already used by another application' })
     expect(tapp.pairing.store.enabled).toBe(false)
+  })
+})
+
+describe.skipIf(!hasOpenssl)('a remote port the previous server still holds', () => {
+  /** A free port, taken by a plain server for as long as the test wants it. */
+  async function holdPort(): Promise<{ port: number; release: () => Promise<void> }> {
+    const held = createServer()
+    await new Promise<void>((resolve) => held.listen(0, resolve))
+    return { port: (held.address() as AddressInfo).port, release: () => new Promise((resolve) => held.close(() => resolve())) }
+  }
+  async function build(dataDir: string, devicesPort: number): Promise<FastifyInstance> {
+    return buildApp({
+      accessToken: null,
+      dataDir,
+      widgetsDir: join(process.cwd(), '..', 'widgets'),
+      providers: [],
+      devicesPort,
+      devices: { exec, advertise: noAdvertise, lanAddresses: () => [ADDRESS], bindRetry: { attempts: 20, delayMs: 50 } },
+    })
+  }
+  const until = async (ok: () => Promise<boolean>): Promise<void> => {
+    for (let i = 0; i < 100 && !(await ok()); i++) await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+
+  it('binds once the port is let go, from the switch, and reports nothing', async () => {
+    const tdir = await mkdtemp(join(tmpdir(), 'fremkit-devices-retry-'))
+    await writeFile(join(tdir, 'fremkit.json'), JSON.stringify(CONFIG))
+    const held = await holdPort()
+    const tapp = await build(tdir, held.port)
+    try {
+      const answer = tapp.inject({ method: 'PUT', url: '/api/devices/settings', payload: { enabled: true } })
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      await held.release()
+      const res = await answer
+      expect(res.json()).toMatchObject({ enabled: true, listening: true, error: null })
+      expect(res.json().message).toBeUndefined()
+    } finally {
+      await tapp.close()
+      await rm(tdir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not hold the boot, keeps the switch on, and clears the status once it binds', async () => {
+    const tdir = await mkdtemp(join(tmpdir(), 'fremkit-devices-boot-'))
+    await writeFile(join(tdir, 'fremkit.json'), JSON.stringify(CONFIG))
+    await writeFile(join(tdir, 'devices.json'), JSON.stringify({ version: 2, enabled: true, devices: [] }))
+    const held = await holdPort()
+    const started = Date.now()
+    const tapp = await build(tdir, held.port)
+    try {
+      // Built after the first try, not after every retry.
+      expect(Date.now() - started).toBeLessThan(900)
+      const status = async () => (await tapp.inject({ method: 'GET', url: '/api/devices' })).json()
+      expect(await status()).toMatchObject({ enabled: true, listening: false, error: null })
+      await held.release()
+      await until(async () => (await status()).listening === true)
+      expect(await status()).toMatchObject({ enabled: true, listening: true, error: null })
+    } finally {
+      await tapp.close()
+      await rm(tdir, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves the switch on when the port stays taken at boot, and says so', async () => {
+    const tdir = await mkdtemp(join(tmpdir(), 'fremkit-devices-boot-'))
+    await writeFile(join(tdir, 'fremkit.json'), JSON.stringify(CONFIG))
+    await writeFile(join(tdir, 'devices.json'), JSON.stringify({ version: 2, enabled: true, devices: [] }))
+    const held = await holdPort()
+    const tapp = await build(tdir, held.port)
+    try {
+      const status = async () => (await tapp.inject({ method: 'GET', url: '/api/devices' })).json()
+      await until(async () => (await status()).error === 'portInUse')
+      expect(await status()).toMatchObject({ enabled: true, listening: false, error: 'portInUse' })
+      expect(tapp.pairing.store.enabled).toBe(true)
+    } finally {
+      await tapp.close()
+      await held.release()
+      await rm(tdir, { recursive: true, force: true })
+    }
   })
 })
 

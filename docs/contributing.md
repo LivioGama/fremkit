@@ -90,7 +90,9 @@ curl -X POST -H @<(fremkit_auth_header 4242) http://127.0.0.1:4242/api/widgets/r
 
 A second checkout on `FREMKIT_PORT=4301` writes `access-4301.token` and names its cookie after
 its port, so it never signs the live one out: `FREMKIT_PORT=4301 pnpm open`. Vite follows
-`FREMKIT_PORT` too.
+`FREMKIT_PORT` too. Its remote listener (paired devices) stays on 4243 unless
+`FREMKIT_REMOTE_PORT` moves it: set that too before turning remote access on in a second checkout,
+or the two servers fight over the port.
 
 ### Installing from a registry you are building
 

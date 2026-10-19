@@ -255,6 +255,12 @@ tagged `vX.Y.Z`.
   thought you had deleted no longer keeps a "to fix" badge without a clue why.
 
 ### Fixed
+- **A restarted Fremkit gets the iPad port back.** A server that was told to stop could keep
+  holding the remote access port for minutes, so the one replacing it said the port was used by
+  another application and turned remote access off. The old one now lets go of both ports as soon
+  as it is told to stop and is gone within three seconds whatever it was doing, and the new one
+  tries the port again every second for ten seconds before saying it is taken; at startup it then
+  leaves remote access on, so the next start tries again.
 - **Right-clicking a widget in the bar of the editor's preview opens its menu in Safari and in
   the Mac's admin window too.** WebKit sent the click to the widget itself, so nothing opened.
 - Escape in a right-click menu opened inside a dialog (the Screen panel's bar widgets) closes

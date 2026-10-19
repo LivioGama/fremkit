@@ -9,6 +9,8 @@ import { widgetDevDir } from './widgets/dev.js'
 import { accessTokenPath, removeAccessToken, resolveAccessToken, writeAccessToken } from './http/access-file.js'
 
 import { helperLogPath, LogTail } from './diagnostics/log-tail.js'
+import { closeRemoteListenersNow } from './devices/listener.js'
+import { installShutdown } from './shutdown.js'
 
 // Every file and folder this process (and its children) creates is this account's alone; the data
 // folder's older files are brought to the same modes at start (data-permissions.ts).
@@ -38,6 +40,12 @@ try {
 const demo = process.env.FREMKIT_DEMO === '1' || process.argv.includes('--demo')
 // A demo never takes the live server's port by default: it runs beside it.
 const port = Number(process.env.FREMKIT_PORT) || (demo ? 4250 : 4242)
+/**
+ * The remote listener's port (paired devices), 4243 unless told otherwise. A second checkout or a
+ * test bench sets it so its listener never fights the live one's.
+ */
+const remotePortEnv = Number(process.env.FREMKIT_REMOTE_PORT)
+const remotePort = Number.isInteger(remotePortEnv) && remotePortEnv > 0 && remotePortEnv < 65536 ? remotePortEnv : undefined
 // The WebSocket's origin check reads the port from the environment (ws/routes.ts).
 if (demo && !process.env.FREMKIT_PORT) process.env.FREMKIT_PORT = String(port)
 
@@ -141,8 +149,17 @@ async function main(): Promise<void> {
     logger: true,
     logTail,
     port,
+    ...(remotePort !== undefined ? { devicesPort: remotePort } : {}),
   })
-  installShutdown(app)
+  installShutdown({
+    close: () => app.close(),
+    // Both ports stop accepting from the signal handler itself (shutdown.ts); Fastify's own close
+    // then finds its server closed already, which it allows.
+    closeListenersNow: () => {
+      closeRemoteListenersNow()
+      if (app.server.listening) app.server.close()
+    },
+  })
   await app.listen({ port, host: '127.0.0.1' })
   // Written once the port is ours, and removed on the way out: the file names a server that is
   // listening, never one that failed to bind or has gone. The helper knows the secret of a
@@ -150,28 +167,6 @@ async function main(): Promise<void> {
   await writeAccessToken(tokenFile, access.token)
   process.on('exit', () => removeAccessToken(tokenFile, access.token))
   app.log.info({ tokenFile, source: access.source }, 'local access secret written')
-}
-
-/**
- * The helper stops the server with SIGTERM (and SIGKILL three seconds later); a terminal sends
- * SIGINT. Node's default for both is to die on the spot, which skips every `onClose` hook — the
- * remote listener, and the `dns-sd` child advertising it, among them. So the app is closed first,
- * with a deadline under the helper's, and the process exits either way: the helper restarts or
- * not on its own terms, whatever the exit status.
- */
-function installShutdown(app: Awaited<ReturnType<typeof buildApp>>): void {
-  let closing = false
-  const shutdown = (signal: NodeJS.Signals): void => {
-    if (closing) return
-    closing = true
-    const code = signal === 'SIGINT' ? 130 : 143
-    setTimeout(() => process.exit(code), 2_000).unref()
-    app.close()
-      .catch((error: unknown) => console.error(error))
-      .finally(() => process.exit(code))
-  }
-  process.on('SIGTERM', shutdown)
-  process.on('SIGINT', shutdown)
 }
 
 main().catch((error: unknown) => {

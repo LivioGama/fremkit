@@ -19,11 +19,27 @@ import { isLanPeer } from '../net/lan.js'
 
 export const REMOTE_PORT = 4243
 
+/** Every listener running in this process, for `closeRemoteListenersNow`. */
+const running = new Set<RemoteListener>()
+
+/**
+ * Stops every remote listener of this process from accepting, and drops its sockets, right now,
+ * synchronously: the shutdown path calls it from the signal handler, before anything that could
+ * block the event loop gets a chance to keep the port held (`shutdown.ts`). `stop()` still runs
+ * later, through the app's close, and finds nothing left to do but wait.
+ */
+export function closeRemoteListenersNow(): void {
+  for (const listener of running) listener.closeNow()
+}
+
 export class RemoteListener {
   private server: Server | null = null
   /** Every socket the listener holds open, the TCP ones and those upgraded to a WebSocket. */
   private readonly sockets = new Set<Socket>()
   private boundPort: number | null = null
+  /** The server `closeNow` has closed already, and the promise of its close, for `stop`. */
+  private closing: Server | null = null
+  private closed: Promise<void> | null = null
 
   constructor(
     private readonly app: FastifyInstance,
@@ -105,6 +121,17 @@ export class RemoteListener {
     server.on('error', (err) => this.app.log.warn({ err: err.message }, 'remote listener error'))
     this.boundPort = (server.address() as AddressInfo).port
     this.server = server
+    running.add(this)
+  }
+
+  /** Stops accepting and destroys every socket, without waiting: see `closeRemoteListenersNow`. */
+  closeNow(): void {
+    const server = this.server
+    if (!server || this.closing) return
+    this.closing = server
+    this.closed = new Promise<void>((resolve) => server.close(() => resolve()))
+    for (const socket of this.sockets) socket.destroy()
+    this.sockets.clear()
   }
 
   /**
@@ -130,7 +157,12 @@ export class RemoteListener {
     if (!server) return
     this.server = null
     this.boundPort = null
-    const closed = new Promise<void>((resolve) => server.close(() => resolve()))
+    running.delete(this)
+    const closed = this.closing === server && this.closed
+      ? this.closed
+      : new Promise<void>((resolve) => server.close(() => resolve()))
+    this.closing = null
+    this.closed = null
     for (const socket of this.sockets) socket.destroy()
     this.sockets.clear()
     await closed

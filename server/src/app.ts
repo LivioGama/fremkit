@@ -179,6 +179,8 @@ export interface AppOptions {
     lanAddresses?: () => string[]
     preferredAddress?: (addresses: string[]) => Promise<string | null>
     appAddresses?: (addresses: string[]) => Promise<string[]>
+    /** How a taken remote port is tried again (`DeviceServiceOptions.bindRetry`). */
+    bindRetry?: { attempts: number; delayMs: number }
   }
 }
 

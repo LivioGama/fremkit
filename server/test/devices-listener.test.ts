@@ -6,7 +6,7 @@ import { connect as tlsConnect } from 'node:tls'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { RemoteListener } from '../src/devices/listener.js'
+import { closeRemoteListenersNow, RemoteListener } from '../src/devices/listener.js'
 import { Hub } from '../src/ws/hub.js'
 import { hasOpenssl, remote, tlsMaterial, upgrade } from './helpers/remote.js'
 
@@ -47,6 +47,18 @@ describe.skipIf(!hasOpenssl)('RemoteListener', () => {
     await listener.stop()
     expect(listener.running).toBe(false)
     await expect(remote(port, { path: '/' })).rejects.toMatchObject({ code: 'ECONNREFUSED' })
+  })
+
+  it('stops accepting at once on closeRemoteListenersNow, and stop() still finishes', async () => {
+    const port = await start()
+    closeRemoteListenersNow()
+    // Synchronous: the very next connection is refused, before any event-loop turn of the close.
+    await expect(remote(port, { path: '/' })).rejects.toMatchObject({ code: 'ECONNREFUSED' })
+    expect(listener.running).toBe(true)
+    await listener.stop()
+    expect(listener.running).toBe(false)
+    // A listener stopped is no longer one the shutdown path closes.
+    closeRemoteListenersNow()
   })
 
   it('drops a peer outside the local networks before TLS, with nothing said', async () => {
