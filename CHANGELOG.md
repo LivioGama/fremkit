@@ -22,6 +22,10 @@ tagged `vX.Y.Z`.
   pasteboard. A cleanup startup failure is returned as a generic copy failure; a later cleaner
   failure is logged without exposing the code.
 
+- **Recent Projects.** Remembers canonical working directories reported by Herdr panes and opens a
+  selected folder in a new pane, optionally starting Claude Code or Codex from a known executable
+  location.
+
 ### Fixed
 
 - **The Claude limits tile finds the sign-in again.** Recent Claude Code versions keep the OAuth

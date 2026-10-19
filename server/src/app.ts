@@ -66,6 +66,7 @@ import { createRectangleProvider } from './providers/rectangle.js'
 import { createServiceStatusProvider } from './providers/service-status.js'
 import { createSystemProvider } from './providers/system.js'
 import { createDiskMapProvider } from './providers/disk-map.js'
+import { createRecentProjectsProvider } from './providers/recent-projects.js'
 import { BrightnessService } from './brightness/service.js'
 import { createBrightnessProvider, BRIGHTNESS_INTERVAL_MS } from './brightness/provider.js'
 import { brightnessRoutes } from './brightness/routes.js'
@@ -313,6 +314,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     registry.register(createMessages2FAProvider({ enabled: () => store.get().privacy.messages2FA }))
     registry.register(createRectangleProvider())
     registry.register(createServiceStatusProvider({}, instances))
+    registry.register(createRecentProjectsProvider({ filePath: join(opts.dataDir, 'recent-projects.json') }))
     // A paired device may set only its own screen's brightness: see mayCommandBrightness. Read
     // at command time, so a device moved to another screen (or unpaired) is judged as it is now.
     registry.register(createBrightnessProvider(brightness, brightnessChanged, (id) => deviceService.deviceScreenOf(id)))
