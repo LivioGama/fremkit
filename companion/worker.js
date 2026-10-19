@@ -43,7 +43,7 @@ const DANGER = '#d9463f'
 
 /** Mirrors of chrome.storage, loaded once per worker life. */
 const local = { installId: null, token: null, deviceId: null, name: null, pairing: null, pairError: null, revoked: false }
-const session = { link: 'unpaired', share: null, lastError: null }
+const session = { link: 'unpaired', share: null, lastError: null, fremplayOff: false }
 
 const ready = (async () => {
   // The token lives in `local`: only the extension's own pages and this worker may read it, never
@@ -469,6 +469,12 @@ async function onServerMessage(msg) {
       greeted = true
       // A proven server greeted this token: an unproven 4401 before was not its word.
       if (local.revoked) await saveLocal({ revoked: false })
+      // Whether Fremkit has Fremplay on (`labs.companion`), for the popup to say before a click.
+      // Sent again when the switch turns; a server that does not say is taken as on.
+      {
+        const off = msg.modules?.fremplay === false
+        if (session.fremplayOff !== off) await saveSession({ fremplayOff: off })
+      }
       failingSince = 0
       retryDelay = RETRY_FIRST_MS
       await setLink('ok')
@@ -486,6 +492,7 @@ async function onServerMessage(msg) {
     case 'tab.refused': {
       if (share?.sessionId !== msg.sessionId) return
       const refusal = refusalOf(msg.reason)
+      if (refusal.error === 'disabled') await saveSession({ fremplayOff: true })
       if (refusal.endShare) return endShare({ notify: false, error: refusal.error })
       // One receiver's offer refused (lib/link.js): its peer goes, with no new offer; the badge
       // flashes and the popup says why next time it opens (not "update needed").
@@ -637,6 +644,9 @@ async function startShare(tabId, { fromShortcut }, seen) {
   await ready
   if (!local.token || local.revoked) return { ok: false, error: 'unpaired' }
   if (!validId(tabId)) return { ok: false, error: 'failed' }
+  // Fremkit said Fremplay is off on this very socket: no capture to start for a sure refusal.
+  // Without a live socket the server answers `disabled` itself.
+  if (greeted && session.fremplayOff) return { ok: false, error: 'disabled' }
   const frames = await surveyTab(tabId)
   if (!frames) return { ok: false, error: 'capture' }
   seen.frames = frames

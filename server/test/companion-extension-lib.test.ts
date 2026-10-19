@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,6 +12,8 @@ import { browserName } from '../../companion/lib/browser.js'
 import { IDLE_SLACK_MS, idleDelay } from '../../companion/lib/presence.js'
 // @ts-expect-error plain JS module
 import { closeOutcome, POLICY_CLOSE_CODE, refusalOf, REVOKED_CLOSE_CODE } from '../../companion/lib/link.js'
+// @ts-expect-error plain JS module
+import { fremplayBlocked, SHARE_ERRORS, shareErrorKey } from '../../companion/lib/errors.js'
 // @ts-expect-error plain JS module
 import { localCandidatesOnly, loopbackAnswer, loopbackForMdns, offerSdp } from '../../companion/lib/sdp.js'
 // @ts-expect-error plain JS module
@@ -742,6 +745,7 @@ describe('refusalOf (what a tab.refused does to the share)', () => {
 
   it('no widget ends the share as such, and anything else as an update due', () => {
     expect(refusalOf('noWidget')).toEqual({ endShare: true, error: 'noWidget' })
+    expect(refusalOf('disabled')).toEqual({ endShare: true, error: 'disabled' })
     expect(refusalOf('protocol')).toEqual({ endShare: true, error: 'protocol' })
     expect(refusalOf('something new')).toEqual({ endShare: true, error: 'protocol' })
     expect(refusalOf(undefined)).toEqual({ endShare: true, error: 'protocol' })
@@ -1024,5 +1028,32 @@ describe('withVolumeHint (the volume set through YouTube)', () => {
     const share = { volumeHint: { element: 0.42, value: 0.8 } }
     expect(withVolumeHint(share, null)).toBeNull()
     expect(share.volumeHint).toEqual({ element: 0.42, value: 0.8 })
+  })
+})
+
+describe('the popup\'s Fremplay messages (lib/errors.js)', () => {
+  const messages = (locale: string): Record<string, { message: string }> =>
+    JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', 'companion', '_locales', locale, 'messages.json'), 'utf8'))
+
+  it('says Fremplay is off in Fremkit, in both languages', () => {
+    expect(shareErrorKey('disabled')).toBe('errDisabled')
+    expect(messages('fr').errDisabled.message).toBe('Fremplay est désactivé dans Fremkit (fonctions expérimentales).')
+    expect(messages('en').errDisabled.message).toBe('Fremplay is turned off in Fremkit (experimental features).')
+  })
+
+  it('maps every error to a message both locales have, and an unknown one to a plain failure', () => {
+    for (const locale of ['fr', 'en']) {
+      const m = messages(locale)
+      for (const key of Object.values(SHARE_ERRORS) as string[]) expect(m[key]?.message, `${locale} ${key}`).toBeTruthy()
+    }
+    expect(shareErrorKey('something new')).toBe('errFailed')
+    expect(shareErrorKey('toString')).toBe('errFailed')
+  })
+
+  it('greys Send while Fremkit says Fremplay is off, and only then', () => {
+    expect(fremplayBlocked({ fremplayOff: true })).toEqual({ error: 'disabled', key: 'errDisabled' })
+    expect(fremplayBlocked({ fremplayOff: false })).toBeNull()
+    expect(fremplayBlocked({})).toBeNull()
+    expect(fremplayBlocked(undefined)).toBeNull()
   })
 })

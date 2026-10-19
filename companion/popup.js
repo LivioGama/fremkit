@@ -4,6 +4,7 @@
 
 import { localize, t } from './i18n.js'
 import { browserName } from './lib/browser.js'
+import { fremplayBlocked, shareErrorKey } from './lib/errors.js'
 import { cleanFrames, embeddedPlayer, pickVideo, survey } from './lib/video.js'
 
 localize()
@@ -11,18 +12,6 @@ localize()
 const $ = (id) => document.getElementById(id)
 const ask = (type, extra = {}) => chrome.runtime.sendMessage({ target: 'worker', type, ...extra }).catch(() => null)
 
-const ERRORS = {
-  noVideo: () => t('noVideo'),
-  noWidget: () => t('errNoWidget'),
-  offerRefused: () => t('errOfferRefused'),
-  protocol: () => t('errProtocol'),
-  unreachable: () => t('errUnreachable'),
-  capture: () => t('errCapture'),
-  unpaired: () => t('errUnpaired'),
-  noVideoLeft: () => t('errNoVideoLeft'),
-  needsPermission: () => t('errNeedsPermission'),
-  failed: () => t('errFailed'),
-}
 const PAIR_ERRORS = {
   refused: () => t('pairRefused'),
   expired: () => t('pairExpired'),
@@ -161,11 +150,13 @@ function renderFremplay() {
   $('live').hidden = !share
   $('livetext').textContent = here ? t('liveHere') : elsewhere ? t('liveElsewhere', share.meta?.title || share.meta?.host || '') : ''
 
-  const canStart = video.checked && !video.restricted && Boolean(video.picked || video.askOrigin)
+  // Fremkit said Fremplay is off: Send is greyed and the card says why, whatever the tab holds.
+  const blocked = fremplayBlocked(session)
+  const canStart = !blocked && video.checked && !video.restricted && Boolean(video.picked || video.askOrigin)
   const go = $('go')
   go.hidden = here
   go.disabled = busy || !canStart
-  go.textContent = video.checked && !video.restricted && !canStart ? t('noVideo') : elsewhere ? t('sendInstead') : t('send')
+  go.textContent = !blocked && video.checked && !video.restricted && !canStart ? t('noVideo') : elsewhere ? t('sendInstead') : t('send')
   $('stop').hidden = !share
   $('stop').disabled = busy
 
@@ -175,7 +166,7 @@ function renderFremplay() {
   $('ask').hidden = !askOrigin
   $('ask').textContent = askOrigin ? t('askAccess', askOrigin) : ''
 
-  const error = shownError ? (ERRORS[shownError] ?? ERRORS.failed)() : video.restricted && !here ? t('errCapture') : null
+  const error = blocked ? t(blocked.key) : shownError ? t(shareErrorKey(shownError)) : video.restricted && !here ? t('errCapture') : null
   $('error').hidden = !error
   $('error').textContent = error ?? ''
 }

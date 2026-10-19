@@ -56,6 +56,12 @@ export interface CompanionSessionOptions {
   canShare?: () => boolean
   /** How many extensions are paired, connected or not. */
   pairedCount?: () => number
+  /**
+   * Whether Fremplay is on (`labs.companion`); off refuses a share with `disabled`. A product
+   * switch, not a security boundary: the socket, the routes and the channel keep their own guards
+   * whatever it says. On when left out.
+   */
+  enabled?: () => boolean
 }
 
 interface Share {
@@ -80,6 +86,7 @@ export class CompanionSession {
   private readonly changed: () => void
   private readonly canShare: () => boolean
   private readonly pairedCount: () => number
+  private readonly enabled: () => boolean
   /** Connected extensions: device id → name. */
   private readonly connected = new Map<string, string>()
   /** Extensions that said hello with a protocol this server does not speak. */
@@ -100,6 +107,28 @@ export class CompanionSession {
     this.changed = opts.changed
     this.canShare = opts.canShare ?? (() => false)
     this.pairedCount = opts.pairedCount ?? (() => 0)
+    this.enabled = opts.enabled ?? (() => true)
+  }
+
+  /**
+   * `labs.companion` may have changed. Every connected extension hears the new state in a fresh
+   * `ready` (its popup says Fremplay is off before anyone clicks Send), and a share running when
+   * it went off ends, its extension told why.
+   */
+  switched(): void {
+    const on = this.enabled()
+    for (const deviceId of this.connected.keys()) {
+      if (!this.foreign.has(deviceId)) this.send(deviceId, this.ready())
+    }
+    if (on || !this.share) return
+    const { deviceId, sessionId } = this.share
+    this.send(deviceId, { type: 'tab.refused', sessionId, reason: 'disabled' })
+    this.endShare()
+  }
+
+  /** The greeting, with the state of the modules this server can switch off. */
+  private ready(): ServerMessage {
+    return { type: 'ready', protocol: PROTOCOL, modules: { fremplay: this.enabled() } }
   }
 
   connect(deviceId: string, name: string): void {
@@ -262,7 +291,7 @@ export class CompanionSession {
   }
 
   private hello(deviceId: string, protocol: number, session?: { sessionId: string; meta: TabMeta }): void {
-    this.send(deviceId, { type: 'ready', protocol: PROTOCOL })
+    this.send(deviceId, this.ready())
     if (protocol !== PROTOCOL) {
       this.foreign.add(deviceId)
       if (session) this.send(deviceId, { type: 'tab.refused', sessionId: session.sessionId, reason: 'protocol' })
@@ -273,6 +302,12 @@ export class CompanionSession {
     if (current && (current.deviceId !== deviceId || current.sessionId !== session.sessionId)) {
       // One share overall, and the running one was here first.
       this.send(deviceId, { type: 'tab.stop' })
+      return
+    }
+    // Fremplay off: no share, the one coming back included (a running one ended with the switch).
+    if (!this.enabled()) {
+      if (current) this.endShare()
+      this.send(deviceId, { type: 'tab.refused', sessionId: session.sessionId, reason: 'disabled' })
       return
     }
     if (!current && !this.canShare()) {
@@ -293,6 +328,9 @@ export class CompanionSession {
   private started(deviceId: string, sessionId: string, meta: TabMeta): void {
     if (this.foreign.has(deviceId)) {
       return this.send(deviceId, { type: 'tab.refused', sessionId, reason: 'protocol' })
+    }
+    if (!this.enabled()) {
+      return this.send(deviceId, { type: 'tab.refused', sessionId, reason: 'disabled' })
     }
     if (!this.canShare()) {
       return this.send(deviceId, { type: 'tab.refused', sessionId, reason: 'noWidget' })

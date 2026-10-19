@@ -84,9 +84,9 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
     if (origin === null) return fail(reply, 403, 'companion.originNotAllowed')
     // Not a security boundary (the server does not rely on `labs.companion` for that, see
     // docs/companion.md): with the switch off the Edge shows no prompt, so nobody would see a
-    // request at all, and a program guessing codes would do it unseen. An extension already
-    // paired keeps working, and may pair again, whatever the switch says.
-    if (opts.config.get().labs?.companion !== true && opts.pairedExtensions() === 0) {
+    // request at all, and a program guessing codes would do it unseen. Off is Fremplay off, so
+    // an extension already paired is refused too; it stays listed in Devices, to remove.
+    if (opts.config.get().labs?.companion !== true) {
       return fail(reply, 409, 'companion.disabled', 'disabled')
     }
     const parsed = PairSchema.safeParse(req.body)

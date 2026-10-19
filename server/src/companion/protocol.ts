@@ -172,9 +172,15 @@ export type Control = z.infer<typeof ControlSchema>
 /** What the server sends the extension. It is built here, never parsed, so it is a plain type. */
 export type ServerMessage =
   | { type: 'proof'; mac: string }
-  | { type: 'ready'; protocol: number }
+  /**
+   * `modules`: which of the extension's modules this server has switched on, Fremplay alone so
+   * far (`labs.companion`). Optional and new within protocol 2: an extension that does not read
+   * it learns the same from `tab.refused` with `disabled`.
+   */
+  | { type: 'ready'; protocol: number; modules?: { fremplay: boolean } }
   | { type: 'tab.accepted'; sessionId: string }
-  | { type: 'tab.refused'; sessionId: string; reason: 'noWidget' | 'protocol' }
+  /** `disabled`: Fremplay is off in Fremkit (`labs.companion`). */
+  | { type: 'tab.refused'; sessionId: string; reason: 'noWidget' | 'protocol' | 'disabled' }
   /** One receiver's offer named more than this Mac: that receiver gets no video, the share goes on. */
   | { type: 'tab.refused'; sessionId: string; reason: 'offer'; receiverId: string }
   | { type: 'tab.view'; receiverId: string }

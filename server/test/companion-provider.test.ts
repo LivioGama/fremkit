@@ -264,6 +264,41 @@ describe('createCompanion', () => {
     send.mockRestore()
   })
 
+  it('ends the share when labs.companion goes off, and refuses one until it is back on', async () => {
+    let config = configWith('page')
+    const listeners: Array<(c: Config) => void> = []
+    const sent: ServerMessage[] = []
+    app = Fastify()
+    await app.register(fastifyWebsocket)
+    const registry = { register: vi.fn(), refresh: vi.fn() }
+    const companion = await createCompanion({
+      app, store, registry,
+      config: { get: () => config, onChange: (cb) => { listeners.push(cb); return () => undefined } },
+    })
+    const set = (next: Config) => { config = next; for (const cb of listeners) cb(next) }
+    const send = vi.spyOn(companion.sockets, 'send').mockImplementation((_id, msg) => { sent.push(msg) })
+    companion.session.connect('ext', 'Chrome')
+    companion.session.onMessage('ext', { type: 'tab.started', sessionId: S1, meta: META })
+    expect(companion.session.snapshot().tab.state).toBe('sharing')
+    sent.length = 0
+    set({ ...configWith('page'), labs: { devices: false, companion: false } } as Config)
+    expect(sent).toEqual([
+      { type: 'ready', protocol: 2, modules: { fremplay: false } },
+      { type: 'tab.refused', sessionId: S1, reason: 'disabled' },
+    ])
+    expect(companion.session.snapshot().tab.state).toBe('idle')
+    // Another save with the switch still off says nothing more.
+    sent.length = 0
+    set({ ...configWith('page'), labs: { devices: true, companion: false } } as Config)
+    expect(sent).toEqual([])
+    companion.session.onMessage('ext', { type: 'tab.started', sessionId: S1, meta: META })
+    expect(sent).toEqual([{ type: 'tab.refused', sessionId: S1, reason: 'disabled' }])
+    set(configWith('page'))
+    companion.session.onMessage('ext', { type: 'tab.started', sessionId: S1, meta: META })
+    expect(sent.at(-1)).toEqual({ type: 'tab.accepted', sessionId: S1 })
+    send.mockRestore()
+  })
+
   it('stops listening once closed', async () => {
     const { companion, registry } = await build()
     await app.close()
@@ -278,15 +313,18 @@ describe('createCompanion', () => {
     payload: { name: 'Chrome', installId, salt: 'S'.repeat(43) },
   })
 
-  it('refuses a request with 409 while labs.companion is off and no extension is paired', async () => {
+  it('refuses a request with 409 while labs.companion is off, with an extension paired or not', async () => {
     const off = { ...configWith('page'), labs: { devices: false, companion: false } } as Config
     await build(off)
     const res = await ask()
     expect(res.statusCode).toBe(409)
     expect(res.json()).toEqual({ error: tr(off.locale, 'companion.disabled'), reason: 'disabled' })
-    // An extension already paired may pair again, whatever the switch says.
+    // Off is Fremplay off: an extension already paired is refused too (it stays in Devices).
     await store.createExtension({ name: 'Chrome', origin: ORIGIN, installId: INSTALL })
-    expect((await ask()).statusCode).toBe(200)
+    const again = await ask()
+    expect(again.statusCode).toBe(409)
+    expect(again.json().reason).toBe('disabled')
+    expect(store.list().filter((d) => d.kind === 'extension')).toHaveLength(1)
   })
 
   it('locks pairing after five requests refused for wrong codes, across a restart, until unlocked', async () => {

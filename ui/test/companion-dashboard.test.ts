@@ -190,15 +190,21 @@ describe('the dashboard and the companion channel', () => {
   } as unknown as Config)
   const PageStub = defineComponent({
     props: { page: { type: Object, required: true } },
-    setup: (props) => () => h('div', { class: 'page-stub' }, (props.page as { id: string }).id),
+    setup: (props) => () => {
+      const page = props.page as { id: string; items: { instanceId: string }[] }
+      return h('div', { class: 'page-stub', 'data-items': page.items.map((i) => i.instanceId).join(',') }, page.id)
+    },
   })
+
+  /** A bar item, as an element carrying its instance id (NavBar sets `data-nav-instance`). */
+  const CompactStub = defineComponent({ setup: () => () => h('div', { class: 'compact-stub' }) })
 
   async function mountApp(href: string) {
     const url = new URL(href)
     vi.stubGlobal('location', { protocol: url.protocol, search: url.search, host: url.host, href: url.href, reload: vi.fn() })
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{"id":"d1","name":"Pad","screenId":"edge"}', { status: 200 })))
     const { default: App } = await import('../src/dashboard/App.vue')
-    const wrapper = mount(App, { global: { stubs: { PageView: PageStub } }, attachTo: document.body })
+    const wrapper = mount(App, { global: { stubs: { PageView: PageStub, CompactWidgetFrame: CompactStub } }, attachTo: document.body })
     await flushPromises(); await nextTick()
     return wrapper
   }
@@ -280,5 +286,54 @@ describe('the dashboard and the companion channel', () => {
       expect(w.find('.companion-prompt').exists(), JSON.stringify(labs)).toBe(false)
       w.unmount()
     }
+  })
+
+  /** Fremplay on p1 alone and in the bar, a clock beside a Fremplay on p2. */
+  const withFremplay = (companion: boolean): Config => {
+    const c = config() as unknown as { labs: object; widgets: Record<string, unknown>; screens: { nav: unknown[]; pages: { id: string; items: unknown[] }[] }[] }
+    c.labs = { devices: false, companion }
+    c.widgets = {
+      fp: { widgetId: 'fremplay', showTitle: false, settings: {} },
+      fp2: { widgetId: 'fremplay', showTitle: false, settings: {} },
+      bar: { widgetId: 'fremplay', showTitle: false, settings: {} },
+      clock: { widgetId: 'clock', showTitle: false, settings: {} },
+    }
+    const at = (instanceId: string, x = 0) => ({ instanceId, x, y: 0, w: 4, h: 4 })
+    c.screens[0].pages[1].items = [at('fp')]
+    c.screens[0].pages[2].items = [at('clock'), at('fp2', 5)]
+    c.screens[0].nav = [{ instanceId: 'bar', slot: 'left' }]
+    return c as unknown as Config
+  }
+
+  it('draws no Fremplay while labs.companion is off, drops the page that held only one, and restores it', async () => {
+    fake.config = withFremplay(false)
+    const w = await mountApp('http://127.0.0.1:4242/')
+    // p1 held only Fremplay: two pages left, the second being p2 without its Fremplay.
+    expect(w.findAll('[data-nav-instance]')).toHaveLength(0)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    await nextTick()
+    expect(w.find('.page-stub').text()).toBe('p2')
+    expect(w.find('.page-stub').attributes('data-items')).toBe('clock')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    await nextTick()
+    expect(w.find('.page-stub').text()).toBe('p0')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    await nextTick()
+    expect(w.find('.page-stub').text()).toBe('p2')
+    // The switch on again: the config never lost them, so they come back in place, and the page
+    // shown stays the one it was.
+    push('config', withFremplay(true))
+    await flushPromises(); await nextTick()
+    expect(w.find('.page-stub').text()).toBe('p2')
+    expect(w.find('.page-stub').attributes('data-items')).toBe('clock,fp2')
+    expect(w.findAll('[data-nav-instance]').map((e) => e.attributes('data-nav-instance'))).toEqual(['bar'])
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    await nextTick()
+    expect(w.find('.page-stub').text()).toBe('p1')
+    // Off again while on p1, which drops out: the page now at its place.
+    push('config', withFremplay(false))
+    await flushPromises(); await nextTick()
+    expect(w.find('.page-stub').text()).toBe('p2')
+    w.unmount()
   })
 })

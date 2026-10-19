@@ -10,6 +10,7 @@
 import { ref } from 'vue'
 import type { Config, WidgetManifest } from '../shared/types'
 import type { DeviceStatus } from '../shared/api'
+import { COMPANION_WIDGETS } from '../shared/companionGate'
 
 /** True when iPad pairing and adding screens are shown. */
 export function labsDevices(config: Config | null | undefined): boolean {
@@ -19,20 +20,21 @@ export function labsDevices(config: Config | null | undefined): boolean {
 /**
  * True when the browser companion is shown: the pairing request in the Devices pane, Fremplay in
  * the widget lists, and the pairing prompt on the Edge. The extension rows show while one is paired
- * whatever this says (`showsExtensions`). The admin's and
- * the dashboard's only: the server never reads `labs.companion`, and the companion routes, the
- * socket's challenge and the `companion` channel's refusal to paired devices hold either way.
+ * whatever this says (`showsExtensions`). Off is also Fremplay off: the server refuses shares and
+ * pairing with it (docs/companion.md), as a product switch. The companion routes, the socket's
+ * challenge and the `companion` channel's refusal to paired devices hold either way.
  */
 export function labsCompanion(config: Config | null | undefined): boolean {
   return config?.labs?.companion === true
 }
 
 /** The built-in widgets that belong to the companion, kept out of the widget lists while it is off. */
-export const COMPANION_WIDGETS: readonly string[] = ['fremplay']
+export { COMPANION_WIDGETS } from '../shared/companionGate'
 
 /**
  * Whether a widget is offered to place (the library, the bar's list, the palette). Fremplay is
- * left out while `labs.companion` is off; one already placed stays where it is and keeps working.
+ * left out while `labs.companion` is off; one already placed stays where it is, greyed on the
+ * canvas and not drawn on the dashboard (`shared/companionGate.ts`).
  */
 export function widgetOffered(config: Config | null | undefined, widgetId: string): boolean {
   return labsCompanion(config) || !COMPANION_WIDGETS.includes(widgetId)

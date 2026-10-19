@@ -13,16 +13,29 @@ times), and tick **Browser companion (Fremplay)** under **Experimental features*
 admin leaves Fremplay out of the widget library and the bar's list and hides the pairing request in
 **Settings → Devices**, and the Edge shows no pairing prompt, so no code can be typed. A
 browser already linked stays listed in **Settings → Devices** whatever the switch says, so it can
-always be renamed or removed, and a Fremplay widget already placed stays where it is.
+always be renamed or removed.
 
-The switch (`labs.companion` in the config) changes what the admin and the dashboard show, and one
-thing on the server: while it is off and no browser is linked, a pairing request is turned down
-(*Activez le compagnon dans les fonctions expérimentales de Fremkit.* / *Turn the companion on in
-Fremkit's experimental features.*), since the Edge would show nobody the request. That is so a
-program cannot guess codes unseen, not a security boundary: the server does not rely on the switch
-for security. The companion routes, the socket's challenge and the refusal of the `companion`
-channel to paired devices guard the same way whether it is on or off, and an extension linked
-before you turned it off keeps working (and may pair again) until you remove it.
+**Off is Fremplay off.** While the switch (`labs.companion` in the config) is off:
+
+- the Edge draws no Fremplay widget, in a page or in the bar, and a page that held nothing else
+  drops out of the navigation. The config keeps them, so ticking the switch again brings them back
+  where they were;
+- the admin's canvas still shows them, greyed and labelled *Fonction désactivée* / *Feature turned
+  off*, so they can be deleted as usual;
+- the server refuses a share (`tab.refused` with reason `disabled`), and ends the one running when
+  the switch goes off. It tells every connected extension in its `ready` (`modules: { fremplay:
+  false }`, sent again when the switch turns), so the popup says *Fremplay est désactivé dans
+  Fremkit (fonctions expérimentales).* / *Fremplay is turned off in Fremkit (experimental
+  features).* with **Send** greyed, and the shortcut flashes `!` and leaves that message for the
+  popup;
+- a pairing request is turned down (*Activez le compagnon dans les fonctions expérimentales de
+  Fremkit.* / *Turn the companion on in Fremkit's experimental features.*), a browser already
+  linked included, since the Edge would show nobody the request.
+
+That is a product switch, not a security boundary: the server does not rely on it for security. The
+companion routes, the socket's challenge and the refusal of the `companion` channel to paired
+devices guard the same way whether it is on or off, and a browser linked before you turned it off
+stays linked, its socket connected, until you remove it.
 
 ## What you need
 

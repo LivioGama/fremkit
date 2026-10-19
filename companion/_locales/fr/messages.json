@@ -75,6 +75,9 @@
   "errNoWidget": {
     "message": "Ajoutez le widget Fremplay à l'Edge depuis l'admin"
   },
+  "errDisabled": {
+    "message": "Fremplay est désactivé dans Fremkit (fonctions expérimentales)."
+  },
   "errOfferRefused": {
     "message": "L'Edge a refusé la connexion vidéo."
   },

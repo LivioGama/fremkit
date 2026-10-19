@@ -6,6 +6,7 @@ import { useSocket } from '../shared/socket'
 import type { Config, NavItem, WidgetManifest } from '../shared/types'
 import { navHeightOf, navItemsOf } from '../shared/types'
 import { pickScreen } from '../shared/screens'
+import { visibleScreen } from '../shared/companionGate'
 import { pageBackground, rootBackgroundStyle } from '../shared/background'
 import { followThemeSchedule, useConfigTheme } from '../shared/theme'
 import PageView from './PageView.vue'
@@ -51,9 +52,24 @@ const screen = computed(() => {
 })
 // Every frame below is told which screen it is on (`Fremkit.screen`).
 provide(SCREEN_ID, () => screen.value?.id)
+/**
+ * The screen as drawn: with `labs.companion` off, without its Fremplay tiles and bar items, nor
+ * the pages that held only those (`companionGate.ts`). Page indexes below count these pages.
+ */
+const shown = computed(() => (config.value && screen.value ? visibleScreen(config.value, screen.value) : null))
 const display = computed(() => screen.value?.display ?? null)
 const pageIndex = ref(0)
-const page = computed(() => screen.value?.pages[pageIndex.value] ?? null)
+const page = computed(() => shown.value?.pages[pageIndex.value] ?? null)
+/**
+ * The pages drawn changed (the switch turned, a page went): stay on the page shown, wherever it now
+ * sits, or on the same index while there is one.
+ */
+watch(() => shown.value?.pages.map((p) => p.id) ?? [], (ids, before) => {
+  const id = before?.[pageIndex.value]
+  const at = id === undefined ? -1 : ids.indexOf(id)
+  if (at !== -1) pageIndex.value = at
+  else if (pageIndex.value >= ids.length) pageIndex.value = 0
+})
 // The theme the config names — its night theme at night — repainted whenever the admin saves
 // another one or the server says day has turned to night.
 useConfigTheme(config)
@@ -87,8 +103,8 @@ let offReload: (() => void) | undefined
 let offScreenReload: (() => void) | undefined
 
 function go(delta: number) {
-  if (!screen.value) return
-  const n = screen.value.pages.length
+  if (!shown.value) return
+  const n = shown.value.pages.length
   direction.value = delta >= 0 ? 1 : -1
   pageIndex.value = (pageIndex.value + delta + n) % n
 }
@@ -145,14 +161,13 @@ onMounted(async () => {
   unsub = socket.subscribe('config', async (c) => {
     manifests.value = (await api.getWidgets()).widgets
     config.value = c as Config
-    if (pageIndex.value >= (screen.value?.pages.length ?? 0)) pageIndex.value = 0
   })
   if (!remote) {
     unsubCompanion = socket.subscribe('companion', (data) => {
       const snap = data as { pairing?: typeof companionPairing.value; reveal?: CompanionReveal | null }
       companionPairing.value = snap.pairing ?? null
       const target = reveal.observe(snap, screen.value?.id)
-      if (target !== null && target !== pageIndex.value && target < (screen.value?.pages.length ?? 0)) select(target)
+      if (target !== null && target !== pageIndex.value && target < (shown.value?.pages.length ?? 0)) select(target)
     })
     // A reconnect replays a snapshot that must not move the page on its own. And the code on show
     // goes with the socket: a server that restarted no longer has that request, and a program
@@ -193,7 +208,7 @@ watch(() => config.value?.locale, (l) => setLocale(l))
     <p class="remote-name">{{ device.name }}</p>
     <p class="remote-title">{{ t('dashboard.remote.noScreen') }}</p>
   </div>
-  <div class="root" :class="{ kiosk }" :style="rootStyle" v-else-if="config && screen && display && page">
+  <div class="root" :class="{ kiosk }" :style="rootStyle" v-else-if="config && screen && shown && display && page">
     <Transition name="bg-fade">
       <div :key="backgroundKey" class="background" :style="backgroundLayerStyle" aria-hidden="true" />
     </Transition>
@@ -213,8 +228,8 @@ watch(() => config.value?.locale, (l) => setLocale(l))
       <div class="edge left" @pointerdown.stop="stageSwipe.down" @pointerup.stop="stageSwipe.up" @pointercancel.stop="stageSwipe.cancel" @wheel.stop="stageSwipe.wheel" />
       <div class="edge right" @pointerdown.stop="stageSwipe.down" @pointerup.stop="stageSwipe.up" @pointercancel.stop="stageSwipe.cancel" @wheel.stop="stageSwipe.wheel" />
     </div>
-    <NavBar class="bar" :style="{ width: gridWidth }" :pages="screen.pages" :active="pageIndex" :height="navHeightOf(display)"
-      :opacity="display.navOpacity" :nav-items="navItemsOf(screen)" :widgets="config.widgets"
+    <NavBar class="bar" :style="{ width: gridWidth }" :pages="shown.pages" :active="pageIndex" :height="navHeightOf(display)"
+      :opacity="display.navOpacity" :nav-items="navItemsOf(shown)" :widgets="config.widgets"
       :manifests="manifests" :cell="display.cell" :admin-gesture="display.adminGesture"
       :nav-style="display.navStyle"
       @select="select" @swipe="go"

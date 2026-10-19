@@ -595,6 +595,8 @@ export const fr: Record<string, string> = {
   'dashboard.navigation.previousNames': 'Voir les pages précédentes',
   'dashboard.navigation.nextNames': 'Voir les pages suivantes',
   'dashboard.widget.notInstalled': 'non installé',
+  /** A placed widget whose experimental feature is off (`labs.companion`): the admin's canvas only. */
+  'dashboard.widget.featureOff': 'Fonction désactivée',
   'dashboard.remote.noScreen': 'Choisissez un écran pour cet iPad dans l’admin du Mac',
   'dashboard.remote.unauthorized': 'Cet iPad n’est plus autorisé',
   'dashboard.companion.request': 'Une extension de navigateur veut se connecter',
