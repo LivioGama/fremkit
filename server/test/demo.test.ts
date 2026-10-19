@@ -36,7 +36,7 @@ vi.mock('../src/secrets/keychain.js', async (orig) => ({ ...(await orig<object>(
 
 const { buildApp } = await import('../src/app.js')
 const { createDemoProviders } = await import('../src/demo/providers.js')
-const { demoConfig, prepareDemoDataDir, DEMO_MARKER, DemoDataDirError } = await import('../src/demo/seed.js')
+const { demoConfig, prepareDemoDataDir, DEMO_MARKER, DemoDataDirError, DEMO_LEAVES_OUT } = await import('../src/demo/seed.js')
 const { demoPublicFetch } = await import('../src/demo/fetch.js')
 const { demoConnectionFetch } = await import('../src/demo/declared.js')
 const { demoConnectionTypes } = await import('../src/demo/connections.js')
@@ -66,7 +66,7 @@ async function demoApp(): Promise<FastifyInstance> {
  */
 async function widgetFolders(readdir: typeof import('node:fs/promises').readdir): Promise<string[]> {
   const entries = await readdir(WIDGETS, { withFileTypes: true })
-  return entries.filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name)
+  return entries.filter((e) => e.isDirectory() && !e.name.startsWith('.') && !DEMO_LEAVES_OUT.includes(e.name)).map((e) => e.name)
 }
 
 describe('demo mode', () => {
