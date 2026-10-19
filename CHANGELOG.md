@@ -171,6 +171,8 @@ tagged `vX.Y.Z`.
   requests run it in CI. See `docs/contributing.md`.
 
 ### Changed
+- **The widget inspector keeps the widget's name in view**, with *Expand all* / *Collapse all* for
+  its sections, while they scroll.
 - **The Sietch keeps its tabs, search and filters in view** while its list scrolls, with *Expand all*
   / *Collapse all* for its shelves. Escape in its search clears the search before it closes the
   window.
