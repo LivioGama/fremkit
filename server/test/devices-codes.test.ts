@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { CODE_PROOF_ITERATIONS, codeProof } from '../src/devices/codeProof.js'
 import {
   CODE_ALPHABET,
   CODE_LENGTH,
@@ -291,5 +292,22 @@ describe('PairingCodes', () => {
       expect(codes.consume(secret)).toBe('wrong')
       expect(codes.consumeSecret(secret)).toBe('ok')
     })
+  })
+})
+
+describe('codeProof', () => {
+  // The same vector as FremkitKit's CodeProofTests: both sides must derive the same proof.
+  it('derives the proof the iPad sends for a typed code, bound to a key', () => {
+    expect(CODE_PROOF_ITERATIONS).toBe(600_000)
+    expect(codeProof('ABCDEFGH', 'n4bQgYhMfWWaL-qgxVrQFaO_TxsrC4Is0V1sFbDwCgg')).toBe('u0OmzfI4qjz-qNwuSnZEHpye4MAjcTzhT3jg2gJVid0')
+    expect(codeProof('ABCDEFGH', 'n4bQgYhMfWWaL-qgxVrQFaO_TxsrC4Is0V1sFbDwCgh')).not.toBe('u0OmzfI4qjz-qNwuSnZEHpye4MAjcTzhT3jg2gJVid0')
+  })
+
+  it('makes the live code pair only as its proof, never as itself', () => {
+    const codes = new PairingCodes()
+    const { code } = codes.issue((c) => codeProof(c, 'n4bQgYhMfWWaL-qgxVrQFaO_TxsrC4Is0V1sFbDwCgg'))
+    expect(codes.consume(code, '192.0.2.1')).toBe('wrong')
+    expect(codes.consume(codeProof(code, 'n4bQgYhMfWWaL-qgxVrQFaO_TxsrC4Is0V1sFbDwCgh'), '192.0.2.1')).toBe('wrong')
+    expect(codes.consume(codeProof(code, 'n4bQgYhMfWWaL-qgxVrQFaO_TxsrC4Is0V1sFbDwCgg'), '192.0.2.1')).toBe('ok')
   })
 })

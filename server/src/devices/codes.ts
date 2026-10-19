@@ -97,7 +97,8 @@ class Window {
  * is the one exception (`consumeSecret`): the right one pairs whatever the counters say.
  */
 export class PairingCodes {
-  private live: { code: string; secret: string; expiresAt: number } | null = null
+  /** `proof` is what `consume` takes for the code: the code itself unless `issue` was told otherwise. */
+  private live: { code: string; proof: string; secret: string; expiresAt: number } | null = null
   private readonly total = new Window()
   /**
    * Per peer. Bounded without a cap of its own: an entry is only made by a wrong guess the total
@@ -110,14 +111,15 @@ export class PairingCodes {
   /**
    * Issues a fresh code, replacing any live one. The total is reset with it (a new secret, a new
    * per-code bound); the per-peer windows are kept, so a guesser is not handed a fresh allowance.
+   * `proofOf` turns the code into what a device sends for it (`codeProof`, bound to the Mac's key).
    */
-  issue(): { code: string; secret: string; expiresAt: number } {
+  issue(proofOf: (code: string) => string = (code) => code): { code: string; secret: string; expiresAt: number } {
     this.total.wrong = 0
     let code = ''
     for (let i = 0; i < CODE_LENGTH; i++) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]
     const secret = randomBytes(SECRET_BYTES).toString('base64url')
-    this.live = { code, secret, expiresAt: this.now() + CODE_TTL_MS }
-    return { ...this.live }
+    this.live = { code, proof: proofOf(code), secret, expiresAt: this.now() + CODE_TTL_MS }
+    return { code, secret, expiresAt: this.live.expiresAt }
   }
 
   /** True while a code is issued, unused and unexpired: the only time pairing is open at all. */
@@ -125,13 +127,16 @@ export class PairingCodes {
     return this.live !== null && this.now() <= this.live.expiresAt
   }
 
-  /** `address` is the address the attempt came from, as the socket reports it. */
-  consume(code: string, address = ''): ConsumeResult {
+  /**
+   * Pairs with the typed code, as the proof `issue`'s `proofOf` makes of it. `address` is the
+   * address the attempt came from, as the socket reports it.
+   */
+  consume(proof: string, address = ''): ConsumeResult {
     const peer = peerKey(address)
     const now = this.now()
     this.roll(now)
     if (this.limited(peer)) return 'limited'
-    if (this.live && same(code, this.live.code)) return this.spend(now)
+    if (this.live && same(proof, this.live.proof)) return this.spend(now)
     return this.count(peer, now)
   }
 

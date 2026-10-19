@@ -14,6 +14,7 @@ import { execFileAsync, type Exec } from '../secrets/keychain.js'
 import type { SecretStore } from '../secrets/types.js'
 import type { WidgetCatalog } from '../widgets/catalog.js'
 import type { Hub } from '../ws/hub.js'
+import { codeProof } from './codeProof.js'
 import { fingerprintWords } from './fingerprint.js'
 import { advertise as bonjourAdvertise, type Advertisement, type Advertiser } from './bonjour.js'
 import { ensureKey, issueCertificate, readKey, resetKey, spkiHash } from './certificate.js'
@@ -57,7 +58,7 @@ export const MAX_APP_ADDRESSES = 8
 /** What `GET /api/devices/me` answers the device app: `DeviceInfo` and where else it may find the Mac. */
 export type DeviceAppInfo = DeviceInfo & { addresses: string[] }
 
-export type PairCredential = { code: string } | { secret: string }
+export type PairCredential = { proof: string } | { secret: string }
 
 export type PairResult =
   | { token: string; device: PublicDevice }
@@ -256,9 +257,10 @@ export class DeviceService {
   private async issueCode(): Promise<PairingOffer | 'notListening'> {
     if (!this.listener.running) return 'notListening'
     const key = await ensureKey(this.secrets, { exec: this.exec })
-    this.keyHash = spkiHash(key)
+    const keyHash = spkiHash(key)
+    this.keyHash = keyHash
     this.keyHashKnown = true
-    const { code, secret, expiresAt } = this.codes.issue()
+    const { code, secret, expiresAt } = this.codes.issue((c) => codeProof(c, keyHash))
     const params: string[] = []
     if (this.hostName !== null) params.push(`h=${encodeURIComponent(`${this.hostName}.local`)}`)
     const address = await this.pickAddress(this.readAddresses())
@@ -268,14 +270,15 @@ export class DeviceService {
   }
 
   /**
-   * Pairs a device with the live code, typed, or with its secret, read off the QR code. It is
+   * Pairs a device with the live code, typed and sent as a proof bound to this Mac's key
+   * (`codeProof`), or with its secret, read off the QR code. It is
    * attached to the one device screen made for its viewport; none, or more than one, leaves it
    * unattached for the user to choose.
    */
   async pair(credential: PairCredential, name: string, viewport: Viewport, peer = ''): Promise<PairResult> {
     const result = 'secret' in credential
       ? this.codes.consumeSecret(credential.secret, peer)
-      : this.codes.consume(credential.code, peer)
+      : this.codes.consume(credential.proof, peer)
     if (result !== 'ok') return { error: result }
     const matches = this.config.get().screens.filter((s) => s.kind === 'device' && fits(s, viewport))
     const screenId = matches.length === 1 ? matches[0].id : null

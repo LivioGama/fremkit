@@ -234,6 +234,17 @@ guess counters, so the right secret pairs while codes are at 429; a wrong one ta
 path, refused while the peer is limited and counted otherwise, with the same answer. Pairing by hand
 (the Bonjour list, the typed code and the four words) still uses the code, and still can be held.
 
+On that path the iPad trusts whatever key answers for the Mac it picked, and the four words are
+only 32 bits of that key's hash: a machine on the network can find a key with the same words
+offline, announce itself under the Mac's name, and pass on what the person types. So the typed
+code never leaves the iPad as itself. The app sends a proof of it bound to the key it is talking
+to (PBKDF2-HMAC-SHA256 of the code, salted with that key's hash, 600,000 rounds; `codeProof.ts`,
+`CodeProof.swift`), and the Mac takes only the proof made for its own key, compared in constant
+time like the code was. A relayed proof was made for the impostor's key and is a wrong code here,
+and reading the code back out of it takes about 2^60 hashes, far beyond its five minutes. The
+Mac derives its proof once, when it issues the code. The words help the person pick the right Mac;
+they are no longer what stops a relay.
+
 The remote listener is an **allow-list**, decided by the socket a request arrived on rather than
 by a header: the dashboard's page and its code, the routes a dashboard reads, `/ws`, the widget
 proxy, and the device's own `GET /api/devices/me` and `POST /api/devices/me/brightness`. Everything

@@ -45,7 +45,11 @@ showing.
 **Without the camera**, the app lists the Macs it finds on the network (Bonjour, `_fremkit._tcp`).
 Pick yours, type the code, and **check that the four words on the iPad are the ones the admin
 shows** before you confirm: they come from your Mac's key, so a Mac that shows other words is not
-yours. There is no field for typing an address: a Mac that is not in the list is reached with the
+yours. The code you type only works for the Mac whose key the iPad sees, so another machine that
+took your Mac's name cannot pass it on to your Mac. The list shows each Mac by its computer name
+(System Settings → General → Sharing), which the Mac announces on the local network while
+**Allow an iPad on the local network** is on: anyone on the same network can see it, as with AirDrop or file sharing.
+Rename the Mac there if you would rather it did not carry yours. There is no field for typing an address: a Mac that is not in the list is reached with the
 QR code.
 
 The iPad keeps what it needs to reconnect in its keychain and pins the Mac's key: it talks to

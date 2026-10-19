@@ -43,9 +43,10 @@ public struct PairClient: Sendable {
         self.transport = transport
     }
 
-    /// `code` or `secret`, never both: the one left nil is not encoded.
+    /// `proof` (the typed code's, `CodeProof`) or `secret`, never both: the one left nil is not
+    /// encoded. The code itself never leaves the iPad.
     private struct Body: Encodable {
-        let code: String?
+        let proof: String?
         let secret: String?
         let name: String
         let viewport: Viewport
@@ -65,14 +66,20 @@ public struct PairClient: Sendable {
     ///     service's name and resolved addresses.
     ///   - name: this iPad's name, shown on the Mac.
     ///   - macName: the Mac's name for people, stored in the record.
-    ///   - secret: the QR link's secret, sent instead of `code` when there is one: the Mac takes it
-    ///     even while it refuses codes to someone guessing them.
+    ///   - code: the normalized code, sent as its proof for `keyHash`: only the Mac holding that
+    ///     key can take it.
+    ///   - secret: the QR link's secret, sent instead of the code when there is one: the Mac takes
+    ///     it even while it refuses codes to someone guessing them.
     public func pair(hosts: [String], port: Int, keyHash: String, code: String, secret: String? = nil, name: String,
                      viewport: Viewport, macName: String) async throws -> PairedMac {
         let hosts = hosts.map(trimmingTrailingDot)
         let policy = PinPolicy(keyHash: keyHash, hosts: Set(hosts))
-        let body = try JSONEncoder().encode(Body(code: secret == nil ? code : nil, secret: secret, name: name,
-                                                 viewport: viewport))
+        var proof: String?
+        if secret == nil {
+            guard let derived = CodeProof.proof(code: code, keyHash: keyHash) else { throw PairError.invalidRequest }
+            proof = derived
+        }
+        let body = try JSONEncoder().encode(Body(proof: proof, secret: secret, name: name, viewport: viewport))
         var sawWrongMac = false
         // The Mac counts wrong codes per address, so one candidate answering 429 says nothing about
         // the next: someone guessing over link-local IPv6 must not keep the iPad from pairing over

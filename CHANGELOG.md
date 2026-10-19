@@ -31,7 +31,8 @@ tagged `vX.Y.Z`.
   and back on time, rather than at its next reload.
 - **The Fremkit iPad app pairs on its own.** Scan the QR code the admin shows, or open its
   `fremkit://` link from the Camera app; without the camera, pick the Mac in the list, check that it
-  shows the same four words as the iPad, and type the code. Opening a link while the iPad is paired
+  shows the same four words as the iPad, and type the code; the code only works for the Mac whose
+  key the iPad sees, so another machine on the network cannot pass it on. Opening a link while the iPad is paired
   asks before replacing the pairing. The iPad reports the size its dashboard really gets, so it lands
   on the matching screen. After **Reset the certificate**, the iPad says the Mac's key has changed
   and offers **Pair again**. When the address it uses goes away (the Ethernet cable unplugged), the

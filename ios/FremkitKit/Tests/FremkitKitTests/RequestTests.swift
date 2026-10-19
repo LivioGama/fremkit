@@ -102,7 +102,10 @@ final class PairClientTests: XCTestCase {
         XCTAssertEqual(seen.request.value(forHTTPHeaderField: "Content-Type"), "application/json")
         let body = try XCTUnwrap(seen.body)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-        XCTAssertEqual(json["code"] as? String, "ABCDEFGH")
+        // The code goes as its proof for the pinned key, never as itself.
+        XCTAssertEqual(json["proof"] as? String, CodeProof.proof(code: "ABCDEFGH", keyHash: SPKIFixture.keyHash))
+        XCTAssertNil(json["code"])
+        XCTAssertFalse(String(decoding: body, as: UTF8.self).contains("ABCDEFGH"))
         XCTAssertNil(json["secret"], "no secret, no field")
         XCTAssertEqual(json["name"] as? String, "iPad")
         XCTAssertEqual(json["viewport"] as? [String: Int], ["width": 1180, "height": 820])
@@ -120,7 +123,8 @@ final class PairClientTests: XCTestCase {
         let body = try XCTUnwrap(bodies.items.first)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["secret"] as? String, secret)
-        XCTAssertNil(json["code"], "the Mac takes one or the other, never both")
+        XCTAssertNil(json["proof"], "the Mac takes one or the other, never both")
+        XCTAssertNil(json["code"])
         XCTAssertEqual(json["name"] as? String, "iPad")
     }
 
