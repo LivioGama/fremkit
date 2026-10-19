@@ -121,7 +121,10 @@ agent's in-flight work. Say where the worktree is, and remove it once the work h
   real provider: a new provider is registered in `registerRealProviders()` in `app.ts`, and a
   channel a built-in widget reads needs a fake in `demo/providers.ts` too (`demo.test.ts` fails
   otherwise). A new built-in widget also gets `DEMO_SETTINGS` if its defaults show an empty state,
-  and a preview from `pnpm widget:preview <id>`.
+  and a preview from `pnpm widget:preview <id>`. A registry widget's channel or declared connection is acted
+  out too (`demo/providers.ts`, `demo/declared.ts` for the LAN devices a declared connection
+  reaches), so `pnpm widget:preview --dir` captures data rather than an empty state; a declared
+  connection's Test and proxy share that fake and must never get the global `fetch` in a demo.
 - **Config schema** changes go through `server/src/config/schema.ts` with a migration in the
   same commit and a test; the store never rewrites a file it could not migrate.
 - **Commits**: small, one concern each — a native fix noticed *while I was in there* is its own
