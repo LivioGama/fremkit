@@ -2,6 +2,7 @@ import { randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto
 import { CODE_ALPHABET } from '../devices/codes.js'
 import type { DeviceStore } from '../devices/store.js'
 import { PAIR_CLIENT_LABEL, PAIR_SERVER_LABEL, pairKey, pairMac, sameMac } from './pairProof.js'
+import { shortExtensionId } from './protocol.js'
 
 /** Short enough to type from the Edge at a glance. */
 export const MATCH_CODE_LENGTH = 4
@@ -156,12 +157,15 @@ export class CompanionPairing {
 
   /**
    * The request waiting for the user's answer, for the Edge and the admin to show, with how many
-   * other installs were turned away since the user last answered one (at most `MAX_TURNED_AWAY`).
+   * other installs were turned away since the user last answered one (at most `MAX_TURNED_AWAY`),
+   * and the first characters of the asking extension's id (`extension`).
    */
-  pending(): { requestId: string; code: string; name: string; expiresAt: number; turnedAway: number } | null {
+  pending(): { requestId: string; code: string; name: string; extension: string; expiresAt: number; turnedAway: number } | null {
     this.sweep(this.now())
     const req = this.waiting === null ? undefined : this.requests.get(this.waiting)
-    return req ? { requestId: req.requestId, code: req.code, name: req.name, expiresAt: req.expiresAt, turnedAway: this.turnedAway.size } : null
+    return req
+      ? { requestId: req.requestId, code: req.code, name: req.name, extension: shortExtensionId(req.origin), expiresAt: req.expiresAt, turnedAway: this.turnedAway.size }
+      : null
   }
 
   /**

@@ -700,7 +700,7 @@ describe.skipIf(!hasOpenssl)('following a change of address', () => {
 })
 
 describe('browser extensions in the device list', () => {
-  const ORIGIN = `chrome-extension://${'e'.repeat(32)}`
+  const ORIGIN = 'chrome-extension://lnckeodobpbbmfbdlpnegjpchgkehdlk'
   const INSTALL = '3a9c1d2e-5b6f-4a7b-8c9d-0e1f2a3b4c5d'
   const HOST = '127.0.0.1:4242'
   let edir: string
@@ -757,7 +757,7 @@ describe('browser extensions in the device list', () => {
     })
     const { requestId } = asked.json()
     const waiting = (await eapp.inject({ url: '/api/devices', headers: { host: HOST } })).json()
-    expect(waiting.companionRequest).toEqual({ requestId, code: expect.stringMatching(/^[A-HJ-NP-Z2-9]{4}$/), name: 'Chrome', expiresAt: expect.any(Number) })
+    expect(waiting.companionRequest).toEqual({ requestId, code: expect.stringMatching(/^[A-HJ-NP-Z2-9]{4}$/), name: 'Chrome', extension: 'lnckeo', expiresAt: expect.any(Number) })
 
     // The same install asking again replaces its waiting request; another install would be busy.
     const { deviceId } = await pairExtension(INSTALL)

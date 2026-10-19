@@ -30,6 +30,40 @@ export function proofMac(key: Buffer, nonce: string): string {
 /** The origin of a Chrome extension: its id is 32 letters from a to p. */
 export const EXTENSION_ORIGIN_RE = /^chrome-extension:\/\/[a-p]{32}$/
 
+/**
+ * Fremkit Companion's id, fixed by the `key` in companion/manifest.json: the Web Store listing's,
+ * and an unpacked copy of companion/ gets the same one.
+ */
+export const COMPANION_EXTENSION_ID = 'lnckeodobpbbmfbdlpnegjpchgkehdlk'
+
+/** Extra ids a developer allows (a copy with another `key`), comma-separated. */
+export const EXTENSION_IDS_ENV = 'FREMKIT_COMPANION_EXTENSION_IDS'
+
+const EXTENSION_ID_RE = /^[a-p]{32}$/
+
+/**
+ * The extension origins the companion routes and socket answer: Companion's, plus the ids listed in
+ * `FREMKIT_COMPANION_EXTENSION_IDS`. Any other extension is refused before it can ask to pair, so
+ * one from the store that is not Companion cannot hold the pairing slot or put a request on the
+ * Edge. `ignored`: the entries that are not extension ids, for the caller to log.
+ */
+export function companionOrigins(env: NodeJS.ProcessEnv = process.env): { origins: ReadonlySet<string>; ignored: string[] } {
+  const ids = new Set([COMPANION_EXTENSION_ID])
+  const ignored: string[] = []
+  for (const raw of (env[EXTENSION_IDS_ENV] ?? '').split(',')) {
+    const id = raw.trim()
+    if (id === '') continue
+    if (EXTENSION_ID_RE.test(id)) ids.add(id)
+    else ignored.push(id)
+  }
+  return { origins: new Set([...ids].map((id) => `chrome-extension://${id}`)), ignored }
+}
+
+/** The first characters of an extension origin's id, to tell two extensions apart at a glance. */
+export function shortExtensionId(origin: string): string {
+  return origin.slice('chrome-extension://'.length, 'chrome-extension://'.length + 6)
+}
+
 export const MAX_MESSAGE_BYTES = 65_536
 export const MAX_SDP = 32_000
 

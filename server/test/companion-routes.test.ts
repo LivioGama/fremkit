@@ -13,8 +13,13 @@ import { PAIR_CLIENT_LABEL, PAIR_SERVER_LABEL, pairKey, pairMac } from '../src/c
 import { hasOpenssl, remote } from './helpers/remote.js'
 
 const SECRET = generateToken()
-const ORIGIN = `chrome-extension://${'c'.repeat(32)}`
+/** Companion's own id, which needs no listing. */
+const ORIGIN = 'chrome-extension://lnckeodobpbbmfbdlpnegjpchgkehdlk'
 const OTHER = `chrome-extension://${'d'.repeat(32)}`
+/** A well-formed extension origin that is not let in. */
+const STRANGER = `chrome-extension://${'e'.repeat(32)}`
+// A developer's second copy, let in the way docs/companion.md says; read when the app is built.
+process.env.FREMKIT_COMPANION_EXTENSION_IDS = ` ${'d'.repeat(32)} , not-an-id`
 const INSTALL = '0b7d1c2e-4f5a-4b6c-8d7e-9f0a1b2c3d4e'
 const HOST = '127.0.0.1:4242'
 
@@ -135,6 +140,24 @@ describe('companion routes', () => {
     expect((await pair('http://127.0.0.1:4242')).statusCode).toBe(403)
     expect((await pair('https://example.com')).statusCode).toBe(403)
     expect((await pair(`chrome-extension://${'q'.repeat(32)}`)).statusCode).toBe(403)
+  })
+
+  it('pair, collect, confirm and finish are 403 to an extension that is not Companion nor listed', async () => {
+    expect((await pair(STRANGER)).statusCode).toBe(403)
+    const { requestId } = (await pair(ORIGIN)).json()
+    expect((await collect(requestId, STRANGER)).statusCode).toBe(403)
+    expect((await step(requestId, 'confirm', { nonce: NONCE_E }, STRANGER)).statusCode).toBe(403)
+    expect((await step(requestId, 'finish', { abandon: true }, STRANGER)).statusCode).toBe(403)
+    // A listed one is let in like Companion (it is turned away as busy, which only a let-in origin hears).
+    expect((await pair(OTHER)).statusCode).toBe(409)
+    expect((await answer(requestId, 'refuse', { code: await codeOf(requestId) })).statusCode).toBe(200)
+  })
+
+  it('shows the asking extension\'s short id with the request', async () => {
+    const { requestId } = (await pair(ORIGIN)).json()
+    const res = await app.inject({ method: 'GET', url: '/api/devices', headers: { host: HOST, ...auth } })
+    expect(res.json().companionRequest).toMatchObject({ requestId, extension: 'lnckeo' })
+    expect((await answer(requestId, 'refuse', { code: await codeOf(requestId) })).statusCode).toBe(200)
   })
 
   it('pair still checks the Host', async () => {

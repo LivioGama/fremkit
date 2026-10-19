@@ -18,7 +18,7 @@ const SDP = 'v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\na=candidate:1 1 udp 2122260223 1
 const S1 = '11111111-1111-4111-8111-111111111111'
 const S2 = '22222222-2222-4222-8222-222222222222'
 const R1 = '00000000-0000-4000-8000-000000000001'
-const ORIGIN = `chrome-extension://${'a'.repeat(32)}`
+const ORIGIN = 'chrome-extension://lnckeodobpbbmfbdlpnegjpchgkehdlk'
 const INSTALL = '6f1c2b8e-3d4a-4b5c-9d6e-7f8091a2b3c4'
 const LOCAL: CommandContext = { loopback: true, paired: false }
 const PAIRED: CommandContext = { loopback: false, paired: true, deviceId: 'ipad-1' }
@@ -197,8 +197,9 @@ describe('companion provider', () => {
     const r = pairing.request({ origin: ORIGIN, name: 'Chrome', installId: INSTALL })
     if (typeof r === 'string') throw new Error(r)
     const snap = await provider.poll!()
-    expect(snap.pairing).toEqual({ requestId: r.requestId, code: r.code, name: 'Chrome', expiresAt: r.expiresAt, turnedAway: 0 })
-    // Nothing the extension sent beyond its name: not its origin, not its install id.
+    expect(snap.pairing).toEqual({ requestId: r.requestId, code: r.code, name: 'Chrome', extension: 'lnckeo', expiresAt: r.expiresAt, turnedAway: 0 })
+    // Nothing the extension sent beyond its name and its id's first characters: not its whole
+    // origin, not its install id.
     expect(JSON.stringify(snap)).not.toContain(ORIGIN)
     expect(JSON.stringify(snap)).not.toContain(INSTALL)
     expect(snap).toMatchObject({ protocol: 2, extensions: { connected: 0 }, tab: { state: 'idle' } })

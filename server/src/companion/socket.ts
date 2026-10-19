@@ -17,7 +17,8 @@
  * keeps its token. A frame over the 64 KiB cap is refused by `ws` itself, with 1009, before any
  * of it is buffered.
  *
- * An upgrade whose `Origin` is not an extension's is answered 403 before any socket exists. Of the
+ * An upgrade whose `Origin` is not an allowed extension's (`companionOrigins`) is answered 403
+ * before any socket exists. Of the
  * rest, at most `MAX_PENDING_PER_ORIGIN` per extension origin and `MAX_PENDING_SOCKETS` in all may
  * be mid-handshake at once; one more is closed with 1013 (try again later) as soon as it is
  * upgraded.
@@ -116,12 +117,15 @@ export interface CompanionSocketOptions {
   store: DeviceStore
   session: CompanionSession
   sockets: CompanionSockets
+  /** The extension origins let in (`companionOrigins`). */
+  origins: ReadonlySet<string>
   /** Test seam; `HELLO_TIMEOUT_MS` otherwise. */
   helloTimeoutMs?: number
 }
 
 export async function companionSocket(app: FastifyInstance, opts: CompanionSocketOptions): Promise<void> {
-  const { store, session, sockets } = opts
+  const { store, session, sockets, origins } = opts
+  const allowed = (origin: unknown): origin is string => typeof origin === 'string' && EXTENSION_ORIGIN_RE.test(origin) && origins.has(origin)
   const helloTimeoutMs = opts.helloTimeoutMs ?? HELLO_TIMEOUT_MS
 
   // A device removed in Appareils loses its socket and whatever it was sharing.
@@ -146,10 +150,9 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
     if (!isLocalRequest(req)) return reply.callNotFound()
   }
 
-  /** Before the 101: a web page, or anything else that is not an extension, gets no socket at all. */
+  /** Before the 101: a web page, or anything that is not an allowed extension, gets no socket at all. */
   const extensionOnly = async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    const origin = req.headers.origin
-    if (typeof origin !== 'string' || !EXTENSION_ORIGIN_RE.test(origin)) return reply.code(403).send()
+    if (!allowed(req.headers.origin)) return reply.code(403).send()
   }
 
   app.get('/companion/ws', { websocket: true, onRequest: [localOnly, extensionOnly] }, (socket, req) => {
@@ -196,7 +199,7 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
     })
 
     // Refused before the upgrade already (`extensionOnly`); kept in case the hook ever moves.
-    if (typeof origin !== 'string' || !EXTENSION_ORIGIN_RE.test(origin)) return refuse()
+    if (!allowed(origin)) return refuse()
 
     socket.on('message', (raw: Buffer, isBinary: boolean) => {
       if (closed) return

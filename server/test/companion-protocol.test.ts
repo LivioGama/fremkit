@@ -2,6 +2,9 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { hostAddresses } from '../src/widgets/webrtc.js'
 import {
+  companionOrigins,
+  COMPANION_EXTENSION_ID,
+  shortExtensionId,
   ControlSchema,
   EXTENSION_ORIGIN_RE,
   MAX_MESSAGE_BYTES,
@@ -194,5 +197,22 @@ describe('parseExtensionMessage', () => {
   it('lets a hello carry keys it does not know, and strips them, so a newer extension still connects', () => {
     expect(parse({ type: 'hello', token, installId, protocol: PROTOCOL, modules: ['fremplay'] }))
       .toEqual({ type: 'hello', token, installId, protocol: PROTOCOL })
+  })
+})
+
+describe('companionOrigins (the extensions let in)', () => {
+  it('lets in Companion alone by default', () => {
+    expect([...companionOrigins({}).origins]).toEqual([`chrome-extension://${COMPANION_EXTENSION_ID}`])
+    expect(COMPANION_EXTENSION_ID).toBe('lnckeodobpbbmfbdlpnegjpchgkehdlk')
+  })
+
+  it('adds the listed ids, trimmed, and sets aside what is not an id', () => {
+    const { origins, ignored } = companionOrigins({ FREMKIT_COMPANION_EXTENSION_IDS: ` ${'a'.repeat(32)},,${'b'.repeat(31)}q, chrome-extension://${'c'.repeat(32)}, ${'D'.repeat(32)}` })
+    expect([...origins].sort()).toEqual([`chrome-extension://${'a'.repeat(32)}`, `chrome-extension://${COMPANION_EXTENSION_ID}`].sort())
+    expect(ignored).toHaveLength(3)
+  })
+
+  it('shortens an origin to the first six characters of its id', () => {
+    expect(shortExtensionId(`chrome-extension://${COMPANION_EXTENSION_ID}`)).toBe('lnckeo')
   })
 })

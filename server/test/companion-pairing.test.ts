@@ -115,7 +115,7 @@ describe('CompanionPairing', () => {
     const first = accepted(ask())
     const second = accepted(ask())
     expect(second.requestId).not.toBe(first.requestId)
-    expect(pairing.pending()).toEqual({ requestId: second.requestId, code: second.code, name: 'Chrome', expiresAt: second.expiresAt, turnedAway: 0 })
+    expect(pairing.pending()).toEqual({ requestId: second.requestId, code: second.code, name: 'Chrome', extension: 'aaaaaa', expiresAt: second.expiresAt, turnedAway: 0 })
     expect(pairing.collect(first.requestId, ORIGIN)).toEqual({ state: 'expired' })
     expect(pairing.collect(second.requestId, ORIGIN)).toEqual({ state: 'pending' })
   })

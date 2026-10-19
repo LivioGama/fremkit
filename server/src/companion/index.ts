@@ -8,6 +8,7 @@ import type { ConfigStore } from '../config/store.js'
 import type { DeviceStore } from '../devices/store.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import { CompanionPairing } from './pairing.js'
+import { companionOrigins, EXTENSION_IDS_ENV } from './protocol.js'
 import { placeFremplay } from './placement.js'
 import { COMPANION_CHANNEL, createCompanionProvider, type CompanionProvider } from './provider.js'
 import { companionRoutes } from './routes.js'
@@ -36,6 +37,9 @@ export async function createCompanion(opts: CompanionOptions): Promise<Companion
     if (!closed) registry.refresh(COMPANION_CHANNEL)
   }
 
+  // Companion's id, plus a developer's own in FREMKIT_COMPANION_EXTENSION_IDS: no other extension.
+  const { origins, ignored } = companionOrigins()
+  if (ignored.length > 0) app.log.warn({ count: ignored.length }, `${EXTENSION_IDS_ENV}: entries that are not extension ids were ignored`)
   const pairing = new CompanionPairing(store)
   const sockets = new CompanionSockets()
   // Assigned right below: the session only calls `changed` once something happens to it.
@@ -57,8 +61,8 @@ export async function createCompanion(opts: CompanionOptions): Promise<Companion
   // An extension paired or removed in Appareils changes `extensions.paired`, connected or not.
   const unsubscribeStore = store.onChange(refresh)
 
-  await app.register(companionRoutes, { pairing, config })
-  await app.register(companionSocket, { store, session, sockets })
+  await app.register(companionRoutes, { pairing, config, origins })
+  await app.register(companionSocket, { store, session, sockets, origins })
 
   const close = (): void => {
     if (closed) return

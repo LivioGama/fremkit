@@ -33,7 +33,7 @@ const ADDRESS_CHECK_MS = 30_000
 export type StatusDevice = PublicIpadDevice | (PublicExtensionDevice & { connected: boolean })
 
 /** A browser extension asking to pair, as the admin shows it: never a token. */
-export type CompanionRequest = { requestId: string; code: string; name: string; expiresAt: number }
+export type CompanionRequest = { requestId: string; code: string; name: string; extension: string; expiresAt: number }
 
 export type DeviceStatus = {
   enabled: boolean
@@ -249,7 +249,7 @@ export class DeviceService {
       fingerprint: this.keyHash === null ? null : fingerprintWords(this.keyHash),
       devices: this.store.list().map((d): StatusDevice => (d.kind === 'extension' ? { ...d, connected: connected.has(d.id) } : d)),
       // Picked field by field, so nothing the pairing object grows later reaches the admin.
-      companionRequest: request ? { requestId: request.requestId, code: request.code, name: request.name, expiresAt: request.expiresAt } : null,
+      companionRequest: request ? { requestId: request.requestId, code: request.code, name: request.name, extension: request.extension, expiresAt: request.expiresAt } : null,
     }
   }
 

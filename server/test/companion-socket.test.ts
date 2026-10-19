@@ -20,6 +20,13 @@ import { hasOpenssl, upgrade } from './helpers/remote.js'
 
 const ORIGIN = `chrome-extension://${'c'.repeat(32)}`
 const OTHER = `chrome-extension://${'d'.repeat(32)}`
+/** Sixteen ids the tests let in, as `FREMKIT_COMPANION_EXTENSION_IDS` would: a…a to p…p. */
+const TEST_IDS = [...'abcdefghijklmnop'].map((c) => c.repeat(32))
+const ORIGINS: ReadonlySet<string> = new Set(TEST_IDS.map((id) => `chrome-extension://${id}`))
+/** A well-formed extension origin that is not let in. */
+const STRANGER = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba'
+// For the app built below (`companionOrigins` reads it when the app is built).
+process.env.FREMKIT_COMPANION_EXTENSION_IDS = TEST_IDS.join(',')
 const INSTALL = '0b7d1c2e-4f5a-4b6c-8d7e-9f0a1b2c3d4e'
 const INSTALL_2 = '1c8e2d3f-5a6b-4c7d-9e8f-0a1b2c3d4e5f'
 const S1 = '11111111-1111-4111-8111-111111111111'
@@ -115,7 +122,7 @@ describe('companion socket', () => {
     })
     app = Fastify()
     await app.register(fastifyWebsocket, { options: { maxPayload: MAX_WS_PAYLOAD_BYTES } })
-    await app.register(companionSocket, { store, session, sockets, helloTimeoutMs: 200 })
+    await app.register(companionSocket, { store, session, sockets, origins: ORIGINS, helloTimeoutMs: 200 })
     await app.listen({ port: 0, host: '127.0.0.1' })
     port = (app.server.address() as { port: number }).port
   })
@@ -136,7 +143,7 @@ describe('companion socket', () => {
     const quiet = new CompanionSession({ send: (id, msg) => sockets.send(id, msg), changed: () => undefined, canShare: () => true })
     app = Fastify()
     await app.register(fastifyWebsocket, { options: { maxPayload: MAX_WS_PAYLOAD_BYTES } })
-    await app.register(companionSocket, { store, session: quiet, sockets, helloTimeoutMs })
+    await app.register(companionSocket, { store, session: quiet, sockets, origins: ORIGINS, helloTimeoutMs })
     await app.listen({ port: 0, host: '127.0.0.1' })
     port = (app.server.address() as { port: number }).port
   }
@@ -225,7 +232,7 @@ describe('companion socket', () => {
   })
 
   it('answers 403 before the upgrade to anything that is not an extension', async () => {
-    for (const origin of [null, 'http://127.0.0.1:4242', 'https://example.com', `chrome-extension://${'q'.repeat(32)}`]) {
+    for (const origin of [null, 'http://127.0.0.1:4242', 'https://example.com', `chrome-extension://${'q'.repeat(32)}`, STRANGER]) {
       await expect(connect(origin), String(origin)).rejects.toThrow('status 403')
     }
     // Those never held a slot: a full set from the extension still fits.
@@ -543,6 +550,12 @@ describe('companion socket in the app', () => {
     const wsHeaders = { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==', origin: ORIGIN }
     const wrongHost = await full.inject({ method: 'GET', url: '/companion/ws', headers: { ...wsHeaders, host: 'evil.example.com' } })
     expect(wrongHost.statusCode).toBe(421)
+  })
+
+  it('answers 403 to the upgrade of an extension that is not Companion nor listed', async () => {
+    const wsHeaders = { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==' }
+    const res = await full.inject({ method: 'GET', url: '/companion/ws', headers: { ...wsHeaders, host: HOST, origin: STRANGER } })
+    expect(res.statusCode).toBe(403)
   })
 
   it('is 404 to a peer that is not loopback, even on the local listener', async () => {

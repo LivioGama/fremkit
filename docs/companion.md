@@ -37,8 +37,14 @@ Store, load it unpacked:
 
 The extension's ID is fixed by the `key` in its manifest: `lnckeodobpbbmfbdlpnegjpchgkehdlk`. That
 is the ID the store listing will have (publication is pending), so a link made with the unpacked
-copy keeps working when you switch to the store version. The server accepts any extension origin,
-and what makes one yours is that you typed the Edge's code into it.
+copy keeps working when you switch to the store version. The server answers that extension only:
+any other extension is refused (403) before it can ask to pair, and the Edge and **Settings →
+Devices** show the first characters of the asking or linked extension's ID (*extension lnckeo…*).
+
+If you work on the extension with a different `key` (so a different ID), list your ID in
+`FREMKIT_COMPANION_EXTENSION_IDS` in the server's environment: comma-separated IDs, each 32 letters
+from `a` to `p`; anything else in the list is ignored, with a warning in the log. The listed IDs are
+let in on top of Companion's.
 
 ## Link it to Fremkit
 

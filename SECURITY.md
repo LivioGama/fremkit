@@ -311,7 +311,8 @@ files:
 
 - `POST /api/companion/pair`, `POST /api/companion/pair/:requestId` (where a request stands) and
   `POST /api/companion/pair/:requestId/confirm` and `…/finish` (the code's proof), which each check
-  for an `Origin` that is an extension's (`chrome-extension://` and 32 letters) before doing
+  for Companion's own `Origin` (`chrome-extension://lnckeodobpbbmfbdlpnegjpchgkehdlk`, the ID its
+  manifest `key` fixes, or one a developer lists in `FREMKIT_COMPANION_EXTENSION_IDS`) before doing
   anything.
 - `GET /companion/ws`, the socket. The extension opens it with a `challenge` naming its record
   and a fresh nonce; the server answers with an HMAC of that nonce keyed by the token's stored
@@ -337,10 +338,11 @@ can forge the extension's `Origin` and keep those slots taken, renewing silent s
 seconds, so your extension's connections are turned away while it does; a process running as you has
 worse options anyway.
 
-**What another extension can do.** It has its own `chrome-extension://` origin, so it can ask to
-pair, and the request shows its name and code on the Edge; it pairs only if you type that code into
-it, and a request you did not make is refused. If you do, it is a Companion like any other, with
-what that carries below. Do not type a code into a request you did not start.
+**What another extension can do.** Not pair, nor open the socket: it has its own
+`chrome-extension://` origin, which is not Companion's, and every companion route and the socket's
+upgrade answer it 403. (A browser sets an extension's `Origin`; the extension cannot pick
+Companion's.) The Edge prompt and **Settings → Devices** also show the first six characters of the
+asking or linked extension's ID, so a developer's second copy is told from Companion at a glance.
 
 **What a linked extension can do**, and it is little: send metadata about the video being shared (a
 title, a host, a position), and a WebRTC offer, to the Edge. It cannot read your dashboard, your

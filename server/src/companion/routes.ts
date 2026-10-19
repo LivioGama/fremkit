@@ -27,6 +27,8 @@ import { EXTENSION_ORIGIN_RE } from './protocol.js'
 export interface CompanionRoutesOptions {
   pairing: CompanionPairing
   config: Pick<ConfigStore, 'get'>
+  /** The extension origins let in (`companionOrigins`). */
+  origins: ReadonlySet<string>
 }
 
 /**
@@ -55,10 +57,10 @@ const RequestIdSchema = z.uuid()
 
 type Params = { Params: { requestId: string } }
 
-/** The request's extension origin, or null when it has none (or several). */
-function extensionOrigin(req: FastifyRequest): string | null {
+/** The request's extension origin when it is one of `allowed`, or null (none, several, another). */
+function extensionOrigin(req: FastifyRequest, allowed: ReadonlySet<string>): string | null {
   const origin = req.headers.origin
-  return typeof origin === 'string' && EXTENSION_ORIGIN_RE.test(origin) ? origin : null
+  return typeof origin === 'string' && EXTENSION_ORIGIN_RE.test(origin) && allowed.has(origin) ? origin : null
 }
 
 export async function companionRoutes(app: FastifyInstance, opts: CompanionRoutesOptions): Promise<void> {
@@ -75,7 +77,7 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
   // --- the extension ----------------------------------------------------------------------------
 
   app.post('/api/companion/pair', { onRequest: localOnly }, async (req, reply) => {
-    const origin = extensionOrigin(req)
+    const origin = extensionOrigin(req, opts.origins)
     if (origin === null) return fail(reply, 403, 'companion.originNotAllowed')
     const parsed = PairSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -103,7 +105,7 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
   })
 
   app.post<Params>('/api/companion/pair/:requestId', { onRequest: localOnly }, async (req, reply) => {
-    const origin = extensionOrigin(req)
+    const origin = extensionOrigin(req, opts.origins)
     if (origin === null) return fail(reply, 403, 'companion.originNotAllowed')
     reply.header('cache-control', 'no-store')
     const id = RequestIdSchema.safeParse(req.params.requestId)
@@ -113,7 +115,7 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
   })
 
   app.post<Params>('/api/companion/pair/:requestId/confirm', { onRequest: localOnly }, async (req, reply) => {
-    const origin = extensionOrigin(req)
+    const origin = extensionOrigin(req, opts.origins)
     if (origin === null) return fail(reply, 403, 'companion.originNotAllowed')
     reply.header('cache-control', 'no-store')
     const id = RequestIdSchema.safeParse(req.params.requestId)
@@ -127,7 +129,7 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
   })
 
   app.post<Params>('/api/companion/pair/:requestId/finish', { onRequest: localOnly }, async (req, reply) => {
-    const origin = extensionOrigin(req)
+    const origin = extensionOrigin(req, opts.origins)
     if (origin === null) return fail(reply, 403, 'companion.originNotAllowed')
     reply.header('cache-control', 'no-store')
     const id = RequestIdSchema.safeParse(req.params.requestId)
