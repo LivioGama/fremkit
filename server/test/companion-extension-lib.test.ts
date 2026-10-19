@@ -13,7 +13,7 @@ import { IDLE_SLACK_MS, idleDelay } from '../../companion/lib/presence.js'
 // @ts-expect-error plain JS module
 import { closeOutcome, POLICY_CLOSE_CODE, refusalOf, REVOKED_CLOSE_CODE } from '../../companion/lib/link.js'
 // @ts-expect-error plain JS module
-import { fremplayBlocked, SHARE_ERRORS, shareErrorKey } from '../../companion/lib/errors.js'
+import { fremplayBlocked, fremplaySwitch, SHARE_ERRORS, shareErrorKey } from '../../companion/lib/errors.js'
 // @ts-expect-error plain JS module
 import { localCandidatesOnly, loopbackAnswer, loopbackForMdns, offerSdp } from '../../companion/lib/sdp.js'
 // @ts-expect-error plain JS module
@@ -1048,6 +1048,17 @@ describe('the popup\'s Fremplay messages (lib/errors.js)', () => {
     }
     expect(shareErrorKey('something new')).toBe('errFailed')
     expect(shareErrorKey('toString')).toBe('errFailed')
+  })
+
+  it('clears a "turned off" last error when Fremkit says Fremplay is back on, and nothing else', () => {
+    expect(fremplaySwitch({ fremplayOff: true, lastError: 'disabled' }, false)).toEqual({ fremplayOff: false, lastError: null })
+    // The shortcut was refused while off, and the flag never got set: the error still goes.
+    expect(fremplaySwitch({ fremplayOff: false, lastError: 'disabled' }, false)).toEqual({ lastError: null })
+    // Another error is the popup's to show.
+    expect(fremplaySwitch({ fremplayOff: true, lastError: 'noVideoLeft' }, false)).toEqual({ fremplayOff: false })
+    expect(fremplaySwitch({ fremplayOff: false, lastError: null }, true)).toEqual({ fremplayOff: true })
+    expect(fremplaySwitch({ fremplayOff: true, lastError: 'disabled' }, true)).toBeNull()
+    expect(fremplaySwitch({}, false)).toBeNull()
   })
 
   it('greys Send while Fremkit says Fremplay is off, and only then', () => {

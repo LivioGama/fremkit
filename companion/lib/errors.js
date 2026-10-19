@@ -28,3 +28,15 @@ export function shareErrorKey(code) {
 export function fremplayBlocked(session) {
   return session?.fremplayOff === true ? { error: 'disabled', key: SHARE_ERRORS.disabled } : null
 }
+
+/**
+ * What the worker stores when Fremkit says whether Fremplay is on (`ready.modules`): the flag, and,
+ * with Fremplay back on, no "turned off" left as the last error for the popup to show on its next
+ * open. Null when nothing changes.
+ */
+export function fremplaySwitch(session, off) {
+  const patch = {}
+  if ((session?.fremplayOff === true) !== off) patch.fremplayOff = off
+  if (!off && session?.lastError === 'disabled') patch.lastError = null
+  return Object.keys(patch).length > 0 ? patch : null
+}

@@ -10,6 +10,7 @@ import { browserName } from './lib/browser.js'
 import { handshake } from './lib/handshake.js'
 import { grantToReturn } from './lib/grant.js'
 import { closeOutcome, refusalOf } from './lib/link.js'
+import { fremplaySwitch } from './lib/errors.js'
 import { confirmCode, normalizeCode, pairingDeadline } from './lib/pairProof.js'
 import { newNonce } from './lib/proof.js'
 import { navigationClearsRect } from './lib/navigation.js'
@@ -473,7 +474,8 @@ async function onServerMessage(msg) {
       // Sent again when the switch turns; a server that does not say is taken as on.
       {
         const off = msg.modules?.fremplay === false
-        if (session.fremplayOff !== off) await saveSession({ fremplayOff: off })
+        const patch = fremplaySwitch(session, off)
+        if (patch) await saveSession(patch)
       }
       failingSince = 0
       retryDelay = RETRY_FIRST_MS
