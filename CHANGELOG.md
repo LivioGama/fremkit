@@ -96,7 +96,7 @@ tagged `vX.Y.Z`.
   in the preview or in the Screen settings: its settings, move left or right, remove. On a screen
   above the canvas: rename it in place (or double-click it), its settings, delete it.
 - **Right-click menus in the editor.** A right click on a widget opens a real menu, like a Mac
-  app's: settings, show title, appearance (opacity presets, colours, background image, reset),
+  app's: show title, appearance (opacity presets, colours, background image, reset),
   copy and paste a widget's style, duplicate, copy and paste, move it to another page or screen,
   show it on another screen too, default or minimum size, open its connection, about the widget
   (version, where it came from, what it asks for, an update when one is waiting), reload it, and

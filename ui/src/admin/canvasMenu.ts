@@ -108,7 +108,6 @@ export function widgetMenu(s: AdminStore, instanceId: string, ui: MenuUi): MenuE
 
   const connection = connectionOf(manifest, widget)
   const lastPlace = s.isLastPlace(instanceId)
-  const hasSettings = !!manifest && Object.keys(manifest.settingsSchema ?? {}).length > 0
 
   const fix = ui.fix?.(instanceId)
   const update = ui.update?.(instanceId)
@@ -117,8 +116,6 @@ export function widgetMenu(s: AdminStore, instanceId: string, ui: MenuUi): MenuE
     fix && { label: fix.label, run: fix.run },
     update && { label: update.label, run: update.run },
     (fix || update) && SEPARATOR,
-    { label: t('admin.menu.settings'), run: () => { s.select(instanceId); ui.revealSection(hasSettings ? 'widget.settings' : '') } },
-    SEPARATOR,
     { label: t('admin.menu.showTitle'), checked: widget.showTitle, run: () => s.updateInstance(instanceId, { showTitle: !widget.showTitle }) },
     { label: t('admin.menu.appearance'), children: appearance },
     { label: t('admin.menu.copyStyle'), run: () => s.copyStyle(instanceId) },
