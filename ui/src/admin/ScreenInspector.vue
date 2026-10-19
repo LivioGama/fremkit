@@ -471,10 +471,10 @@ function setBackground(patch: Partial<Background>): void {
   </BaseSection>
 
   <BaseSection id="screen.about" :title="t('admin.inspector.screen.about')">
-  <!-- Plain text to the eye, and a tab stop: seven clicks, or seven presses of Enter, reveal the
+  <!-- Plain text to the eye, and a tab stop: seven clicks, or seven presses of Enter (held-key repeats do not count), reveal the
        experimental features, so the gesture has a keyboard path. Deliberately not styled or
        announced as a button — it is the version, with a hidden gesture on it. -->
-  <p class="ro version" data-test="version" tabindex="0" @click="onVersionClick()" @keydown.enter.prevent="onVersionClick()">{{ t('admin.inspector.screen.about.version', { version: VERSION }) }}</p>
+  <p class="ro version" data-test="version" tabindex="0" @click="onVersionClick()" @keydown.enter.prevent="!$event.repeat && onVersionClick()">{{ t('admin.inspector.screen.about.version', { version: VERSION }) }}</p>
   <p class="ro">{{ t('admin.inspector.screen.about.authors', { maintainer: MAINTAINER.handle, contributors }) }}</p>
   <!-- A new tab in a browser; the helper's admin window hands these to the default browser
        rather than replacing the admin with them. -->

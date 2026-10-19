@@ -211,6 +211,18 @@ describe('the seven clicks on the version', () => {
     wrapper.unmount()
   })
 
+  it('do not count a held Enter: key repeats are ignored', async () => {
+    seed(false, 1)
+    const wrapper = mount(ScreenInspector, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    const version = wrapper.find('[data-test="version"]')
+    await version.trigger('keydown', { key: 'Enter' })
+    for (let i = 0; i < 20; i++) await version.trigger('keydown', { key: 'Enter', repeat: true })
+    await flushPromises()
+    expect(wrapper.find('[data-test="labs-devices"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('leave the switch in sight while the flag is on, revealed or not', async () => {
     seed(true, 1)
     const wrapper = mount(ScreenInspector, { attachTo: document.body, global: { stubs } })
