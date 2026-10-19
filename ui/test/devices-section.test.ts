@@ -247,6 +247,18 @@ describe('the devices section', () => {
     wrapper.unmount()
   })
 
+  it('shows the short id of the asking extension, and of each linked one', async () => {
+    deviceApi.getDevices.mockResolvedValue(status({
+      devices: [extension({ origin: 'chrome-extension://lnckeodobpbbmfbdlpnegjpchgkehdlk' })],
+      companionRequest: { requestId: 'req-1', code: 'AB2C', name: 'Chrome', extension: 'abcdef', expiresAt: Date.now() + 60_000 },
+    }))
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="request-extension"]').text()).toBe('extension abcdef…')
+    expect(wrapper.find('[data-test="extension-id"]').text()).toBe('extension lnckeo…')
+    wrapper.unmount()
+  })
+
   it('shows the code to type in the browser, and only Refuse', async () => {
     deviceApi.getDevices.mockResolvedValue(status({
       companionRequest: { requestId: 'req-1', code: 'AB2C', name: 'Chrome', expiresAt: Date.now() + 60_000 },

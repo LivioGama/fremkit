@@ -64,6 +64,13 @@ describe('the pairing prompt', () => {
     expect(w.findAll('button').map((b) => b.classes())).toEqual([['refuse']])
   })
 
+  it('shows the first characters of the asking extension\'s id', async () => {
+    const w = await mountPrompt(pairing({ extension: 'lnckeo' }))
+    expect(w.find('[data-test="companion-extension"]').text()).toBe('extension lnckeo…')
+    const none = await mountPrompt(pairing())
+    expect(none.find('[data-test="companion-extension"]').exists()).toBe(false)
+  })
+
   it('calls refuse on Refuser at once, with the code on show', async () => {
     const w = await mountPrompt(pairing())
     await w.find('button.refuse').trigger('click')

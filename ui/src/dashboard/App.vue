@@ -80,7 +80,7 @@ let cycleTimer: number | undefined
 let unsub: (() => void) | undefined
 let unsubCompanion: (() => void) | undefined
 /** The browser extension's pairing request, while one is pending (local dashboard only). */
-const companionPairing = ref<{ requestId: string; code: string; name: string; expiresAt: number; turnedAway?: number } | null>(null)
+const companionPairing = ref<{ requestId: string; code: string; name: string; extension?: string; expiresAt: number; turnedAway?: number } | null>(null)
 const reveal = createRevealTracker()
 let offReload: (() => void) | undefined
 

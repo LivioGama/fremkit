@@ -16,7 +16,7 @@ import BaseCheckbox from '../shared/ui/BaseCheckbox.vue'
 import BaseIcon from '../shared/ui/BaseIcon.vue'
 import { useI18n } from '../shared/i18n'
 import { useConfirm } from '../shared/useConfirm'
-import type { PublicExtensionDevice, PublicIpadDevice } from '../shared/api'
+import { shortExtensionId, type PublicExtensionDevice, type PublicIpadDevice } from '../shared/api'
 import type { Screen } from '../shared/types'
 import AddScreenDialog from './AddScreenDialog.vue'
 import { useDevices } from './devices'
@@ -193,6 +193,7 @@ async function onCreated(screenId: string): Promise<void> {
       <div v-if="request" class="request" role="alertdialog" data-test="companion-request">
         <p class="ask">{{ t('admin.devices.extension.request') }}</p>
         <p class="rname" data-test="request-name">{{ request.name }}</p>
+        <p v-if="request.extension" class="ro ext" data-test="request-extension">{{ t('admin.devices.extension.id', { id: request.extension }) }}</p>
         <p class="value mono" data-test="request-code">{{ request.code }}</p>
         <!-- No Allow: typing this code into the browser is the approval, as on the Edge. -->
         <p class="ro" data-test="request-type">{{ t('admin.devices.extension.typeCode') }}</p>
@@ -210,6 +211,7 @@ async function onCreated(screenId: string): Promise<void> {
             <span v-if="d.connected" class="ro size on" data-test="extension-connected">{{ t('admin.devices.extension.connected') }}</span>
           </div>
           <p class="ro">{{ t('admin.devices.extension.kind') }} · {{ t('admin.devices.pairedAt', { date: when(d.pairedAt) }) }} · {{ t('admin.devices.lastSeen', { date: when(d.lastSeen) }) }}</p>
+          <p class="ro ext" data-test="extension-id">{{ t('admin.devices.extension.id', { id: shortExtensionId(d.origin) }) }}</p>
           <BaseButton variant="danger" data-test="extension-remove" @click="confirm.ask(`device:${d.id}`, () => devices.remove(d.id))">
             <template v-if="confirm.armed(`device:${d.id}`)">{{ t('common.confirm') }}</template>
             <template v-else><BaseIcon name="trash-2" :size="16" />{{ t('admin.devices.remove') }}</template>
@@ -231,6 +233,7 @@ async function onCreated(screenId: string): Promise<void> {
 
 <style scoped>
 .ro { margin: 0 0 var(--space-2); font-size: var(--fs-sm); color: var(--text-muted); }
+.ro.ext { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-dim); }
 .bad { margin: 0 0 var(--space-2); font-size: var(--fs-sm); color: var(--danger); white-space: pre-wrap; }
 .bad.action { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .warn { display: flex; gap: var(--space-2); align-items: flex-start; margin: 0 0 var(--space-2); font-size: var(--fs-sm); color: var(--danger); }

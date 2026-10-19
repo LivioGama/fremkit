@@ -17,7 +17,7 @@ import { useI18n } from '../shared/i18n'
  * a request sitting on the slot that the user did not make (a local program holding pairing up)
  * gives itself away.
  */
-const props = defineProps<{ pairing: { requestId: string; code: string; name: string; expiresAt: number; turnedAway?: number } }>()
+const props = defineProps<{ pairing: { requestId: string; code: string; name: string; extension?: string; expiresAt: number; turnedAway?: number } }>()
 const { t } = useI18n()
 const expired = ref(false)
 const failed = ref(false)
@@ -62,6 +62,7 @@ async function answer(call: (id: string, code: string) => Promise<unknown>) {
     <div class="card">
       <p class="ask">{{ t('dashboard.companion.request') }}</p>
       <p class="name">{{ pairing.name }}</p>
+      <p v-if="pairing.extension" class="ext" data-test="companion-extension">{{ t('dashboard.companion.extensionId', { id: pairing.extension }) }}</p>
       <p class="code" data-test="companion-code">{{ pairing.code }}</p>
       <p class="type">{{ t('dashboard.companion.typeCode') }}</p>
       <p v-if="(pairing.turnedAway ?? 0) > 0" class="turned" data-test="turned-away">{{ t('dashboard.companion.turnedAway', { n: pairing.turnedAway ?? 0 }) }}</p>
@@ -86,6 +87,7 @@ async function answer(call: (id: string, code: string) => Promise<unknown>) {
 .ask { font-size: var(--fs-lg); }
 .name { color: var(--accent); font-size: var(--fs-lg); font-weight: 600; }
 .code { font-family: var(--font-mono); font-size: 96px; line-height: 1; letter-spacing: 0.15em; font-weight: 700; }
+.ext { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-dim); }
 .type { font-size: var(--fs-lg); }
 .error { color: var(--danger); font-size: var(--fs-sm); }
 .turned { color: var(--warn); font-size: var(--fs-sm); max-width: 32em; }

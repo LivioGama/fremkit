@@ -103,7 +103,13 @@ export interface DeviceStatus {
   /** A browser extension waiting for an answer (the Edge shows it too); never carries a token. */
   companionRequest: CompanionRequest | null
 }
-export interface CompanionRequest { requestId: string; code: string; name: string; expiresAt: number }
+/** `extension`: the first characters of the asking extension's id, to tell it from another. */
+export interface CompanionRequest { requestId: string; code: string; name: string; extension?: string; expiresAt: number }
+
+/** The first characters of an extension origin's id, as the server gives them with a request. */
+export function shortExtensionId(origin: string): string {
+  return origin.replace(/^chrome-extension:\/\//, '').slice(0, 6)
+}
 /** A pairing code, its expiry (epoch ms) and the QR payload carrying it. */
 export interface PairingOffer { code: string; expiresAt: number; url: string }
 
