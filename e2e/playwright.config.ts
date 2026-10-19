@@ -19,7 +19,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: ci,
   retries: 0,
-  // One server per worker, on ports 4330–4339.
+  // One server per worker, on ports 4330–4339 (or from E2E_FIRST_PORT).
   workers: ci ? 2 : Math.min(4, MAX_WORKERS),
   reporter: ci ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {

@@ -63,7 +63,8 @@ pnpm typecheck                    # server + ui (vue-tsc)
 pnpm test                         # vitest, server + ui
 pnpm --filter server exec vitest run test/<file>.test.ts
 pnpm --filter ui build            # required before the server shows a UI change
-pnpm e2e                          # Playwright on the built UI, one throwaway server per worker (4330–4339)
+pnpm e2e                          # Playwright on the built UI, one throwaway server per worker (4330–4339;
+                                  # E2E_FIRST_PORT=43x0 moves it when another checkout is running the suite)
 pnpm dev                          # server + Vite with hot reload for the UI
 pnpm helper:build && pnpm helper:install && pnpm helper:test
 ```
