@@ -94,6 +94,10 @@ built="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Co
 [ "$built" = "$VERSION" ] || { echo "error: built $built, expected $VERSION" >&2; exit 1; }
 bash scripts/notarize.sh
 DMG="$DIST/Fremkit-$VERSION.dmg"
+# The same DMG under a name that never changes, so the site can link
+# $REPO_URL/releases/latest/download/Fremkit.dmg and start the download itself.
+LATEST_DMG="$DIST/Fremkit.dmg"
+cp "$DMG" "$LATEST_DMG"
 
 # --- Sparkle ------------------------------------------------------------------------------------
 # The update is the stapled app, zipped the way Sparkle documents. The private key never leaves
@@ -163,7 +167,7 @@ To publish, in this order:
   #    $REPO_URL/releases/latest/download/appcast.xml, so publishing the release is what
   #    offers the update to every installed app, and nothing else has to be committed. The
   #    release also opens a thread in the Announcements discussions, where people can comment.
-  gh release create $TAG "$DMG" "$ZIP" "$DIST/appcast.xml" \\
+  gh release create $TAG "$DMG" "$LATEST_DMG" "$ZIP" "$DIST/appcast.xml" \\
       --title "Fremkit $VERSION" --notes-file "$NOTES" --discussion-category Announcements
 
   # 4. The tap (a clone of fdussert/homebrew-fremkit next to this checkout).
