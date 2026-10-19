@@ -34,6 +34,7 @@ describe('ShellSmith command suggestion provider', () => {
     expect(result).toEqual({ ok: true, command: 'find . -type f' })
     expect(calls).toHaveLength(1)
     expect(calls[0].url).toBe('https://api.openai.com/v1/responses')
+    expect(calls[0].init?.redirect).toBe('error')
     expect(new Headers(calls[0].init?.headers).get('authorization')).toBe('Bearer private-test-token')
     const body = JSON.parse(String(calls[0].init?.body))
     expect(body.model).toBe('gpt-4.1-mini')
@@ -112,6 +113,7 @@ describe('ShellSmith command suggestion provider', () => {
     expect(result).toEqual({ ok: true, command: 'find . -type f' })
     expect(calls).toHaveLength(1)
     expect(calls[0].url).toBe('https://api.groq.com/openai/v1/chat/completions')
+    expect(calls[0].init?.redirect).toBe('error')
     expect(new Headers(calls[0].init?.headers).get('authorization')).toBe('Bearer private-test-token')
     const body = JSON.parse(String(calls[0].init?.body))
     expect(body.model).toBe('openai/gpt-oss-20b')
@@ -129,28 +131,34 @@ describe('ShellSmith command suggestion provider', () => {
     expect(openAIShellsmithType.fields.some((field) => field.key === 'baseUrl')).toBe(false)
 
     let requestedUrl = ''
+    let requestedRedirect: RequestInit['redirect']
     const result = await openAIShellsmithType.test({ model: 'gpt-4.1-mini' }, { token: 'private-test-token' }, {
-      fetchFn: (async (url: string | URL | Request) => {
+      fetchFn: (async (url: string | URL | Request, init?: RequestInit) => {
         requestedUrl = String(url)
+        requestedRedirect = init?.redirect
         return json({ id: 'gpt-4.1-mini' })
       }) as typeof fetch,
     })
 
     expect(requestedUrl).toBe('https://api.openai.com/v1/models/gpt-4.1-mini')
+    expect(requestedRedirect).toBe('error')
     expect(result.ok).toBe(true)
     expect(JSON.stringify(result)).not.toContain('private-test-token')
   })
 
   it('checks Groq models through the fixed models endpoint without returning the secret', async () => {
     let requestedUrl = ''
+    let requestedRedirect: RequestInit['redirect']
     const result = await openAIShellsmithType.test({ provider: 'groq', model: 'openai/gpt-oss-20b' }, { token: 'private-test-token' }, {
-      fetchFn: (async (url: string | URL | Request) => {
+      fetchFn: (async (url: string | URL | Request, init?: RequestInit) => {
         requestedUrl = String(url)
+        requestedRedirect = init?.redirect
         return json({ data: [{ id: 'openai/gpt-oss-20b' }] })
       }) as typeof fetch,
     })
 
     expect(requestedUrl).toBe('https://api.groq.com/openai/v1/models')
+    expect(requestedRedirect).toBe('error')
     expect(result.ok).toBe(true)
     expect(JSON.stringify(result)).not.toContain('private-test-token')
   })

@@ -48,6 +48,7 @@ async function chatCompletion(
   try {
     response = await fetchFn(`${api}/chat/completions`, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/json',
@@ -107,6 +108,7 @@ export function createOpenAIShellsmithProvider(ctx: ConnectionProviderContext, d
         try {
           response = await fetchFn(`${api}/responses`, {
             method: 'POST',
+            redirect: 'error',
             headers: {
               Authorization: `Bearer ${token}`,
               Accept: 'application/json',
