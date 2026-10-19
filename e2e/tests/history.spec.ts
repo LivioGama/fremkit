@@ -43,7 +43,7 @@ test('restoring an earlier version, then the one it replaced', async ({ page, op
   await expect.poll(() => state(savedConfig)).toEqual(EDITED)
 
   await page.locator('[data-test="open-history"]').click()
-  const dialog = page.getByRole('dialog', { name: 'Screen' })
+  const dialog = page.getByRole('dialog', { name: 'Settings' })
   await expect(dialog.locator('[data-test="history"]')).toBeVisible()
 
   // Back to before the edits: the server and the editor both lose them.

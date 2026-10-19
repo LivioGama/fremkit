@@ -15,7 +15,7 @@ and "Notifications: active" above the toggles, and *Log…* opens the supervised
 Use **Copy diagnostics**, then paste the result into the
 [bug form](https://github.com/fdussert/fremkit/issues/new?template=bug.yml). It is in two places:
 
-- the editor, **Screen → About → Diagnostics**: *Prepare diagnostics* shows the whole report
+- the editor, **Settings → About → Diagnostics**: *Prepare diagnostics* shows the whole report
   before *Copy diagnostics* puts it on the clipboard;
 - the helper's menu bar **F**: *Copy diagnostics* copies the same report with the helper's own
   part added (touch driver, Input Monitoring and Accessibility, the kiosk display, DDC). When the
@@ -370,7 +370,7 @@ server* off in the menu and run it yourself.
 refuses to save over your file rather than overwriting it. Repair or remove the file — a good copy
 may be in `data/fremkit.json.bak`, the file as it was before the last save, or among the saved
 versions in `data/history/` (one `<time>-<id>.json` per version, `index.json` says what changed in
-each) — then restart the server. Once it reads its file again, **Screen → History** restores any
+each) — then restart the server. Once it reads its file again, **Settings → History & backup** restores any
 of those versions from the admin.
 
 `data/fremkit.v3.json` is something else: the dashboard as it was the first time a version with
@@ -393,7 +393,7 @@ connection. Remove them, or change their `connection` setting first.
 
 Fremkit sets the brightness of the display the kiosk is on with DDC/CI, the monitor control
 protocol carried by the display cable, the way MonitorControl and m1ddc do. The helper's **F**
-menu, the `brightness` widget and *Screen → Brightness* all say why when it cannot:
+menu, the `brightness` widget and *Settings → your screen → Brightness* all say why when it cannot:
 
 - **"not adjustable on this display (DDC)"** — the display did not answer. In order of likelihood:
   - DDC/CI is switched off in the monitor's own menu. Turn it on.

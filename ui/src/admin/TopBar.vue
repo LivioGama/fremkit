@@ -9,6 +9,7 @@ import { useAdminStore } from './store'
 import { useMarketplaceStore } from './marketplace'
 import HealthMenu from './HealthMenu.vue'
 import { openHistory } from './history'
+import { openSettings } from './settingsWindow'
 import { paletteOpen } from './CommandPalette.vue'
 import { shortcutHint } from './shortcuts'
 import type { Mode } from './store'
@@ -44,8 +45,8 @@ const statusTone = computed(() => (s.state.status === 'error' ? 'danger' : s.sta
     </button>
     <HealthMenu />
     <BaseChip :tone="statusTone">{{ statusLabel }}</BaseChip>
-    <button type="button" class="panel" :title="t('admin.topbar.openScreen')" @click="s.openModal('screen')">
-      <BaseIcon name="monitor" :size="16" />{{ t('admin.tabs.screen') }}
+    <button type="button" class="panel" :title="t('admin.topbar.openSettings')" @click="openSettings(s)">
+      <BaseIcon name="settings" :size="16" />{{ t('admin.tabs.settings') }}
     </button>
     <button type="button" class="panel" :title="t('admin.topbar.openConnections')" @click="s.openModal('connections')">
       <BaseIcon name="network" :size="16" />{{ t('admin.tabs.connections') }}

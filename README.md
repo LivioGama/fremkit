@@ -188,7 +188,7 @@ badges.
    top bar says saved, saving or not saved.
 
 A fresh install starts on one page with a clock and the wallpaper that ships with Fremkit. That
-wallpaper is an ordinary entry in the background library, so *Screen → Image → Remove the image*
+wallpaper is an ordinary entry in the background library, so *Settings → your screen → Screen background → Remove the image*
 leaves the screen with no background at all rather than putting it back.
 
 ### Editing, in more detail
@@ -270,9 +270,9 @@ border, **fill** colours the whole tile. The screen itself has a background colo
 and a page can have its own, shown instead of the screen's while that page is on screen.
 
 **The navigation bar.** The strip at the bottom of every page, 80 px or 40 px tall, as opaque as
-you like. Its middle shows page dots by default. In *Screen → Pages in the bar*, each screen can show scrolling names instead. The sides stay available for compact widgets. **Hold or double-tap
+you like. Its middle shows page dots by default. In *Settings → your screen → Layout → Pages in the bar*, each screen can show scrolling names instead. The sides stay available for compact widgets. **Hold or double-tap
 a page button to open the admin** — the Edge has no keyboard, so this is the way in from the screen.
-*Screen → Open the admin from the bar* chooses between the two gestures, or accepts both, which
+*Settings → your screen → Layout → Open the admin from the bar* chooses between the two gestures, or accepts both, which
 is the default. When both gestures are enabled, a page tap waits briefly for a possible
 double tap. With only long press enabled, the page opens on release. The admin prevents a
 named-page layout that would hide compact widgets. A single page keeps its
@@ -301,7 +301,7 @@ Several widgets can share one, and one service can have several. Non-secret fiel
 (or, with the `file` backend, to a mode-600 `data/secrets.json`) and are never returned by the
 API, logged, written to the config or sent on the WebSocket.
 
-**Brightness.** *Screen → Brightness* sets the level of the selected screen and how it changes
+**Brightness.** *Settings → your screen → Brightness* sets the level of the selected screen and how it changes
 on its own, per screen: a **day / night** pair of levels switched at sunrise and sunset (computed
 on the Mac from a latitude and longitude — typed, or found with *Search for a city*, which asks
 Open-Meteo for that name only when you press it) or at fixed times, with a gradual
@@ -313,7 +313,7 @@ brightness moves noticeably; *Back to automatic* ends it at once. It works over 
 silicon, needs the helper, and only drives the display the kiosk is on; a display that does not
 answer says so (see [troubleshooting](docs/troubleshooting.md#brightness-says-not-adjustable)).
 
-**Language.** French or English, switched in the admin's Screen panel. It changes the interface,
+**Language.** French or English, switched in the admin's *Settings → General*. It changes the interface,
 the widget library and the widgets themselves, live, without a reload.
 
 **The helper, or a browser.** The dashboard is a web page: any browser can show it. The native
@@ -401,7 +401,7 @@ The optional [Codex provider](docs/codex.md) reads selected local account and ch
 ## Share your setup
 
 A setup worth a photo is worth a file. **Export page…** (a page's right-click menu),
-**Export screen…** (a screen's), or **Screen → Share your setup → Export the whole setup…** write a
+**Export screen…** (a screen's), or **Settings → Share → Export the whole setup…** write a
 `.fremkit-layout.json`: the pages, the bar, each tile's place, look and settings, the theme, and
 the background images. The dialog shows what is in the file before you download it (or copy it,
 where a download is not possible) and what was left out.
@@ -419,7 +419,7 @@ replacing only if you choose to. One ⌘Z undoes the whole import. Details, and 
 
 ## Backup
 
-**/admin → Screen → Backup** downloads the whole dashboard — the configuration and the background
+**/admin → Settings → History & backup → Backup** downloads the whole dashboard — the configuration and the background
 library — as `fremkit-backup-<date>.zip`, and **Restore…** takes one back.
 
 Secrets are never in it: they live in the macOS keychain, and the point of keeping them there is
@@ -435,7 +435,7 @@ installed widget was granted. Details in
 
 ### History
 
-**/admin → Screen → History** (or the clock-arrow button next to undo) lists every saved version
+**/admin → Settings → History & backup** (or the clock-arrow button next to undo) lists every saved version
 of the dashboard for the last 30 days, up to 100, grouped by day, each with what changed: pages
 added, removed or renamed, widgets added, removed, moved or edited, screens, theme. Continuous
 editing is kept as one version per two minutes, the last state winning. Open a version to see its
@@ -457,16 +457,16 @@ The list is short and it is all of it.
 | What | Who reads it | When |
 |---|---|---|
 | `~/.claude/projects/` — Claude Code's session transcripts | the `claude-sessions` and `claude-usage` widgets, for the session list and the token counts | whenever one of those widgets is on the dashboard |
-| The `Claude Code-credentials` keychain item — Claude Code's OAuth token | the account usage behind the `claude-usage` gauges. The token is presented to `api.anthropic.com` and nowhere else; it is never stored, never logged, never in an error message | **off for a new install.** Turn it on in **/admin → Screen → Privacy**. A dashboard that already showed the Claude widget before this setting existed keeps it *on*, so the gauges do not go blank on an upgrade — turn it off there if you would rather. The endpoint (`/api/oauth/usage`) is not documented by Anthropic and may disappear |
+| The `Claude Code-credentials` keychain item — Claude Code's OAuth token | the account usage behind the `claude-usage` gauges. The token is presented to `api.anthropic.com` and nowhere else; it is never stored, never logged, never in an error message | **off for a new install.** Turn it on in **/admin → Settings → Privacy**. A dashboard that already showed the Claude widget before this setting existed keeps it *on*, so the gauges do not go blank on an upgrade — turn it off there if you would rather. The endpoint (`/api/oauth/usage`) is not documented by Anthropic and may disappear |
 | Where a Claude Code session lives — its terminal application, pane and tty, read by the hook inside the session | the `claude-sessions` widget's ↗, to raise that window again | whenever the Claude Code hooks are installed. It stays on the server: the dashboard is told which kind of application it is and what to call it, never the pane key or the tty |
 | The clipboard, through `pbpaste` | the `clipboard` widget | whenever that widget is on the dashboard |
 | The Dock's badge counts and the icons of installed applications | the `notifications` and `shortcuts` widgets, through the helper | whenever one of those widgets is on the dashboard |
-| The brightness of the kiosk's display (DDC/CI over its cable) and of the Mac's built-in display | the helper, for the `brightness` widget and *Screen → Brightness*; it changes only the display the kiosk is on | while the helper runs |
+| The brightness of the kiosk's display (DDC/CI over its cable) and of the Mac's built-in display | the helper, for the `brightness` widget and *Settings → your screen → Brightness*; it changes only the display the kiosk is on | while the helper runs |
 | The volume, the battery, the disks, the processes, the network | those widgets, through `pmset`, `df`, `ps` and friends | whenever one of them is on the dashboard |
 | The names and sizes of the folders and files under your home folder or a volume — never their contents | the `disk-map` widget, through `fremkit-scan` or `du`; the last scan is kept in `data/disk-map/` | only when you tap **Scan** (the first time) or ↻ on that widget — never on its own, never on a timer |
 
 A widget that shows an account — its plan, how you signed in — never gets the account's e-mail
-address unless you tick **/admin → Screen → Privacy → Show the account e-mail address**. It is off
+address unless you tick **/admin → Settings → Privacy → Show the account e-mail address**. It is off
 by default, and the server leaves the address out of what it sends, so no widget can show it or
 pass it on. Once on, every widget that reads that account's channel receives it, one installed
 from the marketplace included, and it is on the screen.
@@ -560,7 +560,7 @@ limits, and how to report a problem: **[SECURITY.md](SECURITY.md)**.
 Fremkit is written by [usul](https://github.com/fdussert), with
 [FlorianBruniaux](https://github.com/FlorianBruniaux) and [mcouzinet](https://github.com/mcouzinet).
 The widgets and themes on the registry name their own authors on their cards. The admin's
-**Screen → About** lists the same people, from `ui/src/shared/credits.ts`.
+**Settings → About** lists the same people, from `ui/src/shared/credits.ts`.
 
 The icons are a subset of [Lucide](https://lucide.dev) (ISC licence, © Lucide Contributors),
 inlined in `ui/src/shared/icons.ts` so the interface takes no runtime icon dependency.

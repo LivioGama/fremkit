@@ -9,6 +9,7 @@ import BaseInput from '../shared/ui/BaseInput.vue'
 import BaseRange from '../shared/ui/BaseRange.vue'
 import BaseSection from '../shared/ui/BaseSection.vue'
 import BaseSegmented from '../shared/ui/BaseSegmented.vue'
+import ScrollPanel from '../shared/ui/ScrollPanel.vue'
 import BackgroundPicker from './BackgroundPicker.vue'
 import CopySettingsFrom from './CopySettingsFrom.vue'
 import MissingWidget from './MissingWidget.vue'
@@ -121,6 +122,13 @@ function onSetting(key: string, value: unknown): void {
   s.updateInstance(inst.value!.instanceId, { settings: { ...inst.value!.settings, [key]: value } })
 }
 
+/** The sections "expand all" folds and unfolds: the settings one only when the widget has settings. */
+const sectionIds = computed(() => [
+  'widget.background', 'widget.accent',
+  ...(manifest.value && Object.keys(schema.value).length ? ['widget.settings'] : []),
+  'widget.geometry',
+])
+
 /** What the user calls this widget: its own title, else its manifest's name. */
 const name = computed(() => (inst.value ? inst.value.title?.trim() || pick(manifest.value?.name) || inst.value.widgetId : ''))
 /**
@@ -161,11 +169,14 @@ function moveToPage(): void {
 
 <template>
   <p v-if="!inst" class="empty">{{ t('admin.inspector.widget.empty') }}</p>
-  <template v-else>
+  <!-- The widget's name and the fold buttons stay at the top; its sections scroll under them. -->
+  <ScrollPanel v-else class="widget" :section-ids="sectionIds">
+    <template #title>
     <div class="head">
       <BaseIcon :name="manifest?.icon ?? 'layout-grid'" :size="20" />
       <strong>{{ manifest ? pick(manifest.name) : inst.widgetId }}</strong>
     </div>
+    </template>
     <HealthBanner v-if="wellness" :health="wellness" @action="health.run(inst!.instanceId, $event)" />
     <UpdateNote v-if="update" :update="update" @action="health.run(inst!.instanceId, $event)" />
     <p v-if="alsoOn" class="hint shared"><BaseIcon name="monitor" :size="14" />{{ t('admin.inspector.widget.alsoOn', { screens: alsoOn }) }}</p>
@@ -254,12 +265,14 @@ function moveToPage(): void {
       <BaseButton v-else variant="danger" @click="remove()"><BaseIcon name="trash-2" :size="16" />{{ t('admin.inspector.widget.delete') }}</BaseButton>
     </div>
     <p v-if="deleteArmed" class="hint bad">{{ t('admin.inspector.widget.deleteHint', { name }) }}</p>
-  </template>
+  </ScrollPanel>
 </template>
 
 <style scoped>
 .empty { color: var(--text-muted); font-size: var(--fs-sm); }
-.head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
+.widget { --scroll-panel-pad: var(--space-3); padding-top: var(--space-3); }
+.head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 h3 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted);
   margin: var(--space-4) 0 var(--space-2); }
 .grid4 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--space-2); }

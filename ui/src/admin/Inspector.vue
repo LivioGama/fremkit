@@ -8,10 +8,12 @@ const s = useAdminStore()
 
 <template>
   <aside class="inspector">
-    <div class="body">
+    <!-- A widget's inspector keeps its header fixed and scrolls its own sections. -->
+    <WidgetInspector v-if="s.selected.value" />
+    <!-- With no widget selected, the inspector edits the page being shown. -->
+    <div v-else class="body">
       <WidgetInspector />
-      <!-- With no widget selected, the inspector edits the page being shown. -->
-      <PageInspector v-if="!s.selected.value" />
+      <PageInspector />
     </div>
   </aside>
 </template>

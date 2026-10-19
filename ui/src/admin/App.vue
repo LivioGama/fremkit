@@ -9,7 +9,7 @@ import Inspector from './Inspector.vue'
 import TopBar from './TopBar.vue'
 import BaseToast from '../shared/ui/BaseToast.vue'
 import BaseModal from '../shared/ui/BaseModal.vue'
-import ScreenInspector from './ScreenInspector.vue'
+import SettingsWindow from './settings/SettingsWindow.vue'
 import ConnectionsInspector from './ConnectionsInspector.vue'
 import MarketplacePanel from './MarketplacePanel.vue'
 import WidgetAbout from './WidgetAbout.vue'
@@ -89,7 +89,7 @@ function onKeyDown(e: KeyboardEvent): void {
       if (s.cycleSelection(shortcut.id === 'nextWidget' ? 1 : -1)) e.preventDefault()
       return
   }
-  // A dialog (this sheet, the Screen panel) is over the canvas: the keys are not the tile's.
+  // A dialog (this sheet, the settings window) is over the canvas: the keys are not the tile's.
   if (!inst || !editing || s.state.modal) return
   switch (shortcut.id) {
     case 'deselect': s.select(null); return
@@ -183,16 +183,16 @@ onUnmounted(() => {
       <Canvas />
       <Inspector />
     </main>
-    <BaseModal v-if="s.state.modal === 'screen'" :title="t('admin.tabs.screen')"
-      :height="920" :close-label="t('common.close')" @close="s.closeModal()">
-      <ScreenInspector />
+    <BaseModal v-if="s.state.modal === 'settings'" :title="t('admin.settings.title')"
+      :width="880" :height="920" flush :close-label="t('common.close')" @close="s.closeModal()">
+      <SettingsWindow />
     </BaseModal>
     <BaseModal v-else-if="s.state.modal === 'connections'" :title="t('admin.tabs.connections')"
       :close-label="t('common.close')" @close="s.closeModal()">
       <ConnectionsInspector />
     </BaseModal>
     <BaseModal v-else-if="s.state.modal === 'marketplace'" :title="t('admin.tabs.marketplace')"
-      :width="720" :height="840" :close-label="t('common.close')" @close="s.closeModal()">
+      :width="720" :height="840" flush :close-label="t('common.close')" @close="s.closeModal()">
       <MarketplacePanel />
     </BaseModal>
     <BaseModal v-else-if="s.state.modal === 'about'" :title="t('admin.about.title')"

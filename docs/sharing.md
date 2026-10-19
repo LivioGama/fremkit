@@ -11,7 +11,7 @@ read. The code is `server/src/share/` (building and reading the file) and
 |---|---|
 | A page's right-click menu → **Export page…** | that page, with the grid it was made for |
 | A screen's right-click menu → **Export screen…** | its pages, its bar, its look (bar height, opacity, auto-cycle, background) |
-| **Screen → Share your setup**, or a screen's menu → **Export the whole setup…** | every screen |
+| **Settings → Share**, or a screen's menu → **Export the whole setup…** | every screen |
 
 The dialog is the server's report on the exact file it would write: the widgets with their
 version and where they come from (built in, on the Sietch, or only on this Mac — the last kind
@@ -57,7 +57,7 @@ anything still trips it.
 
 ## Importing
 
-Drop a file anywhere on the editor, or use **Import a layout…** (Screen → Share your setup, or a
+Drop a file anywhere on the editor, or use **Import a layout…** (Settings → Share, or a
 screen's menu). The server reads it first — it is somebody else's file, so nothing in it is taken
 at its word:
 

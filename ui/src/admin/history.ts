@@ -2,18 +2,19 @@ import { ref } from 'vue'
 import { setSectionsOpen } from '../shared/ui/BaseSection.vue'
 import type { HistoryEntry, HistorySummary } from '../shared/api'
 import type { Locale, Params } from '../shared/i18n'
+import { openSettings } from './settingsWindow'
 
 /** Set by the top bar's history button; the History section scrolls itself into view and clears it. */
 export const revealHistory = ref(false)
 
 /**
- * Opens the Screen panel on its History section: the top bar's button and the command palette.
- * Undo reaches back one session; the history, under Screen, reaches back a month.
+ * Opens the settings window on its History pane: the top bar's button and the command palette.
+ * Undo reaches back one session; the history reaches back a month.
  */
-export function openHistory(s: { openModal(name: 'screen'): void }): void {
+export function openHistory(s: { openModal(name: 'settings'): void }): void {
   setSectionsOpen(['screen.history'], true)
   revealHistory.value = true
-  s.openModal('screen')
+  openSettings(s, 'history')
 }
 
 type T = (key: string, params?: Params) => string

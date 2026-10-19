@@ -154,7 +154,7 @@ Under the helper: `kill $(lsof -nP -iTCP:4242 -sTCP:LISTEN -t)` and it respawns 
 
 ## Backup and restore
 
-**/admin → Screen → Backup.** "Back up" downloads `fremkit-backup-<date>.zip`; "Restore…" takes
+**/admin → Settings → History & backup → Backup.** "Back up" downloads `fremkit-backup-<date>.zip`; "Restore…" takes
 one back.
 
 What is in the archive:

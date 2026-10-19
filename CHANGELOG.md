@@ -171,6 +171,19 @@ tagged `vX.Y.Z`.
   requests run it in CI. See `docs/contributing.md`.
 
 ### Changed
+- **The widget inspector keeps the widget's name in view**, with *Expand all* / *Collapse all* for
+  its sections, while they scroll.
+- **The Sietch keeps its tabs, search and filters in view** while its list scrolls, with *Expand all*
+  / *Collapse all* for its shelves. Escape in its search clears the search before it closes the
+  window.
+- **Settings, in a window of their own.** The top bar's *Screen* button is now *Settings*, and it
+  opens a window laid out like the Mac's: every screen on the left, each with its own settings
+  (name, layout and bar, bar widgets, background, brightness, kiosk address), then the app's panes —
+  General (the language), Appearance (theme and night theme), Share, History & backup, Privacy,
+  Devices and About. The search above them finds a setting in any pane ("opacity", "kiosque",
+  "backup"), accents ignored, and shows only what it found; Escape clears it. A pane's title and its
+  *Expand all* / *Collapse all* stay in view while its sections scroll. *Screen settings…*,
+  *Navigation bar settings…* and the command palette open the window on the right pane.
 - **Page dots fit many pages.** With many pages, the dots of the navigation bar draw closer
   together instead of running over the bar's widgets, down to a size a finger can still hit.
 - **Upgrading the dashboard file.** Your dashboard is converted to the new screens layout the

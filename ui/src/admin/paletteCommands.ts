@@ -139,7 +139,7 @@ export function buildCommands(src: PaletteSources): Command[] {
     },
     {
       id: 'app:diagnostics', group: 'actions', label: t('admin.palette.diagnostics'),
-      run: () => { s.openModal('screen'); ui.revealSection('screen.about') },
+      run: () => { s.openModal('settings'); ui.revealSection('screen.about') },
     },
     { id: 'app:shortcuts', group: 'actions', label: t('admin.shortcuts.title'), shortcut: shortcutHint('shortcuts'), run: () => ui.openShortcuts() },
   ])
