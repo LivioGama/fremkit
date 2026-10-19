@@ -202,7 +202,7 @@ export function createRecentProjectsProvider(options: RecentProjectsOptions): Pr
         if (target !== 'herdr' && !targetExecutable) return { ok: false, error: `${target}-unconfigured` }
         try {
           return await createProjectPane(run, herdrPath, path, targetExecutable
-            ? { executable: targetExecutable, searchPath: safePath(dirname(targetExecutable)) }
+            ? { executable: targetExecutable, searchPath: [dirname(targetExecutable), safePath(process.env.PATH)].join(':') }
             : undefined)
         } catch {
           return { ok: false, error: 'herdr-unavailable' }

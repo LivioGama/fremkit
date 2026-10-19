@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { execFile as nodeExecFile } from 'node:child_process'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { createRecentProjectsProvider, type RecentProject } from '../src/providers/recent-projects.js'
+import { safePath } from '../src/system-path.js'
 
+const execFile = promisify(nodeExecFile)
 const LOCAL = { loopback: true, paired: false }
 const resolveTrustedExecutable = vi.fn(async (name: string) => `/trusted/bin/${name}`)
 let dir = ''
@@ -76,7 +80,7 @@ describe('recent projects', () => {
     expect(result).toMatchObject({ ok: true })
     expect(listPanes).not.toHaveBeenCalled()
     expect(run.mock.calls).toEqual([
-      ['/trusted/bin/herdr', ['pane', 'split', '--cwd', canonicalProject, '--direction', 'right', '--no-focus', '--env', 'PATH=/usr/bin:/bin:/usr/sbin:/sbin:/trusted/bin']],
+      ['/trusted/bin/herdr', ['pane', 'split', '--cwd', canonicalProject, '--direction', 'right', '--no-focus', '--env', `PATH=/trusted/bin:${safePath(process.env.PATH)}`]],
       ['/trusted/bin/herdr', ['pane', 'run', 'new', 'codex']],
     ])
   })
@@ -116,9 +120,46 @@ describe('recent projects', () => {
     expect(resolver.mock.calls).toEqual([['herdr'], ['claude'], ['herdr'], ['codex']])
     expect(run.mock.calls.filter(([, args]) => args[1] === 'run').map(([, args]) => args[3])).toEqual(['claude', 'codex'])
     expect(run.mock.calls.filter(([, args]) => args[1] === 'split').map(([, args]) => args.slice(-2))).toEqual([
-      ['--env', 'PATH=/usr/bin:/bin:/usr/sbin:/sbin:/trusted/bin'],
-      ['--env', 'PATH=/usr/bin:/bin:/usr/sbin:/sbin:/trusted/bin'],
+      ['--env', `PATH=/trusted/bin:${safePath(process.env.PATH)}`],
+      ['--env', `PATH=/trusted/bin:${safePath(process.env.PATH)}`],
     ])
+  })
+
+  it('launches the validated target before an inherited same-name executable', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'fremkit-recent-projects-'))
+    const project = join(dir, 'project')
+    const targetDir = join(dir, 'validated')
+    const shadowDir = join(dir, 'inherited')
+    const targetExecutable = join(targetDir, 'claude')
+    const shadowExecutable = join(shadowDir, 'claude')
+    const { chmod, mkdir, realpath, writeFile } = await import('node:fs/promises')
+    await Promise.all([mkdir(project), mkdir(targetDir), mkdir(shadowDir)])
+    const canonicalProject = await realpath(project)
+    await writeFile(join(dir, 'history.json'), JSON.stringify({ historyStartsAt: 1, projects: [{ path: canonicalProject, name: 'project', lastSeen: 2 }] }))
+    await writeFile(targetExecutable, '#!/bin/sh\nprintf validated-target\n')
+    await writeFile(shadowExecutable, '#!/bin/sh\nprintf shadow-target\n')
+    await Promise.all([chmod(targetExecutable, 0o755), chmod(shadowExecutable, 0o755)])
+    const run = vi.fn(async (_file: string, args: string[]) => ({ stdout: args[1] === 'split' ? JSON.stringify({ result: { pane: { pane_id: 'new' } } }) : '' }))
+    const resolveExecutable = vi.fn(async (name: string) => name === 'herdr' ? '/trusted/bin/herdr' : targetExecutable)
+    const provider = createRecentProjectsProvider({ filePath: join(dir, 'history.json'), run, resolveExecutable })
+    const originalPath = process.env.PATH
+
+    try {
+      process.env.PATH = `${shadowDir}:/usr/bin:/bin`
+      expect(await provider.commands!.open({ path: canonicalProject, target: 'claude' }, LOCAL)).toMatchObject({ ok: true })
+      const splitArgs = run.mock.calls.find(([, args]) => args[1] === 'split')?.[1]
+      const pathAssignment = splitArgs?.[splitArgs.indexOf('--env') + 1]
+      expect(pathAssignment?.startsWith('PATH=')).toBe(true)
+      const searchPath = pathAssignment!.slice('PATH='.length)
+      expect(searchPath.split(':').slice(0, 2)).toEqual([targetDir, '/usr/bin'])
+      expect(searchPath.split(':')).toContain(shadowDir)
+
+      const { stdout } = await execFile('claude', [], { env: { PATH: searchPath } })
+      expect(stdout).toBe('validated-target')
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH
+      else process.env.PATH = originalPath
+    }
   })
 
   it('targets the exact pane returned by each concurrent split for the same folder', async () => {
