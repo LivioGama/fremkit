@@ -15,7 +15,7 @@ const IFACES: InterfaceMap = {
   utun4: [v4('100.100.1.2')],
   en5: [v4('169.254.10.20')],
   // A VPN that sorts first.
-  utun2: [v4('10.0.0.5')],
+  utun2: [v4('10.10.0.5')],
   bridge100: [v4('192.0.2.1')],
   en1: [v4('198.51.100.7')],
   en0: [v4('10.20.0.30'), v6('fe80::1')],
@@ -23,7 +23,7 @@ const IFACES: InterfaceMap = {
 
 describe('lanAddresses', () => {
   it('keeps external IPv4 only, without link-local or carrier-grade NAT', () => {
-    expect(lanAddresses(IFACES)).toEqual(['10.0.0.5', '10.20.0.30', '192.0.2.1', '198.51.100.7'])
+    expect(lanAddresses(IFACES)).toEqual(['10.10.0.5', '10.20.0.30', '192.0.2.1', '198.51.100.7'])
   })
 
   it('drops all of 100.64/10 and 169.254/16, and nothing beside them', () => {
@@ -50,8 +50,8 @@ describe('pickAddress', () => {
   })
 
   it('then the first address left', () => {
-    const ifaces: InterfaceMap = { utun2: [v4('10.0.0.5')], en1: [v4('198.51.100.7')] }
-    expect(pickAddress(lanAddresses(ifaces), ifaces, null)).toBe('10.0.0.5')
+    const ifaces: InterfaceMap = { utun2: [v4('10.10.0.5')], en1: [v4('198.51.100.7')] }
+    expect(pickAddress(lanAddresses(ifaces), ifaces, null)).toBe('10.10.0.5')
     expect(pickAddress([], {}, null)).toBeNull()
   })
 

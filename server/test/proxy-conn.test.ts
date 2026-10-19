@@ -464,10 +464,10 @@ describe('a host that is not a host', () => {
   })
 
   it('makes no request at all, and says so without quoting the string', async () => {
-    // `10.0.0.1:x@evil.example` was read as the private `10.0.0.1` — so plain http was allowed
+    // `10.1.0.1:x@evil.example` was read as the private `10.1.0.1` — so plain http was allowed
     // — while the key went to `evil.example`. The widget writes the label, the placeholder and
     // the hint beside that box, so "paste this address" is the whole attack.
-    for (const raw of ['10.0.0.1:x@evil.example', 'user:pw@evil.example', '10.0.0.1/../x', '10.0.0.1?a=b']) {
+    for (const raw of ['10.1.0.1:x@evil.example', 'user:pw@evil.example', '10.1.0.1/../x', '10.1.0.1?a=b']) {
       const res = await ask(raw)
       expect(res.statusCode, raw).toBe(409)
       expect(res.body).not.toContain('evil.example')

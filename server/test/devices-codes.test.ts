@@ -112,7 +112,7 @@ describe('PairingCodes', () => {
     const { code } = codes.issue()
     expect(MAX_WRONG_PER_MINUTE_TOTAL).toBe(60)
     for (let i = 0; i < MAX_WRONG_PER_MINUTE_TOTAL; i++) {
-      expect(codes.consume(other(code), `10.0.${Math.floor(i / 4)}.${i % 4}`)).toBe('wrong')
+      expect(codes.consume(other(code), `10.8.${Math.floor(i / 4)}.${i % 4}`)).toBe('wrong')
     }
     expect(codes.consume(code, '192.168.1.20')).toBe('limited')
     expect(codes.guessing()).toBe(true)
@@ -159,7 +159,7 @@ describe('PairingCodes', () => {
     const first = codes.issue().code
     for (let i = 0; i < MAX_WRONG_PER_MINUTE; i++) expect(codes.consume(other(first), '10.9.9.9')).toBe('wrong')
     for (let i = MAX_WRONG_PER_MINUTE; i < MAX_WRONG_PER_MINUTE_TOTAL; i++) {
-      expect(codes.consume(other(first), `10.0.${Math.floor(i / 4)}.${i % 4}`)).toBe('wrong')
+      expect(codes.consume(other(first), `10.8.${Math.floor(i / 4)}.${i % 4}`)).toBe('wrong')
     }
     expect(codes.consume(first, '192.168.1.20')).toBe('limited')
     const second = codes.issue().code
@@ -197,11 +197,11 @@ describe('PairingCodes', () => {
     /** A secret of the right shape that is not `secret`. */
     const otherSecret = (secret: string) => (secret.startsWith('A') ? 'B' : 'A').repeat(43)
 
-    /** Spends the per-peer allowance of `address` and the total, from addresses in 10.0.0.0/16. */
+    /** Spends the per-peer allowance of `address` and the total, from addresses in 10.8.0.0/16. */
     function exhaust(codes: PairingCodes, code: string, address: string): void {
       for (let i = 0; i < MAX_WRONG_PER_MINUTE; i++) expect(codes.consume(other(code), address)).toBe('wrong')
       for (let i = 0; i < MAX_WRONG_PER_MINUTE_TOTAL - MAX_WRONG_PER_MINUTE; i++) {
-        expect(codes.consume(other(code), `10.0.${Math.floor(i / 4)}.${i % 4}`)).toBe('wrong')
+        expect(codes.consume(other(code), `10.8.${Math.floor(i / 4)}.${i % 4}`)).toBe('wrong')
       }
     }
 
