@@ -236,6 +236,19 @@ describe('companion routes', () => {
     expect((await pair(ORIGIN)).json()).toMatchObject({ reason: 'limited' })
   })
 
+  it('is 404 to a peer that is not loopback, even on the local listener', async () => {
+    // Fails closed if the server is ever bound beyond 127.0.0.1: locality is isLocalRequest.
+    const remoteAddress = '192.0.2.5'
+    const asked = await app.inject({
+      method: 'POST', url: '/api/companion/pair', remoteAddress,
+      headers: { host: HOST, origin: ORIGIN, 'content-type': 'application/json' },
+      payload: JSON.stringify({ name: 'Chrome', installId: INSTALL }),
+    })
+    expect(asked.statusCode).toBe(404)
+    expect((await app.inject({ method: 'POST', url: '/api/companion/pair/x', remoteAddress, headers: { host: HOST, origin: ORIGIN } })).statusCode).toBe(404)
+    expect((await app.inject({ method: 'POST', url: '/api/companion/requests/x/approve', remoteAddress, headers: { host: HOST, ...auth }, payload: { code: 'AAAA' } })).statusCode).toBe(404)
+  })
+
   it.skipIf(!hasOpenssl)('pair on the remote listener is 404', async () => {
     const on = await app.inject({ method: 'PUT', url: '/api/devices/settings', headers: { host: HOST, ...auth }, payload: { enabled: true } })
     expect(on.statusCode).toBe(200)

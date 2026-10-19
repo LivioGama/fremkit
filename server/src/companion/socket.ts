@@ -28,7 +28,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { DeviceStore } from '../devices/store.js'
-import { isRemoteRequest } from '../net/remote.js'
+import { isLocalRequest } from '../net/remote.js'
 import { DEVICE_CLOSE_CODE, DEVICE_TERMINATE_MS } from '../ws/hub.js'
 import { EXTENSION_ORIGIN_RE, parseExtensionMessage, proofMac, type ServerMessage } from './protocol.js'
 import type { CompanionSession } from './session.js'
@@ -143,7 +143,7 @@ export async function companionSocket(app: FastifyInstance, opts: CompanionSocke
 
   /** This Mac's only: the remote allow-list leaves it out too, this is in case it ever grows. */
   const localOnly = async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    if (isRemoteRequest(req)) return reply.callNotFound()
+    if (!isLocalRequest(req)) return reply.callNotFound()
   }
 
   /** Before the 101: a web page, or anything else that is not an extension, gets no socket at all. */

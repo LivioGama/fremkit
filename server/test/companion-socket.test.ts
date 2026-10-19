@@ -545,6 +545,12 @@ describe('companion socket in the app', () => {
     expect(wrongHost.statusCode).toBe(421)
   })
 
+  it('is 404 to a peer that is not loopback, even on the local listener', async () => {
+    const wsHeaders = { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==', origin: ORIGIN }
+    const res = await full.inject({ method: 'GET', url: '/companion/ws', remoteAddress: '192.0.2.5', headers: { ...wsHeaders, host: HOST } })
+    expect(res.statusCode).toBe(404)
+  })
+
   it.skipIf(!hasOpenssl)('the companion socket is 404 on the remote listener', async () => {
     const on = await full.inject({ method: 'PUT', url: '/api/devices/settings', headers: { host: HOST, authorization: `Bearer ${SECRET}` }, payload: { enabled: true } })
     expect(on.statusCode).toBe(200)

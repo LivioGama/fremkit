@@ -17,7 +17,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { ConfigStore } from '../config/store.js'
 import { tr, type MessageKey } from '../i18n.js'
-import { isRemoteRequest } from '../net/remote.js'
+import { isLocalRequest } from '../net/remote.js'
 import type { CompanionPairing } from './pairing.js'
 import { EXTENSION_ORIGIN_RE } from './protocol.js'
 
@@ -60,7 +60,7 @@ export async function companionRoutes(app: FastifyInstance, opts: CompanionRoute
 
   /** Every route here is this Mac's only. */
   const localOnly = async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    if (isRemoteRequest(req)) return reply.callNotFound()
+    if (!isLocalRequest(req)) return reply.callNotFound()
   }
 
   // --- the extension ----------------------------------------------------------------------------
