@@ -14,9 +14,11 @@ export const SHELLSMITH_MAX_COMMAND_CHARS = 2000
 export const TRANSLATE_MAX_TEXT_BYTES = 2048
 
 const ModelSchema = z.string().trim().min(1).max(100).regex(/^[A-Za-z0-9._:/-]+$/)
-const RequestPayload = z.strictObject({ request: z.string().trim().min(1).max(SHELLSMITH_MAX_REQUEST_CHARS) })
-const CopyPayload = z.strictObject({ command: z.string().trim().min(1).max(SHELLSMITH_MAX_COMMAND_CHARS) })
-const FavoritesPayload = z.strictObject({ favorites: z.array(z.string().regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/)).length(2) })
+// The dashboard stamps every widget command with the sending widget instance id.
+const INSTANCE = { instanceId: z.string().min(1).max(200).optional() }
+const RequestPayload = z.strictObject({ ...INSTANCE, request: z.string().trim().min(1).max(SHELLSMITH_MAX_REQUEST_CHARS) })
+const CopyPayload = z.strictObject({ ...INSTANCE, command: z.string().trim().min(1).max(SHELLSMITH_MAX_COMMAND_CHARS) })
+const FavoritesPayload = z.strictObject({ ...INSTANCE, favorites: z.array(z.string().regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/)).length(2) })
 const TranslationResponse = z.strictObject({ sourceLanguage: z.string().trim().min(2).max(20), text: z.string().trim().min(1).max(20_000) })
 
 interface ResponsesBody {

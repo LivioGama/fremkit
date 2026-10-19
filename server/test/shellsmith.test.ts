@@ -49,6 +49,31 @@ describe('ShellSmith command suggestion provider', () => {
     expect(requests).toBe(0)
   })
 
+  it('accepts the dashboard-stamped instance id but rejects other unknown payload fields', async () => {
+    const calls: { url: string; init?: RequestInit }[] = []
+    const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(input), init })
+      return json({ choices: [{ message: { content: 'find . -type f' } }] })
+    }) as typeof fetch
+    const provider = createOpenAIShellsmithProvider({
+      ...context(),
+      fields: { provider: 'groq', model: 'openai/gpt-oss-20b' },
+    }, {
+      fetchFn,
+      pasteboard: { read: async () => '', write: async () => {}, types: async () => [] },
+    })
+    // Mirrors the host's stampInstance() contract: every plain-object command gets this field.
+    const payload = { request: 'List files', instanceId: 'shellsmith-command-showcase' }
+
+    expect(await provider.commands!.suggestCommand(payload, { loopback: true })).toEqual({ ok: true, command: 'find . -type f' })
+    expect(calls).toHaveLength(1)
+    const body = JSON.parse(String(calls[0].init?.body))
+    expect(body.messages[0].content).toContain('List files')
+    expect(JSON.stringify(body)).not.toContain('shellsmith-command-showcase')
+    expect(await provider.commands!.suggestCommand({ ...(payload as object), unexpected: true }, { loopback: true })).toEqual({ ok: false, error: 'invalid-request' })
+    expect(calls).toHaveLength(1)
+  })
+
   it('copies only on an explicit loopback command and never runs the generated text', async () => {
     const writes: string[] = []
     const provider = createOpenAIShellsmithProvider(context(), {
@@ -58,7 +83,7 @@ describe('ShellSmith command suggestion provider', () => {
 
     expect(await provider.commands!.copyCommand({ command: 'echo reviewed' }, { loopback: false })).toEqual({ ok: false, error: 'local-only' })
     expect(writes).toEqual([])
-    expect(await provider.commands!.copyCommand({ command: 'echo reviewed' }, { loopback: true })).toEqual({ ok: true })
+    expect(await provider.commands!.copyCommand({ command: 'echo reviewed', instanceId: 'shellsmith-command-showcase' }, { loopback: true })).toEqual({ ok: true })
     expect(writes).toEqual(['echo reviewed'])
   })
 
@@ -109,7 +134,7 @@ describe('ShellSmith command suggestion provider', () => {
       pasteboard: { types: async () => { clipboardTypeReads++; return [] }, read: async () => { clipboardReads++; return 'stale clipboard text' }, write: async () => { clipboardWrites++ } },
     })
 
-    const result = await provider.commands!.translateSelection({ favorites: ['en', 'fr'] }, { loopback: true })
+    const result = await provider.commands!.translateSelection({ favorites: ['en', 'fr'], instanceId: 'translate-selection-showcase' }, { loopback: true })
 
     expect(result).toEqual({ ok: true, sourceLanguage: 'en', targetLanguage: 'fr', text: 'Bonjour' })
     expect(selectionReads).toBe(1)
