@@ -20,7 +20,7 @@ import { ensureKey, issueCertificate, readKey, resetKey, spkiHash } from './cert
 import { channelAllowed, screenChannels, type ChannelConnection, type ChannelManifest, type ScreenChannels } from './channels.js'
 import { deviceConfigView } from './scope.js'
 import type { PairingCodes } from './codes.js'
-import { lanAddresses as readLanAddresses, computerName, isPrivate, localHostName, preferredAddress } from './host.js'
+import { lanAddresses as readLanAddresses, cachedPick, computerName, isPrivate, localHostName, preferredAddress } from './host.js'
 import { REMOTE_PORT, RemoteListener } from './listener.js'
 import type { DeviceStore, PublicDevice, Viewport } from './store.js'
 
@@ -122,6 +122,8 @@ export class DeviceService {
   private readonly advertiser: Advertiser
   private readonly readAddresses: () => string[]
   private readonly pickAddress: (addresses: string[]) => Promise<string | null>
+  /** `pickAddress` for `meForApp`, kept 30 s per address list: each iPad asks every 30 s or so. */
+  private readonly pickAppAddress: (addresses: string[]) => Promise<string | null>
   private readonly listener: RemoteListener
 
   /**
@@ -160,6 +162,7 @@ export class DeviceService {
     this.advertiser = opts.advertise ?? bonjourAdvertise
     this.readAddresses = opts.lanAddresses ?? readLanAddresses
     this.pickAddress = opts.preferredAddress ?? ((addresses) => preferredAddress(addresses, this.exec))
+    this.pickAppAddress = cachedPick(this.pickAddress)
     this.listener = new RemoteListener(opts.app, opts.listenerPort ?? REMOTE_PORT)
   }
 
@@ -344,13 +347,14 @@ export class DeviceService {
    * through): never a public, CGNAT, link-local or IPv6 address, nor one the listener would answer
    * 421. The one the QR code and Bonjour would carry (`pickAddress`: the default route's) comes
    * first, then the others in order, `MAX_APP_ADDRESSES` at most: each dead one costs the app a
-   * probe.
+   * probe. That pick is kept 30 s per address list (`cachedPick`), so an iPad's periodic check does
+   * not run `route` each time.
    */
   async meForApp(deviceId: string): Promise<DeviceAppInfo | null> {
     const me = this.me(deviceId)
     if (me === null) return null
     const usable = this.certAddresses.filter(isPrivate)
-    const first = usable.length > 0 ? await this.pickAddress(usable) : null
+    const first = usable.length > 0 ? await this.pickAppAddress(usable) : null
     const ordered = first !== null && usable.includes(first) ? [first, ...usable.filter((a) => a !== first)] : usable
     return { ...me, addresses: ordered.slice(0, MAX_APP_ADDRESSES) }
   }

@@ -114,6 +114,33 @@ export function pickAddress(addresses: string[], ifaces: InterfaceMap, defaultIn
   return addresses[0] ?? null
 }
 
+/** How long `cachedPick` keeps an answer for the same addresses. */
+export const PICK_TTL_MS = 30_000
+
+/**
+ * `pick` remembered for `ttlMs` per address list: the same list asked again within that time gets
+ * the same answer without running `pick` (for `preferredAddress`, `route -n get default`) again;
+ * another list, or an older answer, asks again. Concurrent asks for one list share one lookup.
+ */
+export function cachedPick(
+  pick: (addresses: string[]) => Promise<string | null>,
+  ttlMs = PICK_TTL_MS,
+  now: () => number = Date.now,
+): (addresses: string[]) => Promise<string | null> {
+  let last: { key: string; at: number; answer: Promise<string | null> } | null = null
+  return (addresses) => {
+    const key = addresses.join(',')
+    const t = now()
+    if (last !== null && last.key === key && t - last.at < ttlMs) return last.answer
+    const answer = pick(addresses)
+    const entry = { key, at: t, answer }
+    last = entry
+    // A failed lookup is not kept.
+    answer.catch(() => { if (last === entry) last = null })
+    return answer
+  }
+}
+
 /** `pickAddress` on this Mac's own interfaces and default route. */
 export async function preferredAddress(addresses: string[], exec: Exec = execFileAsync): Promise<string | null> {
   return pickAddress(addresses, networkInterfaces(), await defaultRouteInterface(exec))

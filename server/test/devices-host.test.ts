@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NetworkInterfaceInfo } from 'node:os'
-import { defaultRouteInterface, isPrivate, lanAddresses, pickAddress, type InterfaceMap } from '../src/devices/host.js'
+import { cachedPick, defaultRouteInterface, isPrivate, lanAddresses, pickAddress, type InterfaceMap } from '../src/devices/host.js'
 
 const v4 = (address: string, internal = false): NetworkInterfaceInfo => ({
   address, netmask: '255.255.255.0', family: 'IPv4', mac: '00:00:00:00:00:00', internal, cidr: null,
@@ -85,5 +85,37 @@ describe('isPrivate', () => {
     for (const a of ['172.15.0.1', '172.32.0.1', '192.169.0.1', '100.64.0.1', '169.254.1.1', '192.0.2.10', '198.51.100.7', '127.0.0.1']) {
       expect(isPrivate(a), a).toBe(false)
     }
+  })
+})
+
+describe('cachedPick', () => {
+  it('looks the default route up once per address list for 30 s, and again when the list changes', async () => {
+    let t = 0
+    const lookups: string[][] = []
+    const pick = cachedPick(async (a) => { lookups.push(a); return a[0] ?? null }, 30_000, () => t)
+    const first = ['10.1.0.1', '192.168.1.20']
+    expect(await pick(first)).toBe('10.1.0.1')
+    t = 29_999
+    expect(await pick([...first])).toBe('10.1.0.1')
+    expect(lookups).toHaveLength(1)
+    // Another address set: asked again at once.
+    expect(await pick(['192.168.1.20'])).toBe('192.168.1.20')
+    expect(lookups).toHaveLength(2)
+    // The same set past the TTL: asked again.
+    t = 60_000
+    await pick(['192.168.1.20'])
+    expect(lookups).toHaveLength(3)
+  })
+
+  it('shares one lookup between concurrent asks and keeps no failure', async () => {
+    let calls = 0
+    let fail = true
+    const pick = cachedPick(async () => { calls++; if (fail) throw new Error('route'); return '10.1.0.1' }, 30_000, () => 0)
+    const both = await Promise.allSettled([pick(['10.1.0.1']), pick(['10.1.0.1'])])
+    expect(both.map((r) => r.status)).toEqual(['rejected', 'rejected'])
+    expect(calls).toBe(1)
+    fail = false
+    expect(await pick(['10.1.0.1'])).toBe('10.1.0.1')
+    expect(calls).toBe(2)
   })
 })

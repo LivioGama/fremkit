@@ -722,8 +722,13 @@ describe.skipIf(!hasOpenssl)('telling a paired device where else to find the Mac
     const sorted = [...PRIVATE].sort()
     expect(body.addresses).toEqual([DEFAULT_ROUTE, ...sorted.filter((a) => a !== DEFAULT_ROUTE)].slice(0, 8))
     expect(body.addresses).toHaveLength(8)
-    // The default route is picked among the private addresses only.
+    // The default route is picked among the private addresses only, and looked up once for two
+    // quick asks with the same addresses (each iPad asks about every 30 s).
     expect(picked.at(-1)).toEqual(sorted)
+    const lookups = picked.length
+    const again = await remote(mport, { path: '/api/devices/me?addresses=1', host: `example.local:${mport}`, headers: cookie(token) })
+    expect(JSON.parse(again.body).addresses).toEqual(body.addresses)
+    expect(picked).toHaveLength(lookups)
     for (const other of OTHERS) expect(res.body).not.toContain(other)
     // Each address listed is one the listener answers on, so the app is never sent to a 421.
     for (const address of body.addresses) {
