@@ -188,8 +188,14 @@ describe('the editor\'s right click on the bar', () => {
   // jsdom has no `elementFromPoint`; the stub each test sets must not outlive it.
   afterEach(() => { delete (document as { elementFromPoint?: unknown }).elementFromPoint })
 
-  function editBar() {
+  /**
+   * Mounted, then a few milliseconds left to pass: Vue drops an event, at a listener further up,
+   * whose time is not after the moment that listener was attached (the first handler stamps it),
+   * so a click sent in the same millisecond as the mount never reaches the bar's own handler.
+   */
+  async function editBar() {
     const wrapper = mount(NavBar, { props: { pages: PAGES, active: 0, height: 64, edit: true }, attachTo: document.body })
+    await new Promise((r) => setTimeout(r, 5))
     const menu = (target: Element): MouseEvent => {
       // jsdom lays nothing out: the bar finds what is under the pointer by `elementFromPoint`.
       document.elementFromPoint = () => target
@@ -200,8 +206,8 @@ describe('the editor\'s right click on the bar', () => {
     return { wrapper, menu }
   }
 
-  it('asks for the page\'s menu on a page button, and never opens the admin', () => {
-    const { wrapper, menu } = editBar()
+  it('asks for the page\'s menu on a page button, and never opens the admin', async () => {
+    const { wrapper, menu } = await editBar()
     const e = menu(wrapper.findAll('.page-button')[1].element)
     expect(e.defaultPrevented).toBe(true)
     expect(wrapper.emitted('barMenu')?.[0]?.[0]).toBe(1)
@@ -209,8 +215,8 @@ describe('the editor\'s right click on the bar', () => {
     wrapper.unmount()
   })
 
-  it('asks for the bar\'s own menu elsewhere, instead of the browser\'s', () => {
-    const { wrapper, menu } = editBar()
+  it('asks for the bar\'s own menu elsewhere, instead of the browser\'s', async () => {
+    const { wrapper, menu } = await editBar()
     const e = menu(wrapper.find('nav').element)
     expect(e.defaultPrevented).toBe(true)
     expect(wrapper.emitted('barMenu')?.[0]?.[0]).toBeNull()
