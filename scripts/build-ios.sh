@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build, test or install the iPad app (ios/). Run from anywhere.
 #
-#   scripts/build-ios.sh build     the app for the simulator, unsigned (no Local.xcconfig needed)
+#   scripts/build-ios.sh build     the app for the simulator, signed ad hoc (no Local.xcconfig needed):
+#                                  unsigned, it has no keychain and cannot keep a pairing
 #   scripts/build-ios.sh test      FremkitKit's tests, on the Mac
 #   scripts/build-ios.sh install [--seed]
 #                                  a signed Debug build installed and launched on the iPad whose
@@ -79,7 +80,7 @@ cmd="${1:-}"
 [[ $# -gt 0 ]] && shift
 case "$cmd" in
     build)
-        xcb -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+        xcb -destination 'generic/platform=iOS Simulator' CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build
         echo "built: $DERIVED/Build/Products/Debug-iphonesimulator/Fremkit.app"
         ;;
     test)

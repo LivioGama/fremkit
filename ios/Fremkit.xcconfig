@@ -1,6 +1,6 @@
 // The app target's settings. Signing values (team, bundle id) come from the git-ignored
 // Local.xcconfig next to this file; copy Local.example.xcconfig to start one. Without it the app
-// still builds for the simulator, unsigned, as com.example.fremkit.
+// still builds for the simulator, signed ad hoc, as com.example.fremkit.
 FREMKIT_BUNDLE_ID = com.example.fremkit
 #include? "Local.xcconfig"
 

@@ -75,7 +75,7 @@ pnpm e2e                          # Playwright on the built UI, one throwaway se
                                   # E2E_FIRST_PORT=43x0 moves it when another checkout is running the suite)
 pnpm dev                          # server + Vite with hot reload for the UI
 pnpm helper:build && pnpm helper:install && pnpm helper:test
-pnpm ios:build && pnpm ios:test   # iPad app for the simulator, unsigned; FremkitKit's tests
+pnpm ios:build && pnpm ios:test   # iPad app for the simulator, signed ad hoc; FremkitKit's tests
 pbpaste | FREMKIT_IOS_DEVICE=<udid> scripts/build-ios.sh install --seed   # a pairing link from stdin, never argv
 scripts/build-ios.sh upload       # Release archive to App Store Connect / TestFlight (docs/releasing.md)
 ```
