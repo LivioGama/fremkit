@@ -33,10 +33,12 @@ export const openAIShellsmithType: ConnectionType = {
     try {
       const response = provider === 'groq'
         ? await (deps.fetchFn ?? fetch)(`${GROQ_API}/models`, {
+          redirect: 'error',
           headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'User-Agent': USER_AGENT },
           signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
         })
         : await (deps.fetchFn ?? fetch)(`${OPENAI_API}/models/${encodeURIComponent(model)}`, {
+          redirect: 'error',
           headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'User-Agent': USER_AGENT },
           signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
         })
