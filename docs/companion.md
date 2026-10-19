@@ -120,7 +120,8 @@ Edge*), or press **⌥⇧E**. Press it again to stop. The shortcut can be change
   makes it cover the whole tab sends the whole tab's picture, frames from other sites included.
   Whatever it shows, the picture only goes to your own dashboard on this Mac.
 - **The sound stays in the browser.** The Edge shows the picture; volume and mute act on the
-  video in your browser.
+  Mac's output by default, or on the video in your browser when the widget's **Volume buttons**
+  setting says **Video** (and whenever the Mac's volume cannot be read).
 - The Edge **switches to the page holding the Fremplay widget**. If the Edge's screen has no
   Fremplay widget, the popup tells you so and nothing is sent.
 - The browser can be in the background, on another tab or another desktop. Quitting it, or

@@ -148,6 +148,8 @@
       lastOffer: null, hidden: document.visibilityState === 'hidden'
     }
     var snap = null
+    /** The `volume` provider's last snapshot: the Mac's output, which the volume buttons drive by default. */
+    var vol = null
     var pc = null
     var playing = false
     /** The "remplir" toggle: overrides the `fit` setting for the current share only. */
@@ -173,6 +175,8 @@
     /** What the page shows: the share, or the one it holds on to. */
     function showing() { return sharing() || held }
     function meta() { return sharing() ? snap.tab.meta : held ? lastMeta : null }
+    /** 'mac' or 'video': what −, + and mute act on just now. */
+    function target() { return FP.volumeTarget(Fremkit.settings.volumeTarget, vol) }
     function fit() {
       if (Fremkit.compact) return 'cover'
       return fitOverride || (Fremkit.settings.fit === 'cover' ? 'cover' : 'contain')
@@ -379,6 +383,8 @@
       // unavailable, while the picture, which goes peer to peer, keeps playing.
       var steer = !held && state === 'sharing' && snap.extensions.connected > 0
       ;['back', 'toggle', 'fwd', 'voldown', 'volup', 'mute', 'show', 'stop'].forEach(function (a) { buttons[a].disabled = !steer })
+      // The Mac's volume needs no extension: those three stay usable while the picture is up.
+      if (state === 'sharing' && target() === 'mac') ['voldown', 'volup', 'mute'].forEach(function (a) { buttons[a].disabled = false })
       var paused = !m || m.paused
       buttons.toggle.innerHTML = svg(paused ? ICON.play : ICON.pause)
       buttons.toggle.setAttribute('aria-label', Fremkit.t(paused ? L.play : L.pause))
@@ -390,7 +396,7 @@
       buttons.voldown.setAttribute('aria-label', Fremkit.t(L.voldown))
       buttons.volup.innerHTML = svg(ICON.speaker) + '+'
       buttons.volup.setAttribute('aria-label', Fremkit.t(L.volup))
-      var muted = !!(m && m.muted)
+      var muted = target() === 'mac' ? !!vol.muted : !!(m && m.muted)
       buttons.mute.innerHTML = svg(ICON.speaker + (muted ? ICON.cross : ICON.wave))
       buttons.mute.setAttribute('aria-label', Fremkit.t(muted ? L.unmute : L.mute))
       var covering = fit() === 'cover'
@@ -423,7 +429,17 @@
       var c
       if (a === 'back') c = { action: 'seek', delta: -10 }
       else if (a === 'fwd') c = { action: 'seek', delta: 10 }
-      else if (a === 'voldown' || a === 'volup') {
+      else if (target() === 'mac' && (a === 'voldown' || a === 'volup' || a === 'mute')) {
+        // The Mac's output, from the live snapshot; shown at once, corrected by the next poll.
+        if (a === 'mute') {
+          vol.muted = !vol.muted
+          Fremkit.sendCommand('volume', 'mute', { muted: vol.muted }).catch(function () {})
+        } else {
+          vol.level = FP.stepLevel(vol.level, a === 'volup' ? FP.MAC_STEP : -FP.MAC_STEP)
+          Fremkit.sendCommand('volume', 'set', { level: vol.level }).catch(function () {})
+        }
+        return render()
+      } else if (a === 'voldown' || a === 'volup') {
         var value = FP.stepVolume(m && m.volume, a === 'volup' ? 0.1 : -0.1)
         // Shown at once, and corrected by the next meta if the tab disagrees.
         if (m) m.volume = value
@@ -483,6 +499,7 @@
     Fremkit.onLocale(render)
     Fremkit.onSettings(render)
     Fremkit.subscribe('companion', onSnapshot)
+    Fremkit.subscribe('volume', function (v) { vol = v && typeof v === 'object' ? v : null; render() })
     render()
   })
 </script>

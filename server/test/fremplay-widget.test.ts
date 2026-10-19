@@ -24,6 +24,9 @@ interface Logic {
   plan(snapshot: unknown, local: Local): Plan
   clock(seconds: unknown): string
   stepVolume(volume: unknown, step: number): number
+  MAC_STEP: number
+  volumeTarget(setting: unknown, volume: unknown): string
+  stepLevel(level: unknown, step: number): number
 }
 
 async function loadLogic(): Promise<Logic> {
@@ -52,7 +55,7 @@ const fresh = (over: Partial<Local> = {}): Local =>
   ({ receiverId: RECEIVER, sessionId: null, viewed: false, pending: false, live: false, connected: false, lastOffer: null, hidden: false, ...over })
 
 describe('the fremplay manifest', () => {
-  it('the fremplay manifest subscribes to and commands companion, and its fit setting is contain or cover', async () => {
+  it('the fremplay manifest subscribes to and commands companion and volume, with its fit and volume settings', async () => {
     const cat = new WidgetCatalog(SHIPPED)
     await cat.scan()
     expect(cat.errors.filter((e) => e.id === 'fremplay')).toEqual([])
@@ -62,13 +65,21 @@ describe('the fremplay manifest', () => {
     expect(m.id).toBe(FREMPLAY_WIDGET_ID)
     expect(m.name).toEqual({ fr: 'Fremplay', en: 'Fremplay' })
     expect(m.description).toEqual({ fr: expect.any(String), en: expect.any(String) })
-    expect(m.subscriptions).toEqual(['companion'])
-    expect(m.commands).toEqual(['companion'])
+    expect(m.subscriptions).toEqual(['companion', 'volume'])
+    expect(m.commands).toEqual(['companion', 'volume'])
     expect(m.compact).toBeDefined()
     const fit = m.settingsSchema.fit as { type: string; default: unknown; options: { value: string }[] }
     expect(fit.type).toBe('enum')
     expect(fit.default).toBe('contain')
     expect(fit.options.map((o) => o.value)).toEqual(['contain', 'cover'])
+    const target = m.settingsSchema.volumeTarget as { type: string; default: unknown; label: unknown; options: { value: string; label: unknown }[] }
+    expect(target.type).toBe('enum')
+    expect(target.default).toBe('mac')
+    expect(target.label).toEqual({ fr: 'Boutons de volume', en: 'Volume buttons' })
+    expect(target.options).toEqual([
+      { value: 'mac', label: { fr: 'Mac', en: 'Mac' } },
+      { value: 'video', label: { fr: 'Vidéo', en: 'Video' } },
+    ])
   })
 
   it('loads its pure half from its own folder, before the script that uses it', async () => {
@@ -229,6 +240,25 @@ describe('fremplay/logic.js helpers', () => {
     expect(stepVolume(0.3, -0.1)).toBe(0.2)
     expect(stepVolume(undefined, 0.1)).toBe(1)
   })
+
+  it('drives the Mac by default, and the video when asked or when the Mac cannot be read', async () => {
+    const { volumeTarget } = await loadLogic()
+    expect(volumeTarget(undefined, { level: 40, muted: false })).toBe('mac')
+    expect(volumeTarget('mac', { level: 40, muted: false })).toBe('mac')
+    expect(volumeTarget('video', { level: 40, muted: false })).toBe('video')
+    expect(volumeTarget('mac', null)).toBe('video')
+    expect(volumeTarget('mac', { level: 40, muted: false, error: 'offline' })).toBe('video')
+    expect(volumeTarget('mac', { muted: false })).toBe('video')
+  })
+
+  it('steps the Mac level by the volume widget\'s notch, inside 0..100', async () => {
+    const { stepLevel, MAC_STEP } = await loadLogic()
+    expect(MAC_STEP).toBe(5)
+    expect(stepLevel(40, 5)).toBe(45)
+    expect(stepLevel(98, 5)).toBe(100)
+    expect(stepLevel(3, -5)).toBe(0)
+    expect(stepLevel(undefined, 5)).toBe(5)
+  })
 })
 
 /**
@@ -247,8 +277,11 @@ interface Page {
   buttons: Record<string, StubNode>
   stage: StubNode
   commands: [string, Record<string, unknown>][]
+  /** What the page sent on `volume`. */
+  volumeCommands: [string, Record<string, unknown>][]
   peers: { closed: boolean; remote: unknown; connectionState: string; onconnectionstatechange: unknown }[]
   publish(data: unknown): void
+  publishVolume(data: unknown): void
   /** Lets the page's promise chains run. */
   settle(): Promise<void>
   tap(target?: StubNode): void
@@ -311,19 +344,28 @@ async function loadPage(opts: { compact?: boolean; settings?: Record<string, unk
   const commands: [string, Record<string, unknown>][] = []
   const reply: Page['reply'] = { view: { ok: true } }
   const subscribers: ((data: unknown) => void)[] = []
+  const volumeSubscribers: ((data: unknown) => void)[] = []
+  const volumeCommands: [string, Record<string, unknown>][] = []
   const Fremkit = {
     settings: opts.settings ?? { fit: 'contain' },
     locale: 'fr',
     compact: opts.compact === true,
     whenReady: (cb: () => void) => cb(),
     subscribe: (channel: string, cb: (data: unknown) => void) => {
-      expect(channel).toBe('companion')
-      subscribers.push(cb)
+      if (channel === 'volume') volumeSubscribers.push(cb)
+      else {
+        expect(channel).toBe('companion')
+        subscribers.push(cb)
+      }
       return () => {}
     },
     onLocale: () => () => {},
     onSettings: () => () => {},
     sendCommand: (channel: string, name: string, payload: Record<string, unknown>) => {
+      if (channel === 'volume') {
+        volumeCommands.push([name, payload])
+        return Promise.resolve({ ok: true })
+      }
       expect(channel).toBe('companion')
       commands.push([name, payload])
       return Promise.resolve(name === 'view' ? reply.view : { ok: true })
@@ -361,8 +403,9 @@ async function loadPage(opts: { compact?: boolean; settings?: Record<string, unk
 
   const fire = (key: string, type: string, e: unknown = {}) => (listeners.get(key + ':' + type) ?? []).forEach((fn) => fn(e))
   return {
-    nodes, buttons, stage: byId('stage'), commands, peers, reply,
+    nodes, buttons, stage: byId('stage'), commands, volumeCommands, peers, reply,
     publish: (data) => subscribers.forEach((cb) => cb(data)),
+    publishVolume: (data) => volumeSubscribers.forEach((cb) => cb(data)),
     settle: async () => { for (let i = 0; i < 10; i++) await Promise.resolve() },
     tap: (target) => fire('stage', 'click', { target: target ?? byId('stage') }),
     setVisibility: (state) => { visibility = state; fire('document', 'visibilitychange') },
@@ -512,6 +555,74 @@ describe('the fremplay page', () => {
       ['control', { action: 'mute' }],
       ['control', { action: 'show' }],
       ['control', { action: 'stop' }],
+    ])
+  })
+
+  it('drives the Mac\'s output by default: − and + by 5 from the live level, mute from its state', async () => {
+    const page = await loadPage()
+    page.publishVolume({ level: 40, muted: false })
+    page.publish(sharing('s1'))
+    page.commands.length = 0
+    page.tap()
+    page.tap(page.buttons.volup)
+    page.tap(page.buttons.volup)
+    page.tap(page.buttons.voldown)
+    // The icon reads the Mac, not the video's own `muted: true`.
+    expect(page.buttons.mute.attrs['aria-label']).toBe('Couper le son')
+    page.tap(page.buttons.mute)
+    expect(page.buttons.mute.attrs['aria-label']).toBe('Rétablir le son')
+    expect(page.volumeCommands).toEqual([
+      ['set', { level: 45 }],
+      ['set', { level: 50 }],
+      ['set', { level: 45 }],
+      ['mute', { muted: true }],
+    ])
+    expect(page.commands).toEqual([])
+    // A new poll is the base again, and the ends hold.
+    page.publishVolume({ level: 98, muted: false })
+    page.tap(page.buttons.volup)
+    page.publishVolume({ level: 2, muted: false })
+    page.tap(page.buttons.voldown)
+    expect(page.volumeCommands.slice(4)).toEqual([['set', { level: 100 }], ['set', { level: 0 }]])
+  })
+
+  it('keeps the Mac\'s volume buttons usable while the extension is away', async () => {
+    const page = await loadPage()
+    page.publishVolume({ level: 40, muted: false })
+    page.publish({ ...sharing('s1'), extensions: { paired: 1, connected: 0 } })
+    expect(page.buttons.toggle.disabled).toBe(true)
+    expect(page.buttons.volup.disabled).toBe(false)
+    expect(page.buttons.mute.disabled).toBe(false)
+  })
+
+  it('falls back to the video when the Mac\'s volume cannot be read', async () => {
+    const page = await loadPage({ settings: { fit: 'contain', volumeTarget: 'mac' } })
+    page.publishVolume({ level: 40, muted: false, error: 'offline' })
+    page.publish(sharing('s1'))
+    page.commands.length = 0
+    page.tap()
+    page.tap(page.buttons.voldown)
+    page.tap(page.buttons.mute)
+    expect(page.volumeCommands).toEqual([])
+    expect(page.commands).toEqual([['control', { action: 'volume', value: 0.9 }], ['control', { action: 'mute' }]])
+    expect(page.nodes.get('sub')!.textContent).toBe('')
+  })
+
+  it('drives the video when the setting says so, as before', async () => {
+    const page = await loadPage({ settings: { fit: 'contain', volumeTarget: 'video' } })
+    page.publishVolume({ level: 40, muted: false })
+    page.publish(sharing('s1'))
+    page.commands.length = 0
+    page.tap()
+    expect(page.buttons.mute.attrs['aria-label']).toBe('Rétablir le son')
+    page.tap(page.buttons.volup)
+    page.tap(page.buttons.voldown)
+    page.tap(page.buttons.mute)
+    expect(page.volumeCommands).toEqual([])
+    expect(page.commands).toEqual([
+      ['control', { action: 'volume', value: 1 }],
+      ['control', { action: 'volume', value: 0.9 }],
+      ['control', { action: 'mute' }],
     ])
   })
 

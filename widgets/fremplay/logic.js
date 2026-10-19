@@ -101,5 +101,29 @@
     return Math.min(1, Math.max(0, Math.round((v + step) * 10) / 10))
   }
 
-  root.FremkitFremplay = { PROTOCOL: PROTOCOL, stateOf: stateOf, plan: plan, switched: switched, clock: clock, stepVolume: stepVolume }
+  /** How far one press of − or + moves the Mac's level: a wheel notch on the volume widget's knob. */
+  var MAC_STEP = 5
+
+  /**
+   * What the volume buttons drive: 'mac' when the setting asks for it (the default) and the
+   * `volume` provider has a good snapshot, 'video' otherwise. A Mac whose volume cannot be read
+   * falls back to the video quietly rather than leaving buttons that do nothing.
+   */
+  function volumeTarget(setting, volume) {
+    if (setting === 'video') return 'video'
+    if (!volume || typeof volume !== 'object' || volume.error) return 'video'
+    if (typeof volume.level !== 'number' || !isFinite(volume.level)) return 'video'
+    return 'mac'
+  }
+
+  /** The Mac's level one step away, a whole number inside 0..100. */
+  function stepLevel(level, step) {
+    var v = typeof level === 'number' && isFinite(level) ? level : 0
+    return Math.min(100, Math.max(0, Math.round(v + step)))
+  }
+
+  root.FremkitFremplay = {
+    PROTOCOL: PROTOCOL, MAC_STEP: MAC_STEP, stateOf: stateOf, plan: plan, switched: switched, clock: clock,
+    stepVolume: stepVolume, volumeTarget: volumeTarget, stepLevel: stepLevel
+  }
 })(typeof globalThis !== 'undefined' ? globalThis : this)
