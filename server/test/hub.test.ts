@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { Hub, MAX_CHANNELS_PER_SOCKET, DEVICE_CLOSE_CODE, DEVICE_TERMINATE_MS } from '../src/ws/hub.js'
 import { ProviderRegistry } from '../src/providers/registry.js'
+import { deviceHostView } from '../src/devices/service.js'
 
 class FakeSocket extends EventEmitter {
   sent: any[] = []
@@ -465,6 +466,18 @@ describe('a paired socket', () => {
     hub.broadcast('brightness', { a: 1, b: 2 })
     expect(socket.sent).toEqual([{ type: 'data', channel: 'brightness', data: { only: 1 } }])
     expect(local.sent).toEqual([{ type: 'data', channel: 'brightness', data: { a: 1, b: 2 } }])
+    registry.stop()
+  })
+
+  it('hears the theme through the devices view, without the next switch, and no dev-tool channel', () => {
+    const { hub, paired, registry } = pairedSetup()
+    hub.setHostView((_id, channel, data) => deviceHostView(channel, data, 'tablet'), ['brightness'])
+    const socket = paired('dev-a')
+    socket.receive({ type: 'subscribe', channel: 'theme' })
+    socket.receive({ type: 'subscribe', channel: 'widget-dev' })
+    hub.broadcast('theme', { id: 'edge', phase: 'night', scheduled: true, next: { at: '2026-10-19T06:12:00.000Z', to: 'day' } })
+    hub.broadcast('widget-dev', { id: 'w' })
+    expect(socket.sent).toEqual([{ type: 'data', channel: 'theme', data: { id: 'edge', phase: 'night', scheduled: true } }])
     registry.stop()
   })
 

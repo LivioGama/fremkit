@@ -22,6 +22,7 @@ import { deviceConfigView } from './scope.js'
 import type { PairingCodes } from './codes.js'
 import { lanAddresses as readLanAddresses, cachedPick, computerName, isPrivate, localHostName, preferredAddress } from './host.js'
 import { REMOTE_PORT, RemoteListener } from './listener.js'
+import { deviceThemeView } from '../themes/schedule.js'
 import type { DeviceStore, PublicDevice, Viewport } from './store.js'
 
 /** How often the LAN addresses are re-read while listening, to follow a DHCP change. */
@@ -98,6 +99,17 @@ export function deviceBrightnessView(data: unknown, screenId: string | null): un
   return { kiosk: null, screens: Object.hasOwn(screens, screenId) ? { [screenId]: screens[screenId] } : {} }
 }
 
+/**
+ * What a paired socket on `screenId` hears on a host channel (`HOST_CHANNELS`, plus `brightness`):
+ * its own view, or null for nothing at all. A channel with no case here is never sent to a device.
+ */
+export function deviceHostView(channel: string, data: unknown, screenId: string | null): unknown {
+  if (channel === 'config') return deviceConfigView(data as Config, screenId)
+  if (channel === 'brightness') return deviceBrightnessView(data, screenId)
+  if (channel === 'theme') return deviceThemeView(data)
+  return null
+}
+
 /** Whether a device screen was made for this viewport, in either orientation. */
 function fits(screen: Config['screens'][number], viewport: Viewport): boolean {
   const v = screen.display.viewport
@@ -172,12 +184,7 @@ export class DeviceService {
     this.hub.setDevicePayload((deviceId) => this.me(deviceId))
     // The config a device hears is its own screen's (devices/scope.ts), never the Mac's whole one.
     // So is the brightness it hears: its own screen's entry, not every screen's id and level.
-    this.hub.setHostView((deviceId, channel, data) => {
-      const screenId = this.deviceScreenOf(deviceId)
-      if (channel === 'config') return deviceConfigView(data as Config, screenId)
-      if (channel === 'brightness') return deviceBrightnessView(data, screenId)
-      return null
-    }, ['brightness'])
+    this.hub.setHostView((deviceId, channel, data) => deviceHostView(channel, data, this.deviceScreenOf(deviceId)), ['brightness'])
     this.config.onChange((cfg) => this.onConfigChange(cfg))
     this.catalog.onScan(() => {
       this.manifests = null

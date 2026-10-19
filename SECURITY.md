@@ -251,7 +251,8 @@ too; widgets cannot reach the route at all (`connect-src 'none'`, an opaque orig
 only private IPv4 addresses from that list and reaches them under the same pin as any other, so a
 stored address presenting another key is not the Mac. The configuration it reads, over HTTP and on the WebSocket,
 is its own screen's — the theme, the language, that screen and the widgets on it — never your
-connections, the marketplace records, the privacy switches or any other screen; the widget
+connections, the marketplace records, the privacy switches or any other screen. The theme in force
+reaches it without the time of the next switch, which is a sunrise or sunset at your coordinates. The widget
 catalogue lists only the widgets on its screen, without the scan's errors, and the installed
 applications and their icons go only to a screen that shows a widget allowed to read them. A
 device has the Mac fetch a site's icon only for a link or image address its own screen's settings

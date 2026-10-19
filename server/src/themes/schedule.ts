@@ -41,6 +41,17 @@ export function themeInForce(config: Pick<Config, 'theme' | 'themeSchedule'>, no
   }
 }
 
+/**
+ * The `theme` snapshot as a device hears it: the theme in force and its phase, without the time of
+ * the next switch. That time is the next sunrise or sunset at the coordinates the user typed, so it
+ * places the Mac on a map; the device switches when the channel says so and never needs it.
+ */
+export function deviceThemeView(data: unknown): unknown {
+  if (!data || typeof data !== 'object') return null
+  const { next: _next, ...rest } = data as Record<string, unknown>
+  return rest
+}
+
 /** How often the schedule is read again: a theme switches within this of sunset. */
 export const THEME_INTERVAL_MS = 10_000
 
