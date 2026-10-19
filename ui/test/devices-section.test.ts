@@ -259,6 +259,21 @@ describe('the devices section', () => {
     wrapper.unmount()
   })
 
+  it('hides the request card, code included, while the server does not answer', async () => {
+    deviceApi.getDevices.mockResolvedValue(status({
+      companionRequest: { requestId: 'req-1', code: 'AB2C', name: 'Chrome', expiresAt: Date.now() + 60_000 },
+    }))
+    const wrapper = mount(DevicesSection, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="request-code"]').text()).toBe('AB2C')
+    deviceApi.getDevices.mockRejectedValue(new Error('Fremkit is not answering'))
+    await useDevices().refresh()
+    await flushPromises()
+    expect(wrapper.find('[data-test="companion-request"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('AB2C')
+    wrapper.unmount()
+  })
+
   it('shows the code to type in the browser, and only Refuse', async () => {
     deviceApi.getDevices.mockResolvedValue(status({
       companionRequest: { requestId: 'req-1', code: 'AB2C', name: 'Chrome', expiresAt: Date.now() + 60_000 },

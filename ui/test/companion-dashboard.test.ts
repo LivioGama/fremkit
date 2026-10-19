@@ -13,6 +13,8 @@ const fake = vi.hoisted(() => ({
   subs: new Map<string, Set<(data: unknown) => void>>(),
   config: null as unknown,
   refuse: vi.fn(async (_id: string, _code: string) => {}),
+  /** The mocked socket's status, to drop the connection from a test. */
+  status: null as unknown as { value: string },
 }))
 
 vi.mock('../src/shared/socket', async () => {
@@ -27,6 +29,7 @@ vi.mock('../src/shared/socket', async () => {
     },
     command: async () => undefined,
   }
+  fake.status = socket.status
   return { useSocket: () => socket }
 })
 vi.mock('../src/shared/api', () => ({
@@ -245,6 +248,25 @@ describe('the dashboard and the companion channel', () => {
     push('companion', state({}))
     await nextTick()
     expect(w.find('.companion-prompt').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('drops the code as soon as the socket is not open, and shows it again only from a new snapshot', async () => {
+    const w = await mountApp('http://127.0.0.1:4242/')
+    push('companion', state({ pairing: { requestId: 'r1', code: 'K7M2', name: 'Companion', expiresAt: Date.now() + 60_000 } }))
+    await nextTick()
+    expect(w.find('.companion-prompt').exists()).toBe(true)
+    fake.status.value = 'connecting'
+    await nextTick()
+    expect(w.find('.companion-prompt').exists()).toBe(false)
+    expect(w.text()).not.toContain('K7M2')
+    // Back online, the stale code does not come back by itself.
+    fake.status.value = 'open'
+    await nextTick()
+    expect(w.find('.companion-prompt').exists()).toBe(false)
+    push('companion', state({ pairing: { requestId: 'r2', code: 'P4Q9', name: 'Companion', expiresAt: Date.now() + 60_000 } }))
+    await nextTick()
+    expect(w.find('.companion-prompt').text()).toContain('P4Q9')
     w.unmount()
   })
 

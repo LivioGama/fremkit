@@ -80,8 +80,13 @@ watch(() => showsIpads(s.state.config, status.value), (on) => { if (on) ipadsSho
 watch(() => showsExtensions(s.state.config, status.value), (on) => { if (on) extensionsShown.value = true }, { immediate: true })
 watch(() => labsDevices(s.state.config), (on) => { if (!on) ipadsShown.value = showsIpads(s.state.config, status.value) })
 watch(companionOn, (on) => { if (!on) extensionsShown.value = showsExtensions(s.state.config, status.value) })
-/** The extension's request, until its expiry even if the next poll is still to come. */
+/**
+ * The extension's request, until its expiry even if the next poll is still to come, and never
+ * while the last poll failed: a server that restarted has dropped it, and a code left on show
+ * could be typed for a program that took the port meanwhile.
+ */
 const request = computed(() => {
+  if (pollError.value) return null
   const r = companionOn.value ? status.value?.companionRequest ?? null : null
   return r && now.value < r.expiresAt ? r : null
 })

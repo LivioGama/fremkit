@@ -152,8 +152,14 @@ onMounted(async () => {
       const target = reveal.observe(snap, screen.value?.id)
       if (target !== null && target !== pageIndex.value && target < (screen.value?.pages.length ?? 0)) select(target)
     })
-    // A reconnect replays a snapshot that must not move the page on its own.
-    watch(socket.status, (s) => { if (s !== 'open') reveal.reset() })
+    // A reconnect replays a snapshot that must not move the page on its own. And the code on show
+    // goes with the socket: a server that restarted no longer has that request, and a program
+    // that took the port meanwhile must not get the user to type a code still on the screen.
+    watch(socket.status, (s) => {
+      if (s === 'open') return
+      reveal.reset()
+      companionPairing.value = null
+    })
   }
   window.addEventListener('keydown', onKey)
   // A widget's manifest was saved while it is being written: the frames wait for this catalogue.
@@ -220,7 +226,7 @@ watch(() => config.value?.locale, (l) => setLocale(l))
       @root="popover.setPopoverEl" />
     <!-- Experimental: only while `labs.companion` is on. The server answers the extension the same
          either way; with the prompt hidden (and the admin's card too) no request can be allowed. -->
-    <CompanionPrompt v-if="companionPairing && config?.labs?.companion === true" :pairing="companionPairing" />
+    <CompanionPrompt v-if="companionPairing && socket.status.value === 'open' && config?.labs?.companion === true" :pairing="companionPairing" />
   </div>
 </template>
 
