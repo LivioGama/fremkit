@@ -131,7 +131,7 @@ The Xcode project is `ios/Fremkit.xcodeproj`. Signing values never enter the rep
 
 ```bash
 cp ios/Local.example.xcconfig ios/Local.xcconfig   # git-ignored: your team id and bundle id
-scripts/build-ios.sh build     # the simulator, unsigned: needs no Local.xcconfig
+scripts/build-ios.sh build     # the simulator, signed ad hoc: needs no Local.xcconfig
 scripts/build-ios.sh test      # FremkitKit's tests (the pairing and connection logic)
 FREMKIT_IOS_DEVICE=<udid> scripts/build-ios.sh install   # signed debug build onto your iPad
 ```
