@@ -95,6 +95,8 @@ export const fr: Record<string, string> = {
   'admin.menu.copy': 'Copier',
   'admin.menu.paste': 'Coller',
   'admin.menu.moveToPage': 'Déplacer vers la page',
+  'admin.menu.addNavWidget': 'Ajouter un widget à la barre…',
+  'admin.menu.navBarSettings': 'Réglages de la barre de navigation…',
   'admin.menu.newPage': 'Nouvelle page',
   'admin.menu.alsoShowOn': "Afficher aussi sur l'écran",
   'admin.menu.moveToScreen': "Déplacer vers l'écran",

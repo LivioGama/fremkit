@@ -183,3 +183,34 @@ describe('the dots fit the room kept for them', () => {
     expect(column(8, 40)).toBe('44px')
   })
 })
+
+describe('the editor\'s right click on the bar', () => {
+  function editBar() {
+    const wrapper = mount(NavBar, { props: { pages: PAGES, active: 0, height: 64, edit: true }, attachTo: document.body })
+    const menu = (target: Element): MouseEvent => {
+      // jsdom lays nothing out: the bar finds what is under the pointer by `elementFromPoint`.
+      document.elementFromPoint = () => target
+      const e = new MouseEvent('contextmenu', { clientX: 10, clientY: 10, bubbles: true, cancelable: true })
+      target.dispatchEvent(e)
+      return e
+    }
+    return { wrapper, menu }
+  }
+
+  it('asks for the page\'s menu on a page button, and never opens the admin', () => {
+    const { wrapper, menu } = editBar()
+    const e = menu(wrapper.findAll('.page-button')[1].element)
+    expect(e.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('barMenu')?.[0]?.[0]).toBe(1)
+    expect(wrapper.emitted('admin')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('asks for the bar\'s own menu elsewhere, instead of the browser\'s', () => {
+    const { wrapper, menu } = editBar()
+    const e = menu(wrapper.find('nav').element)
+    expect(e.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('barMenu')?.[0]?.[0]).toBeNull()
+    wrapper.unmount()
+  })
+})

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createAdminStore } from '../src/admin/store'
-import { libraryMenu, navSettingsOpen, navWidgetMenu, pageMenu, screenMenu, type PageMenuUi } from '../src/admin/menus'
+import { libraryMenu, navBarMenu, navSettingsOpen, navWidgetMenu, pageMenu, screenMenu, type PageMenuUi } from '../src/admin/menus'
 import { dropIndex } from '../src/admin/pageDrag'
 import { share } from '../src/admin/share'
 import type { MarketplaceStore } from '../src/admin/marketplace'
@@ -204,6 +204,24 @@ function market(widgets: Partial<MarketplaceWidget>[] = []) {
     uninstall: vi.fn(async () => {}),
   } as unknown as MarketplaceStore & { start: ReturnType<typeof vi.fn>; uninstall: ReturnType<typeof vi.fn> }
 }
+
+describe('navBarMenu', () => {
+  it('adds a page, and opens the Screen panel on the bar widgets or the bar settings', async () => {
+    const s = await make()
+    const ui = { revealSection: vi.fn(), focusLibrarySearch: vi.fn() }
+    const menu = navBarMenu(s, ui)
+    const labels = menu.filter((e): e is MenuItem => !isSeparator(e)).map((e) => e.label)
+    expect(labels).toEqual(['New page', 'Add a widget to the bar…', 'Navigation bar settings…'])
+    const pages = s.screen.value!.pages.length
+    ;(menu[0] as MenuItem).run!()
+    expect(s.screen.value!.pages).toHaveLength(pages + 1)
+    ;(menu[1] as MenuItem).run!()
+    expect(s.state.modal).toBe('screen')
+    expect(ui.revealSection).toHaveBeenLastCalledWith('screen.navWidgets')
+    ;(menu[3] as MenuItem).run!()
+    expect(ui.revealSection).toHaveBeenLastCalledWith('screen.layout')
+  })
+})
 
 describe('libraryMenu', () => {
   it('adds to a chosen page, and to the bar only for a compact widget', async () => {

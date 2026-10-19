@@ -147,6 +147,18 @@ export function libraryMenu(s: AdminStore, market: MarketplaceStore, widgetId: s
 }
 
 /** What the screens selector adds to a menu: the inline rename lives in the selector itself. */
+/** The menu of the bar's own background, in the canvas: what the bar is set up from. */
+export function navBarMenu(s: AdminStore, ui: MenuUi): MenuEntry[] {
+  if (!s.state.config) return []
+  const reveal = (id: string): void => { s.openModal('screen'); ui.revealSection(id) }
+  return tidy([
+    { label: t('admin.menu.newPage'), run: () => s.addPage() },
+    { label: t('admin.menu.addNavWidget'), run: () => reveal('screen.navWidgets') },
+    SEPARATOR,
+    { label: t('admin.menu.navBarSettings'), run: () => reveal('screen.layout') },
+  ])
+}
+
 export interface ScreenMenuUi {
   rename(screenId: string): void
 }

@@ -35,6 +35,8 @@ const emit = defineEmits<{
   admin: []
   /** The editor's preview only: a right click on a bar widget, for its menu. */
   itemMenu: [item: NavItem, event: MouseEvent]
+  /** The editor's preview only: a right click on a page button (its index) or on the bar itself (null). */
+  barMenu: [page: number | null, event: MouseEvent]
 }>()
 
 /**
@@ -112,6 +114,8 @@ function holdRightButton(e: PointerEvent): void {
 
 /** The same gesture in a browser, where WebKit does raise the event. */
 function holdContextMenu(e: Event): void {
+  // In the editor a right click is a menu, handled by the bar (`onItemMenu`), not the admin gesture.
+  if (props.edit) return
   e.preventDefault()
   e.stopPropagation()
   if (!wantsGesture('longPress')) return
@@ -319,9 +323,14 @@ onBeforeUnmount(() => {
  */
 function onItemMenu(e: MouseEvent): void {
   if (!props.edit) return
-  const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-nav-instance]')
+  // The editor's own menu, never the browser's, wherever on the bar the click lands.
+  e.preventDefault()
+  const under = document.elementFromPoint(e.clientX, e.clientY)
+  const el = under?.closest('[data-nav-instance]')
   const item = props.navItems.find((x) => x.instanceId === el?.getAttribute('data-nav-instance'))
-  if (item) emit('itemMenu', item, e)
+  if (item) return emit('itemMenu', item, e)
+  const page = under?.closest('[data-nav-page]')?.getAttribute('data-nav-page')
+  emit('barMenu', page == null ? null : Number(page), e)
 }
 
 const cluster = (slot: NavSlot): NavItem[] => props.navItems.filter((item) => item.slot === slot)
@@ -399,7 +408,7 @@ const style = computed<Record<string, string | number>>(() => {
         @wheel.stop @dblclick.stop @contextmenu.prevent.stop @click.stop="scrollNames(-1)">‹</button>
       <div ref="names" class="page-list" :class="{ holding }" @scroll="measureNames"
         @pointerdown="holdDown" @contextmenu="holdContextMenu" @dblclick="adminDoubleClick">
-        <button v-for="(p, i) in pages" :key="p.id" type="button" class="page-button" :class="{ active: i === active }"
+        <button v-for="(p, i) in pages" :key="p.id" type="button" class="page-button" :class="{ active: i === active }" :data-nav-page="i"
           :style="{ minHeight: targetHeight }" :aria-label="p.name"
           :aria-current="i === active ? 'page' : undefined" :title="p.name"
           @pointerdown="pageDown($event, i)" @click="pageClick($event, i)">

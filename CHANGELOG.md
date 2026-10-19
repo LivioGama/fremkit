@@ -93,7 +93,9 @@ tagged `vX.Y.Z`.
   each row says, and a row shows a single "…"
   on hover instead of five buttons. On a widget in the library: add it to any page, add it to the
   bar, and for a widget from the Sietch, show it there, update it or uninstall it. On a bar widget,
-  in the preview or in the Screen settings: its settings, move left or right, remove. On a screen
+  in the preview or in the Screen settings: its settings, move left or right, remove. On a page of
+  the bar in the preview, that page's menu; on the bar itself: new page, add a widget to the bar,
+  the bar's settings. On a screen
   above the canvas: rename it in place (or double-click it), its settings, delete it.
 - **Right-click menus in the editor.** A right click on a widget opens a real menu, like a Mac
   app's: show title, appearance (opacity presets, colours, background image, reset),

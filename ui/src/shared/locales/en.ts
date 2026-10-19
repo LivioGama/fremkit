@@ -95,6 +95,8 @@ export const en: Record<string, string> = {
   'admin.menu.copy': 'Copy',
   'admin.menu.paste': 'Paste',
   'admin.menu.moveToPage': 'Move to page',
+  'admin.menu.addNavWidget': 'Add a widget to the bar…',
+  'admin.menu.navBarSettings': 'Navigation bar settings…',
   'admin.menu.newPage': 'New page',
   'admin.menu.alsoShowOn': 'Also show on screen',
   'admin.menu.moveToScreen': 'Move to screen',
