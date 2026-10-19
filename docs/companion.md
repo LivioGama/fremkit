@@ -142,7 +142,9 @@ Edge*), or press **⌃⇧F** (Control-Shift-F). Press it again to stop. The shor
 - **On the Mac's Edge only.** A Fremplay widget on a paired iPad's screen shows *Fremplay ne
   s'affiche que sur l'Edge du Mac.* / *Fremplay only shows on the Mac's Edge.* and nothing else:
   the picture goes peer to peer between addresses of this Mac, and the iPad's copy of the widget
-  gets no WebRTC and no `companion` channel.
+  gets no WebRTC and no `companion` channel. With the switch off, the iPad leaves its Fremplay
+  widgets out as the Edge does: its view of the config carries `labs.companion`, and nothing
+  else of the experimental switches.
 - The browser can be in the background, on another tab or another desktop. Quitting it, or
   closing the tab, ends the share.
 - The video travels directly between the browser and the Edge over WebRTC, between addresses of

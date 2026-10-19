@@ -337,6 +337,33 @@ describe('the dashboard and the companion channel', () => {
     w.unmount()
   })
 
+  it('a paired device draws its Fremplay tiles with the switch on and leaves them out with it off', async () => {
+    // The device's view of the config: one screen, its widgets, and labs.companion alone.
+    const deviceView = (companion: boolean) => {
+      const c = withFremplay(companion) as unknown as Record<string, unknown>
+      return { version: c.version, theme: c.theme, locale: c.locale, labs: { companion }, widgets: c.widgets, screens: c.screens } as unknown as Config
+    }
+    const device = async () => { push('device', { id: 'd1', name: 'Pad', screenId: 'edge', brightness: null }); await flushPromises(); await nextTick() }
+    fake.config = deviceView(true)
+    const on = await mountApp('https://example.local:4243/')
+    await device()
+    expect(on.findAll('.page-stub')).toHaveLength(1)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    await nextTick()
+    expect(on.find('.page-stub').text()).toBe('p1')
+    expect(on.find('.page-stub').attributes('data-items')).toBe('fp')
+    on.unmount()
+    vi.resetModules()
+    fake.config = deviceView(false)
+    const off = await mountApp('https://example.local:4243/')
+    await device()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    await nextTick()
+    expect(off.find('.page-stub').text()).toBe('p2')
+    expect(off.find('.page-stub').attributes('data-items')).toBe('clock')
+    off.unmount()
+  })
+
   it('a dashboard that has just loaded turns to the Fremplay page when a share is live', async () => {
     const c = withFremplay(true) as unknown as { screens: { nav: unknown[] }[] }
     c.screens[0].nav = []
