@@ -8,8 +8,8 @@ import type { CommandContext, Provider } from './types.js'
 const execFile = promisify(nodeExecFile)
 const ActionSchema = z.enum(['left-half', 'right-half', 'fill', 'next-display'])
 export type RectangleAction = z.infer<typeof ActionSchema>
-const InspectSchema = z.object({}).strict()
-const RunSchema = z.object({ action: ActionSchema, targetToken: z.string().uuid() }).strict()
+const InspectSchema = z.object({ instanceId: z.string().min(1).max(200).optional() }).strict()
+const RunSchema = z.object({ action: ActionSchema, targetToken: z.string().uuid(), instanceId: z.string().min(1).max(200).optional() }).strict()
 const NativeTargetSchema = z.object({
   pid: z.number().int().positive(),
   bundleId: z.string().min(1).max(255),
