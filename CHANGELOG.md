@@ -28,6 +28,10 @@ tagged `vX.Y.Z`.
 
 ### Fixed
 
+- **Tapping the Edge dashboard no longer steals the keyboard.** The dashboard window took the
+  key focus on every tap, so the app you were typing into on the main display lost it and a
+  shortcut such as ⌘V landed in the dashboard. The window is now a non-activating panel that
+  never becomes key; touches still reach the page.
 - **The Claude limits tile finds the sign-in again.** Recent Claude Code versions keep the OAuth
   credentials in a keychain item whose name carries a config-dir suffix
   (`Claude Code-credentials-8047733a`), while the plainly named item can hold MCP data instead.
