@@ -14,6 +14,11 @@ tagged `vX.Y.Z`.
 
 ### Fixed
 
+- **The Claude limits tile finds the sign-in again.** Recent Claude Code versions keep the OAuth
+  credentials in a keychain item whose name carries a config-dir suffix
+  (`Claude Code-credentials-8047733a`), while the plainly named item can hold MCP data instead.
+  The provider now looks through every `Claude Code-credentials*` item for the one that has the
+  token, instead of reporting "not available on this Mac".
 - **The clipboard widget masks one-time codes.** A six-digit code copied from a text message or
   an authenticator (`482913`, `482 913`, `4829-1375`) showed in full on the Edge and on a paired
   iPad; any run of four to eight digits copied on its own is now shown as a secret, and still
