@@ -10,6 +10,18 @@ Anything that changes what the dashboard, the admin or a widget can do gets a li
 (`package.json`, `server/package.json`, `ui/package.json`, `server/src/version.ts`) and is
 tagged `vX.Y.Z`.
 
+## Unreleased
+
+### Fixed
+
+- **The clipboard widget masks one-time codes.** A six-digit code copied from a text message or
+  an authenticator (`482913`, `482 913`, `4829-1375`) showed in full on the Edge and on a paired
+  iPad; any run of four to eight digits copied on its own is now shown as a secret, and still
+  copies back with a tap. Numbers inside a sentence and phone numbers are shown as before.
+- **The clipboard widget leaves alone what more password managers copy.** Besides the standard
+  "concealed" and "transient" markers, a copy from 1Password, KeeWeb, Butler, Typeit4me or a
+  Keyboard Maestro generator is no longer recorded at all.
+
 ## 0.5.0 — 2026-10-19
 
 ### Added
