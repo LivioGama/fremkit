@@ -8,6 +8,7 @@ import { readJsonCapped } from '../net/json.js'
 
 export const OPENAI_API = 'https://api.openai.com/v1'
 export const GROQ_API = 'https://api.groq.com/openai/v1'
+export const OLLAMA_API = 'https://ollama.com/v1'
 export const OPENAI_TIMEOUT_MS = 25_000
 export const SHELLSMITH_MAX_REQUEST_CHARS = 1000
 export const SHELLSMITH_MAX_COMMAND_CHARS = 2000
@@ -37,10 +38,10 @@ export interface OpenAIShellsmithDeps {
   selectedText?: () => Promise<SelectedTextResult>
 }
 
-type ApiProvider = 'openai' | 'groq'
+type ApiProvider = 'openai' | 'groq' | 'ollama'
 const providerFor = (fields: Record<string, string>): ApiProvider | null => fields.provider === undefined || fields.provider === '' || fields.provider === 'openai'
-  ? 'openai' : fields.provider === 'groq' ? 'groq' : null
-const apiFor = (provider: ApiProvider): string => provider === 'groq' ? GROQ_API : OPENAI_API
+  ? 'openai' : fields.provider === 'groq' || fields.provider === 'ollama' ? fields.provider : null
+const apiFor = (provider: ApiProvider): string => provider === 'groq' ? GROQ_API : provider === 'ollama' ? OLLAMA_API : OPENAI_API
 const languageAliases: Record<string, string> = {
   english: 'en', français: 'fr', french: 'fr', deutsch: 'de', german: 'de', español: 'es', spanish: 'es',
   italiano: 'it', italian: 'it', português: 'pt', portuguese: 'pt', nederlands: 'nl', dutch: 'nl',
@@ -111,7 +112,8 @@ export function createOpenAIShellsmithProvider(ctx: ConnectionProviderContext, d
         if (!parsed.success || !modelResult.success || !provider) return { ok: false, error: 'invalid-request' }
         if (!token) return { ok: false, error: 'unconfigured' }
 
-        if (provider === 'groq') {
+        // OpenAI itself uses /responses; Groq and Ollama Cloud only speak chat completions.
+        if (provider !== 'openai') {
           const completion = await chatCompletion(fetchFn, api, token, modelResult.data,
             `Suggest one shell command for this request. Do not execute it, call tools, or include secrets. Return only command text, without markdown or explanation. Avoid destructive commands unless explicitly requested.\n\nRequest: ${parsed.data.request}`,
             false)

@@ -1,6 +1,6 @@
 import { tr } from '../../i18n.js'
 import { OptionsError, type ConnectionType, type PickOption, type TestResult } from '../types.js'
-import { GROQ_API, OPENAI_API, OPENAI_TIMEOUT_MS, createOpenAIShellsmithProvider } from '../../providers/openai-shellsmith.js'
+import { GROQ_API, OLLAMA_API, OPENAI_API, OPENAI_TIMEOUT_MS, createOpenAIShellsmithProvider } from '../../providers/openai-shellsmith.js'
 import type { OpenAIShellsmithDeps } from '../../providers/openai-shellsmith.js'
 import { USER_AGENT } from '../../version.js'
 import { readJsonCapped } from '../../net/json.js'
@@ -12,8 +12,8 @@ const languages: PickOption[] = [
   { value: 'nl', label: 'Nederlands' }, { value: 'ja', label: '日本語' }, { value: 'zh', label: '中文' },
 ]
 
-const providerFor = (fields: Record<string, string>): 'openai' | 'groq' | null => fields.provider === undefined || fields.provider === '' || fields.provider === 'openai'
-  ? 'openai' : fields.provider === 'groq' ? 'groq' : null
+const providerFor = (fields: Record<string, string>): 'openai' | 'groq' | 'ollama' | null => fields.provider === undefined || fields.provider === '' || fields.provider === 'openai'
+  ? 'openai' : fields.provider === 'groq' || fields.provider === 'ollama' ? fields.provider : null
 
 export const openAIShellsmithType: ConnectionType = {
   id: 'openai-shellsmith',
@@ -22,11 +22,11 @@ export const openAIShellsmithType: ConnectionType = {
   icon: 'sparkles',
   secretBindings: ['provider'],
   fields: [
-    { key: 'provider', label: { fr: 'Fournisseur API', en: 'API provider' }, options: ['openai', 'groq'],
+    { key: 'provider', label: { fr: 'Fournisseur API', en: 'API provider' }, options: ['openai', 'groq', 'ollama'],
       help: { fr: 'Le jeton est envoyé uniquement à l’hôte fixe du fournisseur choisi. Sans choix, OpenAI est utilisé.', en: 'The token is sent only to the selected provider’s fixed host. OpenAI is used when no choice is saved.' } },
     { key: 'model', label: { fr: 'ID du modèle', en: 'Model ID' }, required: true,
       placeholder: 'openai/gpt-oss-20b',
-      help: { fr: 'Saisissez un modèle activé pour votre compte. Groq accepte notamment openai/gpt-oss-20b.', en: 'Enter a model enabled for your account. Groq supports openai/gpt-oss-20b, among others.' } },
+      help: { fr: 'Saisissez un modèle activé pour votre compte. Groq accepte notamment openai/gpt-oss-20b ; Ollama Cloud, par exemple gpt-oss:120b.', en: 'Enter a model enabled for your account. Groq supports openai/gpt-oss-20b, Ollama Cloud for example gpt-oss:120b.' } },
     { key: 'token', label: { fr: 'Clé API', en: 'API key' }, secret: true, required: true,
       help: { fr: 'La clé reste dans le coffre de secrets. Les requêtes ne partent qu’après une action explicite.', en: 'The key stays in Fremkit’s secret store. Requests are sent only after an explicit action.' } },
   ],
@@ -37,8 +37,8 @@ export const openAIShellsmithType: ConnectionType = {
     const token = secrets.token?.trim() ?? ''
     if (!provider || !ModelSchema.test(model) || !token) return { ok: false, error: tr(undefined, 'shellsmith.unconfigured') }
     try {
-      const response = provider === 'groq'
-        ? await (deps.fetchFn ?? fetch)(`${GROQ_API}/models`, {
+      const response = provider !== 'openai'
+        ? await (deps.fetchFn ?? fetch)(`${provider === 'groq' ? GROQ_API : OLLAMA_API}/models`, {
           redirect: 'error',
           headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'User-Agent': USER_AGENT },
           signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
@@ -56,7 +56,7 @@ export const openAIShellsmithType: ConnectionType = {
               : tr(undefined, 'shellsmith.unexpected', { status: response.status }) }
       }
       const body = await readJsonCapped(response).catch(() => undefined) as { id?: unknown; data?: Array<{ id?: unknown }> } | undefined
-      const modelAvailable = provider === 'groq'
+      const modelAvailable = provider !== 'openai'
         ? body?.data?.some((item) => item.id === model) === true
         : body?.id === model
       return modelAvailable ? { ok: true, detail: tr(undefined, 'shellsmith.connected', { model }) }

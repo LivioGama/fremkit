@@ -192,7 +192,7 @@ describe('ShellSmith command suggestion provider', () => {
     expect(defaultConnectionTypes().some((type) => type.id === 'openai-shellsmith')).toBe(true)
     expect(openAIShellsmithType.fields.find((field) => field.key === 'token')).toMatchObject({ secret: true, required: true })
     expect(openAIShellsmithType.fields.find((field) => field.key === 'model')).toMatchObject({ required: true })
-    expect(openAIShellsmithType.fields.find((field) => field.key === 'provider')?.options).toEqual(['openai', 'groq'])
+    expect(openAIShellsmithType.fields.find((field) => field.key === 'provider')?.options).toEqual(['openai', 'groq', 'ollama'])
     expect(openAIShellsmithType.fields.some((field) => field.key === 'baseUrl')).toBe(false)
 
     let requestedUrl = ''
@@ -224,6 +224,43 @@ describe('ShellSmith command suggestion provider', () => {
 
     expect(requestedUrl).toBe('https://api.groq.com/openai/v1/models')
     expect(requestedRedirect).toBe('error')
+    expect(result.ok).toBe(true)
+    expect(JSON.stringify(result)).not.toContain('private-test-token')
+  })
+
+  it('uses the fixed Ollama Cloud host for a bounded suggestion', async () => {
+    const calls: { url: string; init?: RequestInit }[] = []
+    const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(input), init })
+      return json({ choices: [{ message: { content: 'ls -la' } }] })
+    }) as typeof fetch
+    const provider = createOpenAIShellsmithProvider({
+      ...context(),
+      fields: { provider: 'ollama', model: 'gpt-oss:120b' },
+    }, {
+      fetchFn,
+      pasteboard: { read: async () => '', write: async () => {}, types: async () => [] },
+    })
+
+    const result = await provider.commands!.suggestCommand({ request: 'List files' }, { loopback: true })
+
+    expect(result).toEqual({ ok: true, command: 'ls -la' })
+    expect(calls[0].url).toBe('https://ollama.com/v1/chat/completions')
+    expect(calls[0].init?.redirect).toBe('error')
+    expect(new Headers(calls[0].init?.headers).get('authorization')).toBe('Bearer private-test-token')
+    expect(JSON.parse(String(calls[0].init?.body)).reasoning_format).toBeUndefined()
+  })
+
+  it('checks Ollama Cloud models through the fixed models endpoint without returning the secret', async () => {
+    let requestedUrl = ''
+    const result = await openAIShellsmithType.test({ provider: 'ollama', model: 'gpt-oss:120b' }, { token: 'private-test-token' }, {
+      fetchFn: (async (url: string | URL | Request) => {
+        requestedUrl = String(url)
+        return json({ data: [{ id: 'gpt-oss:120b' }] })
+      }) as typeof fetch,
+    })
+
+    expect(requestedUrl).toBe('https://ollama.com/v1/models')
     expect(result.ok).toBe(true)
     expect(JSON.stringify(result)).not.toContain('private-test-token')
   })
