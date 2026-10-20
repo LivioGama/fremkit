@@ -397,6 +397,7 @@ const OpenRowPayload = z.object({
 // A widget can ask to open a repository name, but it cannot supply a destination URL.
 const OpenRepoPayload = z.strictObject({
   repo: z.string().regex(OWNER_REPO_RE),
+  instanceId: z.string().min(1).max(200).optional(),
 })
 
 export interface GithubDeps {
