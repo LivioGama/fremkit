@@ -376,7 +376,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func edgeDidChange(_ edge: CGRect?) {
-        let ilitek = ILITEKDisplayTarget.bounds()
+        let ilitek = ILITEKDisplayTarget.bounds(fallbackSize: CGSize(width: config.display.width, height: config.display.height))
         let profiles = TouchDriver.connectedProfiles()
         let profile = TouchHardwareProfile.preferred(edgeDevice: profiles.contains(.edge),
                                                      edgeTarget: edge != nil,
