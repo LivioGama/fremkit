@@ -55,6 +55,14 @@ describe('built-in macOS window provider', () => {
     },
   )
 
+  it('matches on owner and bounds when the window list hides names', () => {
+    const window = { windowID: 41, pid: nativeTarget.pid, title: '', x: 100, y: 100, width: 600, height: 400 }
+    const otherApp = { windowID: 42, pid: nativeTarget.pid + 1, title: '', x: 100, y: 100, width: 600, height: 400 }
+    const input = { pid: nativeTarget.pid, title: nativeTarget.title, x: 100, y: 100, width: 600, height: 400, windows: [window, otherApp] }
+
+    expect(resolveWindowIDs([input, { ...input, expectedWindowID: 42 }])).toEqual([41, null])
+  })
+
   it('rejects a same-process same-title focus switch to a different window ID', () => {
     const firstWindow = { windowID: 41, pid: nativeTarget.pid, title: nativeTarget.title, x: 100, y: 100, width: 600, height: 400 }
     const secondWindow = { ...firstWindow, windowID: 42, x: 720 }
@@ -107,7 +115,14 @@ describe('built-in macOS window provider', () => {
     const provider = createRectangleProvider(run)
 
     await expect(provider.commands?.['inspect-target']?.({}, { loopback: true }))
-      .resolves.toEqual({ ok: false, error: 'no-target' })
+      .resolves.toEqual({ ok: false, error: 'unsafe-target' })
+  })
+
+  it('surfaces the inspector error so permission denials reach the widget', async () => {
+    const provider = createRectangleProvider(async () => JSON.stringify({ ok: false, error: 'accessibility-permission-required' }))
+
+    await expect(provider.commands?.['inspect-target']?.({}, { loopback: true }))
+      .resolves.toEqual({ ok: false, error: 'accessibility-permission-required' })
   })
 
   it.each([

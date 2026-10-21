@@ -79,7 +79,7 @@ export function createRectangleProvider(run: Runner = runProgram, now: () => num
         if (!InspectSchema.safeParse(payload).success) return { ok: false, error: 'invalid-request' }
         try {
           const response = parseResponse(await run(SWIFT, nativeArgsFor('inspect')))
-          if (!response?.ok || !response.target) return { ok: false, error: 'no-target' }
+          if (!response?.ok || !response.target) return { ok: false, error: response?.error ?? 'no-target' }
           const token = randomUUID()
           if (targets.size >= MAX_TARGETS) {
             for (const [key, value] of targets) if (value.expiresAt <= now()) targets.delete(key)

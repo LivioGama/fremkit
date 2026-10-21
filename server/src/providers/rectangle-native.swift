@@ -94,8 +94,10 @@ func closeEnough(_ lhs: CGFloat, _ rhs: CGFloat) -> Bool { abs(lhs - rhs) <= 4 }
 // so map its focused window to exactly one Core Graphics row by owner, title, and bounds.
 // If the mapping is absent or ambiguous, do not guess which same-titled window was focused.
 func matchingWindowID(pid: Int32, title: String, bounds: CGRect, expectedWindowID: UInt32? = nil, candidates: [WindowCandidate]) -> UInt32? {
+    // Without Screen Recording, CGWindowList hides window names: an empty candidate title then
+    // means "unknown", not "different" — owner PID and bounds still prove identity.
     let matches = candidates.filter { candidate in
-        candidate.pid == pid && candidate.title == title &&
+        candidate.pid == pid && (candidate.title.isEmpty || candidate.title == title) &&
         closeEnough(CGFloat(candidate.x), bounds.minX) && closeEnough(CGFloat(candidate.y), bounds.minY) &&
         closeEnough(CGFloat(candidate.width), bounds.width) && closeEnough(CGFloat(candidate.height), bounds.height)
     }
@@ -109,10 +111,10 @@ func onScreenWindowCandidates() -> [WindowCandidate]? {
     return rawWindows.compactMap { info in
         guard let pid = info[kCGWindowOwnerPID as String] as? NSNumber,
               let windowID = info[kCGWindowNumber as String] as? NSNumber,
-              let title = info[kCGWindowName as String] as? String,
               let rawBounds = info[kCGWindowBounds as String] as? [String: Any],
               let bounds = CGRect(dictionaryRepresentation: rawBounds as CFDictionary),
               windowID.uint32Value != kCGNullWindowID else { return nil }
+        let title = info[kCGWindowName as String] as? String ?? ""
         return WindowCandidate(windowID: windowID.uint32Value, pid: pid.int32Value, title: title,
                                x: bounds.minX, y: bounds.minY, width: bounds.width, height: bounds.height)
     }
