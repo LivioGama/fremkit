@@ -26,6 +26,12 @@ tagged `vX.Y.Z`.
   selected folder in a new pane, optionally starting Claude Code or Codex from a known executable
   location.
 
+- **Paste Pad provider.** Answers the `paste-pad` command channel: a button copies its saved value
+  onto the pasteboard as a transient entry, then sends ⌘V — and an optional Return — to the field
+  that has focus on the main display. Values come only from the widget's own saved settings, so a
+  button cannot be made to paste something the user never typed.
+
+
 ### Fixed
 
 - **Tapping the Edge dashboard no longer steals the keyboard.** The dashboard window took the

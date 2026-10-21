@@ -60,6 +60,7 @@ import { DEFAULT_BACKGROUND, seedDefaultBackground } from './backgrounds/seed.js
 import { isSafeBackgroundName } from './config/schema.js'
 import { backupRoutes } from './backup/routes.js'
 import { bambuRoutes } from './bambu/routes.js'
+import { createPastePadProvider } from './providers/paste-pad.js'
 import { createShortcutsProvider } from './providers/shortcuts.js'
 import { createMessages2FAProvider } from './providers/messages-2fa.js'
 import { createRectangleProvider } from './providers/rectangle.js'
@@ -311,6 +312,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     registry.register(createDiskMapProvider({ dataDir: opts.dataDir }))
     // Registered here, not in providers/index.ts, because that is where the config store lives.
     registry.register(createShortcutsProvider(undefined, instances))
+    registry.register(createPastePadProvider(undefined, instances))
     registry.register(createMessages2FAProvider({ enabled: () => store.get().privacy.messages2FA }))
     registry.register(createRectangleProvider())
     registry.register(createServiceStatusProvider({}, instances))
