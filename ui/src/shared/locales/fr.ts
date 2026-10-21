@@ -10,6 +10,7 @@ export const fr: Record<string, string> = {
   'common.remove': 'Supprimer',
   'common.moveUp': 'Monter',
   'common.moveDown': 'Descendre',
+  'common.reorder': 'Glisser pour réordonner',
 
   'admin.topbar.degraded.before': 'Configuration sur disque illisible : corrigez',
   'admin.topbar.degraded.after': "puis redémarrez le serveur. Aucune modification n'est enregistrée.",

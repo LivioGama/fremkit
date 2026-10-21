@@ -10,6 +10,7 @@ export const en: Record<string, string> = {
   'common.remove': 'Delete',
   'common.moveUp': 'Move up',
   'common.moveDown': 'Move down',
+  'common.reorder': 'Drag to reorder',
 
   'admin.topbar.degraded.before': 'Cannot read the configuration on disk: fix',
   'admin.topbar.degraded.after': 'then restart the server. Nothing is being saved.',

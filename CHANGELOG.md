@@ -57,6 +57,9 @@ tagged `vX.Y.Z`.
 - **The clipboard widget leaves alone what more password managers copy.** Besides the standard
   "concealed" and "transient" markers, a copy from 1Password, KeeWeb, Butler, Typeit4me or a
   Keyboard Maestro generator is no longer recorded at all.
+- **List settings rows reorder by drag.** Each row of a list setting — a Paste Pad button, a
+  clock city — carries a grip on its left edge: grab it and drop the row where it belongs. The
+  up/down chevrons stay for keyboard reordering.
 
 ## 0.5.0 — 2026-10-19
 
