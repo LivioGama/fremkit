@@ -129,7 +129,14 @@ func focusedTarget(expected: Target? = nil) -> (Target, AXUIElement, CGPoint, CG
     if let expected, (expected.pid != pid || expected.bundleId != bundleId) { return nil }
 
     let application = AXUIElementCreateApplication(pid)
-    guard let rawWindow = axValue(application, kAXFocusedWindowAttribute as CFString) else { return nil }
+    // Some frontmost apps never report a focused window — Electron shells among them — while
+    // AXMainWindow or the window list still answer. Identity is still proven by the CG match below.
+    var rawWindow = axValue(application, kAXFocusedWindowAttribute as CFString)
+        ?? axValue(application, kAXMainWindowAttribute as CFString)
+    if rawWindow == nil {
+        rawWindow = (axValue(application, kAXWindowsAttribute as CFString) as? [AXUIElement])?.first
+    }
+    guard let rawWindow, CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else { return nil }
     let window = rawWindow as! AXUIElement
     guard let title = stringAttribute(window, kAXTitleAttribute as CFString),
           let position = pointAttribute(window, kAXPositionAttribute as CFString),
@@ -285,8 +292,19 @@ func runAction(_ action: String, expected: Target) {
         case "fill": menuPath = ["Window", "Fill"]
         default: respond(Response(ok: false, error: "invalid-action"))
         }
-        guard menuAction(menuPath, expected: expected) else {
-            respond(Response(ok: false, error: "native-menu-action-unavailable"))
+        // The system tiling menu animates and respects per-app quirks, but an app can answer the
+        // press without honouring it (Warp's menu item exists yet does nothing). Verify the move;
+        // when the window did not reach the target frame, set its position and size directly.
+        if menuAction(menuPath, expected: expected),
+           waitForGeometry(expected, position: targetPosition, size: targetSize) {
+            respond(Response(ok: true, changed: true))
+        }
+        guard let (_, window, _, _) = focusedTarget(expected: expected) else {
+            respond(Response(ok: false, error: "target-changed-or-unavailable"))
+        }
+        guard setAX(window, attribute: kAXSizeAttribute as CFString, size: targetSize),
+              setAX(window, attribute: kAXPositionAttribute as CFString, point: targetPosition) else {
+            respond(Response(ok: false, error: "window-action-rejected"))
         }
     }
     // Native tiling animates asynchronously; poll the same guarded window for at most 1.5 seconds.
