@@ -34,6 +34,12 @@ struct IdentityProbe: Decodable {
     let windows: [WindowCandidate]
 }
 
+struct NextDisplayProbe: Decodable {
+    let current: Int
+    let displays: [UInt32]
+    let excluding: [UInt32]
+}
+
 struct Response: Encodable {
     let ok: Bool
     let error: String?
@@ -179,6 +185,41 @@ func displayFor(_ position: CGPoint, _ size: CGSize, in displays: [Display]) -> 
     return overlaps.max(by: { $0.1 < $1.1 })?.0
 }
 
+/// The displays the kiosk covers edge-to-edge. `next-display` skips them: the strip is the
+/// dashboard, not a destination for app windows. A helper window counts as the kiosk only above
+/// the normal window level *and* matching a display's bounds — the admin window stays at layer 0
+/// and stops at the menu bar, so it never qualifies.
+func kioskDisplayIDs() -> Set<CGDirectDisplayID> {
+    guard let helper = NSRunningApplication.runningApplications(withBundleIdentifier: "dev.fremkit.helper").first,
+          let list = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else { return [] }
+    let helperFrames = list.compactMap { entry -> CGRect? in
+        guard (entry[kCGWindowOwnerPID as String] as? Int32) == helper.processIdentifier,
+              let layer = entry[kCGWindowLayer as String] as? Int, layer > 0,
+              let dict = entry[kCGWindowBounds as String] as? NSDictionary,
+              let frame = CGRect(dictionaryRepresentation: dict) else { return nil }
+        return frame
+    }
+    return Set(NSScreen.screens.compactMap { screen in
+        guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+        let id = CGDirectDisplayID(number.uint32Value)
+        let frame = CGDisplayBounds(id)
+        return helperFrames.contains(where: {
+            closeEnough($0.minX, frame.minX) && closeEnough($0.minY, frame.minY) &&
+            closeEnough($0.width, frame.width) && closeEnough($0.height, frame.height)
+        }) ? id : nil
+    })
+}
+
+/// The display `next-display` lands on: the next screen after `current` in sorted order that the
+/// kiosk does not own. A window already on a kiosk display moves to the first usable one; nil
+/// when nothing usable is left (a single screen, or only the kiosk's).
+func nextDisplayIndex(current: Int, in screens: [Display], excluding: Set<CGDirectDisplayID>) -> Int? {
+    let usable = screens.indices.filter { !excluding.contains(screens[$0].id) }
+    guard let position = usable.firstIndex(of: current) else { return usable.first }
+    guard usable.count > 1 else { return nil }
+    return usable[(position + 1) % usable.count]
+}
+
 func setAX(_ window: AXUIElement, attribute: CFString, point: CGPoint) -> Bool {
     var value = point
     guard let boxed = AXValueCreate(.cgPoint, &value) else { return false }
@@ -263,8 +304,10 @@ func runAction(_ action: String, expected: Target) {
         targetPosition = CGPoint(x: area.minX, y: area.minY)
         targetSize = CGSize(width: area.width, height: area.height)
     case "next-display":
-        guard screens.count > 1 else { respond(Response(ok: false, error: "no-next-display")) }
-        let next = screens[(currentIndex + 1) % screens.count].usable
+        guard let nextIndex = nextDisplayIndex(current: currentIndex, in: screens, excluding: kioskDisplayIDs()) else {
+            respond(Response(ok: false, error: "no-next-display"))
+        }
+        let next = screens[nextIndex].usable
         targetSize = CGSize(width: min(oldSize.width, next.width), height: min(oldSize.height, next.height))
         targetPosition = CGPoint(x: next.midX - targetSize.width / 2, y: next.midY - targetSize.height / 2)
     default:
@@ -330,6 +373,21 @@ if ProcessInfo.processInfo.environment["FREMKIT_RECTANGLE_TESTING"] == "1", argu
     }
     if let data = try? JSONEncoder().encode(windowIDs), let output = String(data: data, encoding: .utf8) { print(output) }
     else { respond(Response(ok: false, error: "identity-test-encoding-failed")) }
+    exit(0)
+}
+if ProcessInfo.processInfo.environment["FREMKIT_RECTANGLE_TESTING"] == "1", arguments.first == "test-next-display" {
+    guard arguments.count == 2,
+          let data = arguments[1].data(using: .utf8),
+          let probes = try? JSONDecoder().decode([NextDisplayProbe].self, from: data) else {
+        respond(Response(ok: false, error: "invalid-test-probe"))
+    }
+    let picked = probes.map { probe in
+        nextDisplayIndex(current: probe.current,
+                         in: probe.displays.map { Display(id: $0, frame: .zero, usable: .zero) },
+                         excluding: Set(probe.excluding))
+    }
+    if let data = try? JSONEncoder().encode(picked), let output = String(data: data, encoding: .utf8) { print(output) }
+    else { respond(Response(ok: false, error: "next-display-test-encoding-failed")) }
     exit(0)
 }
 guard let mode = arguments.first else { respond(Response(ok: false, error: "missing-mode")) }

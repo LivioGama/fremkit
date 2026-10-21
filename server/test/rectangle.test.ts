@@ -18,6 +18,11 @@ const resolveWindowIDs = (inputs: unknown[]) => JSON.parse(execFileSync('/usr/bi
   env: { ...process.env, FREMKIT_RECTANGLE_TESTING: '1' },
 })) as Array<number | null>
 
+const resolveNextDisplay = (inputs: unknown[]) => JSON.parse(execFileSync('/usr/bin/swift', [nativeHelper, 'test-next-display', JSON.stringify(inputs)], {
+  encoding: 'utf8',
+  env: { ...process.env, FREMKIT_RECTANGLE_TESTING: '1' },
+})) as Array<number | null>
+
 describe('built-in macOS window provider', () => {
   it('inspects the active app and returns an opaque target token without exposing its title', async () => {
     const run = vi.fn(async (_file: string, args: string[]) => args[1] === 'inspect'
@@ -69,6 +74,26 @@ describe('built-in macOS window provider', () => {
     const input = { pid: nativeTarget.pid, title: nativeTarget.title, x: firstWindow.x, y: firstWindow.y, width: firstWindow.width, height: firstWindow.height, windows: [firstWindow, secondWindow] }
 
     expect(resolveWindowIDs([input, { ...input, expectedWindowID: 42 }])).toEqual([41, null])
+  })
+
+  it('skips the kiosk display when cycling to the next display', () => {
+    expect(resolveNextDisplay([
+      // displays sorted like `displays()`: kiosk strip first, then two real screens
+      { current: 1, displays: [4, 5, 1], excluding: [4] },
+      { current: 2, displays: [4, 5, 1], excluding: [4] },
+      // a window already on the kiosk display lands on the first usable screen
+      { current: 0, displays: [4, 5, 1], excluding: [4] },
+      // kiosk unknown or absent: the plain cycle is unchanged
+      { current: 0, displays: [4, 5, 1], excluding: [] },
+    ])).toEqual([2, 1, 1, 1])
+  })
+
+  it.each([
+    ['a single screen', { current: 0, displays: [1], excluding: [] }],
+    ['only the kiosk display remains', { current: 0, displays: [4], excluding: [4] }],
+    ['one usable screen and the window is on it', { current: 1, displays: [4, 5], excluding: [4] }],
+  ])('reports no next display with %s', (_case, probe) => {
+    expect(resolveNextDisplay([probe])).toEqual([null])
   })
 
   it.each([
