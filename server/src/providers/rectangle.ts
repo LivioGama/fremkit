@@ -3,6 +3,7 @@ import { execFile as nodeExecFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { z } from 'zod'
+import { resolveNative } from './native-tool.js'
 import type { CommandContext, Provider } from './types.js'
 
 const execFile = promisify(nodeExecFile)
@@ -38,7 +39,8 @@ export function nativeInvocationFor(action: RectangleAction): string[] {
 }
 
 const runProgram: Runner = async (file, args) => {
-  const { stdout } = await execFile(file, args, { timeout: COMMAND_TIMEOUT_MS, maxBuffer: 32 * 1024 })
+  const resolved = await resolveNative(file, args)
+  const { stdout } = await execFile(resolved.file, resolved.args, { timeout: COMMAND_TIMEOUT_MS, maxBuffer: 32 * 1024 })
   return stdout
 }
 
