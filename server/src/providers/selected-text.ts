@@ -2,6 +2,7 @@ import { execFile as nodeExecFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { z } from 'zod'
+import { resolveNative } from './native-tool.js'
 
 const execFile = promisify(nodeExecFile)
 const SWIFT = '/usr/bin/swift'
@@ -16,7 +17,8 @@ export type SelectedTextResult = z.infer<typeof NativeResult>
 export type SelectedTextRunner = (file: string, args: string[]) => Promise<string>
 
 const runProgram: SelectedTextRunner = async (file, args) => {
-  const { stdout } = await execFile(file, args, { timeout: TIMEOUT_MS, maxBuffer: 32 * 1024, shell: false })
+  const resolved = await resolveNative(file, args)
+  const { stdout } = await execFile(resolved.file, resolved.args, { timeout: TIMEOUT_MS, maxBuffer: 32 * 1024, shell: false })
   return stdout
 }
 

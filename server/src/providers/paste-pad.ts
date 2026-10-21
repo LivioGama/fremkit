@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
+import { resolveNative } from './native-tool.js'
 import type { CommandContext, Provider } from './types.js'
 import { noInstances, type InstanceLookup } from '../config/instances.js'
 import { tr } from '../i18n.js'
@@ -50,13 +51,15 @@ export function resolveButton(
 
 export type Run = (file: string, args: string[]) => Promise<string>
 
-export const runProgram: Run = (file, args) =>
-  new Promise((resolve, reject) => {
-    execFile(file, args, { timeout: 10_000 }, (err, stdout, stderr) => {
+export const runProgram: Run = async (file, args) => {
+  const resolved = await resolveNative(file, args)
+  return new Promise((resolve, reject) => {
+    execFile(resolved.file, resolved.args, { timeout: 10_000 }, (err, stdout, stderr) => {
       if (err) reject(new Error(stderr.trim() || err.message))
       else resolve(stdout)
     })
   })
+}
 
 export interface PasteResult { ok: boolean; error?: string }
 
