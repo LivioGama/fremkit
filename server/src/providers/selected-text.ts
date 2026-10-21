@@ -22,9 +22,22 @@ const runProgram: SelectedTextRunner = async (file, args) => {
 
 /** Reads the current focused selection through Accessibility without activating an app or touching the pasteboard. */
 export function createSelectedTextReader(run: SelectedTextRunner = runProgram): () => Promise<SelectedTextResult> {
+  return createSelectedTextMode('read', run)
+}
+
+/**
+ * Reads the selection by posting ⌘C to the focused app and watching the pasteboard change —
+ * the path for apps that never publish AXSelectedText. The pasteboard is consumed: callers
+ * that do not need it afterwards should restore or replace it.
+ */
+export function createSelectedTextCopier(run: SelectedTextRunner = runProgram): () => Promise<SelectedTextResult> {
+  return createSelectedTextMode('copy', run)
+}
+
+function createSelectedTextMode(mode: 'read' | 'copy', run: SelectedTextRunner): () => Promise<SelectedTextResult> {
   return async () => {
     try {
-      const response = NativeResult.safeParse(JSON.parse(await run(SWIFT, [HELPER, 'read'])))
+      const response = NativeResult.safeParse(JSON.parse(await run(SWIFT, [HELPER, mode])))
       return response.success ? response.data : { ok: false, error: 'unavailable' }
     } catch {
       return { ok: false, error: 'unavailable' }
@@ -32,4 +45,14 @@ export function createSelectedTextReader(run: SelectedTextRunner = runProgram): 
   }
 }
 
+/** Posts ⌘V to the focused app — the paste half of copy→translate→paste. */
+export function createSelectionPaster(run: SelectedTextRunner = runProgram): () => Promise<void> {
+  return async () => {
+    const response = NativeResult.safeParse(JSON.parse(await run(SWIFT, [HELPER, 'paste'])))
+    if (!response.success || !response.data.ok) throw new Error(response.success && !response.data.ok ? response.data.error : 'unavailable')
+  }
+}
+
 export const readSelectedText = createSelectedTextReader()
+export const copySelectedText = createSelectedTextCopier()
+export const pasteSelection = createSelectionPaster()

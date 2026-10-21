@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { ConnectionProviderContext } from '../connections/types.js'
 import { pbPasteboard, type Pasteboard } from './clipboard.js'
-import { readSelectedText, type SelectedTextResult } from './selected-text.js'
+import { copySelectedText, pasteSelection, readSelectedText, type SelectedTextResult } from './selected-text.js'
 import type { CommandContext, Provider } from './types.js'
 import { USER_AGENT } from '../version.js'
 import { readJsonCapped } from '../net/json.js'
@@ -36,6 +36,8 @@ export interface OpenAIShellsmithDeps {
   fetchFn?: typeof fetch
   pasteboard?: Pasteboard
   selectedText?: () => Promise<SelectedTextResult>
+  copiedText?: () => Promise<SelectedTextResult>
+  pasteSelection?: () => Promise<void>
 }
 
 type ApiProvider = 'openai' | 'groq' | 'ollama'
@@ -98,6 +100,8 @@ export function createOpenAIShellsmithProvider(ctx: ConnectionProviderContext, d
   const fetchFn = deps.fetchFn ?? fetch
   const pasteboard = deps.pasteboard ?? pbPasteboard
   const selectedText = deps.selectedText ?? readSelectedText
+  const copiedText = deps.copiedText ?? copySelectedText
+  const paste = deps.pasteSelection ?? pasteSelection
   const token = ctx.secrets.token?.trim() ?? ''
   const modelResult = ModelSchema.safeParse(ctx.fields.model)
   const provider = providerFor(ctx.fields)
@@ -171,6 +175,10 @@ export function createOpenAIShellsmithProvider(ctx: ConnectionProviderContext, d
 
         let selection: SelectedTextResult
         try { selection = await selectedText() } catch { return { ok: false, error: 'selection-unavailable' } }
+        if (!selection.ok && (selection.error === 'no-selection' || selection.error === 'unavailable')) {
+          // Editors that never report the selection through Accessibility still answer ⌘C.
+          try { selection = await copiedText() } catch { return { ok: false, error: 'selection-unavailable' } }
+        }
         if (!selection.ok) {
           const error = selection.error === 'no-selection' ? 'empty-selection'
             : selection.error === 'unavailable' ? 'selection-unavailable' : selection.error
@@ -186,6 +194,13 @@ export function createOpenAIShellsmithProvider(ctx: ConnectionProviderContext, d
         let translation: z.infer<typeof TranslationResponse>
         try { translation = TranslationResponse.parse(JSON.parse(completion.content)) } catch { return { ok: false, error: 'invalid-response' } }
         const sourceBase = baseLanguage(translation.sourceLanguage)
+        // Copy → translate → paste: the translation replaces the still-selected source text in
+        // the app it was copied from, and stays on the pasteboard for a second ⌘V. A failed
+        // write skips the keystroke, so an old clipboard can never land by accident.
+        try {
+          await pasteboard.write(translation.text)
+          try { await paste() } catch { /* the tile and the pasteboard still carry it */ }
+        } catch { /* the tile still shows it */ }
         if (sourceBase === aBase) return { ok: true, sourceLanguage: sourceBase, targetLanguage: favoriteB, text: translation.text }
         if (sourceBase === bBase) return { ok: true, sourceLanguage: sourceBase, targetLanguage: favoriteA, text: translation.text }
         return { ok: false, error: 'language-not-favorite' }

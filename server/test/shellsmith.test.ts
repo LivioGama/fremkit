@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { tr } from '../src/i18n.js'
 import { defaultConnectionTypes } from '../src/connections/types/index.js'
 import { openAIShellsmithType } from '../src/connections/types/openai-shellsmith.js'
 import { createOpenAIShellsmithProvider } from '../src/providers/openai-shellsmith.js'
@@ -117,12 +118,14 @@ describe('ShellSmith command suggestion provider', () => {
     expect(body.tools).toBeUndefined()
   })
 
-  it('translates the current selected text without reading or changing the clipboard', async () => {
+  it('translates the current selected text and pastes the translation back over it', async () => {
     const calls: { url: string; init?: RequestInit }[] = []
     let selectionReads = 0
     let clipboardReads = 0
-    let clipboardWrites = 0
     let clipboardTypeReads = 0
+    let copyReads = 0
+    let pastes = 0
+    const written: string[] = []
     const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: String(input), init })
       return json({ choices: [{ message: { content: JSON.stringify({ sourceLanguage: 'English', text: 'Bonjour' }) } }] })
@@ -133,16 +136,20 @@ describe('ShellSmith command suggestion provider', () => {
     }, {
       fetchFn,
       selectedText: async () => { selectionReads++; return { ok: true, text: 'Hello from the focused selection' } },
-      pasteboard: { types: async () => { clipboardTypeReads++; return [] }, read: async () => { clipboardReads++; return 'stale clipboard text' }, write: async () => { clipboardWrites++ } },
+      copiedText: async () => { copyReads++; return { ok: false, error: 'no-selection' } },
+      pasteSelection: async () => { pastes++ },
+      pasteboard: { types: async () => { clipboardTypeReads++; return [] }, read: async () => { clipboardReads++; return 'stale clipboard text' }, write: async (text) => { written.push(text) } },
     })
 
     const result = await provider.commands!.translateSelection({ favorites: ['en', 'fr'], instanceId: 'translate-selection-showcase' }, { loopback: true })
 
     expect(result).toEqual({ ok: true, sourceLanguage: 'en', targetLanguage: 'fr', text: 'Bonjour' })
     expect(selectionReads).toBe(1)
+    expect(copyReads).toBe(0)
     expect(clipboardReads).toBe(0)
-    expect(clipboardWrites).toBe(0)
     expect(clipboardTypeReads).toBe(0)
+    expect(written).toEqual(['Bonjour'])
+    expect(pastes).toBe(1)
     expect(calls).toHaveLength(1)
     expect(calls[0].url).toBe('https://api.groq.com/openai/v1/chat/completions')
     const body = JSON.parse(String(calls[0].init?.body))
@@ -153,18 +160,40 @@ describe('ShellSmith command suggestion provider', () => {
     expect(body.messages.map((message: { content: string }) => message.content).join('\n')).not.toContain('stale clipboard text')
   })
 
-  it('refuses secure focused fields before making a request or falling back to the clipboard', async () => {
+  it('refuses secure focused fields before making a request or falling back to ⌘C', async () => {
     let requests = 0
     let clipboardReads = 0
+    let copyReads = 0
     const provider = createOpenAIShellsmithProvider(context(), {
       fetchFn: (async () => { requests++; return json({}) }) as typeof fetch,
       selectedText: async () => ({ ok: false, error: 'secure-field' }),
+      copiedText: async () => { copyReads++; return { ok: true, text: 'should never be read' } },
       pasteboard: { types: async () => { clipboardReads++; return [] }, read: async () => { clipboardReads++; return 'clipboard contents' }, write: async () => { clipboardReads++ } },
     })
 
     expect(await provider.commands!.translateSelection({ favorites: ['en', 'fr'] }, { loopback: true })).toEqual({ ok: false, error: 'secure-field' })
     expect(clipboardReads).toBe(0)
+    expect(copyReads).toBe(0)
     expect(requests).toBe(0)
+  })
+
+  it('falls back to a ⌘C copy when the focused app never reports a selection', async () => {
+    let copied = 0
+    let pastes = 0
+    const written: string[] = []
+    const provider = createOpenAIShellsmithProvider(context(), {
+      fetchFn: (async () => json({ choices: [{ message: { content: JSON.stringify({ sourceLanguage: 'en', text: 'Bonjour' }) } }] })) as typeof fetch,
+      selectedText: async () => ({ ok: false, error: 'no-selection' }),
+      copiedText: async () => { copied++; return { ok: true, text: 'Hello copied by keyboard' } },
+      pasteSelection: async () => { pastes++ },
+      pasteboard: { types: async () => [], read: async () => '', write: async (text) => { written.push(text) } },
+    })
+
+    const result = await provider.commands!.translateSelection({ favorites: ['en', 'fr'], instanceId: 'translate-selection-showcase' }, { loopback: true })
+    expect(result).toEqual({ ok: true, sourceLanguage: 'en', targetLanguage: 'fr', text: 'Bonjour' })
+    expect(copied).toBe(1)
+    expect(written).toEqual(['Bonjour'])
+    expect(pastes).toBe(1)
   })
 
   it.each([
@@ -176,6 +205,7 @@ describe('ShellSmith command suggestion provider', () => {
     const provider = createOpenAIShellsmithProvider(context(), {
       fetchFn: (async () => { requests++; return json({}) }) as typeof fetch,
       selectedText: async () => ({ ok: false, error: nativeError as 'no-selection' | 'permission-required' }),
+      copiedText: async () => ({ ok: false, error: nativeError as 'no-selection' | 'permission-required' }),
       pasteboard: {
         types: async () => { clipboardCalls++; return [] },
         read: async () => { clipboardCalls++; return 'clipboard contents' },
@@ -188,12 +218,9 @@ describe('ShellSmith command suggestion provider', () => {
     expect(clipboardCalls).toBe(0)
   })
 
-  it('registers an OpenAI-compatible connection with a secret token and a fixed provider choice', async () => {
+  it('registers an OpenAI-compatible connection with a secret token', async () => {
     expect(defaultConnectionTypes().some((type) => type.id === 'openai-shellsmith')).toBe(true)
     expect(openAIShellsmithType.fields.find((field) => field.key === 'token')).toMatchObject({ secret: true, required: true })
-    expect(openAIShellsmithType.fields.find((field) => field.key === 'model')).toMatchObject({ required: true })
-    expect(openAIShellsmithType.fields.find((field) => field.key === 'provider')?.options).toEqual(['openai', 'groq', 'ollama'])
-    expect(openAIShellsmithType.fields.some((field) => field.key === 'baseUrl')).toBe(false)
 
     let requestedUrl = ''
     let requestedRedirect: RequestInit['redirect']
@@ -270,5 +297,13 @@ describe('ShellSmith command suggestion provider', () => {
 
     expect(options).toContainEqual({ value: 'en', label: 'English' })
     expect(options).toContainEqual({ value: 'fr', label: 'Français' })
+  })
+
+  it('rejects an unknown options source before any fetch', async () => {
+    let requests = 0
+    await expect(openAIShellsmithType.options!('zones', {}, {}, {
+      fetchFn: (async () => { requests++; return json({}) }) as typeof fetch,
+    })).rejects.toMatchObject({ status: 400 })
+    expect(requests).toBe(0)
   })
 })

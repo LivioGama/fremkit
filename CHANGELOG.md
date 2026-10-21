@@ -32,6 +32,13 @@ tagged `vX.Y.Z`.
   button cannot be made to paste something the user never typed.
 
 
+
+- **Translate Selection reaches editors that hide the selection.** Apps that never publish
+  `AXSelectedText` — GPU-rendered editors, terminals — still answer ⌘C, so when the Accessibility
+  read comes back empty the widget copies the selection instead of giving up. The translation is
+  then pasted back over the still-selected text, replacing it in place; it also stays on the
+  pasteboard for a second ⌘V.
+
 ### Fixed
 
 - **Tapping the Edge dashboard no longer steals the keyboard.** The dashboard window took the
