@@ -132,6 +132,16 @@ describe('Messages 2FA provider', () => {
     expect(pasteboard.write).not.toHaveBeenCalled()
   })
 
+  it('reports a dedicated permission error when macOS denies access to the database', async () => {
+    const run = vi.fn(async () => { throw new Error('permission-denied') })
+    const pasteboard = { write: vi.fn(async (_text: string) => {}) }
+    const provider = createMessages2FAProvider({ run, pasteboard, enabled: () => true })
+
+    await expect(provider.commands?.copyLatest(null, { loopback: true, paired: false }))
+      .resolves.toEqual({ ok: false, error: tr(undefined, 'messages2fa.permission') })
+    expect(pasteboard.write).not.toHaveBeenCalled()
+  })
+
   it('fails closed on unsupported database schemas without exposing database content', async () => {
     const databasePath = await fixtureDatabase('CREATE TABLE unsupported (body TEXT);')
     const provider = createMessages2FAProvider({ databasePath, enabled: () => true })

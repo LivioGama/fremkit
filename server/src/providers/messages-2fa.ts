@@ -133,10 +133,13 @@ interface Messages2FAOptions {
   enabled?: () => boolean
 }
 
+const PERMISSION_DENIED = /authorization denied|operation not permitted/i
+
 const defaultRun: Run = (file, args) => new Promise((resolve, reject) => {
-  execFile(file, args, { timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_QUERY_OUTPUT_BYTES, shell: false }, (error, stdout) => {
-    if (error) reject(new Error('Messages could not be read.'))
-    else resolve(stdout)
+  execFile(file, args, { timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_QUERY_OUTPUT_BYTES, shell: false }, (error, stdout, stderr) => {
+    if (error) {
+      reject(new Error(PERMISSION_DENIED.test(`${stderr}\n${error.message}`) ? 'permission-denied' : 'read-failed'))
+    } else resolve(stdout)
   })
 })
 
@@ -300,8 +303,9 @@ export function createMessages2FAProvider(options: Messages2FAOptions = {}): Pro
         }
         lastRequestAt = requestedAt
         let code: string | undefined
-        try { code = await latestVerificationCode(databasePath, requestedAt, run) } catch {
-          return { ok: false, error: tr(undefined, 'messages2fa.readFailed') }
+        try { code = await latestVerificationCode(databasePath, requestedAt, run) } catch (error) {
+          const denied = error instanceof Error && error.message === 'permission-denied'
+          return { ok: false, error: tr(undefined, denied ? 'messages2fa.permission' : 'messages2fa.readFailed') }
         }
         if (!code) return { ok: false, error: tr(undefined, 'messages2fa.noneFound') }
         try { await pasteboard.write(code) } catch {

@@ -22,6 +22,11 @@ tagged `vX.Y.Z`.
   pasteboard. A cleanup startup failure is returned as a generic copy failure; a later cleaner
   failure is logged without exposing the code.
 
+### Fixed
+
+- **Messages 2FA now names a missing Full Disk Access grant.** A macOS denial used to surface as
+  a generic "could not be read"; the command now asks to enable Full Disk Access for Fremkit.
+
 ## 0.5.0 — 2026-10-19
 
 ### Added
